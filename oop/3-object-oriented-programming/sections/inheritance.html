@@ -1,0 +1,545 @@
+<!-- 封装、继承、多态 -->
+<section id="inheritance" class="content-section">
+    <h2>10. 封装、继承、多态</h2>
+
+    <h3>10.1 封装（Encapsulation）</h3>
+    <p>封装是面向对象编程的基本特征之一，它将数据和操作数据的方法绑定在一起，并隐藏对象的内部实现细节。</p>
+
+    <div class="code-block">
+        <pre><code class="language-java">// 封装示例：银行账户类
+public class BankAccount {
+    // 私有成员变量，外部无法直接访问
+    private String accountNumber;
+    private String accountHolder;
+    private double balance;
+    private String password;
+    
+    // 构造方法
+    public BankAccount(String accountNumber, String accountHolder, String password) {
+        this.accountNumber = accountNumber;
+        this.accountHolder = accountHolder;
+        this.password = password;
+        this.balance = 0.0;
+    }
+    
+    // 公共方法提供受控的访问
+    public String getAccountNumber() {
+        return accountNumber;
+    }
+    
+    public String getAccountHolder() {
+        return accountHolder;
+    }
+    
+    // 余额查询需要密码验证
+    public double getBalance(String inputPassword) {
+        if (verifyPassword(inputPassword)) {
+            return balance;
+        } else {
+            System.out.println("密码错误，无法查询余额");
+            return -1;
+        }
+    }
+    
+    // 存款方法
+    public boolean deposit(double amount) {
+        if (amount > 0) {
+            balance += amount;
+            System.out.println("存款成功，当前余额: " + balance);
+            return true;
+        } else {
+            System.out.println("存款金额必须大于0");
+            return false;
+        }
+    }
+    
+    // 取款方法需要密码验证
+    public boolean withdraw(double amount, String inputPassword) {
+        if (!verifyPassword(inputPassword)) {
+            System.out.println("密码错误，无法取款");
+            return false;
+        }
+        
+        if (amount <= 0) {
+            System.out.println("取款金额必须大于0");
+            return false;
+        }
+        
+        if (amount > balance) {
+            System.out.println("余额不足，当前余额: " + balance);
+            return false;
+        }
+        
+        balance -= amount;
+        System.out.println("取款成功，当前余额: " + balance);
+        return true;
+    }
+    
+    // 修改密码
+    public boolean changePassword(String oldPassword, String newPassword) {
+        if (verifyPassword(oldPassword)) {
+            this.password = newPassword;
+            System.out.println("密码修改成功");
+            return true;
+        } else {
+            System.out.println("原密码错误，无法修改密码");
+            return false;
+        }
+    }
+    
+    // 私有方法，用于密码验证
+    private boolean verifyPassword(String inputPassword) {
+        return this.password.equals(inputPassword);
+    }
+    
+    // 转账方法
+    public boolean transfer(BankAccount targetAccount, double amount, String inputPassword) {
+        if (withdraw(amount, inputPassword)) {
+            targetAccount.deposit(amount);
+            System.out.println("转账成功，向账户 " + targetAccount.getAccountNumber() + " 转账 " + amount);
+            return true;
+        }
+        return false;
+    }
+    
+    @Override
+    public String toString() {
+        return "账户号: " + accountNumber + ", 账户名: " + accountHolder;
+    }
+}
+
+// 封装的使用示例
+class EncapsulationDemo {
+    public static void main(String[] args) {
+        // 创建银行账户
+        BankAccount account1 = new BankAccount("123456789", "张三", "password123");
+        BankAccount account2 = new BankAccount("987654321", "李四", "mypassword");
+        
+        System.out.println("=== 封装示例：银行账户操作 ===");
+        System.out.println(account1);
+        
+        // 存款操作
+        account1.deposit(1000);
+        account1.deposit(-100);  // 无效操作
+        
+        // 查询余额
+        System.out.println("正确密码查询余额: " + account1.getBalance("password123"));
+        System.out.println("错误密码查询余额: " + account1.getBalance("wrongpassword"));
+        
+        // 取款操作
+        account1.withdraw(200, "password123");
+        account1.withdraw(200, "wrongpassword");  // 密码错误
+        account1.withdraw(2000, "password123");   // 余额不足
+        
+        // 转账操作
+        account2.deposit(500);
+        account1.transfer(account2, 300, "password123");
+        
+        // 修改密码
+        account1.changePassword("password123", "newpassword");
+        account1.withdraw(100, "newpassword");
+        
+        // 尝试直接访问私有变量（编译错误）
+        // System.out.println(account1.balance);  // 这行代码会编译错误
+    }
+}</code></pre>
+    </div>
+
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/21/4KvLcjMzQxWpNhK.png" alt="封装概念" class="content-image">
+        <p class="image-caption">封装的概念和访问控制</p>
+    </div>
+
+    <h3>10.2 继承（Inheritance）</h3>
+    <p>继承是面向对象编程的重要特征，允许一个类继承另一个类的属性和方法，实现代码重用和层次化设计。</p>
+
+    <div class="code-block">
+        <pre><code class="language-java">// 父类：动物类
+class Animal {
+    protected String name;
+    protected int age;
+    protected String species;
+    
+    // 父类构造方法
+    public Animal(String name, int age, String species) {
+        this.name = name;
+        this.age = age;
+        this.species = species;
+        System.out.println("创建动物: " + name);
+    }
+    
+    // 父类方法
+    public void eat() {
+        System.out.println(name + " 正在吃东西");
+    }
+    
+    public void sleep() {
+        System.out.println(name + " 正在睡觉");
+    }
+    
+    public void makeSound() {
+        System.out.println(name + " 发出声音");
+    }
+    
+    public void showInfo() {
+        System.out.println("动物信息: 姓名=" + name + ", 年龄=" + age + ", 种类=" + species);
+    }
+    
+    // getter和setter方法
+    public String getName() { return name; }
+    public int getAge() { return age; }
+    public String getSpecies() { return species; }
+}
+
+// 子类：狗类
+class Dog extends Animal {
+    private String breed;  // 品种
+    private boolean isTrained;  // 是否训练过
+    
+    // 子类构造方法
+    public Dog(String name, int age, String breed) {
+        super(name, age, "犬类");  // 调用父类构造方法
+        this.breed = breed;
+        this.isTrained = false;
+        System.out.println("创建狗狗: " + name + ", 品种: " + breed);
+    }
+    
+    // 重写父类方法
+    @Override
+    public void makeSound() {
+        System.out.println(name + " 汪汪叫");
+    }
+    
+    @Override
+    public void eat() {
+        System.out.println(name + " 正在吃狗粮");
+    }
+    
+    // 子类特有方法
+    public void wagTail() {
+        System.out.println(name + " 摇尾巴表示开心");
+    }
+    
+    public void fetch() {
+        System.out.println(name + " 去捡球");
+    }
+    
+    public void train() {
+        this.isTrained = true;
+        System.out.println(name + " 接受了训练");
+    }
+    
+    public void guard() {
+        if (isTrained) {
+            System.out.println(name + " 正在看家护院");
+        } else {
+            System.out.println(name + " 还没有接受看家训练");
+        }
+    }
+    
+    // 重写showInfo方法
+    @Override
+    public void showInfo() {
+        super.showInfo();  // 调用父类方法
+        System.out.println("品种: " + breed + ", 是否训练: " + (isTrained ? "是" : "否"));
+    }
+}
+
+// 子类：猫类
+class Cat extends Animal {
+    private boolean isIndoor;  // 是否室内猫
+    private String furColor;   // 毛色
+    
+    public Cat(String name, int age, String furColor, boolean isIndoor) {
+        super(name, age, "猫科");
+        this.furColor = furColor;
+        this.isIndoor = isIndoor;
+        System.out.println("创建猫咪: " + name + ", 毛色: " + furColor);
+    }
+    
+    @Override
+    public void makeSound() {
+        System.out.println(name + " 喵喵叫");
+    }
+    
+    @Override
+    public void eat() {
+        System.out.println(name + " 正在吃猫粮");
+    }
+    
+    // 猫类特有方法
+    public void purr() {
+        System.out.println(name + " 发出呼噜声");
+    }
+    
+    public void climb() {
+        System.out.println(name + " 爬到高处");
+    }
+    
+    public void hunt() {
+        if (!isIndoor) {
+            System.out.println(name + " 在户外捕猎");
+        } else {
+            System.out.println(name + " 在室内玩玩具老鼠");
+        }
+    }
+    
+    @Override
+    public void showInfo() {
+        super.showInfo();
+        System.out.println("毛色: " + furColor + ", 生活环境: " + (isIndoor ? "室内" : "户外"));
+    }
+}
+
+// 子类：鸟类
+class Bird extends Animal {
+    private boolean canFly;
+    private double wingspan;  // 翼展
+    
+    public Bird(String name, int age, boolean canFly, double wingspan) {
+        super(name, age, "鸟类");
+        this.canFly = canFly;
+        this.wingspan = wingspan;
+        System.out.println("创建鸟儿: " + name + ", 翼展: " + wingspan + "cm");
+    }
+    
+    @Override
+    public void makeSound() {
+        System.out.println(name + " 啾啾叫");
+    }
+    
+    @Override
+    public void eat() {
+        System.out.println(name + " 正在啄食");
+    }
+    
+    public void fly() {
+        if (canFly) {
+            System.out.println(name + " 展翅飞翔");
+        } else {
+            System.out.println(name + " 不会飞行");
+        }
+    }
+    
+    public void buildNest() {
+        System.out.println(name + " 正在筑巢");
+    }
+    
+    @Override
+    public void showInfo() {
+        super.showInfo();
+        System.out.println("飞行能力: " + (canFly ? "会飞" : "不会飞") + ", 翼展: " + wingspan + "cm");
+    }
+}
+
+// 继承示例
+class InheritanceDemo {
+    public static void main(String[] args) {
+        System.out.println("=== 继承示例：动物世界 ===");
+        
+        // 创建不同的动物对象
+        Dog dog = new Dog("旺财", 3, "金毛");
+        Cat cat = new Cat("咪咪", 2, "橘色", true);
+        Bird bird = new Bird("小黄", 1, true, 25.5);
+        
+        System.out.println("\n=== 共同行为（继承自父类）===");
+        // 所有动物都有的行为
+        dog.eat();
+        cat.eat();
+        bird.eat();
+        
+        System.out.println();
+        dog.sleep();
+        cat.sleep();
+        bird.sleep();
+        
+        System.out.println("\n=== 重写的方法（多态表现）===");
+        dog.makeSound();
+        cat.makeSound();
+        bird.makeSound();
+        
+        System.out.println("\n=== 子类特有方法 ===");
+        dog.wagTail();
+        dog.fetch();
+        dog.train();
+        dog.guard();
+        
+        cat.purr();
+        cat.climb();
+        cat.hunt();
+        
+        bird.fly();
+        bird.buildNest();
+        
+        System.out.println("\n=== 对象信息 ===");
+        dog.showInfo();
+        System.out.println();
+        cat.showInfo();
+        System.out.println();
+        bird.showInfo();
+        
+        System.out.println("\n=== 多态数组 ===");
+        Animal[] animals = {dog, cat, bird};
+        for (Animal animal : animals) {
+            System.out.print(animal.getName() + ": ");
+            animal.makeSound();  // 多态调用
+        }
+    }
+}</code></pre>
+    </div>
+
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/21/5MzQxWpNhKvLcjM.png" alt="继承层次" class="content-image">
+        <p class="image-caption">动物类的继承层次结构</p>
+    </div>
+
+    <h3>10.3 Object类</h3>
+    <p>Object类是Java中所有类的根父类，每个类都直接或间接继承自Object类。</p>
+
+    <div class="code-block">
+        <pre><code class="language-java">// 演示Object类的常用方法
+class Student {
+    private String name;
+    private int age;
+    private String studentId;
+    
+    public Student(String name, int age, String studentId) {
+        this.name = name;
+        this.age = age;
+        this.studentId = studentId;
+    }
+    
+    // 重写toString方法
+    @Override
+    public String toString() {
+        return "Student{name='" + name + "', age=" + age + ", studentId='" + studentId + "'}";
+    }
+    
+    // 重写equals方法
+    @Override
+    public boolean equals(Object obj) {
+        // 1. 检查是否是同一个对象
+        if (this == obj) return true;
+        
+        // 2. 检查是否为null
+        if (obj == null) return false;
+        
+        // 3. 检查类型是否相同
+        if (getClass() != obj.getClass()) return false;
+        
+        // 4. 类型转换并比较属性
+        Student student = (Student) obj;
+        return age == student.age &&
+               Objects.equals(name, student.name) &&
+               Objects.equals(studentId, student.studentId);
+    }
+    
+    // 重写hashCode方法
+    @Override
+    public int hashCode() {
+        return Objects.hash(name, age, studentId);
+    }
+    
+    // getter方法
+    public String getName() { return name; }
+    public int getAge() { return age; }
+    public String getStudentId() { return studentId; }
+}
+
+// Object类方法演示
+class ObjectDemo {
+    public static void main(String[] args) {
+        System.out.println("=== Object类方法演示 ===");
+        
+        Student student1 = new Student("张三", 20, "S001");
+        Student student2 = new Student("张三", 20, "S001");
+        Student student3 = new Student("李四", 21, "S002");
+        
+        // toString方法
+        System.out.println("=== toString方法 ===");
+        System.out.println("student1: " + student1.toString());
+        System.out.println("student1: " + student1);  // 自动调用toString
+        
+        // equals方法
+        System.out.println("\n=== equals方法 ===");
+        System.out.println("student1.equals(student2): " + student1.equals(student2));
+        System.out.println("student1.equals(student3): " + student1.equals(student3));
+        System.out.println("student1 == student2: " + (student1 == student2));
+        System.out.println("student1 == student1: " + (student1 == student1));
+        
+        // hashCode方法
+        System.out.println("\n=== hashCode方法 ===");
+        System.out.println("student1.hashCode(): " + student1.hashCode());
+        System.out.println("student2.hashCode(): " + student2.hashCode());
+        System.out.println("student3.hashCode(): " + student3.hashCode());
+        
+        // getClass方法
+        System.out.println("\n=== getClass方法 ===");
+        System.out.println("student1.getClass(): " + student1.getClass());
+        System.out.println("student1.getClass().getName(): " + student1.getClass().getName());
+        System.out.println("student1.getClass().getSimpleName(): " + student1.getClass().getSimpleName());
+        
+        // instanceof操作符
+        System.out.println("\n=== instanceof操作符 ===");
+        System.out.println("student1 instanceof Student: " + (student1 instanceof Student));
+        System.out.println("student1 instanceof Object: " + (student1 instanceof Object));
+        
+        // clone方法演示（需要实现Cloneable接口）
+        demonstrateClone();
+    }
+    
+    public static void demonstrateClone() {
+        System.out.println("\n=== clone方法演示 ===");
+        
+        // 创建可克隆的类
+        class CloneableStudent implements Cloneable {
+            private String name;
+            private int age;
+            
+            public CloneableStudent(String name, int age) {
+                this.name = name;
+                this.age = age;
+            }
+            
+            @Override
+            protected Object clone() throws CloneNotSupportedException {
+                return super.clone();
+            }
+            
+            @Override
+            public String toString() {
+                return "CloneableStudent{name='" + name + "', age=" + age + "}";
+            }
+            
+            public void setName(String name) { this.name = name; }
+            public void setAge(int age) { this.age = age; }
+        }
+        
+        try {
+            CloneableStudent original = new CloneableStudent("原始学生", 20);
+            CloneableStudent cloned = (CloneableStudent) original.clone();
+            
+            System.out.println("原始对象: " + original);
+            System.out.println("克隆对象: " + cloned);
+            System.out.println("是否为同一对象: " + (original == cloned));
+            
+            // 修改克隆对象
+            cloned.setName("克隆学生");
+            cloned.setAge(21);
+            
+            System.out.println("修改后:");
+            System.out.println("原始对象: " + original);
+            System.out.println("克隆对象: " + cloned);
+            
+        } catch (CloneNotSupportedException e) {
+            System.out.println("克隆失败: " + e.getMessage());
+        }
+    }
+}</code></pre>
+    </div>
+
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/21/6NhKvLcjMzQxWpN.png" alt="Object类方法" class="content-image">
+        <p class="image-caption">Object类的主要方法</p>
+    </div>
+</section>
