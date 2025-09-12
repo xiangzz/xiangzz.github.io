@@ -1,0 +1,225 @@
+<section id="inner-classes" class="content-section">
+    <h2>内部类</h2>
+    <p>上一章我们详细介绍了类，我们现在已经知道该如何创建类、使用类了。当然，类的创建其实可以有多种多样的方式，并不仅仅局限于普通的创建。内部类顾名思义，就是创建在内部的类，那么具体是什么的内部呢，我们接着就来讨论一下。
+    </p>
+    <p><strong>注意：</strong>内部类很多地方都很绕，所以说一定要仔细思考。</p>
+
+    <h3>成员内部类</h3>
+    <p>我们可以直接在类的内部定义成员内部类：</p>
+    <pre><code class="language-java">
+public class Test {
+    public class Inner {   //内部类也是类，所以说里面也可以有成员变量、方法等，甚至还可以继续套娃一个成员内部类
+        public void test(){
+            System.out.println("我是成员内部类！");
+        }
+    }
+}
+            </code></pre>
+    <p>成员内部类和成员方法、成员变量一样，是对象所有的，而不是类所有的，如果我们要使用成员内部类，那么就需要：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    Test test = new Test();   //我们首先需要创建对象
+    Test.Inner inner = test.new Inner();   //成员内部类的类型名称就是 外层.内部类名称
+}
+            </code></pre>
+    <p>虽然看着很奇怪，但是确实是这样使用的。我们同样可以使用成员内部类中的方法：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    Test test = new Test();
+    Test.Inner inner = test.new Inner();
+    inner.test();
+}
+            </code></pre>
+    <p>注意，成员内部类也可以使用访问权限控制，如果我们我们将其权限改为private，那么就像我们把成员变量访问权限变成私有一样，外部是无法访问到这个内部类的：</p>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/HklipN4uOfK9JrG.png" alt="私有内部类访问错误" class="content-image">
+    </div>
+    <p>可以看到这里直接不认识了。</p>
+    <p>这里我们需要特别注意一下，在成员内部类中，是可以访问到外层的变量的：</p>
+    <pre><code class="language-java">
+public class Test {
+    private final String name;
+    
+    public Test(String name){
+        this.name = name;
+    }
+    public class Inner {
+        public void test(){
+            System.out.println("我是成员内部类："+name);
+            //成员内部类可以访问到外部的成员变量
+            //因为成员内部类本身就是某个对象所有的，每个对象都有这样的一个类定义，这里的name是其所依附对象的
+        }
+    }
+}
+            </code></pre>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/aQPow8piljRCs2d.png" alt="成员内部类访问外部变量" class="content-image">
+    </div>
+    <p>每个类可以创建一个对象，每个对象中都有一个单独的类定义，可以通过这个成员内部类又创建出更多对象，套娃了属于是。</p>
+    <p>所以说我们在使用时：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    Test a = new Test("小明");
+    Test.Inner inner1 = a.new Inner();   //依附于a创建的对象，那么就是a的
+    inner1.test();
+
+    Test b = new Test("小红");
+    Test.Inner inner2 = b.new Inner();  //依附于b创建的对象，那么就是b的
+    inner2.test();
+}
+            </code></pre>
+    <p>那现在问大家一个问题，外部能访问内部类里面的成员变量吗？</p>
+    <p>那么如果内部类中也定义了同名的变量，此时我们怎么去明确要使用的是哪一个呢？</p>
+    <pre><code class="language-java">
+public class Test {
+    private final String name;
+
+    public Test(String name){
+        this.name = name;
+    }
+    public class Inner {
+
+        String name;
+        public void test(String name){
+            System.out.println("方法参数的name = "+name);    //依然是就近原则，最近的是参数，那就是参数了
+            System.out.println("成员内部类的name = "+this.name);   //在内部类中使用this关键字，只能表示内部类对象
+            System.out.println("成员内部类的name = "+Test.this.name);
+            //如果需要指定为外部的对象，那么需要在前面添加外部类型名称
+        }
+    }
+}
+            </code></pre>
+    <p>包括对方法的调用和super关键字的使用，也是一样的：</p>
+    <pre><code class="language-java">
+public class Inner {
+    String name;
+    public void test(String name){
+        this.toString();        //内部类自己的toString方法
+        super.toString();    //内部类父类的toString方法
+        Test.this.toString();   //外部类的toSrting方法
+        Test.super.toString();  //外部类父类的toString方法
+    }
+}
+            </code></pre>
+    <p>所以说成员内部类其实在某些情况下使用起来比较麻烦，对于这种成员内部类，我们一般只会在类的内部自己使用。</p>
+
+    <h3>静态内部类</h3>
+    <p>前面我们介绍了成员内部类，它就像成员变量和成员方法一样，是属于对象的，同样的，静态内部类就像静态方法和静态变量一样，是属于类的，我们可以直接创建使用。</p>
+    <pre><code class="language-java">
+public class Test {
+    private final String name;
+
+    public Test(String name){
+        this.name = name;
+    }
+
+    public static class Inner {
+        public void test(){
+            System.out.println("我是静态内部类！");
+        }
+    }
+}
+            </code></pre>
+    <p>不需要依附任何对象，我们可以直接创建静态内部类的对象：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    Test.Inner inner = new Test.Inner();   //静态内部类的类名同样是之前的格式，但是可以直接new了
+    inner.test();
+}
+            </code></pre>
+    <p>静态内部类由于是静态的，所以相对外部来说，整个内部类中都处于静态上下文（注意只是相当于外部来说）是无法访问到外部类的非静态内容的：</p>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/cZapwgeATlG2FHn.png" alt="静态内部类访问非静态成员错误" class="content-image">
+    </div>
+    <p>只不过受影响的只是外部内容的使用，内部倒是不受影响，还是跟普通的类一样：</p>
+    <pre><code class="language-java">
+public static class Inner {
+    String name;
+    public void test(){
+        System.out.println("我是静态内部类："+name);
+    }
+}
+            </code></pre>
+    <p>其实也很容易想通，因为静态内部类是属于外部类的，不依附任何对象，那么我要是直接访问外部类的非静态属性，那到底访问哪个对象的呢？这样肯定是说不通的。</p>
+
+    <h3>局部内部类</h3>
+    <p>局部内部类就像局部变量一样，可以在方法中定义。</p>
+    <pre><code class="language-java">
+public class Test {
+    private final String name;
+
+    public Test(String name){
+        this.name = name;
+    }
+
+    public void hello(){
+        class Inner {    //直接在方法中创建局部内部类
+            
+        }
+    }
+}
+            </code></pre>
+    <p>既然是在方法中声明的类，那作用范围也就只能在方法中了：</p>
+    <pre><code class="language-java">
+public class Test {
+    public void hello(){
+        class Inner{   //局部内部类跟局部变量一样，先声明后使用
+            public void test(){
+                System.out.println("我是局部内部类");
+            }
+        }
+        
+        Inner inner = new Inner();   //局部内部类直接使用类名就行
+        inner.test();
+    }
+}
+            </code></pre>
+    <p>只不过这种局部内部类的形式，使用频率很低，基本上不会用到，所以说了解就行了。</p>
+
+    <h3>匿名内部类</h3>
+    <p>匿名内部类是我们使用频率非常高的一种内部类，它是局部内部类的简化版。</p>
+    <p>还记得我们在之前学习的抽象类和接口吗？在抽象类和接口中都会含有某些抽象方法需要子类去实现，我们当时已经很明确地说了不能直接通过new的方式去创建一个抽象类或是接口对象，但是我们可以使用匿名内部类。</p>
+    <pre><code class="language-java">
+public abstract class Student {
+    public abstract void test();
+}
+            </code></pre>
+    <p>正常情况下，要创建一个抽象类的实例对象，只能对其进行继承，先实现未实现的方法，然后创建子类对象。</p>
+    <p>而我们可以在方法中使用匿名内部类，将其中的抽象方法实现，并直接创建实例对象：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    Student student = new Student() {   //在new的时候，后面加上花括号，把未实现的方法实现了
+        @Override
+        public void test() {
+            System.out.println("我是匿名内部类的实现!");
+        }
+    };
+    student.test();
+}
+            </code></pre>
+    <p>此时这里创建出来的Student对象，就是一个已经实现了抽象方法的对象，这个抽象类直接就定义好了，甚至连名字都没有，就可以直接就创出对象。</p>
+    <p>匿名内部类中同样可以使用类中的属性（因为它本质上就相当于是对应类型的子类）所以说：</p>
+    <pre><code class="language-java">
+Student student = new Student() {
+    int a;   //因为本质上就相当于是子类，所以说子类定义一些子类的属性完全没问题
+    
+    @Override
+    public void test() {
+        System.out.println(name + "我是匿名内部类的实现!");   //直接使用父类中的name变量
+    }
+};
+            </code></pre>
+    <p>同样的，接口也可以通过这种匿名内部类的形式，直接创建一个匿名的接口实现类：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    Study study = new Study() {
+        @Override
+        public void study() {
+            System.out.println("我是学习方法！");
+        }
+    };
+    study.study();
+}
+            </code></pre>
+    <p>当然，并不是说只有抽象类和接口才可以像这样创建匿名内部类，普通的类也可以，只不过意义不大，一般情况下只是为了进行一些额外的初始化工作而已。</p>
+</section>

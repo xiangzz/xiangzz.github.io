@@ -1,0 +1,311 @@
+<section id="exceptions" class="content-section">
+    <h2>异常机制</h2>
+    <p>在理想的情况下，我们的程序会按照我们的思路去运行，按理说是不会出现问题的，但是，代码实际编写后并不一定是完美的，可能会有我们没有考虑到的情况，如果这些情况能够正常得到一个错误的结果还好，但是如果直接导致程序运行出现问题了呢？
+    </p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    test(1, 0);   //当b为0的时候，还能正常运行吗？
+}
+
+private static int test(int a, int b){
+    return a/b;   //没有任何的判断而是直接做计算
+}
+            </code></pre>
+    <p>此时我们可以看到，出现了运算异常：</p>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/5PxTJv7M2YFzfg4.png" alt="算术异常" class="content-image">
+    </div>
+    <p>那么这个异常到底是什么样的一种存在呢？当程序运行出现我们没有考虑到的情况时，就有可能出现异常或是错误！</p>
+
+    <h3>异常的类型</h3>
+    <p>我们在之前其实已经接触过一些异常了，比如数组越界异常，空指针异常，算术异常等，他们其实都是异常类型，我们的每一个异常也是一个类，他们都继承自Exception类！异常类型本质依然类的对象，但是异常类型支持在程序运行出现问题时抛出（也就是上面出现的红色报错）也可以提前声明，告知使用者需要处理可能会出现的异常！
+    </p>
+    <p>异常的第一种类型是运行时异常，如上述的列子，在编译阶段无法感知代码是否会出现问题，只有在运行的时候才知道会不会出错（正常情况下是不会出错的），这样的异常称为运行时异常，异常也是由类定义的，所有的运行时异常都继承自RuntimeException。
+    </p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    Object object = null;
+    object.toString();   //这种情况就会出现运行时异常
+}
+            </code></pre>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/cTAqbZ93HidRIGW.png" alt="空指针异常" class="content-image">
+    </div>
+    <p>又比如下面的这种情况：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    Object object = new Object();
+    Main main = (Main) object;
+}
+            </code></pre>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/QxMimbjZk19C25d.png" alt="类型转换异常" class="content-image">
+    </div>
+    <p>异常的另一种类型是编译时异常，编译时异常明确指出可能会出现的异常，在编译阶段就需要进行处理（捕获异常）必须要考虑到出现异常的情况，如果不进行处理，将无法通过编译！默认继承自Exception类的异常都是编译时异常。
+    </p>
+    <pre><code class="language-java">
+protected native Object clone() throws CloneNotSupportedException;
+            </code></pre>
+    <p>比如Object类中定义的clone方法，就明确指出了在运行的时候会出现的异常。</p>
+    <p>还有一种类型是错误，错误比异常更严重，异常就是不同寻常，但不一定会导致致命的问题，而错误是致命问题，一般出现错误可能JVM就无法继续正常运行了，比如OutOfMemoryError就是内存溢出错误（内存占用已经超出限制，无法继续申请内存了）
+    </p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    test();
+}
+
+private static void test(){
+    test();
+}
+            </code></pre>
+    <p>比如这样的一个无限递归的方法，会导致运行过程中无限制地向下调用方法，导致栈溢出：</p>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/9YEZV2L73ROQTuA.png" alt="栈溢出错误" class="content-image">
+    </div>
+    <p>这种情况就是错误了，已经严重到整个程序都无法正常运行了。又比如：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    Object[] objects = new Object[Integer.MAX_VALUE];   //这里申请一个超级大数组
+}
+            </code></pre>
+    <p>实际上我们电脑的内存是有限的，不可能无限制地使用内存来存放变量，所以说如果内存不够用了，会直接：</p>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/qj8zJnGxdS5IybX.png" alt="内存溢出错误" class="content-image">
+    </div>
+    <p>此时没有更多的可用内存供我们的程序使用，那么程序也就没办法继续运行下去了，这同样是一个很严重的错误。</p>
+    <p>当然，我们这一块主要讨论的目录依然是异常。</p>
+
+    <h3>自定义异常</h3>
+    <p>异常其实就两大类，一个是编译时异常，一个是运行时异常，我们先来看编译时异常。</p>
+    <pre><code class="language-java">
+public class TestException extends Exception{
+    public TestException(String message){
+        super(message);   //这里我们选择使用父类的带参构造，这个参数就是异常的原因
+    }
+}
+            </code></pre>
+    <p>编译时异常只需要继承Exception就行了，编译时异常的子类有很多很多，仅仅是SE中就有700多个。</p>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/TzUu5Sk6NycB9An.png" alt="Exception子类" class="content-image">
+    </div>
+    <p>异常多种多样，不同的异常对应着不同的情况，比如在类型转换时出错那么就是类型转换异常，如果是使用一个值为null的变量调用方法，那么就会出现空指针异常。</p>
+    <p>运行时异常只需要继承RuntimeException就行了：</p>
+    <pre><code class="language-java">
+public class TestException extends RuntimeException{
+    public TestException(String message){
+        super(message);
+    }
+}
+            </code></pre>
+    <p>RuntimeException继承自Exception，Exception继承自Throwable：</p>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/RjzWnNDc6TZeSoJ.png" alt="异常继承体系" class="content-image">
+    </div>
+    <p>运行时异常同同样也有很多，只不过运行时异常和编译型异常在使用时有一些不同，我们会在后面的学习中慢慢认识。</p>
+    <p>当然还有一种类型是Error，它是所有错误的父类，同样是继承自Throwable的。</p>
+
+    <h3>抛出异常</h3>
+    <p>当别人调用我们的方法时，如果传入了错误的参数导致程序无法正常运行，这时我们就可以手动抛出一个异常来终止程序继续运行下去，同时告知上一级方法执行出现了问题：</p>
+    <pre><code class="language-java">
+public static int test(int a, int b) {
+    if(b == 0)
+        throw new RuntimeException("被除数不能为0");  //使用throw关键字来抛出异常
+    return a / b;
+}
+            </code></pre>
+    <p>异常的抛出同样需要创建一个异常对象出来，我们抛出异常实际上就是将这个异常对象抛出，异常对象携带了我们抛出异常时的一些信息，比如是因为什么原因导致的异常，在RuntimeException的构造方法中我们可以写入原因。
+    </p>
+    <p>当出现异常时：</p>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/Ttr4kZSyodKi3M8.png" alt="抛出异常的栈追踪信息" class="content-image">
+    </div>
+    <p>程序会终止，并且会打印栈追踪信息，因为各位小伙伴才初学，还不知道什么是栈，我们这里就简单介绍一下，实际上方法之间的调用是有层级关系的，而当异常发生时，方法调用的每一层都会在栈追踪信息中打印出来，比如这里有两个at，实际上就是在告诉我们程序运行到哪个位置时出现的异常，位于最上面的就是发生异常的最核心位置，我们代码的第15行。
+    </p>
+    <p>并且这里会打印出当前抛出的异常类型和我们刚刚自定义异常信息。</p>
+    <p>注意，如果我们在方法中抛出了一个非运行时异常，那么必须告知函数的调用方我们会抛出某个异常，函数调用方必须要对抛出的这个异常进行对应的处理才可以：</p>
+    <pre><code class="language-java">
+private static void test() throws Exception {    //使用throws关键字告知调用方此方法会抛出哪些异常，请调用方处理好
+    throw new Exception("我是编译时异常！");
+}
+            </code></pre>
+    <p>注意，如果不同的分支条件会出现不同的异常，那么所有在方法中可能会抛出的异常都需要注明：</p>
+    <pre><code class="language-java">
+private static void test(int a) throws FileNotFoundException, ClassNotFoundException {  //多个异常使用逗号隔开
+    if(a == 1)
+        throw new FileNotFoundException();
+    else 
+        throw new ClassNotFoundException();
+}
+            </code></pre>
+    <p>当然，并不是只有非运行时异常可以像这样明确指出，运行时异常也可以，只不过不强制要求：</p>
+    <pre><code class="language-java">
+private static void test(int a) throws RuntimeException {
+    throw new RuntimeException();
+}
+            </code></pre>
+    <p>至于如何处理明确抛出的异常，我们会下一个部分中进行讲解。</p>
+    <p>最后再提一下，我们在重写方法时，如果父类中的方法表明了会抛出某个异常，只要重写的内容中不会抛出对应的异常我们可以直接省去：</p>
+    <pre><code class="language-java">
+@Override
+protected Object clone() {
+    return new Object();
+}
+            </code></pre>
+
+    <h3>异常的处理</h3>
+    <p>当程序没有按照我们理想的样子运行而出现异常时（默认会交给JVM来处理，JVM发现任何异常都会立即终止程序运行，并在控制台打印栈追踪信息）现在我们希望能够自己处理出现的问题，让程序继续运行下去，就需要对异常进行捕获，比如：
+    </p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    try {    //使用try-catch语句进行异常捕获
+        Object object = null;
+        object.toString();
+    } catch (NullPointerException e){   //因为异常本身也是一个对象，catch中实际上就是用一个局部变量去接收异常
+
+    }
+    System.out.println("程序继续正常运行！");
+}
+            </code></pre>
+    <p>我们可以将代码编写到try语句块中，只要是在这个范围内发生的异常，都可以被捕获，使用catch关键字对指定的异常进行捕获，这里我们捕获的是NullPointerException空指针异常：</p>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/7Ek5A46QHNKtWoJ.png" alt="捕获异常后程序继续运行" class="content-image">
+    </div>
+    <p>可以看到，当我们捕获异常之后，程序可以继续正常运行，并不会像之前一样直接结束掉。</p>
+    <p>注意，catch中捕获的类型只能是Throwable的子类，也就是说要么是抛出的异常，要么是错误，不能是其他的任何类型。</p>
+    <p>我们可以在catch语句块中对捕获到的异常进行处理：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    try {
+        Object object = null;
+        object.toString();
+    } catch (NullPointerException e){
+        e.printStackTrace();   //打印栈追踪信息
+        System.out.println("异常错误信息："+e.getMessage());   //获取异常的错误信息
+    }
+    System.out.println("程序继续正常运行！");
+}
+            </code></pre>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/d15ns6hQblU8TAS.png" alt="处理异常信息" class="content-image">
+    </div>
+    <p>如果某个方法明确指出会抛出哪些异常，除非抛出的异常是一个运行时异常，否则我们必须要使用try-catch语句块进行异常的捕获，不然就无法通过编译：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    test(10);    //必须要进行异常的捕获，否则报错
+}
+
+private static void test(int a) throws IOException {  //明确会抛出IOException
+    throw new IOException();
+}
+            </code></pre>
+    <p>当然，如果我们确实不想在当前这个方法中进行处理，那么我们可以继续踢皮球，抛给上一级：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) throws IOException {  //继续编写throws往上一级抛
+    test(10);
+}
+
+private static void test(int a) throws IOException {
+    throw new IOException();
+}
+            </code></pre>
+    <p>注意，如果已经是主方法了，那么就相当于到顶层了，此时发生异常再往上抛出的话，就会直接交给JVM进行处理，默认会让整个程序终止并打印栈追踪信息。</p>
+    <p>注意，如果我们要捕获的异常，是某个异常的父类，那么当发生这个异常时，同样可以捕获到：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) throws IOException {
+    try {
+        int[] arr = new int[1];
+        arr[1] = 100;    //这里发生的是数组越界异常，它是运行时异常的子类
+    } catch (RuntimeException e){  //使用运行时异常同样可以捕获到
+        System.out.println("捕获到异常");
+    }
+}
+            </code></pre>
+    <p>当代码可能出现多种类型的异常时，我们希望能够分不同情况处理不同类型的异常，就可以使用多重异常捕获：</p>
+    <pre><code class="language-java">
+try {
+  //....
+} catch (NullPointerException e) {
+            
+} catch (IndexOutOfBoundsException e){
+
+} catch (RuntimeException e){
+            
+}
+            </code></pre>
+    <p>但是要注意一下顺序：</p>
+    <pre><code class="language-java">
+try {
+  //....
+} catch (RuntimeException e){  //父类型在前，会将子类的也捕获
+
+} catch (NullPointerException e) {   //永远都不会被捕获
+
+} catch (IndexOutOfBoundsException e){   //永远都不会被捕获
+
+}
+            </code></pre>
+    <p>只不过这样写好像有点丑，我们也可以简写为：</p>
+    <pre><code class="language-java">
+try {
+     //....
+} catch (NullPointerException | IndexOutOfBoundsException e) {  //用|隔开每种类型即可
+        
+}
+            </code></pre>
+    <p>如果简写的话，那么发生这些异常的时候，都会采用统一的方式进行处理了。</p>
+    <p>最后，当我们希望，程序运行时，无论是否出现异常，都会在最后执行任务，可以交给finally语句块来处理：</p>
+    <pre><code class="language-java">
+try {
+    //....
+}catch (Exception e){
+            
+}finally {
+    System.out.println("lbwnb");   //无论是否出现异常，都会在最后执行
+}
+            </code></pre>
+    <p>try语句块至少要配合catch或finally中的一个：</p>
+    <pre><code class="language-java">
+try {
+    int a = 10;
+    a /= 0;
+} finally {  //不捕获异常，程序会终止，但在最后依然会执行下面的内容
+    System.out.println("lbwnb"); 
+}
+            </code></pre>
+    <p><strong>思考：</strong>try、catch和finally执行顺序？</p>
+
+    <h3>断言表达式</h3>
+    <p>我们可以使用断言表达式来对某些东西进行判断，如果判断失败会抛出错误，只不过默认情况下没有开启断言，我们需要在虚拟机参数中手动开启一下：</p>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/cAG8kY395fOuTLg.png" alt="开启断言" class="content-image">
+    </div>
+    <p>开启断言之后，我们就可以开始使用了。</p>
+    <p>断言表达式需要使用到assert关键字，如果assert后面的表达式判断结果为false，将抛出AssertionError错误。</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    assert false;
+}
+            </code></pre>
+    <p>比如我们可以判断变量的值，如果大于10就抛出错误：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    int a = 10;
+    assert a > 10;
+}
+            </code></pre>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/12b6zRAL3evQ9ZB.png" alt="断言错误" class="content-image">
+    </div>
+    <p>我们可以在表达式的后面添加错误信息：</p>
+    <pre><code class="language-java">
+public static void main(String[] args) {
+    int a = 10;
+    assert a > 10 : "我是自定义的错误信息";
+}
+            </code></pre>
+    <p>这样就会显示到错误后面了：</p>
+    <div class="image-container">
+        <img src="https://s2.loli.net/2022/09/24/NaYk5pFiBPLXVIr.png" alt="带信息的断言错误" class="content-image">
+    </div>
+    <p>断言表达式一般只用于测试，我们正常的程序中一般不会使用，这里只做了解就行了。</p>
+</section>
