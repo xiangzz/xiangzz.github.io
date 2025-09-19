@@ -62,4 +62,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial setup
     showSlide(0);
+
+    // 初始化动画控制
+    if (typeof initClassObjectAnimation === 'function') {
+        initClassObjectAnimation();
+    }
+    if (typeof initMemoryModelAnimation === 'function') {
+        initMemoryModelAnimation();
+    }
 });

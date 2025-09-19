@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git 分支操作演示</title>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Montserrat:wght@400;600;700&family=Georgia:wght@400&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Lato', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            line-height: 1.7;
+            background-color: #fdfdfd;
+            color: #4a4a4a;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background-color: #ffffff;
+            border-radius: 4px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.07);
+            border: 1px solid #e9ecef;
+            padding: 30px;
+        }
+        /* 标题和按钮容器 */
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        
+        h1 {
+            text-align: left;
+            color: #2c3e50;
+            font-family: 'Georgia', 'Times New Roman', Times, serif;
+            font-size: 2.8rem;
+            font-weight: normal;
+            position: relative;
+            padding-bottom: 1rem;
+            margin: 0;
+            flex: 1;
+        }
+        h1::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 80px;
+            height: 2px;
+            background-color: #af9a7d;
+        }
+
+        /* 控制和状态区 */
+        .controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        button {
+            padding: 10px 20px;
+            border: 1px solid #2c3e50;
+            border-radius: 4px;
+            background-color: #2c3e50;
+            color: #ffffff;
+            cursor: pointer;
+            font-size: 14px;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        button:hover {
+            background-color: #af9a7d;
+            border-color: #af9a7d;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+        
+        button:disabled {
+            background-color: #bdc3c7;
+            border-color: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        input, select {
+            padding: 10px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: 'Lato', sans-serif;
+            background-color: #ffffff;
+            color: #4a4a4a;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #af9a7d;
+            box-shadow: 0 0 0 0.25rem rgba(175, 154, 125, 0.25);
+        }
+        
+        #next-step-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #next-step-btn:hover {
+            background-color: #2980b9;
+        }
+        #next-step-btn:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .status {
+            background-color: #ecf0f1;
+            border-left: 5px solid #3498db;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        #command-display {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #2c3e50;
+            color: #f1c40f;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        #explanation {
+            margin-top: 10px;
+            color: #555;
+        }
+
+        /* Git图形样式 */
+        .git-graph {
+            background-color: #ffffff;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 30px;
+            margin: 30px 0;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .commit {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background-color: #2c3e50;
+            position: absolute;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 3px solid #ffffff;
+            box-shadow: 0 0 0 2px #2c3e50, 0 2px 6px rgba(0,0,0,0.1);
+        }
+        
+        .commit:hover {
+            transform: scale(1.2);
+            z-index: 10;
+            background-color: #af9a7d;
+            box-shadow: 0 0 0 2px #af9a7d, 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .commit-line {
+            position: absolute;
+            background-color: #bdc3c7;
+            height: 3px;
+            border-radius: 1.5px;
+        }
+        
+        .branch-line {
+            position: absolute;
+            background-color: #2c3e50;
+            width: 3px;
+            border-radius: 1.5px;
+        }
+        
+        .branch-label {
+            position: absolute;
+            background-color: #ffffff;
+            border: 2px solid #2c3e50;
+            border-radius: 4px;
+            padding: 4px 12px;
+            font-size: 13px;
+            color: #2c3e50;
+            font-weight: 600;
+            font-family: 'Montserrat', sans-serif;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        
+        .branch-label:hover {
+            background-color: #2c3e50;
+            color: #ffffff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .branch-label.current-branch {
+            background-color: #af9a7d;
+            border-color: #af9a7d;
+            color: #ffffff;
+            font-weight: 700;
+            box-shadow: 0 3px 8px rgba(175, 154, 125, 0.3);
+        }
+
+        /* 图形化展示区 */
+        #graph-container {
+            width: 100%;
+            height: 200px;
+            margin-bottom: 20px;
+        }
+        .commit-circle {
+            transition: all 0.5s ease;
+        }
+        .commit-label {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+        }
+        .main-label { background-color: #2ecc71; color: white; }
+        .dev-label { background-color: #e67e22; color: white; }
+        .head-label {
+            border: 2px dashed #c0392b;
+            color: #c0392b;
+            padding: 1px 5px;
+        }
+
+        /* 代码模拟区 */
+        .code-view {
+            display: flex;
+            gap: 20px;
+            justify-content: space-around;
+        }
+        .branch-code {
+            width: 48%;
+        }
+        .branch-code h3 {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            resize: none;
+        }
+        textarea:disabled {
+            background-color: #f0f0f0;
+            color: #888;
+        }
+        .conflict-marker {
+            background-color: #fbeaea;
+            color: #c0392b;
+        }
+        
+        /* 信息面板 */
+        #info-panel {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 20px;
+            margin-top: 30px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            color: #4a4a4a;
+            line-height: 1.6;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+        
+        /* 步骤说明 */
+        .step-description {
+            background-color: #ffffff;
+            border-left: 4px solid #af9a7d;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 0 4px 4px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border-top: 1px solid #e9ecef;
+            border-right: 1px solid #e9ecef;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .step-description h3 {
+            margin-top: 0;
+            color: #2c3e50;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 600;
+            font-size: 1.3rem;
+        }
+        
+        .step-description p {
+            color: #4a4a4a;
+            margin-bottom: 0;
+            line-height: 1.6;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .header-container {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            
+            h1 {
+                font-size: 2.2rem;
+            }
+            
+            .controls {
+                align-self: stretch;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-container">
+        <h1>Git 合并冲突演示流程</h1>
+        <div class="controls">
+            <button id="next-step-btn">开始演示</button>
+        </div>
+    </div>
+
+    <div class="status">
+        <pre id="command-display">等待操作...</pre>
+        <p id="explanation">点击“开始演示”按钮，一步步跟随 Git 的操作流程。</p>
+    </div>
+
+    <div id="graph-container">
+        <svg width="100%" height="100%" id="git-graph"></svg>
+    </div>
+
+    <div class="code-view">
+        <div class="branch-code">
+            <h3 id="main-code-title">main 分支 (文件: feature.txt)</h3>
+            <textarea id="main-code" disabled></textarea>
+        </div>
+        <div class="branch-code">
+            <h3 id="dev-code-title">dev 分支 (文件: feature.txt)</h3>
+            <textarea id="dev-code" disabled></textarea>
+        </div>
+    </div>
+</div>
+
+<script>
+    const steps = [
+        {
+            command: "git init",
+            explanation: "初始化一个新的 Git 仓库。我们有了一个空的 main 分支。",
+            action: () => {
+                drawCommit('c1', 50, 'C1');
+                drawBranchLabel('main', 'c1');
+                drawHeadLabel('main');
+                updateCode('main', '项目初始化');
+                setActiveBranch('main');
+            }
+        },
+        {
+            command: "git commit -m 'feat: 添加基础功能'",
+            explanation: "在 main 分支上进行第一次提交。我们添加了“基础功能”。",
+            action: () => {
+                drawCommit('c2', 150, 'C2', 'c1');
+                moveBranchLabel('main', 'c2');
+                drawHeadLabel('main');
+                updateCode('main', '项目初始化\n添加基础功能');
+            }
+        },
+        {
+            command: "git branch dev",
+            explanation: "基于当前 main 分支的最新提交(C2)创建一个新的 dev 分支。",
+            action: () => {
+                drawBranchLabel('dev', 'c2');
+                updateCode('dev', document.getElementById('main-code').value);
+            }
+        },
+        {
+            command: "git checkout dev",
+            explanation: "切换到 dev 分支。现在我们的所有操作都将在 dev 分支上进行。",
+            action: () => {
+                drawHeadLabel('dev');
+                setActiveBranch('dev');
+            }
+        },
+        {
+            command: "git commit -m 'feat: 开发新功能A'",
+            explanation: "在 dev 分支上进行第一次提交。我们添加了“新功能A”。注意，main 分支保持不变。",
+            action: () => {
+                drawCommit('c3', 250, 'C3', 'c2', 'dev');
+                moveBranchLabel('dev', 'c3');
+                drawHeadLabel('dev');
+                updateCode('dev', '项目初始化\n添加基础功能\n开发新功能A');
+            }
+        },
+        {
+            command: "git commit -m 'fix: 修复功能A的bug'",
+            explanation: "在 dev 分支上再次提交，修复了一个 bug。dev 分支现在领先 main 分支两个提交。",
+            action: () => {
+                drawCommit('c4', 350, 'C4', 'c3', 'dev');
+                moveBranchLabel('dev', 'c4');
+                drawHeadLabel('dev');
+                updateCode('dev', '项目初始化\n添加基础功能\n开发新功能A (已修复)');
+            }
+        },
+        {
+            command: "git checkout main",
+            explanation: "切换回 main 分支。注意代码区和 HEAD 指针的变化。",
+            action: () => {
+                drawHeadLabel('main');
+                setActiveBranch('main');
+            }
+        },
+        {
+            command: "git commit -m 'hotfix: 紧急修复线上问题'",
+            explanation: "在 main 分支上进行了一次提交，模拟线上紧急修复。现在 main 和 dev 分支有了各自不同的提交，它们“分叉”了。",
+            action: () => {
+                drawCommit('c5', 250, 'C5', 'c2', 'main');
+                moveBranchLabel('main', 'c5');
+                drawHeadLabel('main');
+                updateCode('main', '项目初始化\n添加基础功能 (紧急修复)');
+            }
+        },
+        {
+            command: "git merge dev",
+            explanation: "在 main 分支上，尝试合并 dev 分支。由于两个分支都修改了文件的同一部分，Git 无法自动合并，产生了冲突！",
+            action: () => {
+                document.getElementById('main-code').value =
+                    '项目初始化\n' +
+                    '<<<<<<< HEAD\n' +
+                    '添加基础功能 (紧急修复)\n' +
+                    '=======\n' +
+                    '添加基础功能\n' +
+                    '开发新功能A (已修复)\n' +
+                    '>>>>>>> dev';
+                highlightConflict();
+                document.getElementById('main-code').disabled = false;
+                document.getElementById('next-step-btn').innerText = "解决冲突并提交";
+            }
+        },
+        {
+            command: "手动解决冲突",
+            explanation: "我们需要手动编辑文件，移除 Git 添加的冲突标记 (<<<<<, =====, >>>>>)，并决定最终要保留的内容。这里我们决定同时保留两个分支的修改。",
+            action: () => {
+                document.getElementById('main-code').value =
+                    '项目初始化\n' +
+                    '添加基础功能 (紧急修复)\n' +
+                    '开发新功能A (已修复)';
+                removeHighlightConflict();
+                document.getElementById('main-code').disabled = true;
+            }
+        },
+        {
+            command: "git add . \ngit commit -m 'Merge branch dev'",
+            explanation: "解决冲突后，我们暂存修改并创建一个新的“合并提交”。这个提交有两个父提交(C5 和 C4)，将两个分支的历史连接在一起。",
+            action: () => {
+                drawCommit('c6', 450, 'C6', ['c5', 'c4'], 'main');
+                moveBranchLabel('main', 'c6');
+                moveBranchLabel('dev', 'c4'); // dev 标签不动
+                drawHeadLabel('main');
+                updateCode('main', document.getElementById('main-code').value);
+                document.getElementById('next-step-btn').innerText = "完成";
+            }
+        },
+        {
+            command: "流程结束",
+            explanation: "恭喜！您已经成功完成了一次从创建分支、各自开发、到最终解决冲突并合并的完整 Git 流程。",
+            action: () => {
+                document.getElementById('next-step-btn').innerText = "重新开始";
+            }
+        }
+    ];
+
+    let currentStep = -1;
+    const btn = document.getElementById('next-step-btn');
+    const commandDisplay = document.getElementById('command-display');
+    const explanationDisplay = document.getElementById('explanation');
+    const svg = document.getElementById('git-graph');
+    const ns = "http://www.w3.org/2000/svg";
+
+    const commitCoords = {};
+
+    function reset() {
+        currentStep = -1;
+        svg.innerHTML = '';
+        commitCoords.clear;
+        commandDisplay.innerText = "等待操作...";
+        explanationDisplay.innerText = "点击“开始演示”按钮，一步步跟随 Git 的操作流程。";
+        btn.innerText = "开始演示";
+        btn.disabled = false;
+        updateCode('main', '');
+        updateCode('dev', '');
+        setActiveBranch(null);
+        document.getElementById('main-code-title').innerText = "main 分支 (文件: feature.txt)";
+        document.getElementById('dev-code-title').innerText = "dev 分支 (文件: feature.txt)";
+    }
+
+    btn.addEventListener('click', () => {
+        currentStep++;
+        if (currentStep >= steps.length) {
+            reset();
+            return;
+        }
+
+        const step = steps[currentStep];
+        commandDisplay.innerText = step.command;
+        explanationDisplay.innerText = step.explanation;
+        step.action();
+
+        if (currentStep === steps.length - 1) {
+            btn.innerText = "重新开始";
+        } else if (currentStep === 8) { // After merge command
+            // Button text is updated inside the action
+        } else {
+            btn.innerText = "下一步";
+        }
+    });
+
+    function drawCommit(id, x, label, parentId, branch = 'main') {
+        const y = branch === 'main' ? 50 : 120;
+        commitCoords[id] = { x, y };
+
+        // Draw line(s) to parent(s)
+        if (parentId) {
+            const parents = Array.isArray(parentId) ? parentId : [parentId];
+            parents.forEach(pId => {
+                const pCoords = commitCoords[pId];
+                const line = document.createElementNS(ns, 'line');
+                line.setAttribute('x1', pCoords.x);
+                line.setAttribute('y1', pCoords.y);
+                line.setAttribute('x2', x);
+                line.setAttribute('y2', y);
+                line.setAttribute('stroke', '#555');
+                line.setAttribute('stroke-width', 2);
+                svg.prepend(line); // Prepend to draw lines under circles
+            });
+        }
+        
+        // Draw circle
+        const circle = document.createElementNS(ns, 'circle');
+        circle.setAttribute('id', `circle-${id}`);
+        circle.setAttribute('cx', x);
+        circle.setAttribute('cy', y);
+        circle.setAttribute('r', 15);
+        circle.setAttribute('fill', branch === 'main' ? '#2ecc71' : '#e67e22');
+        circle.setAttribute('stroke', '#2c3e50');
+        circle.setAttribute('stroke-width', 3);
+        circle.classList.add('commit-circle');
+        svg.appendChild(circle);
+
+        // Draw label
+        const text = document.createElementNS(ns, 'text');
+        text.setAttribute('x', x);
+        text.setAttribute('y', y + 5);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('fill', 'white');
+        text.classList.add('commit-label');
+        text.textContent = label;
+        svg.appendChild(text);
+    }
+
+    function drawBranchLabel(branchName, commitId) {
+        const coords = commitCoords[commitId];
+        const foreignObject = document.createElementNS(ns, 'foreignObject');
+        foreignObject.setAttribute('id', `label-${branchName}`);
+        foreignObject.setAttribute('x', coords.x - 25);
+        foreignObject.setAttribute('y', coords.y + 25);
+        foreignObject.setAttribute('width', 60);
+        foreignObject.setAttribute('height', 30);
+        
+        const span = document.createElement('span');
+        span.className = `branch-label ${branchName}-label`;
+        span.textContent = branchName;
+        
+        foreignObject.appendChild(span);
+        svg.appendChild(foreignObject);
+    }
+
+    function moveBranchLabel(branchName, commitId) {
+        const label = document.getElementById(`label-${branchName}`);
+        const coords = commitCoords[commitId];
+        label.setAttribute('x', coords.x - 25);
+        label.setAttribute('y', coords.y + 25);
+    }
+
+    function drawHeadLabel(branchName) {
+        const branchLabel = document.getElementById(`label-${branchName}`);
+        let headLabel = document.getElementById('label-HEAD');
+        if (!headLabel) {
+            const foreignObject = document.createElementNS(ns, 'foreignObject');
+            foreignObject.setAttribute('id', 'label-HEAD');
+            foreignObject.setAttribute('width', 60);
+            foreignObject.setAttribute('height', 30);
+            const span = document.createElement('span');
+            span.className = 'branch-label head-label';
+            span.textContent = 'HEAD';
+            foreignObject.appendChild(span);
+            svg.appendChild(foreignObject);
+            headLabel = foreignObject;
+        }
+        headLabel.setAttribute('x', branchLabel.getAttribute('x'));
+        headLabel.setAttribute('y', parseInt(branchLabel.getAttribute('y')) + 30);
+    }
+
+    function updateCode(branchName, content) {
+        document.getElementById(`${branchName}-code`).value = content;
+    }
+
+    function setActiveBranch(branchName) {
+        const mainTextarea = document.getElementById('main-code');
+        const devTextarea = document.getElementById('dev-code');
+        const mainTitle = document.getElementById('main-code-title');
+        const devTitle = document.getElementById('dev-code-title');
+
+        mainTextarea.disabled = true;
+        devTextarea.disabled = true;
+        mainTitle.style.fontWeight = 'normal';
+        devTitle.style.fontWeight = 'normal';
+
+        if (branchName === 'main') {
+            mainTextarea.disabled = false;
+            mainTitle.style.fontWeight = 'bold';
+        } else if (branchName === 'dev') {
+            devTextarea.disabled = false;
+            devTitle.style.fontWeight = 'bold';
+        }
+    }
+
+    function highlightConflict() {
+        // This is a simplified representation. A real implementation might parse and style the textarea content.
+        const mainTextarea = document.getElementById('main-code');
+        mainTextarea.style.backgroundColor = '#fbeaea';
+        mainTextarea.style.color = '#c0392b';
+    }
+
+    function removeHighlightConflict() {
+        const mainTextarea = document.getElementById('main-code');
+        mainTextarea.style.backgroundColor = '';
+        mainTextarea.style.color = '';
+    }
+
+</script>
+
+</body>
+</html>
