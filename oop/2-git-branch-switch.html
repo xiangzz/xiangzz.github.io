@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git 分支创建与切换演示</title>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Montserrat:wght@400;600;700&family=Georgia:wght@400&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Lato', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            line-height: 1.7;
+            background-color: #fdfdfd;
+            color: #4a4a4a;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background-color: #ffffff;
+            border-radius: 4px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.07);
+            border: 1px solid #e9ecef;
+            padding: 30px;
+        }
+        
+        /* 标题和按钮容器 */
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        
+        h1 {
+            text-align: left;
+            color: #2c3e50;
+            font-family: 'Georgia', 'Times New Roman', Times, serif;
+            font-size: 2.8rem;
+            font-weight: normal;
+            position: relative;
+            padding-bottom: 1rem;
+            margin: 0;
+            flex: 1;
+        }
+        h1::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 80px;
+            height: 2px;
+            background-color: #af9a7d;
+        }
+
+        /* 控制和状态区 */
+        .controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        button {
+            padding: 10px 20px;
+            border: 1px solid #2c3e50;
+            border-radius: 4px;
+            background-color: #2c3e50;
+            color: #ffffff;
+            cursor: pointer;
+            font-size: 14px;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        button:hover {
+            background-color: #af9a7d;
+            border-color: #af9a7d;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+        
+        button:disabled {
+            background-color: #bdc3c7;
+            border-color: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        #next-step-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #next-step-btn:hover {
+            background-color: #2980b9;
+        }
+        #next-step-btn:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            background-color: #ecf0f1;
+            border-left: 5px solid #3498db;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        
+        #command-display {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #2c3e50;
+            color: #f1c40f;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        
+        #explanation {
+            margin-top: 10px;
+            color: #555;
+        }
+
+        /* Git图形样式 */
+        .git-graph {
+            background-color: #ffffff;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 30px;
+            margin: 30px 0;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        /* 图形化展示区 */
+        #graph-container {
+            width: 100%;
+            height: 300px;
+            margin-bottom: 20px;
+        }
+        
+        .commit-circle {
+            transition: all 0.5s ease;
+            cursor: pointer;
+        }
+        
+        .commit-circle:hover {
+            transform: scale(1.1);
+        }
+        
+        .commit-label {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+        }
+        
+        .main-branch { stroke: #2ecc71; stroke-width: 4; }
+        .test-branch { stroke: #e67e22; stroke-width: 4; }
+        
+        .branch-highlight {
+            stroke-dasharray: 5,5;
+            animation: dash 1s linear infinite;
+        }
+        
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -10;
+            }
+        }
+
+        /* 分支状态显示 */
+        .branch-status {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .branch-info {
+            flex: 1;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            background-color: #ffffff;
+        }
+        
+        .branch-info h4 {
+            margin-top: 0;
+            color: #2c3e50;
+            font-family: 'Montserrat', sans-serif;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .branch-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        
+        .main-indicator { background-color: #2ecc71; }
+        .test-indicator { background-color: #e67e22; }
+        
+        .current-indicator {
+            background-color: #e74c3c;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* 信息面板 */
+        #info-panel {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 20px;
+            margin-top: 30px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            color: #4a4a4a;
+            line-height: 1.6;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .header-container {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            
+            h1 {
+                font-size: 2.2rem;
+            }
+            
+            .controls {
+                align-self: stretch;
+                justify-content: center;
+            }
+            
+            .branch-status {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-container">
+        <h1>Git 分支创建与切换演示</h1>
+        <div class="controls">
+            <button id="next-step-btn">开始演示</button>
+        </div>
+    </div>
+
+    <div class="status">
+        <pre id="command-display">等待操作...</pre>
+        <p id="explanation">点击"开始演示"按钮，一步步跟随 Git 分支创建和切换的操作流程。</p>
+    </div>
+
+    <div id="graph-container">
+        <svg width="100%" height="100%" id="git-graph"></svg>
+    </div>
+
+    <div class="branch-status">
+        <div class="branch-info">
+            <h4><span class="branch-indicator main-indicator"></span>main 分支</h4>
+            <p id="main-status">当前分支，包含项目的主要代码</p>
+        </div>
+        <div class="branch-info">
+            <h4><span class="branch-indicator test-indicator"></span>test 分支</h4>
+            <p id="test-status">尚未创建</p>
+        </div>
+    </div>
+
+    <div id="info-panel"></div>
+</div>
+
+<script>
+    const steps = [
+        {
+            command: "git init",
+            explanation: "初始化一个新的 Git 仓库。创建第一个提交，HEAD 指向 main 分支。",
+            action: () => {
+                drawCommit('c1', 100, 150, 'C1', 'main');
+                drawBranchLabel('main', 100, 120);
+                drawHeadPointer('main');
+                updateBranchStatus('main', '当前分支 (HEAD)，包含初始提交');
+                updateInfoPanel('初始化仓库完成。HEAD 指针指向 main 分支的第一个提交。');
+            }
+        },
+        {
+            command: "git commit -m 'feat: 添加基础功能'",
+            explanation: "在 main 分支上添加第二个提交。HEAD 指针跟随 main 分支移动。",
+            action: () => {
+                drawCommit('c2', 200, 150, 'C2', 'main');
+                drawLine('c1', 'c2', 'main');
+                moveBranchLabel('main', 200, 120);
+                moveHeadPointer('main');
+                updateBranchStatus('main', '当前分支 (HEAD)，包含 2 个提交');
+                updateInfoPanel('在 main 分支上添加新提交。HEAD 指针自动跟随分支移动到最新提交。');
+            }
+        },
+        {
+            command: "git commit -m 'feat: 完善功能'",
+            explanation: "继续在 main 分支上开发，添加第三个提交。",
+            action: () => {
+                drawCommit('c3', 300, 150, 'C3', 'main');
+                drawLine('c2', 'c3', 'main');
+                moveBranchLabel('main', 300, 120);
+                moveHeadPointer('main');
+                updateBranchStatus('main', '当前分支 (HEAD)，包含 3 个提交');
+                updateInfoPanel('继续在 main 分支开发。注意 HEAD 指针始终指向当前分支的最新提交。');
+            }
+        },
+        {
+            command: "git branch test",
+            explanation: "基于当前 main 分支的最新提交(C3)创建一个新的 test 分支。注意：HEAD 仍然指向 main。",
+            action: () => {
+                drawBranchLabel('test', 300, 90);
+                updateBranchStatus('test', '新创建的分支，基于 C3 提交');
+                updateInfoPanel('创建 test 分支成功！新分支指向与 main 相同的提交(C3)。\n注意：HEAD 指针仍然指向 main 分支，我们还在 main 分支上工作。');
+            }
+        },
+        {
+            command: "git branch",
+            explanation: "查看所有分支。* 号表示当前所在的分支(main)。",
+            action: () => {
+                updateInfoPanel('分支列表：\n* main    (当前分支，HEAD 指向这里)\n  test    (新创建的分支)\n\n星号(*)表示当前所在分支。');
+            }
+        },
+        {
+            command: "git checkout test",
+            explanation: "切换到 test 分支。这是关键时刻：HEAD 指针从 main 移动到 test！",
+            action: () => {
+                moveHeadPointer('test');
+                updateBranchStatus('main', '包含 3 个提交');
+                updateBranchStatus('test', '当前分支 (HEAD)，包含 3 个提交');
+                updateInfoPanel('切换到 test 分支！\n\n重要变化：\n- HEAD 指针从 main 移动到 test\n- 现在我们在 test 分支上工作\n- 工作目录内容保持不变(都指向 C3)');
+            }
+        },
+        {
+            command: "git commit -m 'test: 添加测试功能'",
+            explanation: "在 test 分支上进行提交。现在两个分支开始分叉！",
+            action: () => {
+                drawCommit('c4', 400, 180, 'C4', 'test');
+                drawLine('c3', 'c4', 'test');
+                moveBranchLabel('test', 400, 90);
+                moveHeadPointer('test');
+                updateBranchStatus('test', '当前分支 (HEAD)，包含 4 个提交');
+                updateInfoPanel('在 test 分支上添加新提交！\n\n现在：\n- test 分支指向 C4(最新)\n- main 分支仍指向 C3\n- HEAD 跟随 test 分支移动\n- 两个分支开始分叉');
+            }
+        },
+        {
+            command: "git commit -m 'test: 完善测试'",
+            explanation: "继续在 test 分支上开发。test 分支现在领先 main 分支两个提交。",
+            action: () => {
+                drawCommit('c5', 500, 180, 'C5', 'test');
+                drawLine('c4', 'c5', 'test');
+                moveBranchLabel('test', 500, 90);
+                moveHeadPointer('test');
+                updateBranchStatus('test', '当前分支 (HEAD)，包含 5 个提交');
+                updateInfoPanel('继续在 test 分支开发。\n\ntest 分支现在领先 main 分支 2 个提交：\n- test: C1 → C2 → C3 → C4 → C5\n- main: C1 → C2 → C3');
+            }
+        },
+        {
+            command: "git checkout main",
+            explanation: "切换回 main 分支。观察 HEAD 指针的移动！",
+            action: () => {
+                moveHeadPointer('main');
+                updateBranchStatus('main', '当前分支 (HEAD)，包含 3 个提交');
+                updateBranchStatus('test', '包含 5 个提交');
+                updateInfoPanel('切换回 main 分支！\n\n重要变化：\n- HEAD 指针从 test 移回 main\n- 工作目录恢复到 main 分支的状态(C3)\n- test 分支的更改(C4, C5)暂时"看不见"了');
+            }
+        },
+        {
+            command: "git branch",
+            explanation: "再次查看分支状态。现在 * 号指向 main，确认我们已经切换回来。",
+            action: () => {
+                updateInfoPanel('当前分支状态：\n* main    (当前分支，HEAD 指向这里)\n  test    (包含额外的提交)\n\n这就是 Git 分支的强大之处：\n- 可以在不同分支间自由切换\n- 每个分支维护独立的开发历史\n- HEAD 指针决定当前工作环境');
+            }
+        },
+        {
+            command: "演示完成",
+            explanation: "分支创建和切换演示完成！你已经学会了 Git 分支的基本操作和 HEAD 指针的工作原理。",
+            action: () => {
+                updateInfoPanel('🎉 演示完成！\n\n你学到了：\n✓ git branch <name> - 创建新分支\n✓ git checkout <name> - 切换分支\n✓ git branch - 查看所有分支\n✓ HEAD 指针的作用和移动规律\n✓ 分支独立开发的概念\n\n下一步可以学习分支合并(merge)和变基(rebase)操作！');
+                document.getElementById('next-step-btn').innerText = "重新开始";
+            }
+        }
+    ];
+
+    let currentStep = -1;
+    const btn = document.getElementById('next-step-btn');
+    const commandDisplay = document.getElementById('command-display');
+    const explanationDisplay = document.getElementById('explanation');
+    const svg = document.getElementById('git-graph');
+    const infoPanel = document.getElementById('info-panel');
+    const ns = "http://www.w3.org/2000/svg";
+
+    const commitElements = {};
+    const branchElements = {};
+    let headElement = null;
+
+    function reset() {
+        currentStep = -1;
+        svg.innerHTML = '';
+        Object.keys(commitElements).forEach(key => delete commitElements[key]);
+        Object.keys(branchElements).forEach(key => delete branchElements[key]);
+        headElement = null;
+        commandDisplay.innerText = "等待操作...";
+        explanationDisplay.innerText = "点击\"开始演示\"按钮，一步步跟随 Git 分支创建和切换的操作流程。";
+        btn.innerText = "开始演示";
+        btn.disabled = false;
+        updateBranchStatus('main', '当前分支，包含项目的主要代码');
+        updateBranchStatus('test', '尚未创建');
+        infoPanel.innerText = '';
+    }
+
+    function drawCommit(id, x, y, label, branch) {
+        const circle = document.createElementNS(ns, 'circle');
+        circle.setAttribute('cx', x);
+        circle.setAttribute('cy', y);
+        circle.setAttribute('r', 8);
+        circle.setAttribute('fill', branch === 'main' ? '#2ecc71' : '#e67e22');
+        circle.setAttribute('stroke', '#ffffff');
+        circle.setAttribute('stroke-width', 3);
+        circle.classList.add('commit-circle');
+        svg.appendChild(circle);
+
+        const text = document.createElementNS(ns, 'text');
+        text.setAttribute('x', x);
+        text.setAttribute('y', y + 25);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('font-family', 'Courier New, monospace');
+        text.setAttribute('font-size', '12');
+        text.setAttribute('fill', '#4a4a4a');
+        text.textContent = label;
+        svg.appendChild(text);
+
+        commitElements[id] = { circle, text, x, y };
+    }
+
+    function drawLine(fromId, toId, branch) {
+        const from = commitElements[fromId];
+        const to = commitElements[toId];
+        
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', from.x);
+        line.setAttribute('y1', from.y);
+        line.setAttribute('x2', to.x);
+        line.setAttribute('y2', to.y);
+        line.setAttribute('stroke', branch === 'main' ? '#2ecc71' : '#e67e22');
+        line.setAttribute('stroke-width', 4);
+        line.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(line);
+    }
+
+    function drawBranchLabel(branchName, x, y) {
+        const rect = document.createElementNS(ns, 'rect');
+        rect.setAttribute('x', x - 20);
+        rect.setAttribute('y', y - 10);
+        rect.setAttribute('width', 40);
+        rect.setAttribute('height', 20);
+        rect.setAttribute('fill', branchName === 'main' ? '#2ecc71' : '#e67e22');
+        rect.setAttribute('stroke', '#ffffff');
+        rect.setAttribute('stroke-width', 2);
+        rect.setAttribute('rx', 4);
+        svg.appendChild(rect);
+
+        const text = document.createElementNS(ns, 'text');
+        text.setAttribute('x', x);
+        text.setAttribute('y', y + 4);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('font-family', 'Montserrat, sans-serif');
+        text.setAttribute('font-size', '11');
+        text.setAttribute('font-weight', '600');
+        text.setAttribute('fill', '#ffffff');
+        text.textContent = branchName;
+        svg.appendChild(text);
+
+        branchElements[branchName] = { rect, text, x, y };
+    }
+
+    function moveBranchLabel(branchName, newX, newY) {
+        const element = branchElements[branchName];
+        if (element) {
+            element.rect.setAttribute('x', newX - 20);
+            element.rect.setAttribute('y', newY - 10);
+            element.text.setAttribute('x', newX);
+            element.text.setAttribute('y', newY + 4);
+            element.x = newX;
+            element.y = newY;
+        }
+    }
+
+    function drawHeadPointer(branchName) {
+        if (headElement) {
+            svg.removeChild(headElement.rect);
+            svg.removeChild(headElement.text);
+        }
+
+        const branch = branchElements[branchName];
+        if (branch) {
+            const rect = document.createElementNS(ns, 'rect');
+            rect.setAttribute('x', branch.x + 25);
+            rect.setAttribute('y', branch.y - 8);
+            rect.setAttribute('width', 35);
+            rect.setAttribute('height', 16);
+            rect.setAttribute('fill', '#e74c3c');
+            rect.setAttribute('stroke', '#c0392b');
+            rect.setAttribute('stroke-width', 2);
+            rect.setAttribute('rx', 4);
+            svg.appendChild(rect);
+
+            const text = document.createElementNS(ns, 'text');
+            text.setAttribute('x', branch.x + 42);
+            text.setAttribute('y', branch.y + 3);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('font-family', 'Montserrat, sans-serif');
+            text.setAttribute('font-size', '10');
+            text.setAttribute('font-weight', '700');
+            text.setAttribute('fill', '#ffffff');
+            text.textContent = 'HEAD';
+            svg.appendChild(text);
+
+            headElement = { rect, text, branch: branchName };
+        }
+    }
+
+    function moveHeadPointer(branchName) {
+        if (headElement) {
+            const branch = branchElements[branchName];
+            if (branch) {
+                // 添加动画效果
+                headElement.rect.style.transition = 'all 0.5s ease';
+                headElement.text.style.transition = 'all 0.5s ease';
+                
+                headElement.rect.setAttribute('x', branch.x + 25);
+                headElement.rect.setAttribute('y', branch.y - 8);
+                headElement.text.setAttribute('x', branch.x + 42);
+                headElement.text.setAttribute('y', branch.y + 3);
+                headElement.branch = branchName;
+            }
+        }
+    }
+
+    function updateBranchStatus(branchName, status) {
+        const statusElement = document.getElementById(branchName + '-status');
+        if (statusElement) {
+            statusElement.textContent = status;
+        }
+        
+        // 更新指示器
+        const indicators = document.querySelectorAll('.branch-indicator');
+        indicators.forEach(indicator => {
+            indicator.classList.remove('current-indicator');
+        });
+        
+        if (status.includes('HEAD')) {
+            const currentIndicator = document.querySelector('.' + branchName + '-indicator');
+            if (currentIndicator) {
+                currentIndicator.classList.add('current-indicator');
+            }
+        }
+    }
+
+    function updateInfoPanel(message) {
+        infoPanel.textContent = message;
+    }
+
+    btn.addEventListener('click', () => {
+        currentStep++;
+        if (currentStep >= steps.length) {
+            reset();
+            return;
+        }
+
+        const step = steps[currentStep];
+        commandDisplay.innerText = step.command;
+        explanationDisplay.innerText = step.explanation;
+        
+        if (step.action) {
+            step.action();
+        }
+
+        if (currentStep === steps.length - 1) {
+            btn.innerText = "重新开始";
+        } else {
+            btn.innerText = "下一步";
+        }
+    });
+
+    // 初始化
+    reset();
+</script>
+
+</body>
+</html>

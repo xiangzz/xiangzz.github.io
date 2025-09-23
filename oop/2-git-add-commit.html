@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git Add & Commit 操作演示</title>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Montserrat:wght@400;600;700&family=Georgia:wght@400&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Lato', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            line-height: 1.7;
+            background-color: #fdfdfd;
+            color: #4a4a4a;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            background-color: #ffffff;
+            border-radius: 4px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.07);
+            border: 1px solid #e9ecef;
+            padding: 30px;
+        }
+        
+        /* 标题和按钮容器 */
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        
+        h1 {
+            text-align: left;
+            color: #2c3e50;
+            font-family: 'Georgia', 'Times New Roman', Times, serif;
+            font-size: 2.8rem;
+            font-weight: normal;
+            position: relative;
+            padding-bottom: 1rem;
+            margin: 0;
+            flex: 1;
+        }
+        h1::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 80px;
+            height: 2px;
+            background-color: #af9a7d;
+        }
+
+        /* 控制和状态区 */
+        .controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        button {
+            padding: 10px 20px;
+            border: 1px solid #2c3e50;
+            border-radius: 4px;
+            background-color: #2c3e50;
+            color: #ffffff;
+            cursor: pointer;
+            font-size: 14px;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        button:hover {
+            background-color: #af9a7d;
+            border-color: #af9a7d;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+        
+        button:disabled {
+            background-color: #bdc3c7;
+            border-color: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        #next-step-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #next-step-btn:hover {
+            background-color: #2980b9;
+        }
+        #next-step-btn:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            background-color: #ecf0f1;
+            border-left: 5px solid #3498db;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        #command-display {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #2c3e50;
+            color: #f1c40f;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        #explanation {
+            margin-top: 10px;
+            color: #555;
+        }
+
+        /* Git 工作流程可视化区域 */
+        .git-workflow {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .workflow-area {
+            flex: 1;
+            background-color: #ffffff;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 300px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        
+        .workflow-area h3 {
+            margin: 0 0 20px 0;
+            text-align: center;
+            color: #2c3e50;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 600;
+            font-size: 1.2rem;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e9ecef;
+        }
+        
+        .working-directory {
+            border-color: #e74c3c;
+        }
+        .working-directory h3 {
+            color: #e74c3c;
+            border-bottom-color: #e74c3c;
+        }
+        
+        .staging-area {
+            border-color: #f39c12;
+        }
+        .staging-area h3 {
+            color: #f39c12;
+            border-bottom-color: #f39c12;
+        }
+        
+        .repository {
+            border-color: #27ae60;
+        }
+        .repository h3 {
+            color: #27ae60;
+            border-bottom-color: #27ae60;
+        }
+        
+        /* 文件项样式 */
+        .file-item {
+            background-color: #ffffff;
+            border: 2px solid #bdc3c7;
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin: 10px 0;
+            cursor: pointer;
+            transition: all 0.4s ease;
+            position: relative;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .file-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .file-item.new {
+            border-color: #e74c3c;
+            background-color: #fdf2f2;
+            color: #e74c3c;
+        }
+        
+        .file-item.modified {
+            border-color: #f39c12;
+            background-color: #fef9e7;
+            color: #f39c12;
+        }
+        
+        .file-item.staged {
+            border-color: #f39c12;
+            background-color: #fff8e1;
+            color: #f39c12;
+        }
+        
+        .file-item.committed {
+            border-color: #27ae60;
+            background-color: #eafaf1;
+            color: #27ae60;
+        }
+        
+        .file-item.moving {
+            animation: moveFile 0.8s ease-in-out;
+            z-index: 100;
+        }
+        
+        @keyframes moveFile {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1) translateY(-10px); }
+            100% { transform: scale(1); }
+        }
+        
+        /* 状态指示器 */
+        .status-indicator {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Montserrat', sans-serif;
+        }
+        
+        .status-indicator.new {
+            background-color: #e74c3c;
+        }
+        
+        .status-indicator.modified {
+            background-color: #f39c12;
+        }
+        
+        .status-indicator.staged {
+            background-color: #3498db;
+        }
+        
+        .status-indicator.committed {
+            background-color: #27ae60;
+        }
+        
+        /* 提交历史区域 */
+        .commit-history {
+            background-color: #ffffff;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 20px;
+            margin: 30px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .commit-history h3 {
+            margin-top: 0;
+            color: #2c3e50;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 600;
+        }
+        
+        .commit-item {
+            background-color: #f8f9fa;
+            border-left: 4px solid #27ae60;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 0 4px 4px 0;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .commit-item:hover {
+            background-color: #e9ecef;
+            transform: translateX(5px);
+        }
+        
+        .commit-hash {
+            color: #3498db;
+            font-weight: bold;
+        }
+        
+        .commit-message {
+            color: #2c3e50;
+            margin-top: 5px;
+        }
+        
+        .commit-files {
+            color: #7f8c8d;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        /* 信息面板 */
+        #info-panel {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 20px;
+            margin-top: 30px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            color: #4a4a4a;
+            line-height: 1.6;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+        
+        /* 箭头动画 */
+        .arrow {
+            position: absolute;
+            font-size: 24px;
+            color: #3498db;
+            animation: pulse 2s infinite;
+            z-index: 50;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .header-container {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            
+            h1 {
+                font-size: 2.2rem;
+            }
+            
+            .controls {
+                align-self: stretch;
+                justify-content: center;
+            }
+            
+            .git-workflow {
+                flex-direction: column;
+            }
+            
+            .workflow-area {
+                min-height: 200px;
+            }
+        }
+        
+        /* 高亮效果 */
+        .highlight {
+            animation: highlight 1s ease-in-out;
+        }
+        
+        @keyframes highlight {
+            0%, 100% { background-color: transparent; }
+            50% { background-color: rgba(52, 152, 219, 0.2); }
+        }
+        
+        /* 空状态提示 */
+        .empty-state {
+            text-align: center;
+            color: #95a5a6;
+            font-style: italic;
+            padding: 40px 20px;
+            border: 2px dashed #bdc3c7;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-container">
+        <h1>Git Add & Commit 操作演示</h1>
+        <div class="controls">
+            <button id="next-step-btn">开始演示</button>
+        </div>
+    </div>
+
+    <div class="status">
+        <pre id="command-display">等待操作...</pre>
+        <p id="explanation">点击"开始演示"按钮，一步步跟随 Git add 和 commit 的操作流程。</p>
+    </div>
+
+    <div class="git-workflow">
+        <div class="workflow-area working-directory">
+            <h3>工作区 (Working Directory)</h3>
+            <div id="working-files">
+                <div class="empty-state">暂无文件</div>
+            </div>
+        </div>
+        
+        <div class="workflow-area staging-area">
+            <h3>暂存区 (Staging Area)</h3>
+            <div id="staging-files">
+                <div class="empty-state">暂无文件</div>
+            </div>
+        </div>
+        
+        <div class="workflow-area repository">
+            <h3>仓库 (Repository)</h3>
+            <div id="repository-files">
+                <div class="empty-state">暂无提交</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="commit-history">
+        <h3>提交历史</h3>
+        <div id="commit-list">
+            <div class="empty-state">暂无提交记录</div>
+        </div>
+    </div>
+
+    <div id="info-panel"></div>
+</div>
+
+<script>
+    const steps = [
+        {
+            command: "git init",
+            explanation: "初始化一个新的 Git 仓库。现在我们有了一个空的工作区、暂存区和仓库。",
+            action: () => {
+                clearAllAreas();
+                updateInfoPanel('仓库初始化完成。工作区、暂存区和仓库都是空的。');
+            }
+        },
+        {
+            command: "创建新文件: index.html",
+            explanation: "在工作区创建一个新文件。新文件处于\"未跟踪\"状态，Git 还不知道这个文件的存在。",
+            action: () => {
+                addFileToWorkingDirectory('index.html', 'new');
+                updateInfoPanel('在工作区创建了新文件 index.html。\n文件状态：未跟踪 (Untracked)');
+            }
+        },
+        {
+            command: "git add index.html",
+            explanation: "将 index.html 添加到暂存区。现在这个文件被 Git 跟踪，并准备在下次提交中包含。",
+            action: () => {
+                moveFileToStaging('index.html');
+                updateInfoPanel('将 index.html 添加到暂存区。\n文件状态：已暂存 (Staged)');
+            }
+        },
+        {
+            command: "git commit -m 'feat: 添加首页'",
+            explanation: "提交暂存区的内容到仓库。现在 index.html 成为仓库历史的一部分。",
+            action: () => {
+                commitStagedFiles('feat: 添加首页', ['index.html']);
+                updateInfoPanel('提交完成！index.html 现在是仓库的一部分。\n文件状态：已提交 (Committed)');
+            }
+        },
+        {
+            command: "创建新文件: style.css",
+            explanation: "在工作区创建另一个新文件 style.css，用于添加页面样式。",
+            action: () => {
+                addFileToWorkingDirectory('style.css', 'new');
+                updateInfoPanel('创建了新文件 style.css。\n文件状态：未跟踪 (Untracked)');
+            }
+        },
+        {
+            command: "git add style.css",
+            explanation: "将新创建的 style.css 文件添加到暂存区，准备提交。",
+            action: () => {
+                moveFileToStaging('style.css');
+                updateInfoPanel('将 style.css 添加到暂存区。\n文件现在已暂存，准备提交。');
+            }
+        },
+        {
+            command: "git commit -m 'feat: 添加样式文件'",
+            explanation: "提交暂存区的 style.css 文件。现在仓库包含两个文件。",
+            action: () => {
+                commitStagedFiles('feat: 添加样式文件', ['style.css']);
+                updateInfoPanel('第二次提交完成！\n仓库现在包含 index.html 和 style.css 两个文件。');
+            }
+        },
+        {
+            command: 'echo "/* 新增样式 */" >> style.css',
+            explanation: "修改已提交的 style.css 文件，添加新的样式内容。文件将显示为已修改状态。",
+            action: () => {
+                addFileToWorkingDirectory('style.css', 'modified');
+                updateInfoPanel('修改了 style.css 文件。\n文件现在显示为已修改状态，等待添加到暂存区。');
+            }
+        },
+        {
+            command: "git add style.css",
+            explanation: "将修改后的 style.css 添加到暂存区。",
+            action: () => {
+                moveFileToStaging('style.css');
+                updateInfoPanel('将修改后的 style.css 添加到暂存区。\n准备提交更新。');
+            }
+        },
+        {
+            command: "git commit -m 'style: 更新样式文件'",
+            explanation: "提交 style.css 的修改。这展示了如何更新已存在的文件。",
+            action: () => {
+                commitStagedFiles('style: 更新样式文件', ['style.css']);
+                updateInfoPanel('提交了 style.css 的修改。\n仓库中的文件已更新到最新版本。');
+            }
+        },
+        {
+            command: "创建新文件: script.js",
+            explanation: "创建 JavaScript 文件，为页面添加交互功能。",
+            action: () => {
+                addFileToWorkingDirectory('script.js', 'new');
+                updateInfoPanel('创建了新文件 script.js。\n文件状态：未跟踪 (Untracked)');
+            }
+        },
+        {
+            command: "git add script.js",
+            explanation: "将新的 JavaScript 文件添加到暂存区，准备提交。",
+            action: () => {
+                moveFileToStaging('script.js');
+                updateInfoPanel('将 script.js 添加到暂存区。\n文件现在已暂存，准备提交。');
+            }
+        },
+        {
+            command: "git commit -m 'feat: 添加交互脚本'",
+            explanation: "提交暂存区的 script.js 文件。现在仓库包含三个文件。",
+            action: () => {
+                commitStagedFiles('feat: 添加交互脚本', ['script.js']);
+                updateInfoPanel('提交了 script.js。\n仓库现在包含 index.html、style.css 和 script.js 三个文件。\n\n演示完成！您已经学会了 Git add 和 commit 的基本操作。');
+                document.getElementById('next-step-btn').innerText = "重新开始";
+            }
+        }
+    ];
+
+    let currentStep = -1;
+    let commitCount = 0;
+    const btn = document.getElementById('next-step-btn');
+    const commandDisplay = document.getElementById('command-display');
+    const explanationDisplay = document.getElementById('explanation');
+    const infoPanel = document.getElementById('info-panel');
+
+    function reset() {
+        currentStep = -1;
+        commitCount = 0;
+        commandDisplay.innerText = "等待操作...";
+        explanationDisplay.innerText = "点击\"开始演示\"按钮，一步步跟随 Git add 和 commit 的操作流程。";
+        btn.innerText = "开始演示";
+        btn.disabled = false;
+        infoPanel.innerText = '';
+        clearAllAreas();
+    }
+
+    btn.addEventListener('click', () => {
+        currentStep++;
+        if (currentStep >= steps.length) {
+            reset();
+            return;
+        }
+
+        const step = steps[currentStep];
+        commandDisplay.innerText = step.command;
+        explanationDisplay.innerText = step.explanation;
+        
+        step.action();
+
+        if (currentStep === steps.length - 1) {
+            btn.innerText = "重新开始";
+        } else {
+            btn.innerText = "下一步";
+        }
+    });
+
+    function clearAllAreas() {
+        document.getElementById('working-files').innerHTML = '<div class="empty-state">暂无文件</div>';
+        document.getElementById('staging-files').innerHTML = '<div class="empty-state">暂无文件</div>';
+        document.getElementById('repository-files').innerHTML = '<div class="empty-state">暂无提交</div>';
+        document.getElementById('commit-list').innerHTML = '<div class="empty-state">暂无提交记录</div>';
+    }
+
+    function addFileToWorkingDirectory(filename, status) {
+        const workingFiles = document.getElementById('working-files');
+        
+        // 移除空状态
+        const emptyState = workingFiles.querySelector('.empty-state');
+        if (emptyState) {
+            emptyState.remove();
+        }
+        
+        // 检查文件是否已存在
+        const existingFile = workingFiles.querySelector(`[data-filename="${filename}"]`);
+        if (existingFile) {
+            existingFile.remove();
+        }
+        
+        const fileItem = document.createElement('div');
+        fileItem.className = `file-item ${status}`;
+        fileItem.setAttribute('data-filename', filename);
+        fileItem.innerHTML = `
+            ${filename}
+            <div class="status-indicator ${status}">${status === 'new' ? '+' : 'M'}</div>
+        `;
+        
+        workingFiles.appendChild(fileItem);
+        
+        // 添加高亮效果
+        setTimeout(() => {
+            fileItem.classList.add('highlight');
+        }, 100);
+    }
+
+    function moveFileToStaging(filename) {
+        const workingFiles = document.getElementById('working-files');
+        const stagingFiles = document.getElementById('staging-files');
+        
+        const fileInWorking = workingFiles.querySelector(`[data-filename="${filename}"]`);
+        if (!fileInWorking) return;
+        
+        // 移除暂存区空状态
+        const emptyState = stagingFiles.querySelector('.empty-state');
+        if (emptyState) {
+            emptyState.remove();
+        }
+        
+        // 添加移动动画
+        fileInWorking.classList.add('moving');
+        
+        setTimeout(() => {
+            // 从工作区移除
+            fileInWorking.remove();
+            
+            // 添加到暂存区
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item staged';
+            fileItem.setAttribute('data-filename', filename);
+            fileItem.innerHTML = `
+                ${filename}
+                <div class="status-indicator staged">S</div>
+            `;
+            
+            stagingFiles.appendChild(fileItem);
+            
+            // 检查工作区是否为空
+            if (workingFiles.children.length === 0) {
+                workingFiles.innerHTML = '<div class="empty-state">暂无文件</div>';
+            }
+            
+            // 添加高亮效果
+            setTimeout(() => {
+                fileItem.classList.add('highlight');
+            }, 100);
+        }, 400);
+    }
+
+    function commitStagedFiles(message, files) {
+        const stagingFiles = document.getElementById('staging-files');
+        const repositoryFiles = document.getElementById('repository-files');
+        const commitList = document.getElementById('commit-list');
+        
+        // 移除仓库空状态
+        const emptyStateRepo = repositoryFiles.querySelector('.empty-state');
+        if (emptyStateRepo) {
+            emptyStateRepo.remove();
+        }
+        
+        const emptyStateCommit = commitList.querySelector('.empty-state');
+        if (emptyStateCommit) {
+            emptyStateCommit.remove();
+        }
+        
+        // 为每个文件添加移动动画，但不在仓库区域重复显示
+        files.forEach((filename, index) => {
+            const fileInStaging = stagingFiles.querySelector(`[data-filename="${filename}"]`);
+            if (fileInStaging) {
+                fileInStaging.classList.add('moving');
+                
+                setTimeout(() => {
+                    fileInStaging.remove();
+                }, index * 200 + 400);
+            }
+        });
+        
+        // 添加提交记录
+        setTimeout(() => {
+            commitCount++;
+            const commitHash = generateCommitHash();
+            const commitItem = document.createElement('div');
+            commitItem.className = 'commit-item';
+            commitItem.innerHTML = `
+                <div class="commit-hash">${commitHash}</div>
+                <div class="commit-message">${message}</div>
+                <div class="commit-files">文件: ${files.join(', ')}</div>
+            `;
+            
+            commitList.insertBefore(commitItem, commitList.firstChild);
+            
+            // 在仓库区域显示已提交的文件
+            files.forEach((filename) => {
+                // 检查文件是否已经在仓库中
+                let existingFile = repositoryFiles.querySelector(`[data-filename="${filename}"]`);
+                if (!existingFile) {
+                    // 添加新文件到仓库
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item committed';
+                    fileItem.setAttribute('data-filename', filename);
+                    fileItem.innerHTML = `
+                        ${filename}
+                        <div class="status-indicator committed">✓</div>
+                    `;
+                    repositoryFiles.appendChild(fileItem);
+                    
+                    // 添加高亮效果
+                    setTimeout(() => {
+                        fileItem.classList.add('highlight');
+                    }, 100);
+                } else {
+                    // 文件已存在，更新其状态（表示有新的提交）
+                    existingFile.classList.add('highlight');
+                    setTimeout(() => {
+                        existingFile.classList.remove('highlight');
+                    }, 1000);
+                }
+            });
+            
+            // 检查暂存区是否为空
+            if (stagingFiles.children.length === 0) {
+                stagingFiles.innerHTML = '<div class="empty-state">暂无文件</div>';
+            }
+            
+            // 添加高亮效果
+            setTimeout(() => {
+                commitItem.classList.add('highlight');
+            }, 100);
+        }, files.length * 200 + 600);
+    }
+
+    function generateCommitHash() {
+        const chars = '0123456789abcdef';
+        let hash = '';
+        for (let i = 0; i < 7; i++) {
+            hash += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return hash;
+    }
+
+    function updateInfoPanel(text) {
+        infoPanel.innerText = text;
+    }
+
+    // 初始化
+    reset();
+</script>
+
+</body>
+</html>
