@@ -150,6 +150,117 @@ function initMemoryModelAnimation() {
     };
 }
 
+// 访问权限控制动画
+// 访问权限规则
+const accessRules = {
+    public: { samePackage: true, child: true, other: true },
+    protected: { samePackage: true, child: true, other: false },
+    default: { samePackage: true, child: false, other: false },
+    private: { samePackage: false, child: false, other: false }
+};
+
+function createAccessAttempt(field, canAccess, delay = 0) {
+    const attempt = document.createElement('div');
+    attempt.className = `access-attempt ${canAccess ? 'success' : 'failure'}`;
+    
+    const icon = canAccess ? '✅' : '❌';
+    const status = canAccess ? 'SUCCESS' : 'DENIED';
+    
+    attempt.innerHTML = `
+        <span class="access-icon">${icon}</span>
+        <span>${field}Field - ${status}</span>
+    `;
+    
+    setTimeout(() => {
+        attempt.classList.add('show');
+    }, delay);
+    
+    return attempt;
+}
+
+function testSamePackageAccess() {
+    clearAccessAttempts();
+    const container = document.getElementById('samePackageAttempts');
+    
+    if (!container) return;
+    
+    let delay = 0;
+    ['public', 'protected', 'default', 'private'].forEach(access => {
+        const canAccess = accessRules[access].samePackage;
+        const attempt = createAccessAttempt(access, canAccess, delay);
+        container.appendChild(attempt);
+        delay += 200;
+    });
+    
+    updateResults('同包访问测试', '同包中的类可以访问 public、protected、default 成员，但不能访问 private 成员。');
+}
+
+function testChildClassAccess() {
+    clearAccessAttempts();
+    const container = document.getElementById('childAttempts');
+    
+    if (!container) return;
+    
+    let delay = 0;
+    ['public', 'protected', 'default', 'private'].forEach(access => {
+        const canAccess = accessRules[access].child;
+        const attempt = createAccessAttempt(access, canAccess, delay);
+        container.appendChild(attempt);
+        delay += 200;
+    });
+    
+    updateResults('子类访问测试', '不同包的子类可以访问 public、protected 成员，但不能访问 default、private 成员。');
+}
+
+function testOtherClassAccess() {
+    clearAccessAttempts();
+    const container = document.getElementById('otherAttempts');
+    
+    if (!container) return;
+    
+    let delay = 0;
+    ['public', 'protected', 'default', 'private'].forEach(access => {
+        const canAccess = accessRules[access].other;
+        const attempt = createAccessAttempt(access, canAccess, delay);
+        container.appendChild(attempt);
+        delay += 200;
+    });
+    
+    updateResults('其他类访问测试', '不同包的非子类只能访问 public 成员，其他所有成员都无法访问。');
+}
+
+function clearAccessAttempts() {
+    ['samePackageAttempts', 'childAttempts', 'otherAttempts'].forEach(id => {
+        const container = document.getElementById(id);
+        if (container) {
+            container.innerHTML = '';
+        }
+    });
+}
+
+function updateResults(testName, description) {
+    const resultsContent = document.getElementById('resultsContent');
+    if (resultsContent) {
+        resultsContent.innerHTML = `
+            <strong>${testName}完成</strong><br>
+            ${description}<br><br>
+            <em>观察上方的访问尝试结果，理解不同访问修饰符的权限控制效果。</em>
+        `;
+    }
+}
+
+function resetAccessDemo() {
+    clearAccessAttempts();
+    const resultsContent = document.getElementById('resultsContent');
+    if (resultsContent) {
+        resultsContent.textContent = '点击上方按钮开始测试访问权限...';
+    }
+}
+
 // 导出函数供外部使用
 window.initClassObjectAnimation = initClassObjectAnimation;
 window.initMemoryModelAnimation = initMemoryModelAnimation;
+window.testSamePackageAccess = testSamePackageAccess;
+window.testChildClassAccess = testChildClassAccess;
+window.testOtherClassAccess = testOtherClassAccess;
+window.resetAccessDemo = resetAccessDemo;
