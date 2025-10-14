@@ -69,6 +69,7 @@ public class Person {
             </div>
         </section>
 
+
         <!-- Slide 4: Encapsulation Example -->
         <section class="slide">
             <div class="slide-content">
@@ -1506,18 +1507,14 @@ public class Dog extends Animal {
         <section class="slide">
             <div class="slide-content">
                 <h2>接口 (Interface)：定义能力的“契约”</h2>
-                <p>接口是比抽象类更纯粹的抽象。它只定义了一组行为规范（方法签名），而不关心任何实现。接口体现了 "has-a" 或 "can-do" 的关系。</p>
-                <p>一个类可以实现（<code>implements</code>）多个接口，这弥补了Java单继承的不足。</p>
+                <p>接口是比抽象类更纯粹的抽象。它只定义了一组行为规范（方法签名），而不关心任何实现。</p>
+                <p>接口体现了 "has-a" 或 "can-do" 的关系。</p>
                 <ul>
                     <li>接口中的方法默认是 <code>public abstract</code> 的。</li>
                     <li>接口中的变量默认是 <code>public static final</code> 的（常量）。</li>
                     <li>实现接口的类必须实现其所有抽象方法。</li>
                 </ul>
 <pre><code class="language-java">
-// 定义“会飞”的能力
-public interface Flyable {
-    void fly(); // 接口方法
-}
 
 // 定义“会游泳”的能力
 public interface Swimmable {
@@ -1525,14 +1522,109 @@ public interface Swimmable {
 }
 
 // Duck 类实现了这两种能力
-public class Duck implements Flyable, Swimmable {
-    @Override
-    public void fly() { System.out.println("鸭子在飞..."); }
+public class Duck implements Swimmable {
 
     @Override
     public void swim() { System.out.println("鸭子在游泳..."); }
 }
 </code></pre>
+            </div>
+        </section>
+
+        
+        <!-- Slide 15.1: Interface Inheritance -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子接口继承父接口（接口的继承）</h2>
+                <p>接口不仅能被类实现，还可以像类一样<strong>继承</strong>其他接口，从而在父接口的基础上扩展能力。接口也支持<strong>多重继承</strong>（<code>extends A, B</code>）。</p>
+<pre><code class="language-java">// 父接口：通用“可移动”能力
+public interface Movable {
+    void move();
+}
+
+// 子接口：在父接口基础上扩展“会飞/会游泳”
+public interface Flyable extends Movable {
+    void fly();
+}
+
+public interface Swimmable extends Movable {
+    void swim();
+}
+
+// 子接口可以多重继承，组合多种能力
+public interface Amphibious extends Flyable, Swimmable { }
+
+// 实现类只需实现组合后的全部抽象方法
+public class DuckHybrid implements Amphibious {
+    @Override public void move() { System.out.println("移动中..."); }
+    @Override public void fly()  { System.out.println("鸭子在飞..."); }
+    @Override public void swim() { System.out.println("鸭子在游泳..."); }
+}
+</code></pre>
+                <div class="important-note" style="display: block; background-color: #fffbe6; border: 1px solid #ffe58f; border-radius: 4px; padding: 16px; margin-top: 20px;">
+                    <h4 style="margin-top: 0; color: #d46b08;">要点</h4>
+                    <ul style="padding-left: 20px; margin-bottom: 0;">
+                        <li>子接口会继承父接口的<strong>抽象方法</strong>与<strong>默认方法</strong>。</li>
+                        <li>当多父接口存在<strong>同名默认方法</strong>冲突时，子接口或实现类必须显式覆盖。</li>
+                        <li>接口可多重继承（<code>extends A, B</code>），类不可多重继承但可实现多个接口。</li>
+                    </ul>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Slide: Default Method Conflict -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>接口的“菱形问题”：默认方法冲突与解决</h2>
+                <p>一个类可以实现多个接口。</p>
+                <p>当一个类实现多个接口，而这些接口恰好包含同名、同参数的默认方法时，编译器会陷入困惑：究竟该继承哪一个？这就是著名的“菱形问题”。Java 要求开发者必须明确解决这个冲突。</p>
+                
+                <h4>场景：飞行与游泳的冲突</h4>
+                <p>假设我们有两个接口，<code>Flyer</code> 和 <code>Swimmer</code>，它们都有一个名为 <code>takeOff()</code> 的默认方法。</p>
+<pre><code class="language-java">
+public interface Flyer {
+    default void takeOff() {
+        System.out.println("扇动翅膀，飞向天空！");
+    }
+}
+
+public interface Swimmer {
+    default void takeOff() {
+        System.out.println("双腿一蹬，潜入水中！");
+    }
+}
+</code></pre>
+
+                <h4>冲突的产生</h4>
+                <p>现在，一个“水陆两栖飞机”<code>AmphibiousPlane</code> 试图同时实现这两个接口。此时，编译器会报错，因为它不知道该选用哪个 <code>takeOff()</code> 实现。</p>
+<pre><code class="language-java">
+// 下面的代码会导致编译错误：AmphibiousPlane inherits unrelated defaults for takeOff()
+// public class AmphibiousPlane implements Flyer, Swimmer {}
+</code></pre>
+
+                <h4>解决方案：显式覆盖</h4>
+                <p>解决方法是在实现类 <code>AmphibiousPlane</code> 中重写 <code>takeOff()</code> 方法，并明确指定要调用哪个父接口的默认实现，或者提供一个全新的实现。</p>
+<pre><code class="language-java">
+public class AmphibiousPlane implements Flyer, Swimmer {
+    @Override
+    public void takeOff() {
+        // 方案一：选择其中一个父接口的实现
+        System.out.println("决策：优先选择飞行模式...");
+        Flyer.super.takeOff(); // 使用 Flyer 的默认方法
+
+        // 方案二：或者，你也可以调用 Swimmer 的
+        // Swimmer.super.takeOff();
+
+        // 方案三：提供一个全新的实现
+        // System.out.println("水陆两栖模式启动，涡轮喷射，水花四溅，冲上云霄！");
+    }
+}
+</code></pre>
+                <div class="important-note" style="display: block; background-color: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 16px; margin-top: 20px;">
+                    <h4 style="margin-top: 0; color: #096dd9;">核心规则</h4>
+                    <p style="margin-bottom: 0;">当一个类面临来自多个父接口的同名默认方法冲突时，它<strong>必须</strong>通过重写（<code>@Override</code>）该方法来消除歧义。在方法内部，可以使用 <code>InterfaceName.super.methodName()</code> 语法来精确调用特定父接口的默认实现。</p>
+                </div>
             </div>
         </section>
 
@@ -2233,5 +2325,6 @@ if (animal instanceof TailWagger) {
     <script src="../prism/prism.js"></script>
     <script src="../prism/prism-autoloader.min.js"></script>
 
+    <script src="./js/nav.js"></script>
 </body>
 </html>

@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java常用工具类</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/animation.css">
+    <link rel="stylesheet" href="./css/hacker-cmd.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+
+<body>
+
+    <main id="presentation">
+        <!-- Slide 1: Title -->
+        <section class="slide title-slide active">
+            <h1>Java常用工具类</h1>
+            <p>Java Utility Classes - Complete Guide</p>
+            <strong>高频工具类与日期时间API的系统掌握</strong>
+        </section>
+
+        <!-- Quote Slide -->
+        <section class="slide">
+            <div class="slide-content" style="text-align: center;">
+                <blockquote
+                    style="font-size: 1.3em; font-style: italic; border-left: 4px solid var(--accent-color); padding-left: 20px;">
+                    <p>君子生非异也，善假于物也</p>
+                    <cite style="display: block; text-align: right; margin-top: 20px;">—— 荀子</cite>
+                </blockquote>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>学习目标</h2>
+                <ul>
+                    <li>熟悉常用工具类的定位与适用场景。</li>
+                    <li>掌握随机数、字符串构建与空值处理的正确用法。</li>
+                    <li>理解旧版日期 API 的常见坑与迁移策略。</li>
+                    <li>用 java.time 进行创建、计算、时区转换与格式化。</li>
+                </ul>
+            </div>
+        </section>
+
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常用工具类总览</h2>
+                <p>Java 提供了大量<strong>工具类</strong>以简化常见任务，常见于 <code>java.lang</code> 与 <code>java.util</code> 包，通常包含静态方法可直接调用。</p>
+                <ul>
+                    <li><strong>Math</strong>：数学运算与常量（<code>PI</code>、<code>E</code>）。</li>
+                    <li><strong>Random / ThreadLocalRandom / SplittableRandom</strong>：伪随机数生成。</li>
+                    <li><strong>java.awt.Point / Point2D</strong>：二维坐标与几何运算（可变/浮点精度）。</li>
+                    <li><strong>java.time.*</strong>：现代日期时间 API（时区、安全、不可变）。</li>
+                </ul>
+                <p class="conclusion">善用工具类能提升代码质量与开发效率，减少重复造轮子。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>数学工具类 (Math)</h2>
+                <p><code>Math</code> 类位于 <code>java.lang</code> 包中，无需导入即可直接使用。它提供了丰富的静态方法来执行高级数学运算。</p>
+                <pre><code class="language-java">public static void main(String[] args) {
+    // 幂运算
+    System.out.println(Math.pow(5, 3)); // 5的3次方，结果: 125.0
+
+    // 基本运算
+    Math.abs(-1);    // 绝对值
+    Math.max(19, 20);  // 最大值
+    Math.min(2, 4);    // 最小值
+    Math.sqrt(9);    // 平方根
+
+    // 三角函数 (参数为弧度)
+    Math.sin(Math.PI / 2); // sin(π/2)
+    Math.cos(Math.PI);     // cos(π)
+
+    // 对数运算
+    Math.log(Math.E);    // 自然对数 (ln)
+    Math.log10(100);   // 以10为底的对数
+
+    // 取整运算
+    Math.ceil(4.5);  // 向上取整，结果: 5.0
+    Math.floor(5.6); // 向下取整，结果: 5.0
+}</code></pre>
+                <p class="warning">由于浮点数精度问题，<code>Math.sin(Math.PI)</code> 的结果可能是一个非常接近0的极小数，而非精确的0。</p>
+            </div>
+        </section>
+
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>随机数生成 (Random)</h2>
+                <p><code>Random</code> 位于 <code>java.util</code> 包；并发场景可使用 <code>ThreadLocalRandom</code>，批量/并发生成可考虑 <code>SplittableRandom</code>。</p>
+                <p>有了数值运算基础，下一步是“可控的随机”，用于模拟、抽样与游戏逻辑。</p>
+                <pre><code class="language-java">import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.SplittableRandom;
+
+public static void main(String[] args) {
+    // 经典用法
+    Random r = new Random();
+    System.out.println(r.nextInt(100)); // [0,100)
+
+    // 并发友好用法（无需显式创建实例）
+    int x = ThreadLocalRandom.current().nextInt(1, 7); // 掷骰子 [1,6]
+    double y = ThreadLocalRandom.current().nextDouble(); // [0.0, 1.0)
+    System.out.println(x + ":" + y);
+
+    // 批量生成（流式 API），适用于统计/模拟
+    SplittableRandom sr = new SplittableRandom();
+    int[] samples = sr.ints(100, 0, 100).toArray(); // 100个 [0,100) 整数
+    System.out.println("batch=" + samples.length);
+}
+</code></pre>
+                <div class="important-note">
+                    <h4>关于“伪随机”</h4>
+                    <p>程序生成的随机数基于<strong>种子</strong>。同一种子会产生相同序列；安全随机请考虑 <code>SecureRandom</code>。</p>
+                </div>
+                <div class="important-note">
+                    <h4>选型指南</h4>
+                    <ul>
+                        <li><code>Random</code>：单线程或简单场景，基础用法。</li>
+                        <li><code>ThreadLocalRandom</code>：并发环境减少竞争，适合多线程独立生成。</li>
+                        <li><code>SplittableRandom</code>：批量/并行生成，高效流式 API。</li>
+                        <li><code>SecureRandom</code>：安全要求（令牌、密钥、抽样）必须使用。</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: Legacy Date API Overview -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>旧版日期时间 API 概览（Date/Calendar）</h2>
+                <p>在处理日期时，空值与格式错误频繁出现；先看旧 API 的坑，再给出现代替代。</p>
+                <ul>
+                    <li><code>java.util.Date</code>：时间点（毫秒级），可变。</li>
+                    <li><code>java.util.Calendar</code> / <code>GregorianCalendar</code>：日期时间的可变对象，受时区/夏令时影响。</li>
+                    <li><code>java.text.SimpleDateFormat</code>：格式化与解析，<strong>非线程安全</strong>。</li>
+                </ul>
+                <p class="warning">常见坑：对象可变、月份从0开始、<code>SimpleDateFormat</code> 并发问题、模式符区别（<code>yyyy</code> vs <code>YYYY</code>）。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Calendar Usage -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Calendar 的基础用法与注意事项</h2>
+                <pre><code class="language-java">import java.util.Calendar;
+import java.util.GregorianCalendar;
+import java.util.Date;
+
+public class LegacyCal {
+    public static void main(String[] args) {
+        // 建议使用常量而非数字，月份从0开始
+        Calendar cal = new GregorianCalendar();
+        cal.set(2025, Calendar.OCTOBER, 1, 9, 30, 0); // 10月用 Calendar.OCTOBER
+
+        // 获取为 Date（可变类型）
+        Date d = cal.getTime();
+        System.out.println(d);
+
+        // 可变陷阱：后续操作会改变同一对象的状态
+        cal.add(Calendar.DAY_OF_MONTH, 7);
+        System.out.println(cal.getTime());
+    }
+}
+</code></pre>
+                <p class="important-note">Calendar/Date 是<strong>可变</strong>的；谨慎在多线程或共享场景中使用。</p>
+            </div>
+        </section>
+
+        <!-- Slide: SimpleDateFormat -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>格式化与解析（SimpleDateFormat）</h2>
+                <pre><code class="language-java">import java.text.SimpleDateFormat;
+import java.util.Date;
+
+public class LegacyFmt {
+    public static void main(String[] args) throws Exception {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        String s = sdf.format(new Date());
+        Date parsed = sdf.parse(s);
+        System.out.println(s + " | " + parsed);
+    }
+}
+</code></pre>
+                <div class="important-note">
+                    <h4>注意</h4>
+                    <ul>
+                        <li><code>SimpleDateFormat</code> 非线程安全：并发场景请每次新建或加锁。</li>
+                        <li><code>yyyy</code> 表示公历年；<code>YYYY</code> 表示周历年，通常不适合作为日期年份。</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: Legacy → java.time 迁移指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>从旧版 API 迁移到 java.time</h2>
+                <pre><code class="language-java">import java.time.*;
+import java.util.*;
+
+public class Migrate {
+    public static void main(String[] args) {
+        // Date ↔ Instant
+        Instant i = new Date().toInstant();
+        Date d = Date.from(Instant.now());
+
+        // Calendar ↔ ZonedDateTime（通过时区）
+        Calendar cal = Calendar.getInstance();
+        ZoneId zone = ZoneId.systemDefault();
+        ZonedDateTime zdt = ZonedDateTime.ofInstant(cal.toInstant(), zone);
+        Calendar back = GregorianCalendar.from(zdt);
+    }
+}
+</code></pre>
+                <p class="conclusion">业务逻辑中优先使用 <code>java.time</code>；与外部系统交互时在边界互转。</p>
+            </div>
+        </section>
+
+
+        <!-- Slide: java.time Overview -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>现代日期时间 API（java.time.*）概览</h2>
+                <ul>
+                    <li><code>LocalDate</code>、<code>LocalTime</code>、<code>LocalDateTime</code>：不含时区。</li>
+                    <li><code>Instant</code>：时间戳（UTC）。</li>
+                    <li><code>ZoneId</code>、<code>ZonedDateTime</code>：时区与夏令时处理。</li>
+                    <li><code>Period</code>（日期间隔）、<code>Duration</code>（时间间隔）。</li>
+                    <li><code>DateTimeFormatter</code>：格式化与解析。</li>
+                </ul>
+                <p class="warning">java.time API 不可变、线程安全；优先替代旧版 <code>Date</code>/<code>Calendar</code>。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Local* & Instant -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建与操作：LocalDate/LocalTime/Instant</h2>
+                <pre><code class="language-java">import java.time.*;
+
+public class TimeBasics {
+    public static void main(String[] args) {
+        LocalDate d = LocalDate.now();
+        LocalDate d2 = LocalDate.of(2025, 10, 1);
+        LocalDate d3 = d2.plusDays(7).minusMonths(1);
+
+        LocalTime t = LocalTime.parse("09:30");
+        LocalDateTime dt = LocalDateTime.of(d2, t);
+
+        Instant now = Instant.now(); // UTC 时间戳
+        System.out.println(d + ", " + t + ", " + dt + ", " + now);
+    }
+}
+</code></pre>
+                <p class="important-note">所有操作都会返回<strong>新对象</strong>，原对象不变。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Zone & ZonedDateTime -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>时区与 ZonedDateTime</h2>
+                <pre><code class="language-java">import java.time.*;
+
+public class Zones {
+    public static void main(String[] args) {
+        ZoneId shanghai = ZoneId.of("Asia/Shanghai");
+        ZonedDateTime zdt = ZonedDateTime.of(2025, 10, 1, 9, 0, 0, 0, shanghai);
+
+        // 与时间戳互转
+        Instant instant = zdt.toInstant();
+        ZonedDateTime utc = instant.atZone(ZoneId.of("UTC"));
+        System.out.println(zdt + " | " + utc);
+    }
+}
+</code></pre>
+                <p class="warning">不要手写时区偏移，用标准 <code>ZoneId</code> 避免夏令时陷阱。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Period & Duration -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>日期/时间间隔：Period 与 Duration</h2>
+                <pre><code class="language-java">import java.time.*;
+import java.time.temporal.ChronoUnit;
+
+public class Spans {
+    public static void main(String[] args) {
+        Period p = Period.between(LocalDate.of(2025,1,1), LocalDate.of(2025,10,1));
+        Duration du = Duration.between(LocalTime.NOON, LocalTime.of(18, 30));
+        long days = ChronoUnit.DAYS.between(LocalDate.of(2025,10,1), LocalDate.of(2025,10,10));
+        System.out.println(p + ", " + du + ", days=" + days);
+    }
+}
+</code></pre>
+                <p class="conclusion">Period 面向日期维度；Duration 面向时间维度；差值计算可用 <code>ChronoUnit</code>。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Formatting & Parsing -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>格式化与解析（DateTimeFormatter）</h2>
+                <pre><code class="language-java">import java.time.*;
+import java.time.format.DateTimeFormatter;
+
+public class Formatting {
+    public static void main(String[] args) {
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        LocalDateTime dt = LocalDateTime.of(2025, 10, 1, 9, 30);
+        String s = dt.format(fmt);
+        LocalDateTime parsed = LocalDateTime.parse(s, fmt);
+        System.out.println(s + " | " + parsed);
+    }
+}
+</code></pre>
+                <p class="important-note">使用统一格式化器，避免各处自定义字符串格式导致的解析问题。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Legacy Interop -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>与旧版 API 互操作</h2>
+                <pre><code class="language-java">import java.time.*;
+import java.util.Date;
+
+public class LegacyInterop {
+    public static void main(String[] args) {
+        // Date -> Instant
+        Instant i = new Date().toInstant();
+        // Instant -> Date
+        Date d = Date.from(Instant.now());
+    }
+}
+</code></pre>
+                <p class="warning">尽量在系统边界进行互转，业务内部统一用 <code>java.time</code>。</p>
+            </div>
+        </section>
+        <!-- Slide: Optional Usage -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>二维点与几何运算（java.awt.Point）</h2>
+                <p><code>Point</code> 位于 <code>java.awt</code> 包，表示整型坐标的二维点，常用于网格移动、碰撞检测与区域判定。</p>
+                <pre><code class="language-java">import java.awt.Point;
+import java.awt.Rectangle;
+
+public class PointDemo {
+    public static void main(String[] args) {
+        Point p1 = new Point(10, 20);
+        Point p2 = new Point(15, 25);
+
+        // 平移与设置（Point 是可变对象）
+        p1.translate(5, -10);      // 结果: (15, 10)
+        p2.setLocation(30, 40);    // 结果: (30, 40)
+
+        // 距离计算（欧氏距离）
+        double dist = p1.distance(p2);
+
+        // 与矩形的区域判定（边界/碰撞）
+        Rectangle box = new Rectangle(0, 0, 100, 100);
+        boolean inside = box.contains(p1);
+
+        System.out.println(p1 + " | " + p2 + " | dist=" + dist + " | inside=" + inside);
+    }
+}
+</code></pre>
+                <div class="important-note">
+                    <h4>提示</h4>
+                    <ul>
+                        <li><code>Point</code> 为<strong>可变</strong>类型，线程共享需谨慎。</li>
+                        <li>坐标为 <code>int</code> 精度；需要小数时使用 <code>Point2D.Double</code>。</li>
+                        <li>复杂几何变换可结合 <code>AffineTransform</code>；区域运算可结合 <code>Rectangle</code>。</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: Summary & Exercises -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>小结与练习</h2>
+                <ul>
+                    <li>工具类定位：Math/Random/Arrays/Objects/字符串工具/Point/java.time。</li>
+                    <li>牢记旧版日期 API 的可变与线程安全问题，优先 java.time。</li>
+                    <li>练习：用 <code>ThreadLocalRandom</code> 生成 100 个整数，
+                        用 <code>Arrays.stream</code> 计算平均值，
+                        使用 <code>DateTimeFormatter</code> 打印当前时间，
+                        用 <code>StringJoiner</code> 拼接输出。</li>
+                </ul>
+                <p class="conclusion">将工具类组合应用到真实场景，形成可复用的代码片段。</p>
+            </div>
+        </section>
+
+        <!-- UI Elements -->
+        <div class="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div class="controls">
+            <button id="prevBtn">上一页</button>
+            <span id="slide-counter">1 / X</span>
+            <button id="nextBtn">下一页</button>
+        </div>
+    </main>
+
+    <script src="./js/animation.js"></script>
+    <script src="./js/ppt.js"></script>
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+
+</html>
