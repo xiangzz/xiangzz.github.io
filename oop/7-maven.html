@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maven 入门与依赖管理</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/animation.css">
+    <link rel="stylesheet" href="./css/hacker-cmd.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+
+<body>
+
+    <main id="presentation">
+        <!-- Slide 1: Title -->
+        <section class="slide title-slide active">
+            <h1>Maven 入门与依赖管理</h1>
+            <p>项目管理与构建自动化 - 从零到实践</p>
+            <strong>用 POM 驱动依赖、生命周期与交付</strong>
+        </section>
+
+        <!-- Quote Slide -->
+        <section class="slide">
+            <div class="slide-content" style="text-align: center;">
+                <blockquote style="font-size: 1.3em; font-style: italic; border-left: 4px solid var(--accent-color); padding-left: 20px;">
+                    <p>君子生非异也，善假于物也</p>
+                    <cite style="display: block; text-align: right; margin-top: 20px;">—— 荀子</cite>
+                </blockquote>
+            </div>
+        </section>
+
+        <!-- Slide: 学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>学习目标</h2>
+                <ul>
+                    <li>理解 Maven 的定位与核心概念（POM、仓库、生命周期）。</li>
+                    <li>掌握依赖声明与解析流程，告别手动管理 JAR。</li>
+                    <li>配置本地/镜像仓库，加速国内构建体验。</li>
+                    <li>在 IDEA 中创建与配置 Maven 项目并实践依赖使用。</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Slide: 旧开发痛点 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要 Maven？常见开发痛点</h2>
+                <ul>
+                    <li><strong>找包麻烦：</strong>手动下载 JAR 并维护 classpath，效率低且易错。</li>
+                    <li><strong>依赖迷宫：</strong>传递性依赖管理困难，易出现 ClassNotFoundException。</li>
+                    <li><strong>打包难题：</strong>构建与打包步骤繁琐，难以保证一致性与可复现。</li>
+                </ul>
+                <p class="conclusion">用 Maven 的声明式依赖与标准化构建生命周期，系统性解决以上问题。</p>
+            </div>
+        </section>
+
+        <!-- Slide: 什么是 Maven -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>什么是 Maven</h2>
+                <p>Maven 是 Apache 基金会开源的<strong>项目管理与构建自动化工具</strong>，核心理念基于 <strong>POM（Project Object Model）</strong>。</p>
+                <ul>
+                    <li><strong>依赖管理：</strong>在 <code>pom.xml</code> 中声明坐标，自动下载并解析传递依赖。</li>
+                    <li><strong>构建生命周期：</strong>标准化 <code>clean</code>、<code>compile</code>、<code>test</code>、<code>package</code>、<code>deploy</code>。</li>
+                </ul>
+                <p>示例命令：<code>mvn package</code> 完成编译到打包的全流程。</p>
+            </div>
+        </section>
+
+        <!-- Slide: 仓库概念总览 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Maven 的仓库体系</h2>
+                <p>仓库（Repository）是依赖（JAR/插件）存放与分发的核心：本地仓库、中央仓库与镜像仓库。</p>
+                <div style="text-align:center">
+                    <img src="https://cdn.nlark.com/yuque/0/2024/gif/26735479/1715394376867-8334312a-4999-4d9f-8b96-b1872823d77c.gif" alt="Maven 仓库体系" style="max-width: 100%; border-radius: 8px;">
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: 本地仓库 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本地仓库（Local Repository）</h2>
+                <ul>
+                    <li><strong>位置：</strong>默认 <code>${user.home}\.m2\repository</code>（如 <code>C:\\Users\\你的用户名\\.m2\\repository</code>）。</li>
+                    <li><strong>作用：</strong>缓存依赖以加速构建；可在离线情况下复用已下载依赖。</li>
+                    <li><strong>流程：</strong>优先从本地查找，缺失时再访问远程仓库。</li>
+                </ul>
+                <p>可通过 <code>settings.xml</code> 自定义本地仓库路径。</p>
+            </div>
+        </section>
+
+        <!-- Slide: 中央仓库 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>中央仓库（Central Repository）</h2>
+                <ul>
+                    <li><strong>定义：</strong>由社区官方维护的全球性远程仓库，收录丰富且权威。</li>
+                    <li><strong>默认依赖来源：</strong>本地缺失时自动从中央仓库下载。</li>
+                    <li><strong>访问地址：</strong><code>https://repo.maven.apache.org/maven2/</code></li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Slide: 镜像仓库与配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>镜像仓库（Mirror Repository）</h2>
+                <ul>
+                    <li><strong>目的：</strong>加速国内访问、提升可用性。</li>
+                    <li><strong>机制：</strong>对被镜像仓库（如 central）的请求自动重定向到镜像地址。</li>
+                </ul>
+                <p>在 <code>settings.xml</code> 中配置镜像：</p>
+                <pre><code class="language-xml">&lt;mirrors&gt;
+  &lt;mirror&gt;
+    &lt;id&gt;aliyunmaven&lt;/id&gt;
+    &lt;mirrorOf&gt;central&lt;/mirrorOf&gt;
+    &lt;name&gt;Aliyun Maven&lt;/name&gt;
+    &lt;url&gt;https://maven.aliyun.com/repository/central&lt;/url&gt;
+  &lt;/mirror&gt;
+&lt;/mirrors&gt;</code></pre>
+            </div>
+        </section>
+
+        <!-- Slide: IDEA 中配置 Maven（入口） -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>在 IDEA 中配置 Maven</h2>
+                <p>IDEA 自带 Maven 环境，可直接在设置中查看与定制。</p>
+                <div style="text-align:center">
+                    <img src="https://cdn.nlark.com/yuque/0/2024/png/26735479/1715355223254-8a6bf07e-1fe2-415a-a4ef-00fcac34dd89.png" alt="IDEA 设置入口" style="max-width: 100%; border-radius: 8px;">
+                </div>
+                <div style="text-align:center; margin-top: 12px;">
+                    <img src="https://cdn.nlark.com/yuque/0/2024/png/26735479/1715393776395-2f18168d-1ac8-4cca-b7f2-91a0181a07c1.png" alt="IDEA Maven 设置页" style="max-width: 100%; border-radius: 8px;">
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: 修改 settings.xml -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>修改 settings.xml：本地仓库与镜像</h2>
+                <p>自定义本地仓库路径（示例）：</p>
+                <pre><code class="language-xml">&lt;localRepository&gt;D:\Java\MavenRepository&lt;/localRepository&gt;</code></pre>
+                <p>配置镜像（示例）：</p>
+                <pre><code class="language-xml">&lt;mirrors&gt;
+  &lt;mirror&gt;
+    &lt;id&gt;aliyunmaven&lt;/id&gt;
+    &lt;mirrorOf&gt;central&lt;/mirrorOf&gt;
+    &lt;name&gt;Aliyun Maven&lt;/name&gt;
+    &lt;url&gt;https://maven.aliyun.com/repository/central&lt;/url&gt;
+  &lt;/mirror&gt;
+&lt;/mirrors&gt;</code></pre>
+                <p>在 IDEA 中保存并应用以上设置。</p>
+            </div>
+        </section>
+
+        <!-- Slide: 创建 Maven 项目 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建 Maven 项目</h2>
+                <p>使用 <code>maven-archetype-quickstart</code> 模板快速创建 “纯 Java” 项目（包含 <code>pom.xml</code>、<code>src/main/java</code>、<code>src/test/java</code>）。</p>
+                <div style="text-align:center">
+                    <img src="https://cdn.nlark.com/yuque/0/2024/png/26735479/1715355196541-2903f677-ff2c-4f96-acca-35d2355e3e64.png" alt="创建 Maven 项目" style="max-width: 100%; border-radius: 8px;">
+                </div>
+                <div style="text-align:center; margin-top: 12px;">
+                    <img src="https://cdn.nlark.com/yuque/0/2024/png/26735479/1715354932385-803ca54a-cd28-4ecd-baab-5b2d25ec1331.png" alt="选择 Archetype" style="max-width: 100%; border-radius: 8px;">
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: Maven 项目结构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Maven 项目结构</h2>
+                <p>遵循 “约定优于配置”：标准目录与构建流程。</p>
+                <div style="text-align:center">
+                    <img src="https://s2.loli.net/2023/03/06/tYh7BGvZHu6ncdf.jpg" alt="Maven 项目结构" style="max-width: 100%; border-radius: 8px;">
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: POM 基础示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>POM（项目对象模型）基础示例</h2>
+                <pre><code class="language-xml">&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+&lt;project xmlns=&quot;http://maven.apache.org/POM/4.0.0&quot;
+         xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot;
+         xsi:schemaLocation=&quot;http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd&quot;&gt;
+    &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+
+    &lt;groupId&gt;org.example&lt;/groupId&gt;
+    &lt;artifactId&gt;MavenTest&lt;/artifactId&gt;
+    &lt;version&gt;1.0-SNAPSHOT&lt;/version&gt;
+
+    &lt;properties&gt;
+        &lt;maven.compiler.source&gt;8&lt;/maven.compiler.source&gt;
+        &lt;maven.compiler.target&gt;8&lt;/maven.compiler.target&gt;
+    &lt;/properties&gt;
+&lt;/project&gt;</code></pre>
+            </div>
+        </section>
+
+        <!-- Slide: GAV 与属性 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>项目唯一标识：GAV 与属性</h2>
+                <ul>
+                    <li><code>&lt;groupId&gt;</code>：组织/公司 ID（反向域名，如 <code>org.apache</code>）。</li>
+                    <li><code>&lt;artifactId&gt;</code>：项目/模块 ID（在组内唯一）。</li>
+                    <li><code>&lt;version&gt;</code>：版本（<code>-SNAPSHOT</code> 表示开发版）。</li>
+                </ul>
+                <p><code>&lt;properties&gt;</code> 用于统一配置（如 Java 版本），避免硬编码。</p>
+            </div>
+        </section>
+
+        <!-- Slide: 声明式依赖管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>声明式依赖管理</h2>
+                <p>在 <code>pom.xml</code> 的 <code>&lt;dependencies&gt;</code> 标签内声明所有依赖：</p>
+                <pre><code class="language-xml">&lt;dependencies&gt;
+    &lt;!-- 在这里放置项目所需的所有依赖 --&gt;
+&lt;/dependencies&gt;</code></pre>
+                <p>使用 MVNRepository 搜索库坐标：<a href="https://mvnrepository.com/" target="_blank">https://mvnrepository.com/</a></p>
+            </div>
+        </section>
+
+        <!-- Slide: 添加 Lombok 依赖 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>示例：添加 Lombok 依赖</h2>
+                <pre><code class="language-xml">&lt;dependency&gt;
+    &lt;groupId&gt;org.projectlombok&lt;/groupId&gt;
+    &lt;artifactId&gt;lombok&lt;/artifactId&gt;
+    &lt;version&gt;1.18.22&lt;/version&gt;
+    &lt;scope&gt;provided&lt;/scope&gt;
+&lt;/dependency&gt;</code></pre>
+                <p>保存后，IDEA 会自动下载依赖并在代码中生效。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Lombok 代码示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>代码示例：Student 与 Main</h2>
+                <pre><code class="language-java">import lombok.AllArgsConstructor;
+import lombok.Data;
+
+@Data
+@AllArgsConstructor
+public class Student {
+    String name;
+    int age;
+}</code></pre>
+                <pre><code class="language-java">public class Main {
+    public static void main(String[] args) {
+        Student student = new Student("小明", 18);
+        System.out.println(student);
+    }
+}</code></pre>
+                <p>输出示例：<code>Student(name=小明, age=18)</code>，说明 Lombok 已生效。</p>
+            </div>
+        </section>
+
+        <!-- Slide: 小结与实践建议 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>小结与实践建议</h2>
+                <ul>
+                    <li>用 POM 管理依赖与构建，确保一致性与可复现。</li>
+                    <li>配置本地与镜像仓库，加速国内构建与提高稳定性。</li>
+                    <li>通过 MVNRepository 搜索坐标，选择稳定版本（避免 alpha/beta/RC）。</li>
+                    <li>结合 IDEA 的 Maven 集成，提升日常开发效率。</li>
+                </ul>
+                <p class="conclusion">下一步：为你的项目添加测试框架（如 JUnit）并尝试 <code>mvn test</code>。</p>
+            </div>
+        </section>
+
+        <!-- UI Elements -->
+        <div class="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div class="controls">
+            <button id="prevBtn">上一页</button>
+            <span id="slide-counter">1 / X</span>
+            <button id="nextBtn">下一页</button>
+        </div>
+    </main>
+
+    <script src="./js/animation.js"></script>
+    <script src="./js/ppt.js"></script>
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+
+</html>
