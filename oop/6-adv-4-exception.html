@@ -11,36 +11,371 @@
 <body>
 
     <main id="presentation">
-
+        <!-- Slide 1: Title -->
         <section class="slide title-slide active">
             <h1>异常机制</h1>
             <p>面向对象程序设计（Java）</p>
-            <strong>掌握异常类型、抛出与处理、断言</strong>
+            <strong>掌握异常类型、抛出与处理、断言；编写更健壮的程序</strong>
         </section>
 
+        <!-- Slide: Why Exceptions -->
         <section class="slide">
             <div class="slide-content">
-                <h2>异常机制概述</h2>
-                <p>程序运行中出现未考虑到的情况时，会抛出异常或错误，影响正常执行。</p>
+                <h2>为什么需要异常？</h2>
+                <p>理想情况下，程序会按预期运行；现实中会遇到不可预料的输入与状态。异常用于在运行期<strong>报告问题</strong>，并提供<strong>优雅的处理</strong>路径。</p>
                 <pre><code class="language-java">public static void main(String[] args) {
     test(1, 0);   // 当 b 为 0 时会怎样？
 }
 private static int test(int a, int b){
     return a / b; // 未进行判断，运行期可能抛出异常
 }</code></pre>
-                <p class="conclusion">核心知识点：</p>
-                <ul>
-                    <li>异常本质是类的对象，支持在运行时抛出</li>
-                    <li>分类：运行时异常(<code>RuntimeException</code>)、编译时异常(<code>Exception</code>)、错误(<code>Error</code>)</li>
-                    <li>运行时异常可不强制处理；编译时异常必须捕获或声明</li>
-                    <li>抛出异常使用 <code>throw</code>；方法声明可能抛出异常用 <code>throws</code></li>
-                    <li>处理异常使用 <code>try</code>、<code>catch</code>、<code>finally</code>，支持多重捕获与顺序要求</li>
-                    <li>断言表达式 <code>assert</code> 在开启断言时用于校验，失败抛 <code>AssertionError</code></li>
-                </ul>
+                <p class="conclusion">异常是“程序遇到非正常情况时抛出的对象”，由JVM或我们手动抛出。<br>学会识别与处理它，程序就能在出错后继续有序运行。</p>
             </div>
         </section>
 
+        <!-- Slide: Exception Categories -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>异常的三大类</h2>
+                <img src="images/6-4-exception-types.png" alt="异常的三大类" style="width: 80%; margin: 20px auto;">
+                <ul>
+                    <li><strong>运行时异常</strong>（RuntimeException）：编译器不强制处理；常见如空指针、数组越界、类型转换。</li>
+                    <li><strong>编译时异常</strong>（Exception）：编译器强制处理（捕获或上抛）；如 IO、反射、文件操作。</li>
+                    <li><strong>错误</strong>（Error）：严重问题，通常无法恢复；如内存溢出、栈溢出。</li>
+                </ul>
+                <p class="conclusion">它们本质都是类的对象，根类为 <code>Throwable</code>。区分类型有助于选择“是否必须捕获”以及“如何处理”。</p>
+            </div>
+        </section>
 
+        <!-- Slide: System Errors vs Exceptions -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>System Errors（你管不着的）</h2>
+                <p>System Error 是 Java 虚拟机抛出的用于表示错误的东西。<code>Error</code> 类描述内部系统的错误，如果产生了 Error，你很难为之进行有效操作，通常应交由 JVM 处理。</p>
+                <p>常见错误：<code>OutOfMemoryError</code>（内存溢出）、<code>StackOverflowError</code>（栈溢出）。</p>
+                <p class="conclusion">遇到 Error，请从资源限制、算法/数据结构、循环/递归设计上根治问题，而非依赖捕获。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Exceptions（你管的到的）</h2>
+                <p><code>Exception</code> 类描述由程序或外部环境导致的可预期问题。这些问题可以被你的程序 <strong>捕获并处理</strong>，从而让系统继续有序运行。</p>
+                <p>示例：文件不存在（<code>FileNotFoundException</code>）、网络超时（<code>SocketTimeoutException</code>）等。</p>
+                <p class="conclusion">设计良好的异常处理能为用户提供清晰的反馈，并保护关键路径不被错误击穿。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Checked vs Unchecked -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Checked Exceptions 与 Unchecked Exceptions</h2>
+                <img src="images/6-4-unchecked-exception.png" alt="Checked vs Unchecked" style="width: 80%; margin: 20px auto;">
+                <ul>
+                    <li><strong>Unchecked</strong>：<code>RuntimeException</code>、<code>Error</code> 及其子类。编译器<strong>不强制</strong>要求你在编译期处理。</li>
+                    <li><strong>Checked</strong>：除上述以外的 <code>Exception</code> 子类。编译器<strong>强制</strong>要求你在编译期捕获或上抛。</li>
+                </ul>
+                <p class="conclusion">“check”指的是编译器是否检查。Checked 更偏向可预期的外部失败；Unchecked 更偏向逻辑错误或编程疏漏。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Unchecked Exceptions details -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Unchecked Exceptions</h2>
+                <p>多数情况下，Unchecked Exceptions 反映了编程中的逻辑错误：</p>
+                <ul>
+                    <li><code>NullPointerException</code>：对未初始化对象进行成员访问。</li>
+                    <li><code>IndexOutOfBoundsException</code>：数组/列表下标越界访问。</li>
+                    <li><code>ClassCastException</code>：错误的强制类型转换。</li>
+                </ul>
+                <p class="conclusion">因为可能在任意位置发生，Java 不强制要求你为 Unchecked 异常写管理代码；应通过更严谨的编码习惯来避免。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Runtime Exceptions Examples -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行时异常示例</h2>
+                <p>运行时异常在编译阶段无法提前发现，多数源于不安全的操作：</p>
+                <pre><code class="language-java">public static void main(String[] args) {
+    // 空指针异常
+    Object obj = null;
+    obj.toString();
+
+    // 类型转换异常
+    Object o = new Object();
+    String s = (String) o; // ClassCastException
+}
+</code></pre>
+                <p>这类异常可捕获也可不捕获，但<strong>应在编码时避免</strong>：判空、谨慎类型转换、边界检查。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Checked Exceptions and throws -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>编译时异常与 throws</h2>
+                <p>编译时异常要求在编译阶段做出处理：要么捕获，要么上抛。</p>
+                <pre><code class="language-java">// Object#clone 明确声明可能抛出异常
+protected native Object clone() throws CloneNotSupportedException;
+
+// 自定义方法上抛
+private static void test() throws Exception {
+    throw new Exception("我是编译时异常！");
+}
+</code></pre>
+                <p class="conclusion">当方法可能失败且调用者有能力处理时，用编译时异常提示调用者“别忘了处理”。</p>
+            </div>
+        </section>
+
+        <!-- Slide: 方法声明中的 throws（Checked） -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>方法声明中的 throws（Checked）</h2>
+                <p>每个方法都应声明“可能抛出的” Checked Exception（不一定真的发生）。</p>
+                <pre><code class="language-java">public void myMethod() throws IOException {
+    // ...
+}
+public void myMethod() throws IOException, OtherException {
+    // ...
+}</code></pre>
+                <p class="conclusion">为调用者提供明确契约：该方法可能失败，调用者需在编译期考虑并处理。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Errors -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>错误（Error）示例</h2>
+                <p>错误严重到通常无法通过常规方式恢复，多数应交由JVM处理。</p>
+                <pre><code class="language-java">// 栈溢出：无限递归
+private static void recur(){
+    recur();
+}
+
+// 内存溢出：申请过大内存
+Object[] arr = new Object[Integer.MAX_VALUE];
+</code></pre>
+                <p>这类问题更多通过<strong>设计优化</strong>与<strong>资源限制</strong>避免，而非用 try-catch 修补。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Define Custom Exceptions -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义异常</h2>
+                <p>根据业务语义定义更清晰的失败信号：</p>
+                <pre><code class="language-java">// 编译时异常：强制调用方处理
+public class BizException extends Exception {
+    public BizException(String msg){
+        super(msg);
+    }
+}
+
+// 运行时异常：调用方可选择处理
+public class BizRuntimeException extends RuntimeException {
+    public BizRuntimeException(String msg){
+        super(msg);
+    }
+}
+</code></pre>
+                <p class="conclusion">选择异常基类取决于你是否希望“强制调用方显式处理”。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Throw Exceptions -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>抛出异常：throw</h2>
+                <p>当入参非法或状态不满足时，及时“失败并告知”。</p>
+                <pre><code class="language-java">public static int divide(int a, int b) {
+    if (b == 0) {
+        throw new RuntimeException("被除数不能为 0");
+    }
+    return a / b;
+}
+</code></pre>
+                <p>抛出异常时携带<strong>明确消息</strong>，方便定位问题。</p>
+            </div>
+        </section>
+
+        <!-- Slide: 抛出异常的两种写法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>抛出异常：直接式与二段式</h2>
+                <pre><code class="language-java">// 直接式
+throw new TheException();
+
+// 二段式
+TheException ex = new TheException();
+throw ex;
+</code></pre>
+                <p class="conclusion">在实际编码中二者等价；二段式适合在构造异常前收集上下文信息。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Catch Exceptions -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>捕获异常：try-catch</h2>
+                <img src="images/6-4-how-to-use-exception.png" alt="使用异常的建议" style="width: 80%; margin: 20px auto;">
+                <p>捕获后要么修复继续，要么转化传播，不要“吃掉异常”。</p>
+                <pre><code class="language-java">public static void main(String[] args) {
+    try {
+        Object object = null;
+        object.toString();
+    } catch (NullPointerException e){
+        e.printStackTrace();              // 记录细节
+        System.out.println("错误信息：" + e.getMessage());
+    }
+    System.out.println("程序继续正常运行！");
+}
+</code></pre>
+                <p class="conclusion">建议记录日志、为用户返回友好提示；避免空的 catch 块。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Multi-catch and Order -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多重捕获与顺序</h2>
+                <p>从<strong>具体到一般</strong>排列 catch；或使用多异常合并。</p>
+                <pre><code class="language-java">try {
+    int[] arr = new int[1];
+    arr[1] = 100; // 数组越界
+} catch (NullPointerException e) {
+    // ...
+} catch (IndexOutOfBoundsException e) {
+    // ...
+} catch (RuntimeException e) { // 父类放在最后
+    // ...
+}
+
+// 或者：
+try {
+    // ...
+} catch (NullPointerException | IndexOutOfBoundsException e) {
+    // 统一处理多种异常
+}
+</code></pre>
+                <p class="conclusion">父类在前会“吞掉”子类；合并捕获适合统一处理策略。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Rethrow Exceptions -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>异常的再抛出（rethrow）</h2>
+                <p>在捕获后完成必要操作（记录日志、释放资源），再将异常抛回上层决定。</p>
+                <pre><code class="language-java">try {
+    // statements
+} catch (TheException ex) {
+    // 记录日志/清理资源
+    throw ex; // 再抛出，让上层处理
+}
+</code></pre>
+                <p class="conclusion">再抛出有助于保留调用栈与原始语义；避免在底层“吞掉”关键异常。</p>
+            </div>
+        </section>
+
+        <!-- Slide: finally -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>finally：收尾工作必执行</h2>
+                <p>无论是否发生异常，资源释放与收尾逻辑都应放在 <code>finally</code>。</p>
+                <pre><code class="language-java">try {
+    int a = 10; a /= 0;
+} catch (ArithmeticException e){
+    // 处理异常
+} finally {
+    System.out.println("收尾：关闭资源/恢复状态");
+}
+</code></pre>
+                <p class="conclusion">try 块至少配合一个 catch 或 finally；异常未捕获时，finally 仍会执行。</p>
+            </div>
+        </section>
+
+        <!-- Slide: try-catch-finally 执行顺序示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>try-catch-finally 执行顺序示例</h2>
+                <pre><code class="language-java">try {
+  statement1;
+  statement2;
+  statement3;
+}
+catch(Exception1 ex) {
+  handling ex;
+}
+catch(Exception2 ex) {
+  inCatchStatement;
+  throw ex;
+}
+finally {
+  finalStatements;
+}
+Next statement; // 不可达（当 statement2 抛 Exception2 且被再抛出）</code></pre>
+                <ul>
+                    <li>这里假设 statement2 抛出 Exception2 → 进入第二个 catch。</li>
+                    <li>执行 inCatchStatement 后，执行 finally 的 finalStatements。</li>
+                    <li>finally 执行完毕，异常继续向上抛出（rethrow），Next statement 不会被执行。</li>
+                    <li>若未抛异常或异常被处理且未再抛出，则 finally 后继续执行 Next statement。</li>
+                </ul>
+                <p class="conclusion">异常路径中，finally 总会先于异常传播执行；这保证资源释放的确定性。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Propagation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>异常上抛与传递</h2>
+                <p>当前层不处理，可用 <code>throws</code> 交由上层决策。主方法上抛最终交由JVM。</p>
+                <pre><code class="language-java">private static void mayFail() throws java.io.IOException {
+    throw new java.io.IOException("IO 失败");
+}
+
+public static void main(String[] args) throws java.io.IOException {
+    mayFail(); // 继续上抛
+}
+</code></pre>
+                <p class="conclusion">合理的异常传递能让“最了解上下文”的层来处理问题。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Assertions -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>断言表达式（assert）</h2>
+                <p>用于测试与调试，在开启断言时对不变量进行校验；失败抛 <code>AssertionError</code>。</p>
+                <pre><code class="language-java">public static void main(String[] args) {
+    int a = 10;
+    assert a > 10 : "a 必须大于 10";
+}
+</code></pre>
+                <p class="conclusion">断言默认关闭，需通过虚拟机参数开启；生产代码中谨慎使用，仅用于开发/测试阶段。</p>
+            </div>
+        </section>
+
+        <!-- Slide: Summary -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>小结与自习建议</h2>
+                <ul>
+                    <li>明确异常分类：运行时 vs 编译时 vs 错误。</li>
+                    <li>用 <code>throw</code> 早失败，携带清晰错误信息。</li>
+                    <li>用 <code>try-catch-finally</code> 做到有记录、有恢复、无吞噬。</li>
+                    <li>上抛让更合适的层处理；断言守护不变量。</li>
+                </ul>
+                <h3>练习</h3>
+                <ul>
+                    <li>实现 <code>safeDivide(int a, int b)</code>：b 为 0 时抛业务异常；调用处捕获并打印友好提示。</li>
+                    <li>编写读取文件方法：声明可能的 IO 异常，上层做重试或错误提示。</li>
+                    <li>构造一个多 catch 栈：分别处理空指针、越界与其父类，体验顺序影响。</li>
+                </ul>
+                <p class="conclusion">带着“如何让程序更健壮”的视角阅读并实践，逐步形成自己的异常处理习惯与规范。</p>
+            </div>
+        </section>
 
         <!-- UI Elements -->
         <div class="progress-bar-container">
