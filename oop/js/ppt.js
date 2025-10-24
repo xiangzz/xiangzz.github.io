@@ -20,6 +20,14 @@ document.addEventListener('DOMContentLoaded', () => {
             slides[index].classList.add('active');
             currentSlide = index;
             updateControls();
+
+            // Smooth scroll slide to top
+            try { slides[index].scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) {}
+
+            // Dispatch slide change event
+            document.dispatchEvent(new CustomEvent('slidechange', {
+                detail: { index: currentSlide, total: totalSlides }
+            }));
         }
     }
 
@@ -70,4 +78,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof initMemoryModelAnimation === 'function') {
         initMemoryModelAnimation();
     }
+
+    // Expose a lightweight API for external navigation
+    window.Presentation = {
+        showSlide: showSlide,
+        showNext: showNextSlide,
+        showPrev: showPrevSlide,
+        getState: function() { return { currentSlide: currentSlide, totalSlides: totalSlides }; }
+    };
 });
