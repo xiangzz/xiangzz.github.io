@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java反射机制详解</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/hacker-cmd.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+
+    <main id="presentation">
+        <!-- Slide 1: Title -->
+        <section class="slide title-slide active">
+            <h1>Java反射机制</h1>
+            <p>面向对象程序设计（Java）</p>
+            <strong>掌握动态编程，提升代码灵活性</strong>
+        </section>
+
+        <!-- Slide 2: Why Need Reflection - Introduction -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要反射？</h2>
+                <p>理解反射，首先要明白它解决了什么实际问题。让我们从几个"要是能这样就好了"的需求场景开始：</p>
+
+                <h3>🤔 场景1：插件系统的困境</h3>
+                <div style="background: #fef3c7; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+                    <p><strong>需求：</strong>我想开发一个图片处理软件，用户可以动态加载新的滤镜插件，而不用重新编译主程序。</p>
+                    <pre><code class="language-java">// 😿 传统方式的问题
+public class ImageProcessor {
+    public void applyFilter(String filterName) {
+        if (filterName.equals("blur")) {
+            new BlurFilter().apply(image);
+        } else if (filterName.equals("sharpen")) {
+            new SharpenFilter().apply(image);
+        } else if (filterName.equals("sepia")) {
+            new SepiaFilter().apply(image);
+        }
+        // 每增加一个滤镜都要修改这里！！！
+    }
+}</code></pre>
+                    <p><strong>要是能这样就好了：</strong>根据配置文件中的类名，动态创建对应的滤镜对象...</p>
+                </div>
+
+                <h3>🤔 场景2：通用工具类的挑战</h3>
+                <div style="background: #dbeafe; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+                    <p><strong>需求：</strong>我想写一个通用的Bean复制工具，自动复制两个相同属性的对象。</p>
+                    <pre><code class="language-java">// 😿 传统方式的限制
+public class BeanUtils {
+    public void copyUser(User source, User target) {
+        target.setName(source.getName());
+        target.setAge(source.getAge());
+        target.setEmail(source.getEmail());
+        // 每个类都要写一个复制方法！！！
+    }
+
+    public void copyProduct(Product source, Product target) {
+        target.setName(source.getName());
+        target.setPrice(source.getPrice());
+        target.setStock(source.getStock());
+        // 又要写一个重复的方法！！！
+    }
+}</code></pre>
+                    <p><strong>要是能这样就好了：</strong>自动扫描所有字段，动态复制属性值...</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 3: More Scenarios -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要反射？- 更多场景</h2>
+
+                <h3>🤔 场景3：框架开发的困境</h3>
+                <div style="background: #dcfce7; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+                    <p><strong>需求：</strong>我想写一个类似Spring的框架，自动管理对象的生命周期和依赖注入。</p>
+                    <pre><code class="language-java">// 😿 硬编码的依赖管理
+public class UserService {
+    private UserRepository userRepository = new UserRepositoryImpl();
+    private EmailService emailService = new EmailServiceImpl();
+
+    public UserService() {
+        // 依赖关系写死了，无法灵活替换实现！！！
+    }
+}</code></pre>
+                    <p><strong>要是能这样就好了：</strong>框架自动扫描注解，动态创建和注入依赖对象...</p>
+                </div>
+
+                <h3>🤔 场景4：配置驱动的应用</h3>
+                <div style="background: #fce7f3; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+                    <p><strong>需求：</strong>我想根据配置文件决定使用哪个数据库驱动，不用重新编译代码。</p>
+                    <pre><code class="language-java">// 😿 硬编码的数据库连接
+public class DatabaseManager {
+    public Connection getConnection() {
+        // 驱动类名写死了，切换数据库要改代码！！！
+        if ("mysql".equals(config.getDatabase())) {
+            return new MySQLConnection();
+        } else if ("oracle".equals(config.getDatabase())) {
+            return new OracleConnection();
+        }
+    }
+}</code></pre>
+                    <p><strong>要是能这样就好了：</strong>根据配置中的完整类名，动态加载驱动类...</p>
+                </div>
+
+                <h3>💡 反射的解决方案</h3>
+                <pre><code class="language-java">// ✅ 使用反射的优雅解决方案
+public class DynamicLoader {
+    public Object createInstance(String className) {
+        try {
+            Class&lt;?&gt; clazz = Class.forName(className);
+            return clazz.getDeclaredConstructor().newInstance();
+        } catch (Exception e) {
+            throw new RuntimeException("创建实例失败", e);
+        }
+    }
+
+    public void copyProperties(Object source, Object target) {
+        Class&lt;?&gt; sourceClass = source.getClass();
+        Class&lt;?&gt; targetClass = target.getClass();
+
+        for (Field field : sourceClass.getDeclaredFields()) {
+            try {
+                Field targetField = targetClass.getDeclaredField(field.getName());
+                field.setAccessible(true);
+                targetField.setAccessible(true);
+                targetField.set(target, field.get(source));
+            } catch (Exception e) {
+                // 忽略无法复制的字段
+            }
+        }
+    }
+}</code></pre>
+
+                <p class="conclusion"><strong>反射的价值：</strong>让程序具备了"自我认知"能力，在运行时动态调整行为，真正实现了代码的灵活性和可扩展性。这就是为什么所有现代Java框架都离不开反射的原因。</p>
+            </div>
+        </section>
+
+        <!-- Slide 4: Reflection Introduction -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>反射概述</h2>
+                <p><strong>Java反射（Reflection）</strong>是Java语言的动态特性，允许程序在运行时检查和修改类的行为。反射提供了"自省"能力，让程序能够"看到"自身的结构。</p>
+
+                <h3>🎯 核心作用</h3>
+                <ul>
+                    <li><strong>运行时分析类：</strong>获取类的构造方法、字段、方法等信息</li>
+                    <li><strong>动态创建对象：</strong>在运行时创建任意类的实例</li>
+                    <li><strong>动态调用方法：</strong>调用任意对象的任意方法</li>
+                    <li><strong>访问私有成员：</strong>突破访问限制，操作私有字段和方法</li>
+                </ul>
+
+                <h3>🔧 应用场景</h3>
+                <ul>
+                    <li><strong>框架开发：</strong>Spring、Hibernate等框架的核心机制</li>
+                    <li><strong>工具开发：</strong>IDE调试工具、代码生成器</li>
+                    <li><strong>动态配置：</strong>插件系统、模块化架构</li>
+                    <li><strong>序列化/反序列化：</strong>JSON、XML处理</li>
+                </ul>
+
+                <p class="conclusion">反射是Java高级特性的重要组成部分，是理解和掌握现代Java框架的基础。</p>
+            </div>
+        </section>
+
+        <!-- Slide 5: Class Object -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Class对象：反射的入口</h2>
+                <p><code>Class</code>类是反射机制的入口，每个类在JVM中都有唯一的<code>Class</code>对象。获取<code>Class</code>对象是使用反射的第一步。</p>
+
+                <h3>🚪 获取Class对象的三种方式</h3>
+                <pre><code class="language-java">public class ReflectionDemo {
+    public static void main(String[] args) throws Exception {
+        // 方式1：通过类字面量（推荐）
+        Class&lt;String&gt; clazz1 = String.class;
+        System.out.println("方式1: " + clazz1.getName());
+
+        // 方式2：通过对象的getClass()方法
+        String str = "Hello";
+        Class&lt;?&gt; clazz2 = str.getClass();
+        System.out.println("方式2: " + clazz2.getName());
+
+        // 方式3：通过Class.forName()（最灵活）
+        Class&lt;?&gt; clazz3 = Class.forName("java.lang.String");
+        System.out.println("方式3: " + clazz3.getName());
+
+        // 验证是同一个Class对象
+        System.out.println(clazz1 == clazz2); // true
+        System.out.println(clazz2 == clazz3); // true
+    }
+}</code></pre>
+
+                <h3>📊 Class对象的基本信息</h3>
+                <pre><code class="language-java">public static void analyzeClass(Class&lt;?&gt; clazz) {
+    System.out.println("类名: " + clazz.getName());
+    System.out.println("简单类名: " + clazz.getSimpleName());
+    System.out.println("包名: " + clazz.getPackage().getName());
+    System.out.println("父类: " + clazz.getSuperclass().getName());
+    System.out.println("是否为接口: " + clazz.isInterface());
+    System.out.println("是否为数组: " + clazz.isArray());
+    System.out.println("是否为基本类型: " + clazz.isPrimitive());
+}</code></pre>
+
+                <p class="conclusion">获取<code>Class</code>对象后，就可以通过它访问类的所有信息，为后续的反射操作奠定基础。</p>
+            </div>
+        </section>
+
+        <!-- Slide 6: Constructor -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>构造方法：动态创建对象</h2>
+                <p>通过反射可以获取类的构造方法，并使用这些构造方法创建对象实例。<code>Constructor</code>类代表了类的构造方法。</p>
+
+                <h3>🔍 获取构造方法</h3>
+                <pre><code class="language-java">import java.lang.reflect.Constructor;
+import java.util.ArrayList;
+
+public class ConstructorDemo {
+    public static void main(String[] args) throws Exception {
+        Class&lt;ArrayList&gt; clazz = ArrayList.class;
+
+        // 获取所有public构造方法
+        Constructor&lt;?&gt;[] constructors = clazz.getConstructors();
+        System.out.println("ArrayList的构造方法:");
+        for (Constructor&lt;?&gt; constructor : constructors) {
+            System.out.println(constructor);
+        }
+
+        // 获取指定参数类型的构造方法
+        Constructor&lt;ArrayList&gt; constructor =
+            clazz.getConstructor(int.class); // ArrayList(int initialCapacity)
+
+        System.out.println("指定构造方法: " + constructor);
+    }
+}</code></pre>
+
+                <h3>🏗️ 通过构造方法创建对象</h3>
+                <pre><code class="language-java">public class ObjectCreationDemo {
+    public static void main(String[] args) throws Exception {
+        Class&lt;String&gt; clazz = String.class;
+
+        // 获取String(byte[], String)构造方法
+        Constructor&lt;String&gt; constructor =
+            clazz.getConstructor(byte[].class, String.class);
+
+        // 准备构造参数
+        byte[] bytes = "Hello 反射".getBytes("UTF-8");
+        String charsetName = "UTF-8";
+
+        // 创建对象实例
+        String str = constructor.newInstance(bytes, charsetName);
+        System.out.println("创建的字符串: " + str);
+
+        // 使用无参构造方法
+        Constructor&lt;String&gt; defaultConstructor =
+            clazz.getConstructor();
+        String emptyStr = defaultConstructor.newInstance();
+        System.out.println("空字符串: '" + emptyStr + "'");
+    }
+}</code></pre>
+
+                <h3>⚡ 处理构造异常</h3>
+                <pre><code class="language-java">try {
+    Constructor&lt;String&gt; constructor = String.class.getConstructor(int.class);
+    String str = constructor.newInstance(100); // 不存在此构造方法
+} catch (NoSuchMethodException e) {
+    System.out.println("找不到指定的构造方法");
+} catch (InstantiationException e) {
+    System.out.println("实例化失败");
+} catch (IllegalAccessException e) {
+    System.out.println("访问权限不足");
+} catch (InvocationTargetException e) {
+    System.out.println("构造方法抛出异常: " + e.getCause());
+}</code></pre>
+
+                <p class="conclusion">通过构造方法创建对象是反射的核心功能之一，它让程序能够在运行时动态创建任意类的实例。</p>
+            </div>
+        </section>
+
+        <!-- Slide 7: Field -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>字段：访问和修改对象属性</h2>
+                <p><code>Field</code>类代表类的字段（成员变量），通过反射可以获取和设置任意对象的字段值，包括私有字段。</p>
+
+                <h3>🔍 获取字段信息</h3>
+                <pre><code class="language-java">import java.lang.reflect.Field;
+
+public class FieldInfoDemo {
+    public static void main(String[] args) {
+        Class&lt;String&gt; clazz = String.class;
+
+        // 获取所有public字段（包括继承的）
+        Field[] publicFields = clazz.getFields();
+        System.out.println("String类的public字段:");
+        for (Field field : publicFields) {
+            System.out.println("  " + field.getType().getSimpleName() +
+                             " " + field.getName());
+        }
+
+        // 获取所有声明的字段（包括私有字段）
+        Field[] declaredFields = clazz.getDeclaredFields();
+        System.out.println("\nString类声明的所有字段:");
+        for (Field field : declaredFields) {
+            System.out.println("  修饰符: " + field.getModifiers() +
+                             ", 类型: " + field.getType().getSimpleName() +
+                             ", 名称: " + field.getName());
+        }
+    }
+}</code></pre>
+
+                <h3>🎯 获取和设置字段值</h3>
+                <pre><code class="language-java">class Person {
+    private String name = "张三";
+    public int age = 25;
+    protected boolean active = true;
+}
+
+public class FieldAccessDemo {
+    public static void main(String[] args) throws Exception {
+        Person person = new Person();
+        Class&lt;?&gt; clazz = person.getClass();
+
+        // 访问public字段
+        Field ageField = clazz.getField("age");
+        int age = (Integer) ageField.get(person);
+        System.out.println("年龄: " + age);
+
+        ageField.set(person, 26);
+        System.out.println("修改后年龄: " + person.age);
+
+        // 访问private字段（需要突破访问限制）
+        Field nameField = clazz.getDeclaredField("name");
+        nameField.setAccessible(true); // 关键！取消访问检查
+        String name = (String) nameField.get(person);
+        System.out.println("姓名: " + name);
+
+        nameField.set(person, "李四");
+        System.out.println("修改后姓名: " + nameField.get(person));
+    }
+}</code></pre>
+
+                <h3>🔓 字段修饰符分析</h3>
+                <pre><code class="language-java">import java.lang.reflect.Modifier;
+
+public static void analyzeField(Field field) {
+    int modifiers = field.getModifiers();
+
+    System.out.println("字段: " + field.getName());
+    System.out.println("  是否为public: " + Modifier.isPublic(modifiers));
+    System.out.println("  是否为private: " + Modifier.isPrivate(modifiers));
+    System.out.println("  是否为protected: " + Modifier.isProtected(modifiers));
+    System.out.println("  是否为static: " + Modifier.isStatic(modifiers));
+    System.out.println("  是否为final: " + Modifier.isFinal(modifiers));
+    System.out.println("  是否为volatile: " + Modifier.isVolatile(modifiers));
+}</code></pre>
+
+                <p class="conclusion">通过反射操作字段可以突破访问限制，但也破坏了封装性。在使用时要谨慎，优先考虑使用公共的getter/setter方法。</p>
+            </div>
+        </section>
+
+        <!-- Slide 8: Method -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>方法：动态调用对象行为</h2>
+                <p><code>Method</code>类代表类的方法，通过反射可以获取方法信息并动态调用任意对象的任意方法。</p>
+
+                <h3>🔍 获取方法信息</h3>
+                <pre><code class="language-java">import java.lang.reflect.Method;
+
+public class MethodInfoDemo {
+    public static void main(String[] args) {
+        Class&lt;String&gt; clazz = String.class;
+
+        // 获取所有public方法（包括继承的）
+        Method[] methods = clazz.getMethods();
+        System.out.println("String类的public方法数量: " + methods.length);
+
+        // 获取指定名称和参数类型的方法
+        try {
+            Method substringMethod = clazz.getMethod("substring", int.class, int.class);
+            System.out.println("找到方法: " + substringMethod);
+
+            // 获取方法详细信息
+            System.out.println("返回类型: " + substringMethod.getReturnType().getSimpleName());
+            System.out.println("参数类型: " +
+                java.util.Arrays.toString(substringMethod.getParameterTypes()));
+            System.out.println("异常类型: " +
+                java.util.Arrays.toString(substringMethod.getExceptionTypes()));
+        } catch (NoSuchMethodException e) {
+            System.out.println("方法不存在");
+        }
+    }
+}</code></pre>
+
+                <h3>🚀 动态调用方法</h3>
+                <pre><code class="language-java">public class MethodInvocationDemo {
+    public static void main(String[] args) throws Exception {
+        String str = "Hello, Java Reflection!";
+
+        // 获取substring方法
+        Method substringMethod = String.class.getMethod("substring", int.class, int.class);
+
+        // 动态调用方法
+        String result = (String) substringMethod.invoke(str, 7, 11);
+        System.out.println("调用结果: " + result); // "Java"
+
+        // 获取length方法
+        Method lengthMethod = String.class.getMethod("length");
+        int length = (Integer) lengthMethod.invoke(str);
+        System.out.println("字符串长度: " + length);
+
+        // 调用静态方法
+        Method valueOfMethod = String.class.getMethod("valueOf", int.class);
+        String numberStr = (String) valueOfMethod.invoke(null, 123);
+        System.out.println("数字转字符串: " + numberStr);
+    }
+}</code></pre>
+
+                <h3>🎯 调用私有方法</h3>
+                <pre><code class="language-java">class SecretService {
+    private String secretMethod(String message) {
+        return "秘密处理: " + message;
+    }
+
+    private static void staticSecret() {
+        System.out.println("静态秘密方法被调用");
+    }
+}
+
+public class PrivateMethodDemo {
+    public static void main(String[] args) throws Exception {
+        SecretService service = new SecretService();
+        Class&lt;?&gt; clazz = service.getClass();
+
+        // 调用私有实例方法
+        Method privateMethod = clazz.getDeclaredMethod("secretMethod", String.class);
+        privateMethod.setAccessible(true);
+        String result = (String) privateMethod.invoke(service, "测试消息");
+        System.out.println(result);
+
+        // 调用私有静态方法
+        Method privateStaticMethod = clazz.getDeclaredMethod("staticSecret");
+        privateStaticMethod.setAccessible(true);
+        privateStaticMethod.invoke(null); // 静态方法不需要对象实例
+    }
+}</code></pre>
+
+                <h3>⚡ 方法调用异常处理</h3>
+                <pre><code class="language-java">try {
+    Method method = String.class.getMethod("nonExistentMethod");
+    method.invoke("test");
+} catch (NoSuchMethodException e) {
+    System.out.println("方法不存在");
+} catch (IllegalAccessException e) {
+    System.out.println("访问权限不足");
+} catch (InvocationTargetException e) {
+    // 获取被调用方法抛出的实际异常
+    Throwable actualException = e.getCause();
+    System.out.println("方法执行异常: " + actualException.getMessage());
+}</code></pre>
+
+                <p class="conclusion">动态调用方法是反射最强大的功能之一，它让程序具备了极大的灵活性，是许多框架实现的核心机制。</p>
+            </div>
+        </section>
+
+        <!-- Slide 9: Solving Real Problems - Plugin System -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>用反射解决最初的问题 - 插件系统</h2>
+                <p>现在让我们回到第2页提到的那些"要是能这样就好了"的场景，看看如何用反射来优雅地解决这些问题。</p>
+
+                <h3>✅ 场景1：插件系统的完美实现</h3>
+                <div style="background: #f0fdf4; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+                    <pre><code class="language-java">public class ImageProcessor {
+        private Map&lt;String, Class&lt;? extends Filter&gt;&gt; filterRegistry = new HashMap&lt;&gt;();
+
+        // 注册滤镜类
+        public void registerFilter(String name, String className) {
+            try {
+                Class&lt;?&gt; clazz = Class.forName(className);
+                if (Filter.class.isAssignableFrom(clazz)) {
+                    filterRegistry.put(name, (Class&lt;? extends Filter&gt;) clazz);
+                }
+            } catch (ClassNotFoundException e) {
+                System.out.println("滤镜类不存在: " + className);
+            }
+        }
+
+        // 动态应用滤镜
+        public void applyFilter(String filterName, Image image) {
+            Class&lt;? extends Filter&gt; filterClass = filterRegistry.get(filterName);
+            if (filterClass != null) {
+                try {
+                    Filter filter = filterClass.getDeclaredConstructor().newInstance();
+                    filter.apply(image);
+                } catch (Exception e) {
+                    System.out.println("应用滤镜失败: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    // 使用示例
+    ImageProcessor processor = new ImageProcessor();
+    processor.registerFilter("blur", "com.example.BlurFilter");
+    processor.registerFilter("sharpen", "com.example.SharpenFilter");
+
+    // 动态加载新滤镜，无需修改主程序代码！
+    processor.applyFilter("blur", image);
+    processor.applyFilter("sharpen", image);</code></pre>
+                    <p><strong>🎉 解决方案优势：</strong>新增滤镜只需要实现Filter接口，无需修改ImageProcessor代码！</p>
+                </div>
+
+                <h3>✅ 场景2：通用Bean复制工具</h3>
+                <div style="background: #f0f9ff; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+                    <pre><code class="language-java">public class UniversalBeanUtils {
+        public static void copyProperties(Object source, Object target) {
+            Class&lt;?&gt; sourceClass = source.getClass();
+            Class&lt;?&gt; targetClass = target.getClass();
+
+            // 获取源对象的所有字段
+            for (Field sourceField : sourceClass.getDeclaredFields()) {
+                try {
+                    // 在目标类中查找同名字段
+                    Field targetField = targetClass.getDeclaredField(sourceField.getName());
+
+                    // 检查类型是否匹配
+                    if (targetField.getType().equals(sourceField.getType())) {
+                        // 突破私有访问限制
+                        sourceField.setAccessible(true);
+                        targetField.setAccessible(true);
+
+                        // 复制字段值
+                        Object value = sourceField.get(source);
+                        targetField.set(target, value);
+                    }
+                } catch (Exception e) {
+                    // 忽略无法复制的字段
+                }
+            }
+        }
+    }
+
+    // 使用示例：一个方法处理所有类型的对象！
+    User user1 = new User("张三", 25, "zhang@example.com");
+    User user2 = new User();
+    UniversalBeanUtils.copyProperties(user1, user2);
+
+    Product product1 = new Product("iPhone", 5999, 100);
+    Product product2 = new Product();
+    UniversalBeanUtils.copyProperties(product1, product2);</code></pre>
+                    <p><strong>🎉 解决方案优势：</strong>一个通用方法处理所有类型，代码复用率极大提升！</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 10: Solving Real Problems - DI Framework -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>用反射解决最初的问题 - 框架开发</h2>
+
+                <h3>✅ 场景3：简易依赖注入框架</h3>
+                <div style="background: #fef3c7; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+                    <pre><code class="language-java">@Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.FIELD)
+    public @interface Autowired {
+    }
+
+    public class SimpleDIContainer {
+        private Map&lt;Class&lt;?&gt;, Object&gt; instances = new HashMap&lt;&gt;();
+
+        // 注册实例
+        public void registerInstance(Class&lt;?&gt; clazz, Object instance) {
+            instances.put(clazz, instance);
+        }
+
+        // 自动注入依赖
+        public &lt;T&gt; T createInstance(Class&lt;T&gt; clazz) {
+            try {
+                // 创建实例
+                T instance = clazz.getDeclaredConstructor().newInstance();
+
+                // 自动注入字段
+                for (Field field : clazz.getDeclaredFields()) {
+                    if (field.isAnnotationPresent(Autowired.class)) {
+                        field.setAccessible(true);
+                        Object dependency = instances.get(field.getType());
+                        if (dependency != null) {
+                            field.set(instance, dependency);
+                        }
+                    }
+                }
+
+                return instance;
+            } catch (Exception e) {
+                throw new RuntimeException("创建实例失败", e);
+            }
+        }
+    }
+
+    // 使用示例
+    public class UserService {
+        @Autowired
+        private UserRepository userRepository;
+
+        @Autowired
+        private EmailService emailService;
+
+        public void registerUser(String username, String email) {
+            User user = new User(username, email);
+            userRepository.save(user);
+            emailService.sendWelcomeEmail(email);
+        }
+    }
+
+    // 配置容器
+    SimpleDIContainer container = new SimpleDIContainer();
+    container.registerInstance(UserRepository.class, new UserRepositoryImpl());
+    container.registerInstance(EmailService.class, new EmailServiceImpl());
+
+    // 自动创建并注入依赖
+    UserService userService = container.createInstance(UserService.class);
+    userService.registerUser("张三", "zhang@example.com");</code></pre>
+                    <p><strong>🎉 解决方案优势：</strong>框架自动管理依赖关系，实现真正的松耦合！</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 11: Solving Real Problems - Configuration -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>用反射解决最初的问题 - 配置驱动</h2>
+
+                <h3>✅ 场景4：配置驱动的数据库连接</h3>
+                <div style="background: #fce7f3; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+                    <pre><code class="language-java">public class DatabaseManager {
+        public Connection getConnection(String configPath) {
+            try {
+                // 读取配置文件
+                Properties props = new Properties();
+                props.load(new FileInputStream(configPath));
+
+                // 获取驱动类名
+                String driverClassName = props.getProperty("database.driver");
+                String url = props.getProperty("database.url");
+                String username = props.getProperty("database.username");
+                String password = props.getProperty("database.password");
+
+                // 动态加载驱动类
+                Class&lt;?&gt; driverClass = Class.forName(driverClassName);
+                Driver driver = (Driver) driverClass.getDeclaredConstructor().newInstance();
+
+                // 创建连接
+                return driver.connect(url, props);
+
+            } catch (Exception e) {
+                throw new RuntimeException("数据库连接失败", e);
+            }
+        }
+    }
+
+    // 配置文件 (database.properties)
+    // database.driver=com.mysql.cj.jdbc.Driver
+    // database.url=jdbc:mysql://localhost:3306/mydb
+    // database.username=root
+    // database.password=123456
+
+    // 使用示例：切换数据库只需修改配置文件！
+    DatabaseManager manager = new DatabaseManager();
+    Connection mysqlConn = manager.getConnection("mysql-config.properties");
+    Connection oracleConn = manager.getConnection("oracle-config.properties");
+    Connection postgresConn = manager.getConnection("postgres-config.properties");</code></pre>
+                    <p><strong>🎉 解决方案优势：</strong>切换数据库只需要修改配置文件，无需重新编译代码！</p>
+                </div>
+
+                <div style="background: #f8fafc; padding: 1.5rem; border-left: 4px solid #3b82f6; margin: 2rem 0;">
+                    <h3>🎯 反射的真正价值</h3>
+                    <p>通过这些实际例子，我们可以看到反射的真正价值在于：</p>
+                    <ul>
+                        <li><strong>🔧 提高代码复用性</strong>：一个通用方法处理多种类型</li>
+                        <li><strong>🔗 降低耦合度</strong>：通过接口和配置实现松耦合</li>
+                        <li><strong>🚀 增强灵活性</strong>：运行时动态调整程序行为</li>
+                        <li><strong>📦 支持插件化</strong>：实现可扩展的架构设计</li>
+                        <li><strong>⚙️ 简化配置</strong>：通过配置文件控制程序行为</li>
+                    </ul>
+                    <p><strong>这就是为什么所有现代Java框架都离不开反射的原因！</strong></p>
+                </div>
+
+                <p class="conclusion">反射不仅仅是一个技术特性，更是一种解决复杂问题的思维方式。掌握了反射，你就掌握了现代软件架构的核心设计原理。</p>
+            </div>
+        </section>
+
+        <!-- Slide 12: Comprehensive Example -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>综合示例：反射工具类</h2>
+                <p>下面实现一个通用的反射工具类，展示反射的综合应用。</p>
+
+                <pre><code class="language-java">import java.lang.reflect.*;
+import java.util.*;
+
+/**
+ * 通用反射工具类
+ */
+public class ReflectionUtils {
+
+    /**
+     * 动态创建对象
+     */
+    public static &lt;T&gt; T createInstance(Class&lt;T&gt; clazz, Object... args) {
+        try {
+            // 根据参数类型查找构造方法
+            Class&lt;?&gt;[] paramTypes = new Class&lt;?&gt;[args.length];
+            for (int i = 0; i &lt; args.length; i++) {
+                paramTypes[i] = args[i].getClass();
+
+                // 处理基本类型
+                if (args[i] instanceof Integer) paramTypes[i] = int.class;
+                else if (args[i] instanceof Long) paramTypes[i] = long.class;
+                else if (args[i] instanceof Double) paramTypes[i] = double.class;
+                else if (args[i] instanceof Boolean) paramTypes[i] = boolean.class;
+            }
+
+            Constructor&lt;T&gt; constructor = clazz.getConstructor(paramTypes);
+            return constructor.newInstance(args);
+        } catch (Exception e) {
+            throw new RuntimeException("创建实例失败", e);
+        }
+    }
+
+    /**
+     * 调用对象方法
+     */
+    public static Object invokeMethod(Object obj, String methodName, Object... args) {
+        try {
+            Class&lt;?&gt;[] paramTypes = getParameterTypes(args);
+            Method method = obj.getClass().getMethod(methodName, paramTypes);
+            return method.invoke(obj, args);
+        } catch (Exception e) {
+            throw new RuntimeException("调用方法失败: " + methodName, e);
+        }
+    }
+
+    /**
+     * 获取对象所有字段值
+     */
+    public static Map&lt;String, Object&gt; getAllFields(Object obj) {
+        Map&lt;String, Object&gt; fieldMap = new HashMap&lt;&gt;();
+        Class&lt;?&gt; clazz = obj.getClass();
+
+        // 获取所有字段（包括私有字段）
+        for (Field field : clazz.getDeclaredFields()) {
+            try {
+                field.setAccessible(true);
+                Object value = field.get(obj);
+                fieldMap.put(field.getName(), value);
+            } catch (IllegalAccessException e) {
+                fieldMap.put(field.getName(), "无法访问");
+            }
+        }
+
+        return fieldMap;
+    }
+
+    /**
+     * 复制对象属性
+     */
+    public static void copyProperties(Object source, Object target) {
+        Class&lt;?&gt; sourceClass = source.getClass();
+        Class&lt;?&gt; targetClass = target.getClass();
+
+        for (Field sourceField : sourceClass.getDeclaredFields()) {
+            try {
+                // 查找目标类中同名字段
+                Field targetField = targetClass.getDeclaredField(sourceField.getName());
+                if (targetField.getType().equals(sourceField.getType())) {
+                    sourceField.setAccessible(true);
+                    targetField.setAccessible(true);
+
+                    Object value = sourceField.get(source);
+                    targetField.set(target, value);
+                }
+            } catch (Exception e) {
+                // 忽略无法复制的字段
+            }
+        }
+    }
+
+    private static Class&lt;?&gt;[] getParameterTypes(Object[] args) {
+        Class&lt;?&gt;[] types = new Class&lt;?&gt;[args.length];
+        for (int i = 0; i &lt; args.length; i++) {
+            types[i] = args[i].getClass();
+        }
+        return types;
+    }
+}</code></pre>
+
+                <h3>🎯 工具类使用示例</h3>
+                <pre><code class="language-java">class User {
+    private String name;
+    private int age;
+
+    public User() {}
+    public User(String name, int age) {
+        this.name = name;
+        this.age = age;
+    }
+
+    public void introduce() {
+        System.out.println("我是" + name + "，今年" + age + "岁");
+    }
+
+    // getters and setters...
+}
+
+public class ToolUsageDemo {
+    public static void main(String[] args) {
+        // 动态创建对象
+        User user = ReflectionUtils.createInstance(User.class, "张三", 25);
+
+        // 调用方法
+        ReflectionUtils.invokeMethod(user, "introduce");
+
+        // 获取所有字段
+        Map&lt;String, Object&gt; fields = ReflectionUtils.getAllFields(user);
+        System.out.println("对象字段: " + fields);
+
+        // 对象复制
+        User user2 = new User();
+        ReflectionUtils.copyProperties(user, user2);
+        ReflectionUtils.invokeMethod(user2, "introduce");
+    }
+}</code></pre>
+
+                <p class="conclusion">这个工具类展示了反射的实际应用，包括对象创建、方法调用、字段操作等核心功能，是理解反射机制的完整示例。</p>
+            </div>
+        </section>
+
+        <!-- Slide 13: Pros and Cons -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>反射的优缺点与使用建议</h2>
+                <p>反射机制虽然强大，但也需要在合适的场景下使用。了解其优缺点和适用场景非常重要。</p>
+
+                <h3>✅ 优点</h3>
+                <div style="background: #f0f9ff; padding: 1rem; border-left: 4px solid #0ea5e9; margin: 1rem 0;">
+                    <p><strong>🔧 极大灵活性</strong>：运行时动态创建对象、调用方法，无需在编译时确定类型</p>
+                    <p><strong>🔗 降低耦合度</strong>：通过接口和反射实现插件化架构，提高代码的可扩展性</p>
+                    <p><strong>🛠️ 框架支持</strong>：Spring、Hibernate等现代框架依赖反射实现IoC、AOP等特性</p>
+                    <p><strong>📊 工具开发</strong>：IDE调试器、代码生成器、序列化工具的基础</p>
+                </div>
+
+                <h3>❌ 缺点</h3>
+                <div style="background: #fef2f2; padding: 1rem; border-left: 4px solid #ef4444; margin: 1rem 0;">
+                    <p><strong>🐌 性能开销</strong>：反射操作比直接调用慢10-100倍，不适合高频调用场景</p>
+                    <p><strong>🔓 破坏封装</strong>：可以访问私有成员，违反面向对象设计原则</p>
+                    <p><strong>⚠️ 安全风险</strong>：绕过访问控制可能导致安全漏洞</p>
+                    <p><strong>📖 代码可读性</strong>：反射代码复杂，难以理解和维护</p>
+                    <p><strong>🚫 编译时检查</strong>：错误只能在运行时发现，失去编译时类型安全</p>
+                </div>
+
+                <h3>🎯 使用建议</h3>
+                <pre><code class="language-java">// ✅ 推荐使用场景
+// 1. 框架和工具开发
+@Component
+public class SpringBeanFactory {
+    public Object createBean(Class&lt;?&gt; clazz) {
+        // 使用反射创建和管理Bean
+        return clazz.getDeclaredConstructor().newInstance();
+    }
+}
+
+// 2. 配置驱动的对象创建
+public class PluginManager {
+    public void loadPlugin(String className) {
+        Class&lt;?&gt; pluginClass = Class.forName(className);
+        Object plugin = pluginClass.getDeclaredConstructor().newInstance();
+        // 注册插件...
+    }
+}
+
+// ❌ 避免使用场景
+public class BadReflectionUsage {
+    public void processList(List&lt;String&gt; list) {
+        // 不要这样使用反射！
+        try {
+            Method sizeMethod = List.class.getMethod("size");
+            int size = (Integer) sizeMethod.invoke(list);
+            // 应该直接使用: list.size()
+        } catch (Exception e) {
+            // 处理异常...
+        }
+    }
+}</code></pre>
+
+                <h3>⚡ 性能优化建议</h3>
+                <ul>
+                    <li><strong>缓存反射对象</strong>：将<code>Class</code>、<code>Method</code>、<code>Field</code>对象缓存起来重复使用</li>
+                    <li><strong>减少反射调用</strong>：在性能敏感的代码中避免频繁使用反射</li>
+                    <li><strong>考虑替代方案</strong>：接口、回调、设计模式等往往比反射更合适</li>
+                    <li><strong>使用MethodHandle</strong>：Java 7+的<code>MethodHandle</code>性能优于传统反射</li>
+                </ul>
+
+                <div style="background: #f0fdf4; padding: 1rem; border-left: 4px solid #22c55e; margin: 1rem 0;">
+                    <h3>💡 最佳实践总结</h3>
+                    <ol>
+                        <li><strong>优先选择编译时确定的方法</strong>，只有在真正需要动态性时才使用反射</li>
+                        <li><strong>在框架和工具中使用反射</strong>，在业务逻辑中谨慎使用</li>
+                        <li><strong>做好异常处理</strong>，反射操作容易抛出各种异常</li>
+                        <li><strong>考虑安全性</strong>，避免在生产环境中随意突破访问控制</li>
+                        <li><strong>做好性能测试</strong>，确保反射不会成为性能瓶颈</li>
+                    </ol>
+                </div>
+
+                <p class="conclusion">反射是Java强大的高级特性，要在合适的场景下合理使用。掌握了反射，就掌握了Java动态编程的核心能力。</p>
+            </div>
+        </section>
+
+        <!-- UI Elements -->
+        <div class="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div class="controls">
+            <button id="prevBtn">上一页</button>
+            <span id="slide-counter">1 / 13</span>
+            <button id="nextBtn">下一页</button>
+        </div>
+    </main>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/ppt.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

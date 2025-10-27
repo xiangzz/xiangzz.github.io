@@ -1,0 +1,3933 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java IO流系统详解</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/hacker-cmd.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+
+    <main id="presentation">
+        <!-- Slide 1: Title -->
+        <section class="slide title-slide active">
+            <h1>Java IO流系统</h1>
+            <p>面向对象程序设计（Java）</p>
+            <strong>掌握文件操作与数据流处理，构建完整的输入输出体系</strong>
+        </section>
+
+        <!-- Slide 2: File Class Basics -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>File类基础概念</h2>
+                <p><code>File</code> 类是Java中用于表示文件系统中的文件或目录路径名的抽象表示。它提供了一个与平台无关的方式来处理文件和目录。</p>
+
+                <h3>🏗️ 构造方法</h3>
+                <pre><code class="language-java">// 1. 使用完整路径
+File file1 = new File("D:\\workspace\\test.txt");
+
+// 2. 使用父目录和子路径
+File file2 = new File("D:\\workspace", "test.txt");
+
+// 3. 使用File对象和子路径
+File parent = new File("D:\\workspace");
+File file3 = new File(parent, "test.txt");
+
+// 4. 路径分隔符的跨平台处理
+String path = "docs" + File.separator + "data" + File.separator + "config.txt";</code></pre>
+
+                <h3>⚠️ 重要概念</h3>
+                <ul>
+                    <li><strong>抽象表示</strong>：File对象不一定对应真实存在的文件</li>
+                    <li><strong>路径分隔符</strong>：Windows使用<code>\</code>，Linux/macOS使用<code>/</code></li>
+                    <li><strong>相对路径</strong> vs <strong>绝对路径</strong>：相对于当前工作目录 vs 从根目录开始</li>
+                    <li><strong>规范路径</strong>：解析<code>.</code>和<code>..</code>后的标准路径</li>
+                </ul>
+
+                <p class="conclusion">File类只是路径的抽象，不创建实际文件。真正的文件操作需要其他IO类配合。</p>
+            </div>
+        </section>
+
+        <!-- Slide 3: File Path and Name Methods -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>File类路径和名称方法</h2>
+                <p>File类提供了丰富的方法来获取路径信息和文件名称。</p>
+
+                <pre><code class="language-java">public static void main(String[] args) throws IOException {
+    // 创建测试文件
+    File file = new File("./test/../docs/data.txt");
+    file.getParentFile().mkdirs();
+    file.createNewFile();
+
+    // 路径相关方法
+    System.out.println("getName(): " + file.getName());           // "data.txt"
+    System.out.println("getPath(): " + file.getPath());           // "./test/../docs/data.txt"
+    System.out.println("getAbsolutePath(): " + file.getAbsolutePath()); // 完整绝对路径
+    System.out.println("getCanonicalPath(): " + file.getCanonicalPath()); // 规范化路径
+
+    // 父目录相关
+    System.out.println("getParent(): " + file.getParent());       // "./test/../docs"
+    File parent = file.getParentFile();
+    System.out.println("父目录名: " + parent.getName());           // "docs"
+
+    // 磁盘空间信息
+    File root = new File("C:");
+    System.out.println("总空间: " + root.getTotalSpace() / (1024*1024*1024) + " GB");
+    System.out.println("可用空间: " + root.getFreeSpace() / (1024*1024*1024) + " GB");
+    System.out.println("可用空间: " + root.getUsableSpace() / (1024*1024*1024) + " GB");
+}</code></pre>
+
+                <h3>🔄 路径转换对比</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">方法</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">特点</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">getPath()</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">返回创建时的原始路径</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">getAbsolutePath()</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">转换为绝对路径，但不解析..</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">getCanonicalPath()</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">解析..和.，返回规范路径（推荐）</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p class="conclusion"><strong>提问</strong>：什么时候需要使用getCanonicalPath()而不是getAbsolutePath()？</p>
+            </div>
+        </section>
+
+        <!-- Slide 4: File Status and Attribute Methods -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>File类状态和属性方法</h2>
+                <p>检查文件状态、获取文件属性是文件操作的第一步。</p>
+
+                <pre><code class="language-java">public static void analyzeFile(String filePath) {
+    File file = new File(filePath);
+
+    // 存在性检查
+    if (!file.exists()) {
+        System.out.println("文件不存在: " + filePath);
+        return;
+    }
+
+    // 类型判断
+    System.out.println("是文件: " + file.isFile());
+    System.out.println("是目录: " + file.isDirectory());
+    System.out.println("是绝对路径: " + file.isAbsolute());
+    System.out.println("是隐藏文件: " + file.isHidden());
+
+    // 权限检查
+    System.out.println("可读: " + file.canRead());
+    System.out.println("可写: " + file.canWrite());
+    System.out.println("可执行: " + file.canExecute());
+
+    // 文件属性
+    System.out.println("文件大小: " + file.length() + " 字节");
+
+    // 时间戳处理
+    long lastModified = file.lastModified();
+    Date date = new Date(lastModified);
+    System.out.println("最后修改时间: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(date));
+
+    // 如果是目录，显示文件数量
+    if (file.isDirectory()) {
+        String[] files = file.list();
+        System.out.println("目录下的文件数量: " + (files != null ? files.length : 0));
+    }
+}</code></pre>
+
+                <h3>⚡ 实际应用场景</h3>
+                <ul>
+                    <li><strong>文件备份前检查</strong>：验证文件存在性和可读性</li>
+                    <li><strong>磁盘空间管理</strong>：大文件处理前检查剩余空间</li>
+                    <li><strong>文件监控</strong>：通过时间戳检测文件变化</li>
+                    <li><strong>权限验证</strong>：确保程序有足够权限操作文件</li>
+                </ul>
+
+                <p class="conclusion"><strong>提示</strong>：在执行文件操作前，一定要先调用exists()等方法检查文件状态，避免异常！</p>
+            </div>
+        </section>
+
+        <!-- Slide 5: File Operation Methods -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>File类操作方法</h2>
+                <p>File类提供了创建、删除、重命名等文件操作方法。</p>
+
+                <h3>📁 创建和删除操作</h3>
+                <pre><code class="language-java">public static void fileOperationsDemo() throws IOException {
+    // 1. 创建文件
+    File file = new File("temp.txt");
+    if (file.createNewFile()) {
+        System.out.println("文件创建成功: " + file.getName());
+    } else {
+        System.out.println("文件已存在或创建失败");
+    }
+
+    // 2. 创建目录
+    File dir = new File("mydir");
+    if (dir.mkdir()) {
+        System.out.println("单级目录创建成功");
+    }
+
+    // 3. 创建多级目录
+    File multiDir = new File("path/to/deep/directory");
+    if (multiDir.mkdirs()) {
+        System.out.println("多级目录创建成功");
+    }
+
+    // 4. 删除文件
+    if (file.delete()) {
+        System.out.println("文件删除成功");
+    }
+
+    // 5. 程序退出时删除
+    File tempFile = File.createTempFile("temp", ".txt");
+    tempFile.deleteOnExit(); // JVM退出时自动删除
+
+    // 6. 重命名/移动文件
+    File oldFile = new File("old.txt");
+    File newFile = new File("new.txt");
+    if (oldFile.renameTo(newFile)) {
+        System.out.println("文件重命名成功");
+    }
+}</code></pre>
+
+                <h3>🔍 目录遍历和过滤</h3>
+                <pre><code class="language-java">// 7. 列出目录内容
+File directory = new File(".");
+String[] files = directory.list();
+File[] fileObjects = directory.listFiles();
+
+// 8. 使用过滤器
+// 只显示.txt文件
+String[] txtFiles = directory.list((dir, name) -> name.endsWith(".txt"));
+
+// 只显示目录
+File[] dirsOnly = directory.listFiles(File::isDirectory);
+
+// 自定义过滤器：显示大于1MB的文件
+File[] largeFiles = directory.listFiles(file ->
+    file.isFile() && file.length() > 1024 * 1024
+);</code></pre>
+
+                <h3>⚠️ 常见陷阱</h3>
+                <ul>
+                    <li><strong>delete()不能删除非空目录</strong>，需要递归删除</li>
+                    <li><strong>renameTo()不能跨文件系统</strong>移动文件</li>
+                    <li><strong>listFiles()可能返回null</strong>，需要空值检查</li>
+                </ul>
+
+                <p class="conclusion">File类提供了文件系统操作的基础，但实际的文件读写需要使用IO流类。</p>
+            </div>
+        </section>
+
+        <!-- Slide 6: IO Stream Overview - Basic Concepts -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>IO流概述 - 基本概念</h2>
+                <p>Java IO采用<strong>流(Stream)</strong>的概念来处理数据的输入输出。流就像数据传输的管道，数据从源头流向目的地。</p>
+
+                <h3>🌊 流的基本概念</h3>
+                <ul>
+                    <li><strong>单向性</strong>：输入流只能读取，输出流只能写入</li>
+                    <li><strong>顺序性</strong>：数据按顺序传输，支持随机访问的特殊类除外</li>
+                    <li><strong>缓冲机制</strong>：提高I/O效率的关键</li>
+                    <li><strong>装饰器模式</strong>：通过组合增强功能</li>
+                </ul>
+
+                <h3>💧 流的比喻理解</h3>
+                <div style="background: #e3f2fd; border: 2px solid #2196F3; border-radius: 8px; padding: 1.5rem; margin: 1rem 0;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 3rem;">🚰</div>
+                            <p><strong>数据源</strong><br>文件、网络、内存</p>
+                        </div>
+                        <div style="font-size: 2rem;">→</div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 3rem;">🚿</div>
+                            <p><strong>输入流</strong><br>读取数据</p>
+                        </div>
+                        <div style="font-size: 2rem;">→</div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 3rem;">🔄</div>
+                            <p><strong>程序处理</strong><br>转换数据</p>
+                        </div>
+                        <div style="font-size: 2rem;">→</div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 3rem;">🚿</div>
+                            <p><strong>输出流</strong><br>写入数据</p>
+                        </div>
+                        <div style="font-size: 2rem;">→</div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 3rem;">🪣</div>
+                            <p><strong>目的地</strong><br>文件、网络、内存</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>📊 流的基本操作</h3>
+                <pre><code class="language-java">// 输入流的基本操作模式
+try (InputStream input = new FileInputStream("source.txt")) {
+    int data;
+    while ((data = input.read()) != -1) {  // 读取数据
+        process(data);                     // 处理数据
+    }
+} // 自动关闭流
+
+// 输出流的基本操作模式
+try (OutputStream output = new FileOutputStream("target.txt")) {
+    byte[] data = "Hello World".getBytes();
+    output.write(data);                    // 写入数据
+    output.flush();                        // 刷新缓冲区
+} // 自动关闭流</code></pre>
+
+                <h3>🎯 流的分类维度</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">分类维度</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">类型1</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">类型2</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>数据流向</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">输入流 (InputStream)</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">输出流 (OutputStream)</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>数据单位</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">字节流 (Byte Stream)</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">字符流 (Character Stream)</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>功能角色</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">节点流 (Node Stream)</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">处理流 (Processing Stream)</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p class="conclusion">流是Java IO的核心概念，理解流的特性和分类是掌握Java IO体系的基础。</p>
+            </div>
+        </section>
+
+        <!-- Slide 7: IO Stream Hierarchy -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>IO流层次结构</h2>
+                <p>Java IO四大抽象类构成了完整的流体系，通过继承和装饰器模式实现了丰富的功能。</p>
+
+                <h3>🏗️ 四大抽象类体系概览</h3>
+                <div style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 1rem; margin: 1rem 0; text-align: center;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div style="background: #e3f2fd; border-radius: 6px; padding: 1rem;">
+                            <h4 style="color: #1976D2; margin: 0 0 0.5rem 0;">字节输入流</h4>
+                            <strong style="font-size: 1.2rem;">InputStream</strong>
+                            <p style="margin: 0.5rem 0; font-size: 0.9rem;">所有字节输入流的抽象基类</p>
+                        </div>
+                        <div style="background: #fff3e0; border-radius: 6px; padding: 1rem;">
+                            <h4 style="color: #F57C00; margin: 0 0 0.5rem 0;">字节输出流</h4>
+                            <strong style="font-size: 1.2rem;">OutputStream</strong>
+                            <p style="margin: 0.5rem 0; font-size: 0.9rem;">所有字节输出流的抽象基类</p>
+                        </div>
+                        <div style="background: #e8f5e8; border-radius: 6px; padding: 1rem;">
+                            <h4 style="color: #388E3C; margin: 0 0 0.5rem 0;">字符输入流</h4>
+                            <strong style="font-size: 1.2rem;">Reader</strong>
+                            <p style="margin: 0.5rem 0; font-size: 0.9rem;">所有字符输入流的抽象基类</p>
+                        </div>
+                        <div style="background: #f3e5f5; border-radius: 6px; padding: 1rem;">
+                            <h4 style="color: #7B1FA2; margin: 0 0 0.5rem 0;">字符输出流</h4>
+                            <strong style="font-size: 1.2rem;">Writer</strong>
+                            <p style="margin: 0.5rem 0; font-size: 0.9rem;">所有字符输出流的抽象基类</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>🌳 InputStream 层次结构</h3>
+                <div style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; font-family: 'Courier New', monospace;">
+                    <div style="margin-bottom: 1.5rem;">
+                        <strong style="color: #0066cc;">InputStream (字节输入流)</strong>
+                        <div style="margin-left: 2rem; border-left: 2px solid #0066cc; padding-left: 1rem;">
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #e3f2fd; padding: 2px 6px; border-radius: 3px;">FileInputStream</code> - 文件字节输入流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #e3f2fd; padding: 2px 6px; border-radius: 3px;">BufferedInputStream</code> - 缓冲字节输入流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #e3f2fd; padding: 2px 6px; border-radius: 3px;">DataInputStream</code> - 基本数据类型输入流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #e3f2fd; padding: 2px 6px; border-radius: 3px;">ObjectInputStream</code> - 对象输入流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #e3f2fd; padding: 2px 6px; border-radius: 3px;">ByteArrayInputStream</code> - 字节数组输入流
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>🌊 OutputStream 层次结构</h3>
+                <div style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; font-family: 'Courier New', monospace;">
+                    <div style="margin-bottom: 1.5rem;">
+                        <strong style="color: #cc6600;">OutputStream (字节输出流)</strong>
+                        <div style="margin-left: 2rem; border-left: 2px solid #cc6600; padding-left: 1rem;">
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #fff3e0; padding: 2px 6px; border-radius: 3px;">FileOutputStream</code> - 文件字节输出流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #fff3e0; padding: 2px 6px; border-radius: 3px;">BufferedOutputStream</code> - 缓冲字节输出流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #fff3e0; padding: 2px 6px; border-radius: 3px;">DataOutputStream</code> - 基本数据类型输出流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #fff3e0; padding: 2px 6px; border-radius: 3px;">ObjectOutputStream</code> - 对象输出流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #fff3e0; padding: 2px 6px; border-radius: 3px;">ByteArrayOutputStream</code> - 字节数组输出流
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="conclusion">字节流是Java IO的基础，所有其他流类型都是在字节流基础上构建的。理解层次结构有助于选择合适的流类。</p>
+            </div>
+        </section>
+
+        <!-- Slide 8: Character Stream Hierarchy and Comparison -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>字符流层次结构与对比</h2>
+                <p>字符流专门用于处理文本数据，自动处理字符编码转换，是处理国际化文本的理想选择。</p>
+
+                <h3>📖 Reader 层次结构</h3>
+                <div style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; font-family: 'Courier New', monospace;">
+                    <div style="margin-bottom: 1.5rem;">
+                        <strong style="color: #009933;">Reader (字符输入流)</strong>
+                        <div style="margin-left: 2rem; border-left: 2px solid #009933; padding-left: 1rem;">
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #e8f5e8; padding: 2px 6px; border-radius: 3px;">FileReader</code> - 文件字符输入流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #e8f5e8; padding: 2px 6px; border-radius: 3px;">BufferedReader</code> - 缓冲字符输入流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #e8f5e8; padding: 2px 6px; border-radius: 3px;">InputStreamReader</code> - 字节流到字符流的桥梁
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #e8f5e8; padding: 2px 6px; border-radius: 3px;">StringReader</code> - 字符串输入流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #e8f5e8; padding: 2px 6px; border-radius: 3px;">CharArrayReader</code> - 字符数组输入流
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>✍️ Writer 层次结构</h3>
+                <div style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; font-family: 'Courier New', monospace;">
+                    <div style="margin-bottom: 1rem;">
+                        <strong style="color: #9900cc;">Writer (字符输出流)</strong>
+                        <div style="margin-left: 2rem; border-left: 2px solid #9900cc; padding-left: 1rem;">
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #f3e5f5; padding: 2px 6px; border-radius: 3px;">FileWriter</code> - 文件字符输出流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #f3e5f5; padding: 2px 6px; border-radius: 3px;">BufferedWriter</code> - 缓冲字符输出流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #f3e5f5; padding: 2px 6px; border-radius: 3px;">OutputStreamWriter</code> - 字符流到字节流的桥梁
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #f3e5f5; padding: 2px 6px; border-radius: 3px;">StringWriter</code> - 字符串输出流
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <code style="background: #f3e5f5; padding: 2px 6px; border-radius: 3px;">PrintWriter</code> - 格式化字符输出流
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>🎯 字节流 vs 字符流对比</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">特性</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">字节流</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">字符流</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>处理单位</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">字节(8位)</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">字符(16位)</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>适用场景</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">二进制文件(图片、音视频)</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">文本文件(.txt, .csv, .json)</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>编码处理</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">无需考虑</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">需要处理字符编码</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>典型子类</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">FileInputStream, BufferedInputStream</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">FileReader, BufferedReader</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>🏗️ 流的组合使用示例</h3>
+                <pre><code class="language-java">// 装饰器模式的典型应用：流的层层包装
+BufferedReader reader = new BufferedReader(
+    new InputStreamReader(
+        new FileInputStream("data.txt"), "UTF-8"
+    )
+);
+// 节点流(FileInputStream) + 转换流(InputStreamReader) + 缓冲流(BufferedReader)</code></pre>
+
+                <p class="conclusion">理解流的分类体系和层次关系是选择合适IO工具的基础。字节流处理原始数据，字符流处理文本数据，通过装饰器模式实现功能增强。</p>
+            </div>
+        </section>
+
+        <!-- Slide 7: Text vs Binary vs Object IO -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Text vs Binary vs Object IO对比</h2>
+                <p>Java IO可以处理三种不同类型的数据，每种都有其适用场景和特点。</p>
+
+                <h3>📝 Text IO - 文本数据处理</h3>
+                <pre><code class="language-java">// Text IO特点：人类可读，有字符编码
+try (BufferedReader reader = new BufferedReader(new FileReader("config.txt"))) {
+    String line;
+    while ((line = reader.readLine()) != null) {
+        // 自动处理字符编码，一次读取一行
+        System.out.println("配置: " + line);
+    }
+}
+
+// 适用于：.txt, .csv, .json, .xml, .properties
+// 优点：跨平台兼容，可手动编辑，有编码自动处理
+// 缺点：需要处理编码问题，文件体积相对较大</code></pre>
+
+                <h3>🔢 Binary IO - 二进制数据处理</h3>
+                <pre><code class="language-java">// Binary IO特点：保持原始格式，字节级操作
+try (FileInputStream fis = new FileInputStream("image.jpg")) {
+    byte[] buffer = new byte[1024];
+    int bytesRead;
+    while ((bytesRead = fis.read(buffer)) != -1) {
+        // 直接操作字节数据，保持文件原始格式
+        processImageData(buffer, bytesRead);
+    }
+}
+
+// 适用于：图片(.jpg, .png), 音视频(.mp3, .mp4), 可执行文件(.exe)
+// 优点：文件紧凑，读写快速，保持原始数据格式
+// 缺点：不可直接阅读，需要专门的解析器</code></pre>
+
+                <h3>🏗️ Object IO - 对象序列化</h3>
+                <pre><code class="language-java">// Object IO特点：保持对象状态，支持复杂对象关系
+// 序列化
+try (ObjectOutputStream oos = new ObjectOutputStream(
+        new FileOutputStream("gamestate.dat"))) {
+    GameState state = new GameState("Player1", 100, new Date());
+    oos.writeObject(state); // 将对象转换为字节流
+}
+
+// 反序列化
+try (ObjectInputStream ois = new ObjectInputStream(
+        new FileInputStream("gamestate.dat"))) {
+    GameState state = (GameState) ois.readObject(); // 恢复对象状态
+    System.out.println("恢复的游戏状态: " + state);
+}
+
+// 适用于：游戏进度保存，对象缓存，分布式系统通信
+// 优点：自动处理对象关系，保持对象完整性
+// 缺点：版本兼容性问题，安全性考虑</code></pre>
+
+                <h3>🎯 选择指南</h3>
+                <ul>
+                    <li><strong>需要人类阅读？</strong> → Text IO</li>
+                    <li><strong>处理媒体文件？</strong> → Binary IO</li>
+                    <li><strong>保存对象状态？</strong> → Object IO</li>
+                </ul>
+
+                <p class="conclusion"><strong>提问</strong>：如果要保存一个包含图片和文字的文档，应该选择哪种IO方式？</p>
+            </div>
+        </section>
+
+        <!-- Slide 8: Byte Stream Basics -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>字节流基础</h2>
+                <p><code>InputStream</code> 和 <code>OutputStream</code> 是所有字节流的抽象基类，定义了字节流的基本操作方法。</p>
+
+                <h3>📥 InputStream 核心方法</h3>
+                <pre><code class="language-java">public abstract class InputStream {
+    // 读取单个字节，返回0-255，到达末尾返回-1
+    public abstract int read() throws IOException;
+
+    // 读取字节数组，返回实际读取的字节数
+    public int read(byte[] b) throws IOException;
+
+    // 读取指定长度的字节数组
+    public int read(byte[] b, int off, int len) throws IOException;
+
+    // 跳过指定字节数
+    public long skip(long n) throws IOException;
+
+    // 返回可读取的字节数
+    public int available() throws IOException;
+
+    // 关闭流，释放资源
+    public void close() throws IOException;
+
+    // 标记当前位置，支持重置
+    public void mark(int readlimit);
+    public void reset() throws IOException;
+}</code></pre>
+
+                <h3>📤 OutputStream 核心方法</h3>
+                <pre><code class="language-java">public abstract class OutputStream {
+    // 写入单个字节
+    public abstract void write(int b) throws IOException;
+
+    // 写入字节数组
+    public void write(byte[] b) throws IOException;
+
+    // 写入字节数组的一部分
+    public void write(byte[] b, int off, int len) throws IOException;
+
+    // 刷新缓冲区，强制写入
+    public void flush() throws IOException;
+
+    // 关闭流，释放资源
+    public void close() throws IOException;
+}</code></pre>
+
+                <h3>💡 使用模式</h3>
+                <pre><code class="language-java">// 标准的读取模式
+try (InputStream is = new FileInputStream("data.bin")) {
+    byte[] buffer = new byte[1024];
+    int bytesRead;
+    while ((bytesRead = is.read(buffer)) != -1) {
+        // 处理读取到的数据
+        processData(buffer, bytesRead);
+    }
+} // 自动关闭流
+
+// 标准的写入模式
+try (OutputStream os = new FileOutputStream("output.bin")) {
+    byte[] data = "Hello World".getBytes();
+    os.write(data);
+    os.flush(); // 确保数据写入
+} // 自动关闭流</code></pre>
+
+                <p class="conclusion">字节流是Java IO的基础，所有其他流类型都是在字节流基础上构建的。</p>
+            </div>
+        </section>
+
+        <!-- Slide 9: File Byte Streams -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件字节流</h2>
+                <p><code>FileInputStream</code> 和 <code>FileOutputStream</code> 是用于文件读写字节数据的基础流类，是字节流体系中的节点流。</p>
+
+                <h3>📥 FileInputStream 文件读取</h3>
+                <pre><code class="language-java">public static void readFileBytes(String filePath) {
+    try (FileInputStream fis = new FileInputStream(filePath)) {
+        byte[] buffer = new byte[1024];
+        int bytesRead;
+
+        System.out.println("开始读取文件: " + filePath);
+
+        while ((bytesRead = fis.read(buffer)) != -1) {
+            // 处理读取到的字节
+            System.out.println("读取了 " + bytesRead + " 字节");
+
+            // 示例：将字节转换为十六进制显示
+            for (int i = 0; i < bytesRead; i++) {
+                System.out.printf("%02X ", buffer[i]);
+                if ((i + 1) % 16 == 0) {
+                    System.out.println();
+                }
+            }
+        }
+    } catch (IOException e) {
+        System.err.println("读取文件失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>📤 FileOutputStream 文件写入</h3>
+                <pre><code class="language-java">public static void writeFileBytes(String filePath) {
+    try (FileOutputStream fos = new FileOutputStream(filePath)) {
+        // 写入字符串数据
+        String text = "Hello, Java IO!";
+        fos.write(text.getBytes());
+
+        // 写入二进制数据
+        byte[] binaryData = {
+            (byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE, // 魔数
+            0x01, 0x02, 0x03, 0x04,                           // 版本信息
+            0x42, 0x42, 0x42, 0x42                            // 示例数据
+        };
+        fos.write(binaryData);
+
+        System.out.println("文件写入完成: " + filePath);
+    } catch (IOException e) {
+        System.err.println("写入文件失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>🔧 常用构造方法</h3>
+                <pre><code class="language-java">// 1. 使用文件路径
+FileInputStream fis1 = new FileInputStream("data.txt");
+
+// 2. 使用File对象
+File file = new File("data.txt");
+FileInputStream fis2 = new FileInputStream(file);
+
+// 3. FileOutputStream追加模式
+FileOutputStream fos1 = new FileOutputStream("log.txt", true); // 追加
+FileOutputStream fos2 = new FileOutputStream("output.txt");   // 覆盖</code></pre>
+
+                <h3>⚡ 性能考虑</h3>
+                <ul>
+                    <li><strong>缓冲区大小</strong>：合适的缓冲区大小(通常1024-8192字节)能显著提升性能</li>
+                    <li><strong>直接内存访问</strong>：对于大文件，考虑使用NIO的FileChannel</li>
+                    <li><strong>批量操作</strong>：使用byte[]数组而非单字节操作</li>
+                </ul>
+
+                <h3>🎯 实际应用示例</h3>
+                <pre><code class="language-java">// 文件复制工具
+public static void copyFile(String source, String destination) {
+    try (FileInputStream fis = new FileInputStream(source);
+         FileOutputStream fos = new FileOutputStream(destination)) {
+
+        byte[] buffer = new byte[4096]; // 4KB缓冲区
+        int bytesRead;
+        long totalBytes = 0;
+
+        while ((bytesRead = fis.read(buffer)) != -1) {
+            fos.write(buffer, 0, bytesRead);
+            totalBytes += bytesRead;
+        }
+
+        System.out.println("复制完成，共 " + totalBytes + " 字节");
+    } catch (IOException e) {
+        System.err.println("文件复制失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <p class="conclusion">文件字节流是文件IO的基础，适用于处理二进制文件和需要精确控制字节的场景。对于文本文件，建议使用字符流以获得更好的编码支持。</p>
+            </div>
+        </section>
+
+        <!-- Slide 12: Buffered Byte Streams - Principles -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>缓冲字节流 - 原理与性能</h2>
+                <p><code>BufferedInputStream</code> 和 <code>BufferedOutputStream</code> 通过内部缓冲区大幅提升IO性能，是装饰器模式的典型应用。</p>
+
+                <h3>🚀 缓冲流原理与优势</h3>
+                <div style="background: #e3f2fd; border: 2px solid #2196F3; border-radius: 8px; padding: 1.5rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">工作原理对比</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div style="background: white; border-radius: 6px; padding: 1rem;">
+                            <h5 style="color: #f44336; margin-top: 0;">无缓冲流</h5>
+                            <p style="font-size: 0.9rem; margin-bottom: 1rem;">每次读取都访问磁盘</p>
+                            <div style="text-align: center;">
+                                <div style="font-size: 2rem;">💾</div>
+                                <p style="font-size: 0.8rem;">磁盘</p>
+                            </div>
+                            <p style="font-size: 1.2rem; text-align: center;">⇅</p>
+                            <div style="text-align: center;">
+                                <div style="font-size: 2rem;">🔄</div>
+                                <p style="font-size: 0.8rem;">每次1字节</p>
+                            </div>
+                            <p style="font-size: 1.2rem; text-align: center;">⇅</p>
+                            <div style="text-align: center;">
+                                <div style="font-size: 2rem;">💻</div>
+                                <p style="font-size: 0.8rem;">内存</p>
+                            </div>
+                        </div>
+                        <div style="background: white; border-radius: 6px; padding: 1rem;">
+                            <h5 style="color: #4CAF50; margin-top: 0;">缓冲流</h5>
+                            <p style="font-size: 0.9rem; margin-bottom: 1rem;">批量读取到内存缓冲区</p>
+                            <div style="text-align: center;">
+                                <div style="font-size: 2rem;">💾</div>
+                                <p style="font-size: 0.8rem;">磁盘</p>
+                            </div>
+                            <p style="font-size: 1.2rem; text-align: center;">⇅</p>
+                            <div style="text-align: center;">
+                                <div style="font-size: 2rem;">🗄️</div>
+                                <p style="font-size: 0.8rem;">缓冲区(8KB)</p>
+                            </div>
+                            <p style="font-size: 1.2rem; text-align: center;">⇅</p>
+                            <div style="text-align: center;">
+                                <div style="font-size: 2rem;">💻</div>
+                                <p style="font-size: 0.8rem;">内存</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>📊 性能对比示例</h3>
+                <pre><code class="language-java">public static void performanceTest(String filePath) {
+    int iterations = 1000;
+
+    // 测试1：不使用缓冲流
+    long startTime = System.currentTimeMillis();
+    for (int i = 0; i < iterations; i++) {
+        try (FileInputStream fis = new FileInputStream(filePath)) {
+            while (fis.read() != -1) {} // 逐字节读取
+        }
+    }
+    long noBufferTime = System.currentTimeMillis() - startTime;
+
+    // 测试2：使用缓冲流
+    startTime = System.currentTimeMillis();
+    for (int i = 0; i < iterations; i++) {
+        try (BufferedInputStream bis = new BufferedInputStream(
+                 new FileInputStream(filePath))) {
+            while (bis.read() != -1) {} // 逐字节读取（从缓冲区）
+        }
+    }
+    long bufferTime = System.currentTimeMillis() - startTime;
+
+    System.out.println("无缓冲流: " + noBufferTime + "ms");
+    System.out.println("缓冲流: " + bufferTime + "ms");
+    System.out.println("性能提升: " + (noBufferTime / bufferTime) + "倍");
+}</code></pre>
+
+                <h3>🔧 自定义缓冲区大小</h3>
+                <pre><code class="language-java">// 默认缓冲区大小(通常8KB)
+BufferedInputStream bis1 = new BufferedInputStream(
+    new FileInputStream("data.txt"));
+
+// 自定义缓冲区大小
+BufferedInputStream bis2 = new BufferedInputStream(
+    new FileInputStream("data.txt"), 32768); // 32KB缓冲区
+
+BufferedOutputStream bos = new BufferedOutputStream(
+    new FileOutputStream("output.txt"), 16384); // 16KB缓冲区
+
+// 缓冲区大小选择建议：
+// - 小文件(1MB以下)：4KB - 8KB
+// - 中等文件(1MB-100MB)：8KB - 32KB
+// - 大文件(100MB以上)：32KB - 64KB
+// - 网络IO：64KB - 128KB</code></pre>
+
+                <h3>⚠️ 重要注意事项</h3>
+                <ul>
+                    <li><strong>及时刷新</strong>：对于BufferedOutputStream，关键数据要调用flush()</li>
+                    <li><strong>缓冲区大小权衡</strong>：过大占用内存，过小影响性能</li>
+                    <li><strong>装饰器顺序</strong>：缓冲流应该装饰其他流，而不是被装饰</li>
+                </ul>
+
+                <p class="conclusion">缓冲流是提升Java IO性能的<strong>关键工具</strong>。通过减少磁盘IO次数，可以带来数倍甚至数十倍的性能提升。</p>
+            </div>
+        </section>
+
+        <!-- Slide 13: Buffered Byte Streams - Best Practices -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>缓冲字节流 - 最佳实践</h2>
+                <p>掌握缓冲流的正确使用方法和性能优化技巧，让程序获得最佳的IO性能。</p>
+
+                <h3>🎯 实际应用：高效文件复制</h3>
+                <pre><code class="language-java">public static void efficientFileCopy(String source, String target) {
+    try (BufferedInputStream bis = new BufferedInputStream(
+             new FileInputStream(source), 65536); // 64KB读取缓冲区
+         BufferedOutputStream bos = new BufferedOutputStream(
+             new FileOutputStream(target), 65536)) { // 64KB写入缓冲区
+
+        byte[] buffer = new byte[8192]; // 8KB工作缓冲区
+        int bytesRead;
+        long totalBytes = 0;
+
+        while ((bytesRead = bis.read(buffer)) != -1) {
+            bos.write(buffer, 0, bytesRead);
+            totalBytes += bytesRead;
+        }
+
+        bos.flush(); // 确保所有缓冲数据写入磁盘
+        System.out.println("复制完成: " + totalBytes + " 字节");
+
+    } catch (IOException e) {
+        System.err.println("文件复制失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>💡 缓冲流最佳实践</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">场景</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">建议</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">缓冲区大小</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">小文件处理</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">使用默认缓冲区</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">8KB</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">大文件复制</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">大缓冲区+批量操作</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">32KB-64KB</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">网络IO</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">较大缓冲区</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">64KB-128KB</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">实时数据流</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">较小缓冲区，及时flush</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">4KB-8KB</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>🔍 缓冲流性能分析</h3>
+                <pre><code class="language-java">// 性能测试工具类
+public class BufferPerformanceAnalyzer {
+
+    public static void compareBufferSizes(String filePath) {
+        int[] sizes = {1024, 4096, 8192, 16384, 32768, 65536};
+
+        System.out.println("缓冲区大小性能对比:");
+        System.out.println("大小\t\t时间(ms)\t吞吐量(MB/s)");
+
+        for (int size : sizes) {
+            long startTime = System.nanoTime();
+
+            try (BufferedInputStream bis = new BufferedInputStream(
+                     new FileInputStream(filePath), size)) {
+
+                byte[] buffer = new byte[8192];
+                long totalBytes = 0;
+
+                while (bis.read(buffer) != -1) {
+                    totalBytes += buffer.length;
+                }
+
+                long endTime = System.nanoTime();
+                long timeMs = (endTime - startTime) / 1_000_000;
+                double throughput = (totalBytes / 1_048_576.0) / (timeMs / 1000.0);
+
+                System.out.printf("%d\t\t%d\t\t%.2f%n", size, timeMs, throughput);
+
+            } catch (IOException e) {
+                System.err.println("测试失败: " + e.getMessage());
+            }
+        }
+    }
+}</code></pre>
+
+                <h3>🚨 常见陷阱与解决方案</h3>
+                <div style="background: #fff3e0; border-left: 4px solid #FF9800; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱1：忘记flush()</h4>
+                    <p><strong>问题</strong>：使用BufferedOutputStream时，数据可能还在缓冲区中未写入磁盘</p>
+                    <p><strong>解决</strong>：关键数据后调用flush()，或在try-with-resources结束时自动flush</p>
+                </div>
+
+                <div style="background: #ffebee; border-left: 4px solid #f44336; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱2：缓冲区过大</h4>
+                    <p><strong>问题</strong>：过大的缓冲区占用过多内存，可能导致GC压力</p>
+                    <p><strong>解决</strong>：根据文件大小和系统内存合理选择缓冲区大小</p>
+                </div>
+
+                <div style="background: #e8f5e8; border-left: 4px solid #4CAF50; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱3：装饰器顺序错误</h4>
+                    <p><strong>问题</strong>：错误的装饰器顺序可能导致缓冲失效</p>
+                    <p><strong>解决</strong>：确保缓冲流装饰基础流，而不是被其他流装饰</p>
+                </div>
+
+                <p class="conclusion">正确使用缓冲流可以显著提升IO性能。关键是选择合适的缓冲区大小，养成良好的使用习惯，避免常见陷阱。</p>
+            </div>
+        </section>
+
+        <!-- Slide 11: Character Stream Basics -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>字符流基础</h2>
+                <p><code>Reader</code> 和 <code>Writer</code> 是所有字符流的抽象基类，专门用于处理文本数据，自动处理字符编码转换。</p>
+
+                <h3>📖 Reader 核心方法</h3>
+                <pre><code class="language-java">public abstract class Reader {
+    // 读取单个字符，返回0-65535，到达末尾返回-1
+    public int read() throws IOException;
+
+    // 读取字符到数组
+    public int read(char[] cbuf) throws IOException;
+
+    // 读取指定长度的字符到数组
+    public abstract int read(char[] cbuf, int off, int len) throws IOException;
+
+    // 跳过指定数量的字符
+    public long skip(long n) throws IOException;
+
+    // 检查是否支持标记/重置
+    public boolean markSupported();
+
+    // 标记当前位置
+    public void mark(int readAheadLimit) throws IOException;
+
+    // 重置到标记位置
+    public void reset() throws IOException;
+
+    // 关闭流
+    public abstract void close() throws IOException;
+}</code></pre>
+
+                <h3>✍️ Writer 核心方法</h3>
+                <pre><code class="language-java">public abstract class Writer {
+    // 写入单个字符
+    public void write(int c) throws IOException;
+
+    // 写入字符数组
+    public void write(char[] cbuf) throws IOException;
+
+    // 写入字符数组的一部分
+    public abstract void write(char[] cbuf, int off, int len) throws IOException;
+
+    // 写入字符串
+    public void write(String str) throws IOException;
+
+    // 写入字符串的一部分
+    public void write(String str, int off, int len) throws IOException;
+
+    // 追加字符
+    public Writer append(char c) throws IOException;
+
+    // 追加字符序列
+    public Writer append(CharSequence csq) throws IOException;
+
+    // 刷新缓冲区
+    public abstract void flush() throws IOException;
+
+    // 关闭流
+    public abstract void close() throws IOException;
+}</code></pre>
+
+                <h3>🌍 字符编码处理</h3>
+                <pre><code class="language-java">// 字符流的优势：自动处理编码转换
+public static void encodingDemo() {
+    // 读取UTF-8编码的文件
+    try (Reader reader = new InputStreamReader(
+             new FileInputStream("utf8.txt"), StandardCharsets.UTF_8)) {
+        char[] buffer = new char[1024];
+        int charsRead;
+        while ((charsRead = reader.read(buffer)) != -1) {
+            String text = new String(buffer, 0, charsRead);
+            System.out.println("读取内容: " + text);
+        }
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+
+    // 写入GBK编码的文件
+    try (Writer writer = new OutputStreamWriter(
+             new FileOutputStream("gbk.txt"), "GBK")) {
+        writer.write("中文字符编码示例");
+        writer.flush();
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+}</code></pre>
+
+                <h3>🔤 字符流 vs 字节流对比</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">特性</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">字符流</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">字节流</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>处理单位</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">字符(Unicode)</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">字节(8位)</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>编码处理</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">自动转换</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">手动处理</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>适用场景</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">文本文件</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">二进制文件</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>国际化</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">支持多语言</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">编码敏感</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>💡 字符流使用模式</h3>
+                <pre><code class="language-java">// 标准的字符读取模式
+try (Reader reader = new FileReader("text.txt")) {
+    char[] buffer = new char[1024];
+    int charsRead;
+    while ((charsRead = reader.read(buffer)) != -1) {
+        String text = new String(buffer, 0, charsRead);
+        processText(text);
+    }
+} catch (IOException e) {
+    e.printStackTrace();
+}
+
+// 标准的字符写入模式
+try (Writer writer = new FileWriter("output.txt")) {
+    String content = "Hello, 字符流世界！";
+    writer.write(content);
+    writer.flush();
+} catch (IOException e) {
+    e.printStackTrace();
+}</code></pre>
+
+                <p class="conclusion">字符流是处理文本数据的<strong>最佳选择</strong>，自动处理编码转换，支持Unicode字符，是国际化和文本处理的首选工具。</p>
+            </div>
+        </section>
+
+        <!-- Slide 12: File Character Streams -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件字符流</h2>
+                <p><code>FileReader</code> 和 <code>FileWriter</code> 是专门用于文件读写字符数据的便捷类，是字符流体系中的节点流。</p>
+
+                <h3>📖 FileReader 文件读取</h3>
+                <pre><code class="language-java">public static void readTextFile(String filePath) {
+    try (FileReader reader = new FileReader(filePath)) {
+        char[] buffer = new char[1024];
+        int charsRead;
+        StringBuilder content = new StringBuilder();
+
+        System.out.println("开始读取文本文件: " + filePath);
+
+        while ((charsRead = reader.read(buffer)) != -1) {
+            // 将读取的字符追加到StringBuilder
+            content.append(buffer, 0, charsRead);
+            System.out.println("读取了 " + charsRead + " 个字符");
+        }
+
+        System.out.println("文件内容:");
+        System.out.println(content.toString());
+
+    } catch (IOException e) {
+        System.err.println("读取文件失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>✍️ FileWriter 文件写入</h3>
+                <pre><code class="language-java">public static void writeTextFile(String filePath) {
+    try (FileWriter writer = new FileWriter(filePath)) {
+        // 写入单行文本
+        writer.write("Java IO字符流示例\n");
+
+        // 写入多行文本
+        writer.write("这是第二行内容\n");
+        writer.write("中文字符测试：你好世界！\n");
+
+        // 写入字符数组
+        char[] charArray = {'H', 'e', 'l', 'l', 'o', ' ', 'C', 'h', 'a', 'r', 's'};
+        writer.write(charArray);
+
+        // 写入字符串的一部分
+        String longText = "这是一个很长的字符串，我们只写入其中的一部分内容";
+        writer.write(longText, 0, 10); // 只写入前10个字符
+
+        writer.flush(); // 确保数据写入文件
+        System.out.println("文件写入完成: " + filePath);
+
+    } catch (IOException e) {
+        System.err.println("写入文件失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>🔧 常用构造方法</h3>
+                <pre><code class="language-java">// FileReader构造方法
+FileReader fr1 = new FileReader("input.txt");              // 使用文件路径
+FileReader fr2 = new FileReader(new File("input.txt"));     // 使用File对象
+
+// FileWriter构造方法
+FileWriter fw1 = new FileWriter("output.txt");              // 覆盖模式
+FileWriter fw2 = new FileWriter("output.txt", true);        // 追加模式
+FileWriter fw3 = new FileWriter(new File("output.txt"));    // 使用File对象
+FileWriter fw4 = new FileWriter(new File("output.txt"), true); // 追加模式</code></pre>
+
+                <h3>🌍 编码注意事项</h3>
+                <pre><code class="language-java">// FileReader/FileWriter的编码限制
+try {
+    // 问题：FileReader使用系统默认编码，可能不准确
+    FileReader reader = new FileReader("chinese.txt"); // Windows可能用GBK，Linux可能用UTF-8
+
+    // 解决方案：使用InputStreamReader/OutputStreamWriter指定编码
+    Reader reader = new InputStreamReader(
+        new FileInputStream("chinese.txt"), StandardCharsets.UTF_8);
+
+    Writer writer = new OutputStreamWriter(
+        new FileOutputStream("output.txt"), "UTF-8");
+
+} catch (IOException e) {
+    e.printStackTrace();
+}</code></pre>
+
+                <h3>🎯 实际应用示例</h3>
+                <pre><code class="language-java">// 文本文件复制工具
+public static void copyTextFile(String source, String destination) {
+    try (FileReader reader = new FileReader(source);
+         FileWriter writer = new FileWriter(destination)) {
+
+        char[] buffer = new char[2048]; // 2KB字符缓冲区
+        int charsRead;
+        long totalChars = 0;
+
+        while ((charsRead = reader.read(buffer)) != -1) {
+            writer.write(buffer, 0, charsRead);
+            totalChars += charsRead;
+        }
+
+        writer.flush();
+        System.out.println("文本文件复制完成，共 " + totalChars + " 个字符");
+
+    } catch (IOException e) {
+        System.err.println("文本文件复制失败: " + e.getMessage());
+    }
+}
+
+// 配置文件读取器
+public static Map<String, String> readConfigFile(String configPath) {
+    Map<String, String> config = new HashMap<>();
+
+    try (FileReader reader = new FileReader(configPath)) {
+        char[] buffer = new char[1024];
+        StringBuilder content = new StringBuilder();
+
+        // 读取整个文件内容
+        int charsRead;
+        while ((charsRead = reader.read(buffer)) != -1) {
+            content.append(buffer, 0, charsRead);
+        }
+
+        // 解析配置项
+        String[] lines = content.toString().split("\n");
+        for (String line : lines) {
+            line = line.trim();
+            if (line.contains("=") && !line.startsWith("#")) {
+                String[] parts = line.split("=", 2);
+                config.put(parts[0].trim(), parts[1].trim());
+            }
+        }
+
+    } catch (IOException e) {
+        System.err.println("读取配置文件失败: " + e.getMessage());
+    }
+
+    return config;
+}</code></pre>
+
+                <h3>⚠️ 重要注意事项</h3>
+                <ul>
+                    <li><strong>编码问题</strong>：FileReader使用系统默认编码，跨平台可能不一致</li>
+                    <li><strong>缓冲区大小</strong>：合适的字符缓冲区能提升性能(通常1024-8192字符)</li>
+                    <li><strong>文件追加</strong>：FileWriter构造时指定true参数启用追加模式</li>
+                    <li><strong>异常处理</strong>：始终使用try-with-resources确保流正确关闭</li>
+                </ul>
+
+                <p class="conclusion">FileReader和FileWriter是处理文本文件的<strong>便捷选择</strong>。对于需要特定编码的场景，建议使用InputStreamReader和OutputStreamWriter。</p>
+            </div>
+        </section>
+
+        <!-- Slide 16: Buffered Character Streams - Core Functions -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>缓冲字符流 - 核心功能</h2>
+                <p><code>BufferedReader</code> 和 <code>BufferedWriter</code> 为字符IO提供缓冲功能，大幅提升文本处理性能，并支持便捷的按行操作。</p>
+
+                <h3>📖 BufferedReader 核心功能</h3>
+                <pre><code class="language-java">public static void bufferedReaderDemo() {
+    try (BufferedReader reader = new BufferedReader(
+             new FileReader("multilines.txt"))) {
+
+        String line;
+        int lineNumber = 0;
+
+        // 按行读取：BufferedReader的核心优势
+        while ((line = reader.readLine()) != null) {
+            lineNumber++;
+            System.out.println("第" + lineNumber + "行: " + line);
+        }
+
+        System.out.println("总共读取了 " + lineNumber + " 行");
+
+    } catch (IOException e) {
+        System.err.println("读取文件失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>✍️ BufferedWriter 核心功能</h3>
+                <pre><code class="language-java">public static void bufferedWriterDemo() {
+    try (BufferedWriter writer = new BufferedWriter(
+             new FileWriter("output.txt"))) {
+
+        // 写入多行文本
+        writer.write("第一行内容");
+        writer.newLine(); // 换行符，跨平台兼容
+
+        writer.write("第二行内容");
+        writer.newLine();
+
+        // 批量写入
+        String[] lines = {
+            "Java IO缓冲字符流示例",
+            "支持多种写入方式",
+            "自动处理换行符"
+        };
+
+        for (String line : lines) {
+            writer.write(line);
+            writer.newLine();
+        }
+
+        writer.flush(); // 确保数据写入文件
+        System.out.println("文件写入完成");
+
+    } catch (IOException e) {
+        System.err.println("写入文件失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>🔧 标记与重置功能</h3>
+                <pre><code class="language-java">public static void markAndResetDemo() {
+    try (BufferedReader reader = new BufferedReader(
+             new FileReader("sample.txt"))) {
+
+        // 读取第一行
+        String line1 = reader.readLine();
+        System.out.println("第一行: " + line1);
+
+        // 标记当前位置
+        reader.mark(1024); // 标记，允许读取1024字符后重置
+
+        // 继续读取几行
+        System.out.println("后续内容:");
+        for (int i = 0; i < 3 && reader.ready(); i++) {
+            System.out.println("  " + reader.readLine());
+        }
+
+        // 重置到标记位置
+        reader.reset();
+        System.out.println("重置后重新读取:");
+
+        // 再次读取标记后的内容
+        String line = reader.readLine();
+        while (line != null) {
+            System.out.println("  " + line);
+            line = reader.readLine();
+        }
+
+    } catch (IOException e) {
+        System.err.println("标记重置操作失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>🚀 性能对比示例</h3>
+                <pre><code class="language-java">public static void performanceComparison(String filePath) {
+    int iterations = 100;
+
+    // 测试1：不使用缓冲流
+    long startTime = System.currentTimeMillis();
+    for (int i = 0; i < iterations; i++) {
+        try (FileReader reader = new FileReader(filePath)) {
+            StringBuilder content = new StringBuilder();
+            char[] buffer = new char[1024];
+            int charsRead;
+            while ((charsRead = reader.read(buffer)) != -1) {
+                content.append(buffer, 0, charsRead);
+            }
+        }
+    }
+    long noBufferTime = System.currentTimeMillis() - startTime;
+
+    // 测试2：使用缓冲流
+    startTime = System.currentTimeMillis();
+    for (int i = 0; i < iterations; i++) {
+        try (BufferedReader reader = new BufferedReader(
+                 new FileReader(filePath))) {
+            StringBuilder content = new StringBuilder();
+            char[] buffer = new char[1024];
+            int charsRead;
+            while ((charsRead = reader.read(buffer)) != -1) {
+                content.append(buffer, 0, charsRead);
+            }
+        }
+    }
+    long bufferTime = System.currentTimeMillis() - startTime;
+
+    System.out.println("无缓冲字符流: " + noBufferTime + "ms");
+    System.out.println("缓冲字符流: " + bufferTime + "ms");
+    System.out.println("性能提升: " + (noBufferTime / bufferTime) + "倍");
+}</code></pre>
+
+                <h3>⚠️ 重要注意事项</h3>
+                <ul>
+                    <li><strong>换行符处理</strong>：使用newLine()而非"\n"，确保跨平台兼容</li>
+                    <li><strong>及时刷新</strong>：BufferedWriter在关键数据后调用flush()</li>
+                    <li><strong>标记限制</strong>：mark()后的读取量不能超过readAheadLimit</li>
+                    <li><strong>性能权衡</strong>：缓冲区过小影响性能，过大占用内存</li>
+                </ul>
+
+                <p class="conclusion">缓冲字符流的核心优势在于按行读取和标记重置功能，大大简化了文本处理逻辑。</p>
+            </div>
+        </section>
+
+        <!-- Slide 17: Buffered Character Streams - Applications -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>缓冲字符流 - 实际应用</h2>
+                <p>掌握缓冲字符流在实际项目中的应用场景，处理日志、配置、CSV等文本文件的最佳实践。</p>
+
+                <h3>🎯 实际应用：文件逐行处理</h3>
+                <pre><code class="language-java">// 日志文件分析器
+public static void analyzeLogFile(String logPath) {
+    Map<String, Integer> logLevels = new HashMap<>();
+    long totalLines = 0;
+
+    try (BufferedReader reader = new BufferedReader(
+             new FileReader(logPath))) {
+
+        String line;
+        while ((line = reader.readLine()) != null) {
+            totalLines++;
+
+            // 分析日志级别
+            if (line.contains("ERROR")) {
+                logLevels.merge("ERROR", 1, Integer::sum);
+            } else if (line.contains("WARN")) {
+                logLevels.merge("WARN", 1, Integer::sum);
+            } else if (line.contains("INFO")) {
+                logLevels.merge("INFO", 1, Integer::sum);
+            } else if (line.contains("DEBUG")) {
+                logLevels.merge("DEBUG", 1, Integer::sum);
+            }
+
+            // 提取时间戳（简单示例）
+            if (line.matches("\\d{4}-\\d{2}-\\d{2}.*")) {
+                // 处理包含时间戳的行
+                processTimestampLine(line);
+            }
+        }
+
+    } catch (IOException e) {
+        System.err.println("日志分析失败: " + e.getMessage());
+    }
+
+    // 输出分析结果
+    System.out.println("日志分析结果:");
+    System.out.println("总行数: " + totalLines);
+    logLevels.forEach((level, count) ->
+        System.out.println(level + ": " + count + " 次"));
+}</code></pre>
+
+                <h3>📝 配置文件写入器</h3>
+                <pre><code class="language-java">public static void writeConfigFile(String configPath,
+                                   Map<String, String> properties) {
+    try (BufferedWriter writer = new BufferedWriter(
+             new FileWriter(configPath))) {
+
+        // 写入文件头
+        writer.write("# 配置文件");
+        writer.newLine();
+        writer.write("# 生成时间: " + new Date());
+        writer.newLine();
+        writer.newLine();
+
+        // 写入配置项
+        for (Map.Entry<String, String> entry : properties.entrySet()) {
+            writer.write(entry.getKey() + " = " + entry.getValue());
+            writer.newLine();
+        }
+
+        writer.flush();
+        System.out.println("配置文件写入完成: " + configPath);
+
+    } catch (IOException e) {
+        System.err.println("配置文件写入失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>💡 缓冲字符流最佳实践</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">场景</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">推荐做法</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">缓冲区大小</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">大文件逐行处理</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">BufferedReader + readLine()</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">8KB-16KB</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">批量文本写入</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">BufferedWriter + newLine()</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">8KB-32KB</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">需要回退读取</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">使用mark()和reset()</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">默认即可</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">网络文本流</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">较大缓冲区</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">16KB-64KB</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>🔧 高级应用：CSV文件处理</h3>
+                <pre><code class="language-java">// CSV文件处理器
+public static void processCSVFile(String csvPath) {
+    try (BufferedReader reader = new BufferedReader(
+             new FileReader(csvPath))) {
+
+        String headerLine = reader.readLine(); // 读取表头
+        String[] headers = headerLine.split(",");
+
+        List<Map<String, String>> records = new ArrayList<>();
+        String line;
+        int lineNumber = 1;
+
+        while ((line = reader.readLine()) != null) {
+            lineNumber++;
+            String[] values = line.split(",");
+
+            if (values.length == headers.length) {
+                Map<String, String> record = new HashMap<>();
+                for (int i = 0; i < headers.length; i++) {
+                    record.put(headers[i].trim(), values[i].trim());
+                }
+                records.add(record);
+            } else {
+                System.err.println("第" + lineNumber + "行格式错误");
+            }
+        }
+
+        System.out.println("成功解析 " + records.size() + " 条记录");
+
+    } catch (IOException e) {
+        System.err.println("CSV处理失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>🚨 常见应用陷阱</h3>
+                <div style="background: #fff3e0; border-left: 4px solid #FF9800; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱1：大文件内存溢出</h4>
+                    <p><strong>问题</strong>：一次性读取大文件到内存可能导致OutOfMemoryError</p>
+                    <p><strong>解决</strong>：使用BufferedReader逐行处理，避免一次性加载</p>
+                </div>
+
+                <div style="background: #ffebee; border-left: 4px solid #f44336; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱2：编码不一致</h4>
+                    <p><strong>问题</strong>：文件编码与读取编码不匹配导致乱码</p>
+                    <p><strong>解决</strong>：使用InputStreamReader指定正确编码</p>
+                </div>
+
+                <div style="background: #e8f5e8; border-left: 4px solid #4CAF50; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱3：异常处理不当</h4>
+                    <p><strong>问题</strong>：读取过程中异常可能导致资源泄漏</p>
+                    <p><strong>解决</strong>：使用try-with-resources确保流正确关闭</p>
+                </div>
+
+                <p class="conclusion">缓冲字符流是文本处理的<strong>利器</strong>，按行读取功能大大简化了文本处理逻辑，是处理日志、配置、CSV等文本文件的理想选择。</p>
+            </div>
+        </section>
+
+        <!-- Slide 18: Conversion Streams - Basic Usage -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>转换流 - 基础用法</h2>
+                <p><code>InputStreamReader</code> 和 <code>OutputStreamWriter</code> 是字节流与字符流之间的桥梁，负责编码转换，是处理不同字符编码的关键。</p>
+
+                <h3>🌉 转换流的作用</h3>
+                <div style="background: #e3f2fd; border: 2px solid #2196F3; border-radius: 8px; padding: 1.5rem; margin: 1rem 0;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 2rem;">💾</div>
+                            <p><strong>字节流</strong><br>FileInputStream<br>FileOutputStream</p>
+                        </div>
+                        <div style="font-size: 2rem;">⇄</div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 2rem;">🔄</div>
+                            <p><strong>转换流</strong><br>InputStreamReader<br>OutputStreamWriter</p>
+                        </div>
+                        <div style="font-size: 2rem;">⇄</div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 2rem;">📝</div>
+                            <p><strong>字符流</strong><br>Reader<br>Writer</p>
+                        </div>
+                    </div>
+                    <p style="text-align: center; margin-top: 1rem; font-weight: bold;">编码转换桥梁</p>
+                </div>
+
+                <h3>📖 InputStreamReader 字节流转字符流</h3>
+                <pre><code class="language-java">// 基本用法：指定编码读取文件
+public static void readWithEncoding(String filePath, String encoding) {
+    try (InputStreamReader reader = new InputStreamReader(
+             new FileInputStream(filePath), encoding)) {
+
+        char[] buffer = new char[1024];
+        int charsRead;
+        StringBuilder content = new StringBuilder();
+
+        while ((charsRead = reader.read(buffer)) != -1) {
+            content.append(buffer, 0, charsRead);
+        }
+
+        System.out.println("使用 " + encoding + " 编码读取的内容:");
+        System.out.println(content.toString());
+
+    } catch (IOException e) {
+        System.err.println("读取失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>✍️ OutputStreamWriter 字符流转字节流</h3>
+                <pre><code class="language-java">// 基本用法：指定编码写入文件
+public static void writeWithEncoding(String filePath, String encoding) {
+    try (OutputStreamWriter writer = new OutputStreamWriter(
+             new FileOutputStream(filePath), encoding)) {
+
+        writer.write("多语言文本示例\n");
+        writer.write("English: Hello World\n");
+        writer.write("中文: 你好世界\n");
+        writer.write("日本語: こんにちは世界\n");
+        writer.write("한국어: 안녕하세요 세계\n");
+        writer.write("Español: Hola Mundo\n");
+
+        writer.flush();
+        System.out.println("使用 " + encoding + " 编码写入完成");
+
+    } catch (IOException e) {
+        System.err.println("写入失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>🌍 常用编码示例</h3>
+                <pre><code class="language-java">public static void encodingExamples() {
+    String filePath = "multilang.txt";
+
+    // UTF-8 编码（推荐）
+    readWithEncoding(filePath, StandardCharsets.UTF_8.name());
+
+    // GBK 编码（中文Windows常用）
+    readWithEncoding(filePath, "GBK");
+
+    // ISO-8859-1 编码（西欧）
+    readWithEncoding(filePath, "ISO-8859-1");
+
+    // UTF-16 编码
+    readWithEncoding(filePath, "UTF-16");
+}</code></pre>
+
+                <h3>⚠️ 重要注意事项</h3>
+                <ul>
+                    <li><strong>编码一致性</strong>：读写时使用相同的编码，避免乱码</li>
+                    <li><strong>异常处理</strong>：编码可能不支持，需捕获UnsupportedEncodingException</li>
+                    <li><strong>性能考虑</strong>：转换流会进行编码转换，影响性能</li>
+                    <li><strong>BOM处理</strong>：注意处理UTF-8/16的BOM标记</li>
+                </ul>
+
+                <p class="conclusion">转换流是处理<strong>字符编码</strong>的核心工具，正确使用转换流能确保字符数据的准确性。</p>
+            </div>
+        </section>
+
+        <!-- Slide 19: Conversion Streams - Encoding Detection -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>转换流 - 编码检测与处理</h2>
+                <p>掌握文件编码的自动检测技术和智能读取方法，解决不同编码文件的兼容性问题。</p>
+
+                <h3>🔍 自动检测文件编码</h3>
+                <pre><code class="language-java">// 自动检测文件编码（简单示例）
+public static String detectEncoding(String filePath) {
+    try (FileInputStream fis = new FileInputStream(filePath)) {
+        byte[] bom = new byte[4];
+        int bytesRead = fis.read(bom);
+
+        if (bytesRead >= 3 && bom[0] == (byte) 0xEF &&
+            bom[1] == (byte) 0xBB && bom[2] == (byte) 0xBF) {
+            return "UTF-8";
+        }
+
+        if (bytesRead >= 2 && bom[0] == (byte) 0xFE &&
+            bom[1] == (byte) 0xFF) {
+            return "UTF-16BE";
+        }
+
+        if (bytesRead >= 2 && bom[0] == (byte) 0xFF &&
+            bom[1] == (byte) 0xFE) {
+            return "UTF-16LE";
+        }
+
+        // 默认使用系统编码或UTF-8
+        return StandardCharsets.UTF_8.name();
+
+    } catch (IOException e) {
+        return StandardCharsets.UTF_8.name();
+    }
+}</code></pre>
+
+                <h3>🧠 智能编码读取</h3>
+                <pre><code class="language-java">// 智能编码读取
+public static void smartRead(String filePath) {
+    String detectedEncoding = detectEncoding(filePath);
+    System.out.println("检测到编码: " + detectedEncoding);
+
+    try (InputStreamReader reader = new InputStreamReader(
+             new FileInputStream(filePath), detectedEncoding)) {
+
+        BufferedReader bufferedReader = new BufferedReader(reader);
+        String line;
+        while ((line = bufferedReader.readLine()) != null) {
+            System.out.println(line);
+        }
+
+    } catch (IOException e) {
+        System.err.println("智能读取失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>🔄 编码转换工具</h3>
+                <pre><code class="language-java">// 文件编码转换工具
+public static void convertEncoding(String sourceFile, String targetFile,
+                                  String sourceEncoding, String targetEncoding) {
+    try (InputStreamReader reader = new InputStreamReader(
+             new FileInputStream(sourceFile), sourceEncoding);
+         OutputStreamWriter writer = new OutputStreamWriter(
+             new FileOutputStream(targetFile), targetEncoding)) {
+
+        char[] buffer = new char[4096];
+        int charsRead;
+
+        System.out.println("开始编码转换: " + sourceEncoding + " -> " + targetEncoding);
+
+        while ((charsRead = reader.read(buffer)) != -1) {
+            writer.write(buffer, 0, charsRead);
+        }
+
+        writer.flush();
+        System.out.println("编码转换完成: " + targetFile);
+
+    } catch (IOException e) {
+        System.err.println("编码转换失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>📦 批量编码转换</h3>
+                <pre><code class="language-java">// 批量编码转换
+public static void batchConvertEncoding(String sourceDir, String targetDir,
+                                       String sourceEncoding, String targetEncoding) {
+    File sourceDirectory = new File(sourceDir);
+    File targetDirectory = new File(targetDir);
+
+    if (!targetDirectory.exists()) {
+        targetDirectory.mkdirs();
+    }
+
+    File[] files = sourceDirectory.listFiles((dir, name) ->
+        name.endsWith(".txt") || name.endsWith(".csv"));
+
+    if (files != null) {
+        for (File file : files) {
+            String sourcePath = file.getPath();
+            String targetPath = new File(targetDir, file.getName()).getPath();
+
+            convertEncoding(sourcePath, targetPath, sourceEncoding, targetEncoding);
+        }
+    }
+}</code></pre>
+
+                <h3>🌐 常见编码问题与解决方案</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">问题</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">原因</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">解决方案</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">中文乱码</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">编码不匹配</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">指定UTF-8或GBK编码</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">BOM字符显示</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">UTF-8 BOM处理</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">跳过前3个字节或使用UTF-8-sig</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">部分字符显示异常</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">字符集不包含</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">使用Unicode编码(UTF-8/16)</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">跨平台编码问题</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">系统默认编码不同</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">始终指定具体编码</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p class="conclusion">编码检测和转换是处理<strong>多语言文本</strong>的关键技术，能显著提升程序的兼容性和健壮性。</p>
+            </div>
+        </section>
+
+        <!-- Slide 20: Conversion Streams - Best Practices -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>转换流 - 最佳实践</h2>
+                <p>掌握转换流在实际开发中的最佳实践，处理网络流、文件操作等复杂场景。</p>
+
+                <h3>💡 推荐的文本文件处理模式</h3>
+                <pre><code class="language-java">public static void bestPracticeTextProcessing(String filePath) {
+    // 1. 检测或指定编码
+    String encoding = detectEncoding(filePath);
+
+    // 2. 使用转换流 + 缓冲流的组合
+    try (BufferedReader reader = new BufferedReader(
+             new InputStreamReader(
+                 new FileInputStream(filePath), encoding))) {
+
+        String line;
+        int lineNumber = 0;
+
+        while ((line = reader.readLine()) != null) {
+            lineNumber++;
+            // 处理每一行文本
+            processTextLine(line, lineNumber);
+        }
+
+    } catch (IOException e) {
+        System.err.println("文本处理失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>🌐 网络流的编码处理</h3>
+                <pre><code class="language-java">public static void handleNetworkStream(InputStream inputStream, String encoding) {
+    try (InputStreamReader reader = new InputStreamReader(inputStream, encoding);
+         BufferedReader bufferedReader = new BufferedReader(reader)) {
+
+        String response = bufferedReader.readLine();
+        System.out.println("服务器响应: " + response);
+
+        // 处理多行响应
+        while ((response = bufferedReader.readLine()) != null) {
+            if (response.trim().isEmpty()) break; // 空行表示响应结束
+            processResponseLine(response);
+        }
+
+    } catch (IOException e) {
+        System.err.println("网络流处理失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>📁 文件编码转换工具类</h3>
+                <pre><code class="language-java">public class EncodingConverter {
+
+    public static void convertFileToUTF8(String sourcePath, String targetPath) {
+        try {
+            String sourceEncoding = detectEncoding(sourcePath);
+
+            try (InputStreamReader reader = new InputStreamReader(
+                     new FileInputStream(sourcePath), sourceEncoding);
+                 OutputStreamWriter writer = new OutputStreamWriter(
+                     new FileOutputStream(targetPath), "UTF-8")) {
+
+                char[] buffer = new char[8192];
+                int charsRead;
+
+                while ((charsRead = reader.read(buffer)) != -1) {
+                    writer.write(buffer, 0, charsRead);
+                }
+
+                writer.flush();
+                System.out.println("文件已转换为UTF-8: " + targetPath);
+            }
+        } catch (IOException e) {
+            System.err.println("转换失败: " + e.getMessage());
+        }
+    }
+
+    public static void convertDirectoryToUTF8(String sourceDir, String targetDir) {
+        File source = new File(sourceDir);
+        File target = new File(targetDir);
+
+        if (!target.exists()) {
+            target.mkdirs();
+        }
+
+        File[] files = source.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isFile()) {
+                    String targetPath = new File(targetDir, file.getName()).getPath();
+                    convertFileToUTF8(file.getPath(), targetPath);
+                }
+            }
+        }
+    }
+}</code></pre>
+
+                <h3>🚨 常见陷阱与解决方案</h3>
+                <div style="background: #fff3e0; border-left: 4px solid #FF9800; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱1：编码转换失败</h4>
+                    <p><strong>问题</strong>：某些字符在目标编码中不存在</p>
+                    <p><strong>解决</strong>：使用Unicode编码(UTF-8/16)作为目标编码</p>
+                </div>
+
+                <div style="background: #ffebee; border-left: 4px solid #f44336; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱2：BOM处理不当</h4>
+                    <p><strong>问题</strong>：UTF-8 BOM在前端显示为乱码</p>
+                    <p><strong>解决</strong>：检测并跳过BOM字节，或使用无BOM的UTF-8</p>
+                </div>
+
+                <div style="background: #e8f5e8; border-left: 4px solid #4CAF50; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱3：性能问题</h4>
+                    <p><strong>问题</strong>：大文件编码转换性能较差</p>
+                    <p><strong>解决</strong>：使用大缓冲区和批量处理</p>
+                </div>
+
+                <h3>🎯 实际应用场景</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0;">
+                    <div style="background: #f0f8ff; border-radius: 6px; padding: 1rem;">
+                        <h4 style="color: #1976D2; margin-top: 0;">🌍 国际化应用</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li>多语言界面显示</li>
+                            <li>本地化文件处理</li>
+                            <li>字符集自动适配</li>
+                        </ul>
+                    </div>
+                    <div style="background: #fff5f5; border-radius: 6px; padding: 1rem;">
+                        <h4 style="color: #d32f2f; margin-top: 0;">📡 网络编程</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li>HTTP响应处理</li>
+                            <li>Socket通信编码</li>
+                            <li>协议数据解析</li>
+                        </ul>
+                    </div>
+                    <div style="background: #f5fff5; border-radius: 6px; padding: 1rem;">
+                        <h4 style="color: #388e3c; margin-top: 0;">📁 文件处理</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li>历史文件迁移</li>
+                            <li>编码格式统一</li>
+                            <li>批量文件转换</li>
+                        </ul>
+                    </div>
+                    <div style="background: #fffaf0; border-radius: 6px; padding: 1rem;">
+                        <h4 style="color: #f57c00; margin-top: 0;">🔧 数据处理</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li>CSV文件导入</li>
+                            <li>XML/JSON解析</li>
+                            <li>数据库字符集处理</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <p class="conclusion">转换流是处理<strong>多语言文本</strong>和<strong>编码转换</strong>的核心工具。在网络编程、文件处理等场景中，正确使用转换流能确保字符数据的准确性。</p>
+            </div>
+        </section>
+
+        <!-- Slide 21: Decorator Pattern - Core Concepts -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>装饰器模式 - 核心概念</h2>
+                <p>Java IO体系是<strong>装饰器模式</strong>的经典实现。通过层层包装流对象，动态添加功能，而不改变原有类的结构。</p>
+
+                <h3>🎨 装饰器模式核心概念</h3>
+                <div style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 1.5rem; margin: 1rem 0;">
+                    <div style="text-align: center; margin-bottom: 1rem;">
+                        <strong>装饰器模式结构</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap;">
+                        <div style="text-align: center; padding: 0.5rem;">
+                            <div style="background: #e3f2fd; border: 1px solid #2196F3; border-radius: 4px; padding: 0.5rem; margin-bottom: 0.5rem;">
+                                <strong>Component</strong>
+                            </div>
+                            <small>InputStream/OutputStream<br>Reader/Writer</small>
+                        </div>
+                        <div style="font-size: 2rem; color: #666;">→</div>
+                        <div style="text-align: center; padding: 0.5rem;">
+                            <div style="background: #fff3e0; border: 1px solid #FF9800; border-radius: 4px; padding: 0.5rem; margin-bottom: 0.5rem;">
+                                <strong>Concrete Component</strong>
+                            </div>
+                            <small>FileInputStream<br>FileOutputStream</small>
+                        </div>
+                        <div style="font-size: 2rem; color: #666;">→</div>
+                        <div style="text-align: center; padding: 0.5rem;">
+                            <div style="background: #f3e5f5; border: 1px solid #9C27B0; border-radius: 4px; padding: 0.5rem; margin-bottom: 0.5rem;">
+                                <strong>Decorator</strong>
+                            </div>
+                            <small>FilterInputStream<br>FilterOutputStream</small>
+                        </div>
+                        <div style="font-size: 2rem; color: #666;">→</div>
+                        <div style="text-align: center; padding: 0.5rem;">
+                            <div style="background: #e8f5e8; border: 1px solid #4CAF50; border-radius: 4px; padding: 0.5rem; margin-bottom: 0.5rem;">
+                                <strong>Concrete Decorator</strong>
+                            </div>
+                            <small>BufferedInputStream<br>DataInputStream</small>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>🔄 IO流的层层装饰</h3>
+                <pre><code class="language-java">// 装饰器模式的典型应用：多层包装
+public static void decoratorPatternExample() {
+    // 基础组件：文件字节流
+    FileInputStream fileStream = new FileInputStream("data.txt");
+
+    // 第一层装饰：缓冲功能
+    BufferedInputStream bufferedStream = new BufferedInputStream(fileStream);
+
+    // 第二层装饰：数据类型转换
+    DataInputStream dataStream = new DataInputStream(bufferedStream);
+
+    // 第三层装饰：如果需要，还可以继续包装
+    // PushbackInputStream pushbackStream = new PushbackInputStream(dataStream);
+
+    // 现在可以使用所有装饰过的功能
+    int intValue = dataStream.readInt();     // DataInputStream的功能
+    bufferedStream.mark(1000);              // BufferedInputStream的功能
+    fileStream.available();                 // FileInputStream的功能
+}</code></pre>
+
+                <h3>🏗️ 装饰器模式的特点</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0;">
+                    <div style="background: #e3f2fd; border-radius: 6px; padding: 1rem;">
+                        <h4 style="color: #1976D2; margin-top: 0;">🔄 动态组合</h4>
+                        <p>运行时动态添加功能，无需修改原有代码</p>
+                    </div>
+                    <div style="background: #f3e5f5; border-radius: 6px; padding: 1rem;">
+                        <h4 style="color: #7B1FA2; margin-top: 0;">👁️ 透明性</h4>
+                        <p>装饰后的对象仍可当作原类型使用</p>
+                    </div>
+                    <div style="background: #e8f5e8; border-radius: 6px; padding: 1rem;">
+                        <h4 style="color: #388E3C; margin-top: 0;">🔧 功能增强</h4>
+                        <p>不修改原有类结构，通过包装增强功能</p>
+                    </div>
+                    <div style="background: #fff3e0; border-radius: 6px; padding: 1rem;">
+                        <h4 style="color: #F57C00; margin-top: 0;">📦 可组合性</h4>
+                        <p>多个装饰器可以任意组合使用</p>
+                    </div>
+                </div>
+
+                <h3>🎯 Java IO中的装饰器体系</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">类型</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">抽象装饰器</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">具体装饰器</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>字节输入</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">FilterInputStream</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">BufferedInputStream, DataInputStream</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>字节输出</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">FilterOutputStream</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">BufferedOutputStream, DataOutputStream</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>字符输入</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">FilterReader</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">BufferedReader, PushbackReader</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>字符输出</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">FilterWriter</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">BufferedWriter, PrintWriter</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p class="conclusion">装饰器模式是Java IO体系的核心设计思想，理解它有助于更好地使用IO流和设计灵活的程序架构。</p>
+            </div>
+        </section>
+
+        <!-- Slide 22: Decorator Pattern - Custom Decorators -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>装饰器模式 - 自定义装饰器</h2>
+                <p>学习如何创建自定义装饰器，为IO流添加特定功能，扩展Java IO的能力。</p>
+
+                <h3>🏗️ 自定义装饰器示例</h3>
+                <pre><code class="language-java">// 自定义装饰器：统计读取的字节数
+public class CountingInputStream extends FilterInputStream {
+    private long bytesRead = 0;
+
+    public CountingInputStream(InputStream in) {
+        super(in);
+    }
+
+    @Override
+    public int read() throws IOException {
+        int data = super.read();
+        if (data != -1) {
+            bytesRead++;
+        }
+        return data;
+    }
+
+    @Override
+    public int read(byte[] b, int off, int len) throws IOException {
+        int count = super.read(b, off, len);
+        if (count != -1) {
+            bytesRead += count;
+        }
+        return count;
+    }
+
+    public long getBytesRead() {
+        return bytesRead;
+    }
+
+    public void resetCount() {
+        bytesRead = 0;
+    }
+}</code></pre>
+
+                <h3>💡 更多自定义装饰器示例</h3>
+                <pre><code class="language-java">// 1. 加密装饰器
+public class EncryptingOutputStream extends FilterOutputStream {
+    private final byte[] key;
+
+    public EncryptingOutputStream(OutputStream out, String key) {
+        super(out);
+        this.key = key.getBytes(StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public void write(int b) throws IOException {
+        byte encrypted = (byte) (b ^ key[0]);
+        super.write(encrypted);
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) throws IOException {
+        for (int i = 0; i < len; i++) {
+            write(b[off + i]);
+        }
+    }
+}
+
+// 2. 压缩装饰器
+public class CompressingOutputStream extends FilterOutputStream {
+    private ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+
+    public CompressingOutputStream(OutputStream out) {
+        super(out);
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) throws IOException {
+        buffer.write(b, off, len);
+    }
+
+    @Override
+    public void flush() throws IOException {
+        byte[] compressed = compress(buffer.toByteArray());
+        super.write(compressed);
+        super.flush();
+        buffer.reset();
+    }
+
+    private byte[] compress(byte[] data) {
+        // 简单的压缩实现（示例）
+        return data; // 实际应用中使用GZIP等算法
+    }
+}</code></pre>
+
+                <h3>🎯 使用自定义装饰器</h3>
+                <pre><code class="language-java">// 使用统计装饰器
+public static void useCountingDecorator() {
+    try (CountingInputStream countingStream =
+         new CountingInputStream(new FileInputStream("largefile.dat"))) {
+
+        byte[] buffer = new byte[1024];
+        while (countingStream.read(buffer) != -1) {
+            // 处理数据
+        }
+
+        System.out.println("总共读取了 " + countingStream.getBytesRead() + " 字节");
+
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+}
+
+// 组合多个装饰器
+public static void useMultipleDecorators(String filePath) {
+    try (InputStream input = new CountingInputStream(
+             new EncryptingInputStream(
+                 new BufferedInputStream(
+                     new FileInputStream(filePath))))) {
+
+        byte[] buffer = new byte[1024];
+        while (input.read(buffer) != -1) {
+            // 数据经过：文件读取 → 缓冲 → 加密 → 统计
+        }
+
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+}</code></pre>
+
+                <h3>🚨 自定义装饰器注意事项</h3>
+                <div style="background: #fff3e0; border-left: 4px solid #FF9800; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">注意1：保持接口一致性</h4>
+                    <p><strong>要点</strong>：确保装饰器不会改变原有接口的行为约定</p>
+                </div>
+
+                <div style="background: #ffebee; border-left: 4px solid #f44336; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">注意2：正确处理异常</h4>
+                    <p><strong>要点</strong>：装饰器中的异常处理应该保持一致性和透明性</p>
+                </div>
+
+                <div style="background: #e8f5e8; border-left: 4px solid #4CAF50; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">注意3：资源管理</h4>
+                    <p><strong>要点</strong>：装饰器不应该干扰底层的资源管理机制</p>
+                </div>
+
+                <p class="conclusion">自定义装饰器是扩展Java IO功能的强大方式，可以根据业务需求添加特定的处理逻辑。</p>
+            </div>
+        </section>
+
+        <!-- Slide 23: Decorator Pattern - Best Practices -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>装饰器模式 - 最佳实践</h2>
+                <p>掌握装饰器模式的正确使用方法，常见组合模式以及在实际项目中的应用技巧。</p>
+
+                <h3>🎯 常见装饰器组合</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">组合方式</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">用途</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">示例</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">Buffered + File</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">文件IO性能优化</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">BufferedReader(new FileReader())</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">Data + Buffered + File</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">高效读取数据类型</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">DataInputStream(new BufferedInputStream())</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">Pushback + Buffered</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">需要回退的解析</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">PushbackReader(new BufferedReader())</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">Line Number + Buffered</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">带行号的文本处理</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">LineNumberReader(new BufferedReader())</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>💡 装饰器模式的优势</h3>
+                <pre><code class="language-java">// 1. 动态组合功能
+public void dynamicComposition(String filePath) {
+    try (InputStream base = new FileInputStream(filePath)) {
+        InputStream stream = base;
+
+        // 根据需要动态添加装饰器
+        if (needBuffering()) {
+            stream = new BufferedInputStream(stream);
+        }
+
+        if (needDataTypes()) {
+            stream = new DataInputStream(stream);
+        }
+
+        if (needPushback()) {
+            stream = new PushbackInputStream(stream);
+        }
+
+        // 使用组合后的流
+        processStream(stream);
+
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+}
+
+// 2. 透明性：装饰后的流仍可当作原类型使用
+public static void transparencyExample() {
+    InputStream stream = new DataInputStream(
+                            new BufferedInputStream(
+                                new FileInputStream("data.dat")));
+
+    // 仍然可以作为InputStream使用
+    readAsInputStream(stream);
+
+    // 也可以作为DataInputStream使用
+    readAsDataInputStream((DataInputStream) stream);
+}</code></pre>
+
+                <h3>🔧 实际应用：复合IO工具</h3>
+                <pre><code class="language-java">// 复合IO工具：带有多种功能的读取器
+public class AdvancedFileReader implements AutoCloseable {
+    private final BufferedReader reader;
+    private int lineNumber = 0;
+    private long totalBytes = 0;
+
+    public AdvancedFileReader(String filePath, String encoding) throws IOException {
+        this.reader = new BufferedReader(
+                        new InputStreamReader(
+                            new FileInputStream(filePath), encoding));
+    }
+
+    // 读取下一行并更新统计信息
+    public String readLine() throws IOException {
+        String line = reader.readLine();
+        if (line != null) {
+            lineNumber++;
+            totalBytes += line.getBytes(StandardCharsets.UTF_8).length;
+        }
+        return line;
+    }
+
+    // 读取指定行
+    public String readLineAt(int targetLine) throws IOException {
+        reset();
+        String line;
+        while ((line = readLine()) != null && lineNumber < targetLine) {
+            // 继续读取
+        }
+        return lineNumber == targetLine ? line : null;
+    }
+
+    public int getCurrentLineNumber() { return lineNumber; }
+    public long getTotalBytesRead() { return totalBytes; }
+    public void reset() throws IOException {
+        reader.reset();
+        lineNumber = 0;
+        totalBytes = 0;
+    }
+
+    @Override
+    public void close() throws IOException {
+        reader.close();
+    }
+}</code></pre>
+
+                <h3>⚠️ 装饰器使用注意事项</h3>
+                <ul>
+                    <li><strong>装饰顺序</strong>：装饰器的顺序很重要，通常缓冲流应该接近底层</li>
+                    <li><strong>资源管理</strong>：只需关闭最外层的装饰器，它会自动关闭内层</li>
+                    <li><strong>功能冲突</strong>：某些装饰器可能不兼容，需要注意组合</li>
+                    <li><strong>性能开销</strong>：过多装饰可能带来性能开销</li>
+                </ul>
+
+                <p class="conclusion">装饰器模式让Java IO具有<strong>极强的灵活性</strong>。通过组合不同的装饰器，可以构建出功能强大且符合特定需求的IO解决方案，这是设计模式在实际应用中的完美体现。</p>
+            </div>
+        </section>
+
+              <!-- Slide 16: Object Serialization -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>对象序列化</h2>
+                <p>Java序列化机制将对象转换为字节流，便于存储或传输。<code>Serializable</code>接口和<code>ObjectOutputStream/ObjectInputStream</code>是实现对象序列化的核心。</p>
+
+                <h3>🏷️ Serializable接口</h3>
+                <pre><code class="language-java">// 实现Serializable接口
+public class Student implements Serializable {
+    private static final long serialVersionUID = 1L;
+
+    private String name;
+    private int age;
+    private double gpa;
+    private transient String password; // transient字段不会被序列化
+
+    public Student(String name, int age, double gpa, String password) {
+        this.name = name;
+        this.age = age;
+        this.gpa = gpa;
+        this.password = password;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("Student{name='%s', age=%d, gpa=%.2f, password='%s'}",
+                           name, age, gpa, password);
+    }
+}
+
+// 序列化对象
+public static void serializeObject(Student student, String filePath) {
+    try (ObjectOutputStream oos = new ObjectOutputStream(
+             new FileOutputStream(filePath))) {
+
+        oos.writeObject(student);
+        System.out.println("对象序列化成功: " + student);
+
+    } catch (IOException e) {
+        System.err.println("序列化失败: " + e.getMessage());
+    }
+}
+
+// 反序列化对象
+public static Student deserializeObject(String filePath) {
+    try (ObjectInputStream ois = new ObjectInputStream(
+             new FileInputStream(filePath))) {
+
+        Student student = (Student) ois.readObject();
+        System.out.println("对象反序列化成功: " + student);
+
+        return student;
+
+    } catch (IOException | ClassNotFoundException e) {
+        System.err.println("反序列化失败: " + e.getMessage());
+        return null;
+    }
+}</code></pre>
+
+                <h3>🎯 序列化ID的作用</h3>
+                <pre><code class="language-java">public class Product implements Serializable {
+    // 推荐显式声明serialVersionUID
+    private static final long serialVersionUID = 123456789L;
+
+    private String productName;
+    private double price;
+
+    // 如果不声明serialVersionUID，JVM会根据类信息自动计算
+    // 这可能导致版本兼容性问题
+}
+
+// 版本兼容性问题示例
+public class Product implements Serializable {
+    // 版本1: 只有productName和price
+    private String productName;
+    private double price;
+
+    // 版本2: 添加了新字段category
+    private String category; // 新增字段
+}
+
+// 如果没有serialVersionUID，版本1和版本2的序列化数据可能不兼容</code></pre>
+
+                <p class="conclusion">对象序列化是<strong>持久化对象状态</strong>的重要机制，广泛用于缓存、会话管理、分布式系统中。注意serialVersionUID的管理和transient关键字的使用。</p>
+            </div>
+        </section>
+
+        <!-- Slide 17: RandomAccessFile -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>RandomAccessFile与文件指针</h2>
+                <p><code>RandomAccessFile</code>支持随机访问文件的任意位置，通过文件指针实现读写操作，是处理大型文件的利器。</p>
+
+                <h3>📍 文件指针操作</h3>
+                <pre><code class="language-java">public static void randomAccessDemo(String filePath) {
+    try (RandomAccessFile raf = new RandomAccessFile(filePath, "rw")) {
+
+        // 获取当前文件指针位置
+        long position = raf.getFilePointer();
+        System.out.println("初始位置: " + position);
+
+        // 写入一些数据
+        raf.writeUTF("Hello, RandomAccessFile!");
+        raf.writeInt(42);
+        raf.writeDouble(3.14159);
+
+        // 移动文件指针到文件开头
+        raf.seek(0);
+        System.out.println("回到开头: " + raf.getFilePointer());
+
+        // 读取字符串
+        String message = raf.readUTF();
+        System.out.println("读取字符串: " + message);
+
+        // 跳转到整数位置
+        raf.seek(raf.getFilePointer()); // 当前位置已在整数前
+
+        // 读取整数
+        int number = raf.readInt();
+        System.out.println("读取整数: " + number);
+
+        // 获取文件长度
+        long length = raf.length();
+        System.out.println("文件长度: " + length);
+
+        // 移动到文件末尾
+        raf.seek(length);
+        raf.writeUTF("追加的内容");
+
+    } catch (IOException e) {
+        System.err.println("随机访问文件失败: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>🎯 实际应用示例</h3>
+                <pre><code class="language-java">// 简单的数据库实现
+public class SimpleDatabase {
+    private final RandomAccessFile raf;
+    private final int recordSize = 100; // 每条记录100字节
+
+    public SimpleDatabase(String filePath) throws IOException {
+        this.raf = new RandomAccessFile(filePath, "rw");
+    }
+
+    // 写入指定位置的记录
+    public void writeRecord(int index, String data) throws IOException {
+        long position = (long) index * recordSize;
+        raf.seek(position);
+
+        // 填充到固定长度
+        byte[] bytes = data.getBytes(StandardCharsets.UTF_8);
+        byte[] record = new byte[recordSize];
+        System.arraycopy(bytes, 0, record, 0, Math.min(bytes.length, recordSize));
+
+        raf.write(record);
+    }
+
+    // 读取指定位置的记录
+    public String readRecord(int index) throws IOException {
+        long position = (long) index * recordSize;
+        raf.seek(position);
+
+        byte[] record = new byte[recordSize];
+        raf.read(record);
+
+        // 移除尾部空字符
+        int end = record.length;
+        while (end > 0 && record[end - 1] == 0) {
+            end--;
+        }
+
+        return new String(record, 0, end, StandardCharsets.UTF_8);
+    }
+
+    // 获取记录数量
+    public int getRecordCount() throws IOException {
+        return (int) (raf.length() / recordSize);
+    }
+
+    public void close() throws IOException {
+        raf.close();
+    }
+}</code></pre>
+
+                <h3>⚠️ 使用注意事项</h3>
+                <ul>
+                    <li><strong>指针位置</strong>：seek()方法的参数不能为负数</li>
+                    <li><strong>文件长度</strong>：seek超过文件末尾会自动扩展文件</li>
+                    <li><strong>线程安全</strong>：RandomAccessFile不是线程安全的</li>
+                    <li><strong>性能考虑</strong>：频繁的seek操作可能影响性能</li>
+                </ul>
+
+                <p class="conclusion">RandomAccessFile是<strong>文件随机访问</strong>的理想选择，适用于数据库、日志文件、大文件处理等需要精确定位的场景。</p>
+            </div>
+        </section>
+
+        <!-- Slide 18: Scanner File Reading -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Scanner类读取文件</h2>
+                <p><code>Scanner</code>类提供了便捷的文本扫描功能，支持各种数据类型的解析，是处理格式化文本文件的简单工具。</p>
+
+                <h3>📖 Scanner基本用法</h3>
+                <pre><code class="language-java">public static void scannerBasics(String filePath) {
+    try (Scanner scanner = new Scanner(new File(filePath))) {
+
+        // 读取整行
+        while (scanner.hasNextLine()) {
+            String line = scanner.nextLine();
+            System.out.println("行: " + line);
+        }
+
+    } catch (FileNotFoundException e) {
+        System.err.println("文件未找到: " + e.getMessage());
+    }
+}
+
+// 解析不同类型的数据
+public static void parseDataTypes(String filePath) {
+    try (Scanner scanner = new Scanner(new File(filePath))) {
+
+        while (scanner.hasNext()) {
+            if (scanner.hasNextInt()) {
+                int number = scanner.nextInt();
+                System.out.println("整数: " + number);
+            } else if (scanner.hasNextDouble()) {
+                double decimal = scanner.nextDouble();
+                System.out.println("小数: " + decimal);
+            } else if (scanner.hasNextBoolean()) {
+                boolean bool = scanner.nextBoolean();
+                System.out.println("布尔值: " + bool);
+            } else {
+                String text = scanner.next();
+                System.out.println("文本: " + text);
+            }
+        }
+
+    } catch (FileNotFoundException e) {
+        System.err.println("文件未找到: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>🎯 实际应用：CSV文件解析</h3>
+                <pre><code class="language-java">public static void parseCSVFile(String filePath) {
+    try (Scanner scanner = new Scanner(new File(filePath))) {
+
+        // 设置分隔符为逗号
+        scanner.useDelimiter(",");
+
+        int lineNumber = 0;
+        while (scanner.hasNextLine()) {
+            lineNumber++;
+            String line = scanner.nextLine();
+
+            // 跳过空行和注释行
+            if (line.trim().isEmpty() || line.startsWith("#")) {
+                continue;
+            }
+
+            // 解析CSV行
+            Scanner lineScanner = new Scanner(line);
+            lineScanner.useDelimiter(",");
+
+            List<String> fields = new ArrayList<>();
+            while (lineScanner.hasNext()) {
+                fields.add(lineScanner.next().trim());
+            }
+
+            System.out.println("第" + lineNumber + "行: " + fields);
+            lineScanner.close();
+        }
+
+    } catch (FileNotFoundException e) {
+        System.err.println("CSV文件未找到: " + e.getMessage());
+    }
+}</code></pre>
+
+                <h3>🔧 Scanner配置选项</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">方法</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">用途</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">示例</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">useDelimiter()</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">设置分隔符</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">scanner.useDelimiter(";")</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">useLocale()</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">设置地区</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">scanner.useLocale(Locale.US)</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">hasNextPattern()</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">正则表达式匹配</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">scanner.hasNext("\\d+")</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">findInLine()</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">行内查找</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">scanner.findInLine("error")</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>💡 Scanner vs BufferedReader</h3>
+                <pre><code class="language-java">// Scanner: 简单易用，适合格式化数据
+public void scannerExample() {
+    try (Scanner scanner = new Scanner(new File("data.txt"))) {
+        while (scanner.hasNextInt()) {
+            int num = scanner.nextInt();
+            processNumber(num);
+        }
+    }
+}
+
+// BufferedReader: 性能更好，适合大文件
+public void bufferedReaderExample() {
+    try (BufferedReader reader = new BufferedReader(new FileReader("data.txt"))) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+            int num = Integer.parseInt(line.trim());
+            processNumber(num);
+        }
+    }
+}</code></pre>
+
+                <p class="conclusion">Scanner是<strong>文本解析</strong>的便捷工具，特别适合处理配置文件、CSV数据等格式化文本。对于大文件，BufferedReader通常是更好的选择。</p>
+            </div>
+        </section>
+
+        <!-- Slide 19: Exception Handling and Resource Management -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>IO异常处理和资源管理</h2>
+                <p>正确的异常处理和资源管理是编写健壮IO程序的关键。Java提供了多种机制来确保资源的正确释放和异常的优雅处理。</p>
+
+                <h3>🛡️ Try-with-Resources (推荐)</h3>
+                <pre><code class="language-java">// 传统方式（容易出错）
+public static void oldWayFileCopy(String source, String target) {
+    FileInputStream fis = null;
+    FileOutputStream fos = null;
+
+    try {
+        fis = new FileInputStream(source);
+        fos = new FileOutputStream(target);
+
+        byte[] buffer = new byte[1024];
+        int bytesRead;
+
+        while ((bytesRead = fis.read(buffer)) != -1) {
+            fos.write(buffer, 0, bytesRead);
+        }
+
+    } catch (IOException e) {
+        System.err.println("文件复制失败: " + e.getMessage());
+    } finally {
+        // 需要手动关闭资源，容易遗漏
+        try {
+            if (fis != null) fis.close();
+        } catch (IOException e) {
+            System.err.println("关闭输入流失败: " + e.getMessage());
+        }
+
+        try {
+            if (fos != null) fos.close();
+        } catch (IOException e) {
+            System.err.println("关闭输出流失败: " + e.getMessage());
+        }
+    }
+}
+
+// 现代方式（推荐）
+public static void modernWayFileCopy(String source, String target) {
+    try (FileInputStream fis = new FileInputStream(source);
+         FileOutputStream fos = new FileOutputStream(target)) {
+
+        byte[] buffer = new byte[1024];
+        int bytesRead;
+
+        while ((bytesRead = fis.read(buffer)) != -1) {
+            fos.write(buffer, 0, bytesRead);
+        }
+
+    } catch (IOException e) {
+        System.err.println("文件复制失败: " + e.getMessage());
+        // 资源会自动关闭，无需手动操作
+    }
+}</code></pre>
+
+                <h3>🔄 异常链处理</h3>
+                <pre><code class="language-java">public class FileProcessor {
+
+    public void processFile(String filePath) throws FileProcessingException {
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            int lineNumber = 0;
+
+            while ((line = reader.readLine()) != null) {
+                lineNumber++;
+                try {
+                    processLine(line, lineNumber);
+                } catch (LineProcessingException e) {
+                    // 包装异常，保留原始异常信息
+                    throw new FileProcessingException(
+                        "处理第 " + lineNumber + " 行时失败: " + e.getMessage(), e);
+                }
+            }
+
+        } catch (IOException e) {
+            throw new FileProcessingException("读取文件失败: " + e.getMessage(), e);
+        }
+    }
+
+    private void processLine(String line, int lineNumber) throws LineProcessingException {
+        // 处理单行数据，可能抛出业务异常
+        if (line == null || line.trim().isEmpty()) {
+            throw new LineProcessingException("空行");
+        }
+
+        // 更多处理逻辑...
+    }
+}
+
+// 自定义异常类
+public class FileProcessingException extends Exception {
+    public FileProcessingException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}
+
+public class LineProcessingException extends Exception {
+    public LineProcessingException(String message) {
+        super(message);
+    }
+}</code></pre>
+
+                <h3>⚡ 性能相关的异常处理</h3>
+                <pre><code class="language-java">public class OptimizedFileReader {
+
+    // 避免在循环中创建异常
+    public static void efficientFileProcessing(String filePath) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            int validLines = 0;
+            int invalidLines = 0;
+
+            while ((line = reader.readLine()) != null) {
+                try {
+                    processDataLine(line);
+                    validLines++;
+                } catch (InvalidDataException e) {
+                    // 记录错误但继续处理
+                    invalidLines++;
+                    System.err.println("跳过无效行: " + e.getMessage());
+                }
+            }
+
+            System.out.printf("处理完成: 有效行 %d, 无效行 %d%n", validLines, invalidLines);
+
+        } catch (IOException e) {
+            System.err.println("文件处理失败: " + e.getMessage());
+        }
+    }
+
+    // 批量处理，减少异常开销
+    public static void batchProcessing(String filePath) {
+        List<String> validLines = new ArrayList<>();
+        List<String> invalidLines = new ArrayList<>();
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                if (isValidLine(line)) {
+                    validLines.add(line);
+                } else {
+                    invalidLines.add(line);
+                }
+            }
+
+            // 批量处理有效数据
+            processBatch(validLines);
+
+            // 记录无效数据
+            if (!invalidLines.isEmpty()) {
+                System.err.println("发现 " + invalidLines.size() + " 行无效数据");
+            }
+
+        } catch (IOException e) {
+            System.err.println("批量处理失败: " + e.getMessage());
+        }
+    }
+
+    private static boolean isValidLine(String line) {
+        // 验证逻辑，避免抛出异常
+        return line != null && !line.trim().isEmpty() &&
+               line.matches("[a-zA-Z0-9,\\s]+");
+    }
+}</code></pre>
+
+                <h3>💡 最佳实践总结</h3>
+                <ul>
+                    <li><strong>优先使用try-with-resources</strong>：自动管理资源，避免泄漏</li>
+                    <li><strong>具体异常处理</strong>：捕获具体的异常类型，而非笼统的Exception</li>
+                    <li><strong>异常链保留</strong>：包装异常时保留原始异常信息</li>
+                    <li><strong>资源清理</strong>：在finally块或try-with-resources中确保资源释放</li>
+                    <li><strong>性能考虑</strong>：避免在热点路径上频繁创建异常</li>
+                </ul>
+
+                <p class="conclusion">良好的异常处理和资源管理是<strong>健壮程序</strong>的基础。正确使用try-with-resources和合理的异常处理策略，能让你的IO程序更加可靠和高效。</p>
+            </div>
+        </section>
+
+        <!-- Slide 24: Performance Optimization - Buffer Strategies -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>性能优化 - 缓冲策略</h2>
+                <p>缓冲是提升IO性能的基础策略。通过合理的缓冲区大小和使用方式，可以获得显著的性能提升。</p>
+
+                <h3>🚀 缓冲策略的重要性</h3>
+                <div style="background: #e3f2fd; border: 2px solid #2196F3; border-radius: 8px; padding: 1.5rem; margin: 1rem 0;">
+                    <div style="text-align: center; margin-bottom: 1rem;">
+                        <strong>为什么需要缓冲？</strong>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div style="background: white; border-radius: 6px; padding: 1rem;">
+                            <h5 style="color: #f44336; margin-top: 0;">❌ 无缓冲</h5>
+                            <p style="font-size: 0.9rem; margin-bottom: 1rem;">每次读取都访问磁盘</p>
+                            <div style="text-align: center;">
+                                <div style="font-size: 1.5rem;">💾</div>
+                                <p style="font-size: 0.8rem;">磁盘IO</p>
+                                <p style="font-size: 1.2rem; color: #f44336;">↓</p>
+                                <p style="font-size: 0.8rem;">频繁访问</p>
+                            </div>
+                            <p style="font-size: 0.9rem; color: #f44336;">性能极差</p>
+                        </div>
+                        <div style="background: white; border-radius: 6px; padding: 1rem;">
+                            <h5 style="color: #4CAF50; margin-top: 0;">✅ 有缓冲</h5>
+                            <p style="font-size: 0.9rem; margin-bottom: 1rem;">批量读取到内存</p>
+                            <div style="text-align: center;">
+                                <div style="font-size: 1.5rem;">💾</div>
+                                <p style="font-size: 0.8rem;">磁盘IO</p>
+                                <p style="font-size: 1.2rem; color: #4CAF50;">↓</p>
+                                <p style="font-size: 0.8rem;">批量读取</p>
+                            </div>
+                            <p style="font-size: 0.9rem; color: #4CAF50;">性能优异</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>🔧 缓冲性能对比测试</h3>
+                <pre><code class="language-java">public class BufferOptimization {
+
+    // 性能对比测试
+    public static void bufferPerformanceTest(String filePath) {
+        int iterations = 1000;
+
+        // 测试1：无缓冲读取
+        long startTime = System.nanoTime();
+        for (int i = 0; i < iterations; i++) {
+            try (FileInputStream fis = new FileInputStream(filePath)) {
+                byte[] buffer = new byte[1]; // 单字节读取
+                while (fis.read(buffer) != -1) {
+                    // 空循环
+                }
+            }
+        }
+        long noBufferTime = System.nanoTime() - startTime;
+
+        // 测试2：使用缓冲流
+        startTime = System.nanoTime();
+        for (int i = 0; i < iterations; i++) {
+            try (BufferedInputStream bis = new BufferedInputStream(
+                     new FileInputStream(filePath), 8192)) {
+                byte[] buffer = new byte[1024];
+                while (bis.read(buffer) != -1) {
+                    // 空循环
+                }
+            }
+        }
+        long bufferTime = System.nanoTime() - startTime;
+
+        System.out.printf("无缓冲: %.2f ms%n", noBufferTime / 1_000_000.0);
+        System.out.printf("缓冲流: %.2f ms%n", bufferTime / 1_000_000.0);
+        System.out.printf("性能提升: %.1fx%n", (double) noBufferTime / bufferTime);
+    }
+}</code></pre>
+
+                <h3>📏 缓冲区大小优化</h3>
+                <pre><code class="language-java">// 缓冲区大小优化
+public static void optimalBufferSize(String filePath) {
+    int[] bufferSizes = {512, 1024, 2048, 4096, 8192, 16384, 32768, 65536};
+
+    System.out.println("缓冲区大小性能测试:");
+    System.out.println("大小\t\t时间(ms)\t吞吐量(MB/s)");
+
+    for (int size : bufferSizes) {
+        long startTime = System.nanoTime();
+
+        try (BufferedInputStream bis = new BufferedInputStream(
+                 new FileInputStream(filePath), size)) {
+
+            byte[] buffer = new byte[8192];
+            long totalBytes = 0;
+
+            while (bis.read(buffer) != -1) {
+                totalBytes += buffer.length;
+            }
+
+            long endTime = System.nanoTime();
+            long timeMs = (endTime - startTime) / 1_000_000;
+            double throughput = (totalBytes / 1_048_576.0) / (timeMs / 1000.0);
+
+            System.out.printf("%d\t\t%d\t\t%.2f%n", size, timeMs, throughput);
+
+        } catch (IOException e) {
+            System.err.println("测试失败: " + e.getMessage());
+        }
+    }
+}</code></pre>
+
+                <h3>🎯 缓冲区选择指南</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">文件大小</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">推荐缓冲区</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">&lt; 1MB</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">4KB - 8KB</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">小文件，内存占用少</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">1MB - 100MB</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">8KB - 32KB</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">中等文件，平衡性能</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">&gt; 100MB</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">32KB - 64KB</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">大文件，最大化吞吐量</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">网络IO</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">64KB - 128KB</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">网络延迟大，增大缓冲</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>💡 缓冲最佳实践</h3>
+                <ul>
+                    <li><strong>默认使用缓冲流</strong>：除非特殊需求，否则始终使用BufferedXxx</li>
+                    <li><strong>合理设置缓冲区大小</strong>：根据文件大小和场景选择合适大小</li>
+                    <li><strong>避免频繁flush</strong>：只在必要时调用flush()</li>
+                    <li><strong>批量操作优于单字节</strong>：尽量使用批量读写方法</li>
+                </ul>
+
+                <p class="conclusion">缓冲是IO性能优化的<strong>基础且重要</strong>的策略。合理使用缓冲流可以带来10-100倍的性能提升。</p>
+            </div>
+        </section>
+
+        <!-- Slide 25: Performance Optimization - NIO and Advanced Techniques -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>性能优化 - NIO与高级技术</h2>
+                <p>对于大文件和高性能场景，传统IO可能不够用。NIO和内存映射提供了更高效的解决方案。</p>
+
+                <h3>🎯 NIO vs 传统IO对比</h3>
+                <pre><code class="language-java">import java.nio.channels.*;
+import java.nio.ByteBuffer;
+
+public class NIOComparison {
+
+    // 传统IO方式
+    public static void traditionalCopy(String source, String target) {
+        long startTime = System.nanoTime();
+
+        try (FileInputStream fis = new FileInputStream(source);
+             FileOutputStream fos = new FileOutputStream(target)) {
+
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                fos.write(buffer, 0, bytesRead);
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        long endTime = System.nanoTime();
+        System.out.printf("传统IO耗时: %.2f ms%n", (endTime - startTime) / 1_000_000.0);
+    }
+
+    // NIO方式
+    public static void nioCopy(String source, String target) {
+        long startTime = System.nanoTime();
+
+        try (FileChannel sourceChannel = FileChannel.open(Paths.get(source), StandardOpenOption.READ);
+             FileChannel targetChannel = FileChannel.open(Paths.get(target),
+                     StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+
+            ByteBuffer buffer = ByteBuffer.allocateDirect(8192); // 直接缓冲区
+
+            while (sourceChannel.read(buffer) != -1) {
+                buffer.flip(); // 切换到读模式
+                targetChannel.write(buffer);
+                buffer.clear(); // 清空缓冲区，准备写入
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        long endTime = System.nanoTime();
+        System.out.printf("NIO耗时: %.2f ms%n", (endTime - startTime) / 1_000_000.0);
+    }
+}</code></pre>
+
+                <h3>💾 内存映射文件技术</h3>
+                <pre><code class="language-java">public class MemoryMappedFile {
+
+    public static void memoryMappedCopy(String source, String target) {
+        long startTime = System.nanoTime();
+
+        try (RandomAccessFile sourceFile = new RandomAccessFile(source, "r");
+             RandomAccessFile targetFile = new RandomAccessFile(target, "rw");
+             FileChannel sourceChannel = sourceFile.getChannel();
+             FileChannel targetChannel = targetFile.getChannel()) {
+
+            long fileSize = sourceChannel.size();
+
+            // 内存映射源文件
+            MappedByteBuffer sourceBuffer = sourceChannel.map(
+                FileChannel.MapMode.READ_ONLY, 0, fileSize);
+
+            // 内存映射目标文件
+            MappedByteBuffer targetBuffer = targetChannel.map(
+                FileChannel.MapMode.READ_WRITE, 0, fileSize);
+
+            // 直接内存复制
+            targetBuffer.put(sourceBuffer);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        long endTime = System.nanoTime();
+        System.out.printf("内存映射耗时: %.2f ms%n", (endTime - startTime) / 1_000_000.0);
+    }
+
+    // 大文件处理
+    public static void processLargeFile(String filePath, long chunkSize) {
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "r");
+             FileChannel channel = file.getChannel()) {
+
+            long fileSize = channel.size();
+            long position = 0;
+
+            while (position < fileSize) {
+                long remaining = fileSize - position;
+                long currentChunk = Math.min(chunkSize, remaining);
+
+                MappedByteBuffer buffer = channel.map(
+                    FileChannel.MapMode.READ_ONLY, position, currentChunk);
+
+                // 处理当前块
+                processBuffer(buffer);
+
+                position += currentChunk;
+
+                // 释放内存映射（帮助垃圾回收）
+                Cleaner cleaner = ((DirectBuffer) buffer).cleaner();
+                if (cleaner != null) {
+                    cleaner.clean();
+                }
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}</code></pre>
+
+                <h3>🔄 NIO的关键优势</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0;">
+                    <div style="background: #e3f2fd; border-radius: 6px; padding: 1rem;">
+                        <h4 style="color: #1976D2; margin-top: 0;">⚡ 直接缓冲区</h4>
+                        <p>使用直接内存，减少数据拷贝</p>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li>ByteBuffer.allocateDirect()</li>
+                            <li>避免JVM堆内存拷贝</li>
+                            <li>提高大文件处理效率</li>
+                        </ul>
+                    </div>
+                    <div style="background: #f3e5f5; border-radius: 6px; padding: 1rem;">
+                        <h4 style="color: #7B1FA2; margin-top: 0;">🔄 非阻塞IO</h4>
+                        <p>支持异步IO操作</p>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li>Selector多路复用</li>
+                            <li>Channel异步操作</li>
+                            <li>高并发网络编程</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3>📊 适用场景对比</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">场景</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">传统IO</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">NIO</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">推荐</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">小文件操作</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">✅ 简单易用</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">❌ 过度复杂</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">传统IO</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">大文件读写</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">⚠️ 性能一般</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">✅ 高效处理</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">NIO</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">随机访问</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">❌ 需要seek</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">✅ 内存映射</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">内存映射</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">高并发</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">❌ 线程阻塞</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">✅ 非阻塞</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">NIO.2</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p class="conclusion">NIO和内存映射为高性能IO提供了强大的工具，特别适合大文件、随机访问和高并发场景。</p>
+            </div>
+        </section>
+
+        <!-- Slide 26: Performance Optimization - Best Practices -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>性能优化 - 最佳实践清单</h2>
+                <p>掌握IO性能优化的核心要点，建立完整的性能优化检查清单，让程序性能更上一层楼。</p>
+
+                <h3>📊 性能优化检查清单</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">优化项</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">建议</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">预期收益</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">优先级</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">使用缓冲流</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">文件操作默认使用</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">10-100x性能提升</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">⭐⭐⭐⭐⭐</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">合适的缓冲区大小</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">8KB-64KB</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">20-50%性能提升</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">⭐⭐⭐⭐</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">批量操作</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">避免单字节操作</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">显著性能提升</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">⭐⭐⭐⭐</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">NIO用于大文件</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">&gt;100MB文件</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">20-30%性能提升</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">⭐⭐⭐</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">内存映射</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">超大文件随机访问</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">显著性能提升</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">⭐⭐</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">资源管理</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">try-with-resources</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">避免资源泄漏</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">⭐⭐⭐⭐⭐</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>🔧 性能监控工具</h3>
+                <pre><code class="language-java">public class IOPerformanceMonitor {
+
+    // 简单的性能计时器
+    public static long timeExecution(Runnable task) {
+        long startTime = System.nanoTime();
+        task.run();
+        return System.nanoTime() - startTime;
+    }
+
+    // 文件复制性能测试
+    public static void benchmarkFileCopy(String source, String target) {
+        long traditionalTime = timeExecution(() -> traditionalCopy(source, target));
+        long bufferedTime = timeExecution(() -> bufferedCopy(source, target));
+        long nioTime = timeExecution(() -> nioCopy(source, target));
+
+        System.out.println("=== 文件复制性能对比 ===");
+        System.out.printf("传统IO:  %.2f ms%n", traditionalTime / 1_000_000.0);
+        System.out.printf("缓冲IO:  %.2f ms (%.1fx faster)%n",
+            bufferedTime / 1_000_000.0, (double) traditionalTime / bufferedTime);
+        System.out.printf("NIO:     %.2f ms (%.1fx faster)%n",
+            nioTime / 1_000_000.0, (double) traditionalTime / nioTime);
+    }
+
+    // 吞吐量测试
+    public static void throughputTest(String filePath) {
+        try (FileInputStream fis = new FileInputStream(filePath)) {
+            byte[] buffer = new byte[8192];
+            long totalBytes = 0;
+            long startTime = System.currentTimeMillis();
+
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                totalBytes += bytesRead;
+            }
+
+            long endTime = System.currentTimeMillis();
+            long duration = endTime - startTime;
+            double throughput = (totalBytes / 1024.0 / 1024.0) / (duration / 1000.0);
+
+            System.out.printf("吞吐量: %.2f MB/s%n", throughput);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}</code></pre>
+
+                <h3>🚨 常见性能陷阱</h3>
+                <div style="background: #fff3e0; border-left: 4px solid #FF9800; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱1：过度优化</h4>
+                    <p><strong>问题</strong>：过早优化，增加代码复杂度</p>
+                    <p><strong>解决</strong>：先保证正确性，再优化性能</p>
+                </div>
+
+                <div style="background: #ffebee; border-left: 4px solid #f44336; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱2：忽视异常处理</h4>
+                    <p><strong>问题</strong>：异常处理逻辑影响性能</p>
+                    <p><strong>解决</strong>：合理设计异常处理，避免性能热点</p>
+                </div>
+
+                <div style="background: #e8f5e8; border-left: 4px solid #4CAF50; padding: 1rem; margin: 1rem 0;">
+                    <h4 style="margin-top: 0;">陷阱3：内存泄漏</h4>
+                    <p><strong>问题</strong>：未正确关闭IO资源</p>
+                    <p><strong>解决</strong>：使用try-with-resources确保资源释放</p>
+                </div>
+
+                <p class="conclusion">IO性能优化需要<strong>综合考虑</strong>场景、数据量、硬件等因素。选择合适的工具和策略，可以让你的程序获得显著的性能提升。记住：先正确，再优化！</p>
+            </div>
+        </section>
+
+        <!-- Slide 27: Java IO Core Knowledge Summary -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Java IO核心知识总结</h2>
+                <p>通过本课程学习，我们掌握了Java IO体系的核心概念。让我们系统回顾关键知识点。</p>
+
+                <h3>📚 核心知识体系</h3>
+                <div style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 1.5rem; margin: 1rem 0;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <h4 style="color: #2196F3; margin-bottom: 0.5rem;">🏗️ 基础概念</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li>字节流 vs 字符流</li>
+                                <li>输入流 vs 输出流</li>
+                                <li>节点流 vs 处理流</li>
+                                <li>装饰器模式应用</li>
+                                <li>字符编码处理</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 style="color: #4CAF50; margin-bottom: 0.5rem;">🛠️ 核心工具</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li>File类操作</li>
+                                <li>缓冲流优化</li>
+                                <li>转换流编码</li>
+                                <li>对象序列化</li>
+                                <li>随机访问文件</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 style="color: #FF9800; margin-bottom: 0.5rem;">⚡ 性能优化</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li>缓冲区大小选择</li>
+                                <li>NIO vs 传统IO</li>
+                                <li>内存映射文件</li>
+                                <li>批量操作策略</li>
+                                <li>资源管理优化</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 style="color: #9C27B0; margin-bottom: 0.5rem;">🛡️ 最佳实践</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li>try-with-resources</li>
+                                <li>异常处理策略</li>
+                                <li>编码一致性</li>
+                                <li>线程安全考虑</li>
+                                <li>跨平台兼容</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>🎯 流类型选择指南</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0;">
+                    <div style="background: #e3f2fd; border-radius: 8px; padding: 1rem;">
+                        <h4 style="color: #1976D2; margin-top: 0;">使用字节流的场景</h4>
+                        <ul>
+                            <li>二进制文件（图片、音频、视频）</li>
+                            <li>可执行文件和压缩包</li>
+                            <li>网络数据传输</li>
+                            <li>不需要编码转换的数据</li>
+                        </ul>
+                    </div>
+                    <div style="background: #e8f5e8; border-radius: 8px; padding: 1rem;">
+                        <h4 style="color: #2e7d32; margin-top: 0;">使用字符流的场景</h4>
+                        <ul>
+                            <li>文本文件处理</li>
+                            <li>需要字符编码的场景</li>
+                            <li>按行读取文本内容</li>
+                            <li>国际化文本处理</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3>📈 学习路径回顾</h3>
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; padding: 1.5rem; margin: 1rem 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                        <div style="text-align: center; margin: 0.5rem;">
+                            <div style="background: rgba(255,255,255,0.2); border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem;">
+                                <span style="font-size: 1.5rem;">📁</span>
+                            </div>
+                            <div style="font-size: 0.9rem;">File类基础</div>
+                        </div>
+                        <div style="font-size: 1.5rem;">→</div>
+                        <div style="text-align: center; margin: 0.5rem;">
+                            <div style="background: rgba(255,255,255,0.2); border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem;">
+                                <span style="font-size: 1.5rem;">🌊</span>
+                            </div>
+                            <div style="font-size: 0.9rem;">字节流核心</div>
+                        </div>
+                        <div style="font-size: 1.5rem;">→</div>
+                        <div style="text-align: center; margin: 0.5rem;">
+                            <div style="background: rgba(255,255,255,0.2); border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem;">
+                                <span style="font-size: 1.5rem;">📝</span>
+                            </div>
+                            <div style="font-size: 0.9rem;">字符流处理</div>
+                        </div>
+                        <div style="font-size: 1.5rem;">→</div>
+                        <div style="text-align: center; margin: 0.5rem;">
+                            <div style="background: rgba(255,255,255,0.2); border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem;">
+                                <span style="font-size: 1.5rem;">⚡</span>
+                            </div>
+                            <div style="font-size: 0.9rem;">性能优化</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 28: Best Practices and Advanced Learning -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践与进阶学习</h2>
+                <p>掌握Java IO的最佳实践和进阶学习方向，编写更专业、高效的IO程序。</p>
+
+                <h3>🎯 实践建议</h3>
+                <pre><code class="language-java">// 1. 选择合适的流类型
+public void chooseCorrectStream(String filePath, boolean isText) {
+    if (isText) {
+        // 文本文件：使用字符流
+        try (BufferedReader reader = new BufferedReader(
+                 new InputStreamReader(
+                     new FileInputStream(filePath), "UTF-8"))) {
+            // 处理文本
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    } else {
+        // 二进制文件：使用字节流
+        try (BufferedInputStream bis = new BufferedInputStream(
+                 new FileInputStream(filePath))) {
+            // 处理二进制数据
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+// 2. 性能优化的标准模式
+public void optimizedFileCopy(String source, String target) {
+    try (FileInputStream fis = new FileInputStream(source);
+         FileOutputStream fos = new FileOutputStream(target);
+         BufferedInputStream bis = new BufferedInputStream(fis, 65536);
+         BufferedOutputStream bos = new BufferedOutputStream(fos, 65536)) {
+
+        byte[] buffer = new byte[8192];
+        int bytesRead;
+
+        while ((bytesRead = bis.read(buffer)) != -1) {
+            bos.write(buffer, 0, bytesRead);
+        }
+
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+}
+
+// 3. 健壮的异常处理
+public void robustFileProcessing(String filePath) throws FileProcessingException {
+    try (BufferedReader reader = new BufferedReader(
+             new InputStreamReader(
+                 new FileInputStream(filePath), StandardCharsets.UTF_8))) {
+
+        String line;
+        int lineNumber = 0;
+
+        while ((line = reader.readLine()) != null) {
+            lineNumber++;
+            try {
+                processLine(line, lineNumber);
+            } catch (LineProcessingException e) {
+                throw new FileProcessingException(
+                    "处理第" + lineNumber + "行失败: " + e.getMessage(), e);
+            }
+        }
+
+    } catch (IOException e) {
+        throw new FileProcessingException("文件读取失败", e);
+    }
+}</code></pre>
+
+                <h3>🚀 进阶学习方向</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">方向</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">核心内容</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">应用场景</th>
+                            <th style="border: 1px solid #ddd; padding: 0.5rem;">学习优先级</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>NIO.2</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">Path, Files, AsynchronousFileChannel</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">现代文件操作, 异步IO</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><span style="color: #4CAF50;">⭐⭐⭐⭐⭐</span></td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>网络IO</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">Socket, ServerSocket, NIO Selector</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">网络编程, 分布式系统</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><span style="color: #4CAF50;">⭐⭐⭐⭐</span></td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>内存文件系统</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">内存映射，零拷贝技术</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">高性能应用, 大数据处理</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><span style="color: #FF9800;">⭐⭐⭐</span></td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><strong>压缩IO</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">GZIP, ZIP, 压缩流处理</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;">数据压缩, 存储优化</td>
+                            <td style="border: 1px solid #ddd; padding: 0.5rem;"><span style="color: #FF9800;">⭐⭐⭐</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>💡 核心原则总结</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0;">
+                    <div style="background: #fff3e0; border-left: 4px solid #ff9800; padding: 1rem;">
+                        <h4 style="color: #e65100; margin-top: 0;">🎯 选择原则</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><strong>文本用字符流</strong>，二进制用字节流</li>
+                            <li><strong>大文件必用缓冲</strong>，小文件可简单处理</li>
+                            <li><strong>编码要明确</strong>，避免平台依赖</li>
+                        </ul>
+                    </div>
+                    <div style="background: #e8f5e8; border-left: 4px solid #4caf50; padding: 1rem;">
+                        <h4 style="color: #1b5e20; margin-top: 0;">⚡ 性能原则</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><strong>缓冲区大小</strong>：8KB-64KB最佳</li>
+                            <li><strong>批量操作</strong>，减少系统调用</li>
+                            <li><strong>及时释放资源</strong>，防止内存泄漏</li>
+                        </ul>
+                    </div>
+                    <div style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 1rem;">
+                        <h4 style="color: #0d47a1; margin-top: 0;">🛡️ 安全原则</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><strong>try-with-resources</strong>自动资源管理</li>
+                            <li><strong>异常处理</strong>保留原始信息</li>
+                            <li><strong>路径验证</strong>防止目录遍历攻击</li>
+                        </ul>
+                    </div>
+                    <div style="background: #f3e5f5; border-left: 4px solid #9c27b0; padding: 1rem;">
+                        <h4 style="color: #4a148c; margin-top: 0;">🔧 维护原则</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><strong>代码可读性</strong>优先于过度优化</li>
+                            <li><strong>统一异常处理</strong>策略</li>
+                            <li><strong>充分的日志记录</strong>便于调试</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3>📖 推荐学习资源</h3>
+                <div style="background: #f8f9fa; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <h4 style="color: #2196F3; margin-bottom: 0.5rem;">📚 官方文档</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li>Java IO Documentation</li>
+                                <li>NIO.2 API Guide</li>
+                                <li>Java Performance Tuning Guide</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 style="color: #4CAF50; margin-bottom: 0.5rem;">📖 深入学习</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li>《Java IO》Elliotte Rusty Harold</li>
+                                <li>《Java性能优化权威指南》</li>
+                                <li>《Java并发编程实战》</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="conclusion">Java IO是一个<strong>强大而灵活</strong>的体系。掌握这些核心概念和最佳实践，你就能处理各种复杂的IO任务，编写出高效、可靠的IO程序。记住：实践是最好的老师！</p>
+            </div>
+        </section>
+
+        <!-- Slide 29: Basic and Advanced Exercises -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>基础练习与进阶练习</h2>
+                <p>通过实际练习来巩固Java IO知识。从基础练习开始，逐步提升难度，帮助你掌握各种IO操作。</p>
+
+                <h3>📝 基础练习</h3>
+                <div style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 1rem; margin: 1rem 0;">
+                    <h4>练习1：文件复制工具</h4>
+                    <p>实现一个支持进度显示的文件复制工具：</p>
+                    <ul>
+                        <li>显示复制进度百分比</li>
+                        <li>支持大文件复制（>1GB）</li>
+                        <li>提供复制速度统计</li>
+                        <li>支持暂停/恢复功能</li>
+                    </ul>
+                </div>
+
+                <div style="background: #e8f5e8; border-left: 4px solid #4CAF50; padding: 1rem; margin: 1rem 0;">
+                    <h4>练习2：文本分析器</h4>
+                    <p>创建一个文本文件分析工具：</p>
+                    <ul>
+                        <li>统计字符、单词、行数</li>
+                        <li>计算词频并输出TOP10</li>
+                        <li>检测文件编码</li>
+                        <li>支持多种文件格式</li>
+                    </ul>
+                </div>
+
+                <h3>🎯 进阶练习</h3>
+                <div style="background: #fff3e0; border-left: 4px solid #FF9800; padding: 1rem; margin: 1rem 0;">
+                    <h4>练习3：简单数据库</h4>
+                    <p>使用RandomAccessFile实现一个简单的键值数据库：</p>
+                    <ul>
+                        <li>支持字符串键值对存储</li>
+                        <li>实现增删改查操作</li>
+                        <li>支持索引查询</li>
+                        <li>提供数据备份功能</li>
+                    </ul>
+                </div>
+
+                <div style="background: #f3e5f5; border-left: 4px solid #9C27B0; padding: 1rem; margin: 1rem 0;">
+                    <h4>练习4：文件分割合并工具</h4>
+                    <p>开发一个文件分割和合并工具：</p>
+                    <ul>
+                        <li>按大小或数量分割文件</li>
+                        <li>支持任意类型文件</li>
+                        <li>提供完整性校验</li>
+                        <li>支持批量操作</li>
+                    </ul>
+                </div>
+
+                <h3>🎯 练习要点提示</h3>
+                <div style="background: #f8f9fa; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <h4 style="color: #2196F3; margin-bottom: 0.5rem;">💡 关键技能</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li>缓冲流的使用和性能优化</li>
+                                <li>字符编码处理和转换</li>
+                                <li>文件属性和元数据操作</li>
+                                <li>异常处理和资源管理</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 style="color: #4CAF50; margin-bottom: 0.5rem;">📈 学习目标</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li>掌握基本IO操作模式</li>
+                                <li>理解性能优化技巧</li>
+                                <li>学会处理实际开发问题</li>
+                                <li>培养代码调试能力</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 30: Challenge Exercises and Learning Guidance -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>挑战练习与学习指导</h2>
+                <p>挑战更高难度的练习，并获取学习建议和指导，进一步提升Java IO编程能力。</p>
+
+                <h3>🚀 挑战练习</h3>
+                <div style="background: #ffebee; border-left: 4px solid #f44336; padding: 1rem; margin: 1rem 0;">
+                    <h4>练习5：多线程文件下载器</h4>
+                    <p>实现一个支持断点续传的多线程下载器：</p>
+                    <ul>
+                        <li>支持HTTP/HTTPS协议</li>
+                        <li>多线程分段下载</li>
+                        <li>断点续传功能</li>
+                        <li>下载速度限制</li>
+                    </ul>
+                </div>
+
+                <div style="background: #e0f2f1; border-left: 4px solid #009688; padding: 1rem; margin: 1rem 0;">
+                    <h4>练习6：实时日志监控系统</h4>
+                    <p>开发一个实时日志监控和分析系统：</p>
+                    <ul>
+                        <li>监控多个日志文件</li>
+                        <li>实时解析日志内容</li>
+                        <li>关键词告警功能</li>
+                        <li>Web界面展示</li>
+                    </ul>
+                </div>
+
+                <h3>💻 实现参考与代码框架</h3>
+                <pre><code class="language-java">// 文件复制工具框架
+public class FileCopier {
+    private final int bufferSize;
+    private final boolean showProgress;
+
+    public FileCopier(int bufferSize, boolean showProgress) {
+        this.bufferSize = bufferSize;
+        this.showProgress = showProgress;
+    }
+
+    public void copy(String source, String target) throws IOException {
+        try (FileInputStream fis = new FileInputStream(source);
+             FileOutputStream fos = new FileOutputStream(target);
+             BufferedInputStream bis = new BufferedInputStream(fis, bufferSize);
+             BufferedOutputStream bos = new BufferedOutputStream(fos, bufferSize)) {
+
+            long fileSize = new File(source).length();
+            long totalBytes = 0;
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+
+            long startTime = System.currentTimeMillis();
+
+            while ((bytesRead = bis.read(buffer)) != -1) {
+                bos.write(buffer, 0, bytesRead);
+                totalBytes += bytesRead;
+
+                if (showProgress) {
+                    showProgress(totalBytes, fileSize, startTime);
+                }
+            }
+        }
+    }
+
+    private void showProgress(long current, long total, long startTime) {
+        double percent = (double) current / total * 100;
+        long elapsed = System.currentTimeMillis() - startTime;
+        double speed = current / (elapsed / 1000.0) / (1024 * 1024); // MB/s
+
+        System.out.printf("\r进度: %.1f%% 速度: %.2f MB/s", percent, speed);
+    }
+}
+
+// 文本分析器框架
+public class TextAnalyzer {
+    private final Map<String, Integer> wordFrequency = new HashMap<>();
+    private int charCount = 0;
+    private int wordCount = 0;
+    private int lineCount = 0;
+
+    public void analyze(String filePath) throws IOException {
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lineCount++;
+                charCount += line.length();
+
+                // 简单的单词分割
+                String[] words = line.split("\\s+");
+                for (String word : words) {
+                    if (!word.isEmpty()) {
+                        wordCount++;
+                        wordFrequency.merge(word.toLowerCase(), 1, Integer::sum);
+                    }
+                }
+            }
+        }
+    }
+
+    public void printStatistics() {
+        System.out.println("字符数: " + charCount);
+        System.out.println("单词数: " + wordCount);
+        System.out.println("行数: " + lineCount);
+
+        System.out.println("\n词频TOP10:");
+        wordFrequency.entrySet().stream()
+            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+            .limit(10)
+            .forEach(entry -> System.out.printf("%s: %d%n",
+                      entry.getKey(), entry.getValue()));
+    }
+}</code></pre>
+
+                <h3>🎓 学习建议与指导</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0;">
+                    <div style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 1rem;">
+                        <h4 style="color: #1976D2; margin-top: 0;">📈 学习路径</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><strong>循序渐进</strong>：从基础练习开始，逐步挑战进阶题目</li>
+                            <li><strong>注重实践</strong>：理论结合实践，多写代码多调试</li>
+                            <li><strong>举一反三</strong>：完成一个练习后，思考其他实现方式</li>
+                        </ul>
+                    </div>
+                    <div style="background: #e8f5e8; border-left: 4px solid #4CAF50; padding: 1rem;">
+                        <h4 style="color: #2e7d32; margin-top: 0;">⚡ 技能提升</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><strong>性能意识</strong>：关注性能，尝试不同的优化方案</li>
+                            <li><strong>错误处理</strong>：完善异常处理，提高代码健壮性</li>
+                            <li><strong>代码重构</strong>：不断改进代码结构和可读性</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3>🔧 开发工具推荐</h3>
+                <div style="background: #f8f9fa; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                        <div style="text-align: center;">
+                            <h4 style="color: #FF9800; margin-bottom: 0.5rem;">🛠️ IDE推荐</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem; text-align: left;">
+                                <li>IntelliJ IDEA</li>
+                                <li>Eclipse</li>
+                                <li>VS Code</li>
+                            </ul>
+                        </div>
+                        <div style="text-align: center;">
+                            <h4 style="color: #9C27B0; margin-bottom: 0.5rem;">📊 调试工具</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem; text-align: left;">
+                                <li>JProfiler</li>
+                                <li>VisualVM</li>
+                                <li>JConsole</li>
+                            </ul>
+                        </div>
+                        <div style="text-align: center;">
+                            <h4 style="color: #4CAF50; margin-bottom: 0.5rem;">📚 学习资源</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem; text-align: left;">
+                                <li>Oracle官方文档</li>
+                                <li>GitHub开源项目</li>
+                                <li>Stack Overflow</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>🎯 评估标准</h3>
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; text-align: center;">
+                        <div>
+                            <div style="font-size: 2rem; margin-bottom: 0.5rem;">✅</div>
+                            <div style="font-weight: bold;">功能完整性</div>
+                            <div style="font-size: 0.9rem;">所有需求功能正确实现</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 2rem; margin-bottom: 0.5rem;">⚡</div>
+                            <div style="font-weight: bold;">性能表现</div>
+                            <div style="font-size: 0.9rem;">合理的内存和CPU使用</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 2rem; margin-bottom: 0.5rem;">🛡️</div>
+                            <div style="font-weight: bold;">代码质量</div>
+                            <div style="font-size: 0.9rem;">清晰的异常处理和注释</div>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="conclusion">通过这些练习，你将<strong>深入理解</strong>Java IO的各种特性，掌握实际开发中的<strong>最佳实践</strong>。记住，编程能力的提升来自于持续的实践和思考！</p>
+            </div>
+        </section>
+
+        <!-- UI Elements -->
+        <div class="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div class="controls">
+            <button id="prevBtn">上一页</button>
+            <span id="slide-counter">1 / X</span>
+            <button id="nextBtn">下一页</button>
+        </div>
+    </main>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/ppt.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>
