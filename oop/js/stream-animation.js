@@ -242,12 +242,7 @@ const StreamAnimation = {
         if (!container) return;
 
         container.innerHTML = `
-            <h3>map() 映射演示</h3>
-            <div class="animation-controls">
-                <button onclick="StreamAnimation.startMapAnimation()">播放映射</button>
-                <button onclick="StreamAnimation.startFlatMapAnimation()">播放扁平化</button>
-                <button onclick="StreamAnimation.resetAnimation('map-animation')">重置</button>
-            </div>
+            <h3>map() 和 flatMap() 映射演示</h3>
             <div class="animation-scene">
                 <div class="process-flow">
                     <div class="stage" id="map-input">
@@ -256,10 +251,10 @@ const StreamAnimation = {
                     </div>
                     <div class="arrow" id="map-arrow">
                         <div class="arrow-body"></div>
-                        <div class="arrow-head">map(Student::getName)</div>
+                        <div class="arrow-head">点击"下一步"开始</div>
                     </div>
                     <div class="stage" id="map-output">
-                        <h4>String姓名</h4>
+                        <h4>映射结果</h4>
                         <div class="string-list" id="map-result"></div>
                     </div>
                 </div>
@@ -267,42 +262,99 @@ const StreamAnimation = {
         `;
 
         this.renderStudents('map-students', sampleStudents.slice(0, 4));
+        this.resetMap();
     },
 
-    startMapAnimation: function() {
-        const inputStudents = document.querySelectorAll('#map-students .student-card');
-        const outputContainer = document.getElementById('map-result');
-        const arrow = document.getElementById('map-arrow');
+    resetMap: function() {
+        // 重置所有状态
+        this.mapCurrentIndex = 0;
+        this.mapCurrentMode = 'map'; // 'map' 或 'flatMap'
+        this.mapStudents = document.querySelectorAll('#map-students .student-card');
+        this.mapOutputContainer = document.getElementById('map-result');
+        this.mapArrow = document.getElementById('map-arrow');
+        this.mapInputStage = document.getElementById('map-input');
 
-        outputContainer.innerHTML = '';
+        // 清空输出区域
+        if (this.mapOutputContainer) {
+            this.mapOutputContainer.innerHTML = '';
+        }
 
-        inputStudents.forEach((studentEl, index) => {
-            setTimeout(() => {
-                const name = studentEl.querySelector('.student-name').textContent;
+        // 重置箭头文本
+        if (this.mapArrow) {
+            this.mapArrow.querySelector('.arrow-head').textContent = 'map(Student::getName)';
+        }
 
-                // 转换动画效果
-                studentEl.classList.add('transforming');
-                arrow.querySelector('.arrow-head').textContent = `Student::getName()`;
-
-                setTimeout(() => {
-                    // 创建姓名字符串元素
-                    const nameEl = document.createElement('div');
-                    nameEl.className = 'string-item';
-                    nameEl.textContent = `"${name}"`;
-                    nameEl.classList.add('fade-in');
-                    outputContainer.appendChild(nameEl);
-
-                    studentEl.classList.remove('transforming');
-                    studentEl.classList.add('transformed');
-                }, 300);
-
-            }, index * 700);
+        // 移除所有样式类
+        this.mapStudents.forEach(el => {
+            el.classList.remove('transforming', 'transformed', 'flattening');
         });
     },
 
-    startFlatMapAnimation: function() {
+    mapStep: function() {
+        if (!this.mapStudents || this.mapCurrentIndex >= this.mapStudents.length) {
+            // 检查是否需要切换到flatMap模式
+            if (this.mapCurrentMode === 'map') {
+                this.switchToFlatMapMode();
+                return;
+            }
+
+            // 处理完成
+            if (this.mapArrow) {
+                this.mapArrow.querySelector('.arrow-head').textContent = '✓ 映射和扁平化完成';
+            }
+            return;
+        }
+
+        const currentStudent = this.mapStudents[this.mapCurrentIndex];
+
+        if (this.mapCurrentMode === 'map') {
+            // Map模式：Student -> String
+            const name = currentStudent.querySelector('.student-name').textContent;
+
+            // 显示映射箭头
+            if (this.mapArrow) {
+                this.mapArrow.classList.add('active');
+                this.mapArrow.querySelector('.arrow-head').textContent = `map(Student::getName()) -> "${name}"`;
+            }
+
+            // 转换动画效果
+            currentStudent.classList.add('transforming');
+
+            setTimeout(() => {
+                // 创建姓名字符串元素
+                const nameEl = document.createElement('div');
+                nameEl.className = 'string-item';
+                nameEl.textContent = `"${name}"`;
+                nameEl.classList.add('fade-in');
+                this.mapOutputContainer.appendChild(nameEl);
+
+                currentStudent.classList.remove('transforming');
+                currentStudent.classList.add('transformed');
+            }, 300);
+
+        } else if (this.mapCurrentMode === 'flatMap') {
+            // FlatMap模式：处理课程数据
+            this.processFlatMapStep();
+        }
+
+        // 移动到下一个
+        this.mapCurrentIndex++;
+    },
+
+    switchToFlatMapMode: function() {
+        // 切换到flatMap模式
+        this.mapCurrentMode = 'flatMap';
+        this.mapCurrentIndex = 0;
+        this.flatMapCourseIndex = 0;
+        this.flatMapStudentIndex = 0;
+
+        // 清空输出区域
+        if (this.mapOutputContainer) {
+            this.mapOutputContainer.innerHTML = '';
+        }
+
         // 为flatMap添加课程数据
-        const studentsWithCourses = sampleStudents.slice(0, 3).map(student => ({
+        this.studentsWithCourses = sampleStudents.slice(0, 3).map(student => ({
             ...student,
             courses: [
                 { name: "Java", score: 85 },
@@ -311,10 +363,15 @@ const StreamAnimation = {
             ]
         }));
 
+        // 重新渲染输入区域
         const container = document.getElementById('map-input');
         container.innerHTML = '<h4>Student课程列表</h4>';
 
-        studentsWithCourses.forEach(student => {
+        const studentsContainer = document.createElement('div');
+        studentsContainer.className = 'student-list';
+        studentsContainer.id = 'map-students';
+
+        this.studentsWithCourses.forEach(student => {
             const studentDiv = document.createElement('div');
             studentDiv.className = 'student-card with-courses';
             studentDiv.innerHTML = `
@@ -325,34 +382,66 @@ const StreamAnimation = {
                     ).join('')}
                 </div>
             `;
-            container.appendChild(studentDiv);
+            studentsContainer.appendChild(studentDiv);
         });
 
-        // 扁平化动画
-        setTimeout(() => {
-            const outputContainer = document.getElementById('map-result');
-            outputContainer.innerHTML = '';
+        container.appendChild(studentsContainer);
 
-            document.getElementById('map-arrow').querySelector('.arrow-head').textContent = 'flatMap(课程列表)';
+        // 更新状态变量
+        this.mapStudents = document.querySelectorAll('#map-students .student-card');
 
-            let courseCount = 0;
-            studentsWithCourses.forEach((student, sIndex) => {
-                setTimeout(() => {
-                    const studentEl = container.children[sIndex + 1]; // +1因为h4元素
-                    studentEl.classList.add('flattening');
+        // 更新箭头文本
+        if (this.mapArrow) {
+            this.mapArrow.querySelector('.arrow-head').textContent = 'flatMap(学生 -> 课程列表)';
+        }
 
-                    student.courses.forEach((course, cIndex) => {
-                        setTimeout(() => {
-                            const courseEl = document.createElement('div');
-                            courseEl.className = 'string-item course-name fade-in';
-                            courseEl.textContent = course.name;
-                            outputContainer.appendChild(courseEl);
-                            courseCount++;
-                        }, cIndex * 200);
-                    });
-                }, sIndex * 800);
-            });
-        }, 500);
+        // 更新输出区域标题
+        const outputStage = document.getElementById('map-output');
+        if (outputStage) {
+            outputStage.querySelector('h4').textContent = '扁平化结果';
+        }
+    },
+
+    processFlatMapStep: function() {
+        if (!this.studentsWithCourses || this.flatMapStudentIndex >= this.studentsWithCourses.length) {
+            return;
+        }
+
+        const currentStudent = this.studentsWithCourses[this.flatMapStudentIndex];
+        const studentEl = this.mapStudents[this.flatMapStudentIndex];
+
+        // 显示当前处理的扁平化操作
+        if (this.mapArrow) {
+            this.mapArrow.querySelector('.arrow-head').textContent =
+                `flatMap(${currentStudent.name} -> 课程)`;
+        }
+
+        // 添加扁平化效果
+        studentEl.classList.add('flattening');
+
+        // 处理该学生的所有课程
+        currentStudent.courses.forEach((course, courseIndex) => {
+            setTimeout(() => {
+                const courseEl = document.createElement('div');
+                courseEl.className = 'string-item course-name fade-in';
+                courseEl.textContent = course.name;
+                this.mapOutputContainer.appendChild(courseEl);
+
+                this.flatMapCourseIndex++;
+
+                // 最后一个课程处理完成
+                if (this.flatMapStudentIndex === this.studentsWithCourses.length - 1 &&
+                    courseIndex === currentStudent.courses.length - 1) {
+                    setTimeout(() => {
+                        studentEl.classList.remove('flattening');
+                        studentEl.classList.add('flattened');
+                    }, 300);
+                }
+            }, courseIndex * 200);
+        });
+
+        // 移动到下一个学生
+        this.flatMapStudentIndex++;
     },
 
     // 4. sorted() 排序操作动画
