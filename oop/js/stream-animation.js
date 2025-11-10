@@ -93,12 +93,7 @@ const StreamAnimation = {
         if (!container) return;
 
         container.innerHTML = `
-            <h3>filter() 筛选演示</h3>
-            <div class="animation-controls">
-                <button onclick="StreamAnimation.startFilterAnimation()">播放筛选</button>
-                <button onclick="StreamAnimation.startDistinctAnimation()">播放去重</button>
-                <button onclick="StreamAnimation.resetAnimation('filter-animation')">重置</button>
-            </div>
+            <h3>filter() 和 distinct() 筛选演示</h3>
             <div class="animation-scene">
                 <div class="process-flow">
                     <div class="stage" id="filter-input">
@@ -107,7 +102,7 @@ const StreamAnimation = {
                     </div>
                     <div class="arrow" id="filter-arrow">
                         <div class="arrow-body"></div>
-                        <div class="arrow-head">filter(age ≥ 20)</div>
+                        <div class="arrow-head">点击"下一步"开始</div>
                     </div>
                     <div class="stage" id="filter-output">
                         <h4>筛选结果</h4>
@@ -118,76 +113,129 @@ const StreamAnimation = {
         `;
 
         this.renderStudents('filter-students', sampleStudents);
+        this.resetFilter();
     },
 
-    startFilterAnimation: function() {
-        const inputStudents = document.querySelectorAll('#filter-students .student-card');
-        const outputContainer = document.getElementById('filter-result');
-        const arrow = document.getElementById('filter-arrow');
+    resetFilter: function() {
+        // 重置所有状态
+        this.filterCurrentIndex = 0;
+        this.filterCurrentMode = 'filter'; // 'filter' 或 'distinct'
+        this.filterStudents = document.querySelectorAll('#filter-students .student-card');
+        this.filterOutputContainer = document.getElementById('filter-result');
+        this.filterArrow = document.getElementById('filter-arrow');
 
-        outputContainer.innerHTML = '';
+        // 清空输出区域
+        if (this.filterOutputContainer) {
+            this.filterOutputContainer.innerHTML = '';
+        }
 
-        // 显示筛选箭头
-        arrow.classList.add('active');
+        // 重置箭头文本
+        if (this.filterArrow) {
+            this.filterArrow.querySelector('.arrow-head').textContent = 'filter(age ≥ 20)';
+        }
 
-        let outputCount = 0;
-        inputStudents.forEach((studentEl, index) => {
-            setTimeout(() => {
-                const age = parseInt(studentEl.querySelector('.student-age').textContent);
+        // 移除所有样式类
+        this.filterStudents.forEach(el => {
+            el.classList.remove('pass', 'fail', 'duplicate', 'unique', 'fade-out');
+        });
+    },
 
+    filterStep: function() {
+        if (!this.filterStudents || this.filterCurrentIndex >= this.filterStudents.length) {
+            // 检查是否需要切换到distinct模式
+            if (this.filterCurrentMode === 'filter') {
+                this.switchToDistinctMode();
+                return;
+            }
+
+            // 处理完成
+            if (this.filterArrow) {
+                this.filterArrow.querySelector('.arrow-head').textContent = '✓ 筛选和去重完成';
+            }
+            return;
+        }
+
+        const currentStudent = this.filterStudents[this.filterCurrentIndex];
+
+        if (this.filterCurrentMode === 'filter') {
+            // Filter模式：按年龄筛选
+            const age = parseInt(currentStudent.querySelector('.student-age').textContent);
+
+            // 显示筛选箭头
+            if (this.filterArrow) {
+                this.filterArrow.classList.add('active');
                 if (age >= 20) {
-                    // 复制到输出区域
-                    const clone = studentEl.cloneNode(true);
-                    clone.classList.add('filtered');
-                    outputContainer.appendChild(clone);
-
-                    // 添加通过效果
-                    studentEl.classList.add('pass');
-                    arrow.querySelector('.arrow-head').textContent = `✓ 通过 (age: ${age})`;
+                    this.filterArrow.querySelector('.arrow-head').textContent = `✓ 通过 (age: ${age})`;
                 } else {
-                    // 添加未通过效果
-                    studentEl.classList.add('fail');
-                    arrow.querySelector('.arrow-head').textContent = `✗ 未通过 (age: ${age})`;
+                    this.filterArrow.querySelector('.arrow-head').textContent = `✗ 未通过 (age: ${age})`;
                 }
+            }
 
-            }, index * 600);
+            if (age >= 20) {
+                // 通过筛选，复制到输出区域
+                const clone = currentStudent.cloneNode(true);
+                clone.classList.add('filtered');
+                this.filterOutputContainer.appendChild(clone);
+                currentStudent.classList.add('pass');
+            } else {
+                // 未通过筛选
+                currentStudent.classList.add('fail');
+            }
+        } else if (this.filterCurrentMode === 'distinct') {
+            // Distinct模式：按姓名去重
+            const name = currentStudent.querySelector('.student-name').textContent;
+
+            // 检查是否已经见过这个名字
+            const existingNames = Array.from(this.filterOutputContainer.querySelectorAll('.student-card'))
+                .map(el => el.querySelector('.student-name').textContent);
+
+            if (existingNames.includes(name)) {
+                // 重复项，添加震动效果然后淡出
+                currentStudent.classList.add('duplicate');
+                if (this.filterArrow) {
+                    this.filterArrow.querySelector('.arrow-head').textContent = `✗ 重复: ${name}`;
+                }
+                setTimeout(() => {
+                    currentStudent.classList.add('fade-out');
+                }, 300);
+            } else {
+                // 首次出现，复制到输出
+                const clone = currentStudent.cloneNode(true);
+                clone.classList.add('unique');
+                this.filterOutputContainer.appendChild(clone);
+                currentStudent.classList.add('pass');
+                if (this.filterArrow) {
+                    this.filterArrow.querySelector('.arrow-head').textContent = `✓ 唯一: ${name}`;
+                }
+            }
+        }
+
+        // 移动到下一个
+        this.filterCurrentIndex++;
+    },
+
+    switchToDistinctMode: function() {
+        // 切换到distinct模式
+        this.filterCurrentMode = 'distinct';
+        this.filterCurrentIndex = 0;
+
+        // 清空输出区域
+        if (this.filterOutputContainer) {
+            this.filterOutputContainer.innerHTML = '';
+        }
+
+        // 更新箭头文本
+        if (this.filterArrow) {
+            this.filterArrow.querySelector('.arrow-head').textContent = 'distinct() 按姓名去重';
+        }
+
+        // 重置学生样式
+        this.filterStudents.forEach(el => {
+            el.classList.remove('pass', 'fail', 'duplicate', 'unique', 'fade-out');
         });
     },
 
-    startDistinctAnimation: function() {
-        // 去重动画 - 按姓名去重
-        const inputStudents = document.querySelectorAll('#filter-students .student-card');
-        const outputContainer = document.getElementById('filter-result');
-        const arrow = document.getElementById('filter-arrow');
-
-        outputContainer.innerHTML = '';
-        arrow.querySelector('.arrow-head').textContent = 'distinct() 去重';
-
-        const seenNames = new Set();
-        let processedCount = 0;
-
-        inputStudents.forEach((studentEl, index) => {
-            setTimeout(() => {
-                const name = studentEl.querySelector('.student-name').textContent;
-
-                if (seenNames.has(name)) {
-                    // 重复项，添加震动效果
-                    studentEl.classList.add('duplicate');
-                    setTimeout(() => {
-                        studentEl.classList.add('fade-out');
-                    }, 500);
-                } else {
-                    // 首次出现，复制到输出
-                    seenNames.add(name);
-                    const clone = studentEl.cloneNode(true);
-                    clone.classList.add('unique');
-                    outputContainer.appendChild(clone);
-                }
-
-            }, index * 600);
-        });
-    },
-
+  
     // 3. map() 和 flatMap() 映射操作动画
     mapDemo: function() {
         const container = document.getElementById('map-animation');
