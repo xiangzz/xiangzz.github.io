@@ -23,8 +23,8 @@ const StreamAnimation = {
         container.innerHTML = `
             <h3>forEach() 遍历演示</h3>
             <div class="animation-controls">
-                <button onclick="StreamAnimation.forEachDemo()">播放动画</button>
-                <button onclick="StreamAnimation.resetAnimation('forEach-animation')">重置</button>
+                <button onclick="StreamAnimation.forEachStep()">下一步</button>
+                <button onclick="StreamAnimation.resetForEach()">重置</button>
             </div>
             <div class="animation-scene">
                 <div class="student-list" id="forEach-students"></div>
@@ -36,31 +36,55 @@ const StreamAnimation = {
         `;
 
         this.renderStudents('forEach-students', sampleStudents);
-        this.startForEachAnimation();
+        this.resetForEach();
     },
 
-    startForEachAnimation: function() {
-        const students = document.querySelectorAll('#forEach-students .student-card');
-        const consoleContent = document.querySelector('#forEach-console .console-content');
+    resetForEach: function() {
+        // 重置所有状态
+        this.forEachCurrentIndex = 0;
+        this.forEachStudents = document.querySelectorAll('#forEach-students .student-card');
+        this.forEachConsoleContent = document.querySelector('#forEach-console .console-content');
 
-        consoleContent.innerHTML = '';
+        if (this.forEachConsoleContent) {
+            this.forEachConsoleContent.innerHTML = '';
+        }
 
-        students.forEach((studentEl, index) => {
-            setTimeout(() => {
-                // 高亮当前处理的学生
-                students.forEach(el => el.classList.remove('highlighted'));
-                studentEl.classList.add('highlighted');
+        // 移除所有高亮
+        this.forEachStudents.forEach(el => el.classList.remove('highlighted', 'processed'));
+    },
 
-                // 模拟打印到控制台
-                const name = studentEl.querySelector('.student-name').textContent;
-                const age = studentEl.querySelector('.student-age').textContent;
-                consoleContent.innerHTML += `<div class="console-line">处理学生: ${name}, 年龄: ${age}</div>`;
+    forEachStep: function() {
+        if (!this.forEachStudents || this.forEachCurrentIndex >= this.forEachStudents.length) {
+            // 处理完成
+            if (this.forEachConsoleContent) {
+                this.forEachConsoleContent.innerHTML += `<div class="console-line complete">✓ forEach() 遍历完成</div>`;
+            }
+            return;
+        }
 
-                // 滚动到最新输出
-                consoleContent.scrollTop = consoleContent.scrollHeight;
+        // 移除之前的高亮
+        this.forEachStudents.forEach(el => el.classList.remove('highlighted'));
 
-            }, index * 800);
-        });
+        // 高亮当前处理的学生
+        const currentStudent = this.forEachStudents[this.forEachCurrentIndex];
+        currentStudent.classList.add('highlighted');
+
+        // 模拟打印到控制台
+        const name = currentStudent.querySelector('.student-name').textContent;
+        const age = currentStudent.querySelector('.student-age').textContent;
+        this.forEachConsoleContent.innerHTML += `<div class="console-line">处理学生: ${name}, 年龄: ${age}</div>`;
+
+        // 滚动到最新输出
+        this.forEachConsoleContent.scrollTop = this.forEachConsoleContent.scrollHeight;
+
+        // 标记为已处理
+        setTimeout(() => {
+            currentStudent.classList.remove('highlighted');
+            currentStudent.classList.add('processed');
+        }, 300);
+
+        // 移动到下一个
+        this.forEachCurrentIndex++;
     },
 
     // 2. filter() 和 distinct() 筛选操作动画
