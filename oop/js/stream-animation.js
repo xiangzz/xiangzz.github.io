@@ -449,64 +449,187 @@ const StreamAnimation = {
         const container = document.getElementById('sorted-animation');
         if (!container) return;
 
+        // 准备需要排序的学生数据（按成绩降序排序）
+        this.sortedStudents = sampleStudents.slice(0, 5).sort((a, b) => b.score - a.score);
+
+        // 打乱顺序用于演示
+        this.shuffledStudents = [...this.sortedStudents].sort(() => Math.random() - 0.5);
+
         container.innerHTML = `
             <h3>sorted() 排序演示</h3>
-            <div class="animation-controls">
-                <button onclick="StreamAnimation.startSortAnimation()">按成绩排序</button>
-                <button onclick="StreamAnimation.resetAnimation('sorted-animation')">重置</button>
-            </div>
             <div class="animation-scene">
                 <div class="sort-container" id="sort-container">
                     <div class="sort-stage" id="sort-input">
-                        <h4>原始顺序</h4>
+                        <h4>原始顺序（随机）</h4>
                         <div class="student-list" id="sort-students"></div>
                     </div>
                     <div class="sort-stage" id="sort-output">
-                        <h4>排序后 (按成绩降序)</h4>
+                        <h4>排序过程（按成绩降序）</h4>
                         <div class="student-list" id="sort-result"></div>
                     </div>
+                </div>
+                <div class="sort-info" id="sort-info">
+                    <p>点击"下一步"开始排序演示</p>
                 </div>
             </div>
         `;
 
-        this.renderStudents('sort-students', sampleStudents.slice(0, 5));
+        this.renderStudents('sort-students', this.shuffledStudents);
+        this.resetSorted();
     },
 
-    startSortAnimation: function() {
-        const students = sampleStudents.slice(0, 5);
-        const outputContainer = document.getElementById('sort-result');
+    resetSorted: function() {
+        // 重置所有状态
+        this.sortedCurrentIndex = 0;
+        this.sortedCurrentStep = 'prepare'; // 'prepare', 'sorting', 'complete'
+        this.sortedInputStudents = document.querySelectorAll('#sort-students .student-card');
+        this.sortedOutputContainer = document.getElementById('sort-result');
+        this.sortedInfo = document.getElementById('sort-info');
 
-        // 复制学生到输出区域（初始位置打乱）
-        outputContainer.innerHTML = '';
-        students.forEach((student, index) => {
-            const studentEl = this.createStudentCard(student);
-            studentEl.style.order = Math.random(); // 随机位置
-            studentEl.classList.add('sorting');
-            outputContainer.appendChild(studentEl);
+        // 清空输出区域
+        if (this.sortedOutputContainer) {
+            this.sortedOutputContainer.innerHTML = '';
+        }
+
+        // 重置信息区域
+        if (this.sortedInfo) {
+            this.sortedInfo.innerHTML = '<p>点击"下一步"开始排序演示</p>';
+        }
+
+        // 移除所有样式类
+        this.sortedInputStudents.forEach(el => {
+            el.classList.remove('current', 'sorted', 'processing');
         });
 
-        // 排序动画
-        setTimeout(() => {
-            const sortedStudents = students.sort((a, b) => b.score - a.score);
-            const studentEls = outputContainer.querySelectorAll('.student-card');
+        // 初始化输出区域（显示打乱顺序）
+        this.renderSortedStudents();
+    },
 
-            sortedStudents.forEach((student, index) => {
-                const targetEl = Array.from(studentEls).find(el =>
-                    el.querySelector('.student-name').textContent === student.name
-                );
+    renderSortedStudents: function() {
+        if (!this.sortedOutputContainer || !this.shuffledStudents) return;
 
-                if (targetEl) {
-                    targetEl.style.order = index;
-                    targetEl.classList.add('sorted');
+        this.sortedOutputContainer.innerHTML = '';
 
-                    // 添加排名
-                    const rankEl = document.createElement('div');
-                    rankEl.className = 'rank-badge';
-                    rankEl.textContent = `#${index + 1}`;
-                    targetEl.appendChild(rankEl);
-                }
-            });
-        }, 1000);
+        this.shuffledStudents.forEach((student, index) => {
+            const studentEl = this.createStudentCard(student);
+            studentEl.classList.add('sorting');
+            studentEl.setAttribute('data-score', student.score);
+            studentEl.setAttribute('data-name', student.name);
+            this.sortedOutputContainer.appendChild(studentEl);
+        });
+    },
+
+    sortedStep: function() {
+        if (this.sortedCurrentStep === 'prepare') {
+            this.startSortingStep();
+        } else if (this.sortedCurrentStep === 'sorting') {
+            this.processSortingStep();
+        } else if (this.sortedCurrentStep === 'complete') {
+            // 排序完成
+            if (this.sortedInfo) {
+                this.sortedInfo.innerHTML = '<p><strong>✓ 排序完成！按成绩从高到低排列</strong></p>';
+            }
+        }
+    },
+
+    startSortingStep: function() {
+        // 开始排序阶段
+        this.sortedCurrentStep = 'sorting';
+        this.sortedCurrentIndex = 0;
+
+        if (this.sortedInfo) {
+            this.sortedInfo.innerHTML = '<p><strong>开始排序：sorted(Comparator.comparing(Student::getScore).reversed())</strong></p>';
+        }
+
+        // 标记所有输出元素为排序中状态
+        const outputStudents = this.sortedOutputContainer.querySelectorAll('.student-card');
+        outputStudents.forEach(el => {
+            el.classList.add('processing');
+        });
+
+        // 移到第一个排序步骤
+        this.processSortingStep();
+    },
+
+    processSortingStep: function() {
+        const outputStudents = this.sortedOutputContainer.querySelectorAll('.student-card');
+
+        if (this.sortedCurrentIndex >= this.sortedStudents.length) {
+            // 排序完成
+            this.completeSorting();
+            return;
+        }
+
+        const currentRank = this.sortedCurrentIndex + 1; // 当前排名（1-based）
+        const targetStudent = this.sortedStudents[this.sortedCurrentIndex];
+        const targetStudentEl = Array.from(outputStudents).find(el =>
+            el.getAttribute('data-name') === targetStudent.name
+        );
+
+        if (targetStudentEl) {
+            // 高亮当前处理的元素
+            outputStudents.forEach(el => el.classList.remove('current'));
+            targetStudentEl.classList.add('current');
+
+            // 设置正确的order（排序位置，0-based）
+            targetStudentEl.style.order = this.sortedCurrentIndex;
+
+            // 更新信息显示
+            if (this.sortedInfo) {
+                this.sortedInfo.innerHTML = `
+                    <p><strong>排序步骤 ${currentRank}/${this.sortedStudents.length}:</strong></p>
+                    <p>将 <strong>${targetStudent.name}</strong> (成绩: ${targetStudent.score}) 排列到第 ${currentRank} 位</p>
+                `;
+            }
+
+            // 添加排序完成效果
+            setTimeout(() => {
+                targetStudentEl.classList.remove('processing', 'current');
+                targetStudentEl.classList.add('sorted');
+
+                // 添加排名徽章
+                this.addRankBadge(targetStudentEl, currentRank);
+
+                // 然后才移动到下一个
+                this.sortedCurrentIndex++;
+            }, 300);
+        } else {
+            // 如果没找到元素，直接移动到下一个
+            this.sortedCurrentIndex++;
+        }
+    },
+
+    addRankBadge: function(studentEl, rank) {
+        // 移除旧的排名徽章
+        const oldBadge = studentEl.querySelector('.rank-badge');
+        if (oldBadge) {
+            oldBadge.remove();
+        }
+
+        // 添加新的排名徽章
+        const rankEl = document.createElement('div');
+        rankEl.className = 'rank-badge';
+        rankEl.textContent = `#${rank}`;
+        studentEl.appendChild(rankEl);
+    },
+
+    completeSorting: function() {
+        this.sortedCurrentStep = 'complete';
+
+        // 标记所有元素为排序完成
+        const outputStudents = this.sortedOutputContainer.querySelectorAll('.student-card');
+        outputStudents.forEach(el => {
+            el.classList.remove('processing', 'current');
+            el.classList.add('sorted');
+        });
+
+        // 最终信息
+        if (this.sortedInfo) {
+            this.sortedInfo.innerHTML = `
+                <p><strong>✓ 排序完成！按成绩从高到低排列</strong></p>
+                <p>排序规则：Comparator.comparing(Student::getScore).reversed()</p>
+            `;
+        }
     },
 
     // 5. skip() 和 limit() 提取操作动画
@@ -514,60 +637,266 @@ const StreamAnimation = {
         const container = document.getElementById('skipLimit-animation');
         if (!container) return;
 
+        // 分页参数配置
+        this.skipCount = 3;
+        this.limitCount = 5;
+
         container.innerHTML = `
-            <h3>skip() & limit() 分页演示</h3>
-            <div class="animation-controls">
-                <button onclick="StreamAnimation.startSkipLimitAnimation()">分页: 跳过3个，取5个</button>
-                <button onclick="StreamAnimation.resetAnimation('skipLimit-animation')">重置</button>
-            </div>
+            <h3>skip() 和 limit() 分页演示</h3>
             <div class="animation-scene">
                 <div class="pagination-container">
                     <div class="stage" id="skip-input">
                         <h4>原始数据 (前10个)</h4>
                         <div class="student-list" id="skip-students"></div>
                     </div>
-                    <div class="pagination-info">
-                        <div class="operation">skip(3)</div>
+                    <div class="pagination-info" id="pagination-info">
+                        <div class="operation">准备分页...</div>
                         <div class="arrow down">⬇</div>
-                        <div class="operation">limit(5)</div>
+                        <div class="operation">等待操作</div>
                     </div>
                     <div class="stage" id="skip-result">
-                        <h4>分页结果 (第2页)</h4>
+                        <h4>分页结果</h4>
                         <div class="student-list" id="skip-result-list"></div>
                     </div>
+                </div>
+                <div class="pagination-status" id="pagination-status">
+                    <p>点击"下一步"开始分页演示：skip(${this.skipCount}) + limit(${this.limitCount})</p>
                 </div>
             </div>
         `;
 
         this.renderStudents('skip-students', sampleStudents);
+        this.resetSkipLimit();
     },
 
-    startSkipLimitAnimation: function() {
-        const students = document.querySelectorAll('#skip-students .student-card');
-        const outputContainer = document.getElementById('skip-result-list');
+    resetSkipLimit: function() {
+        // 重置所有状态
+        this.skipLimitCurrentIndex = 0;
+        this.skipLimitCurrentStep = 'prepare'; // 'prepare', 'skipping', 'limiting', 'complete'
+        this.skipLimitInputStudents = document.querySelectorAll('#skip-students .student-card');
+        this.skipLimitOutputContainer = document.getElementById('skip-result-list');
+        this.skipLimitPaginationInfo = document.getElementById('pagination-info');
+        this.skipLimitStatus = document.getElementById('pagination-status');
 
-        outputContainer.innerHTML = '';
+        // 清空输出区域
+        if (this.skipLimitOutputContainer) {
+            this.skipLimitOutputContainer.innerHTML = '';
+        }
 
-        students.forEach((studentEl, index) => {
-            setTimeout(() => {
-                if (index < 3) {
-                    // skip: 飞出并消失
-                    studentEl.classList.add('skipped');
-                    setTimeout(() => {
-                        studentEl.classList.add('fade-out');
-                    }, 300);
-                } else if (index < 8) {
-                    // limit: 复制到结果区域
-                    const clone = studentEl.cloneNode(true);
-                    clone.classList.add('selected', 'fade-in');
-                    outputContainer.appendChild(clone);
-                    studentEl.classList.add('selected');
-                } else {
-                    // 超出limit: 变灰
-                    studentEl.classList.add('excluded');
-                }
-            }, index * 200);
+        // 重置信息区域
+        if (this.skipLimitStatus) {
+            this.skipLimitStatus.innerHTML = `<p>点击"下一步"开始分页演示：skip(${this.skipCount}) + limit(${this.limitCount})</p>`;
+        }
+
+        // 移除所有样式类
+        this.skipLimitInputStudents.forEach(el => {
+            el.classList.remove('skipped', 'selected', 'excluded', 'fade-out', 'current');
         });
+    },
+
+    skipLimitStep: function() {
+        if (this.skipLimitCurrentStep === 'prepare') {
+            this.startSkippingStep();
+        } else if (this.skipLimitCurrentStep === 'skipping') {
+            // 检查当前是否有高亮的元素需要处理
+            const currentElement = document.querySelector('#skip-students .student-card.current');
+            if (currentElement) {
+                // 执行跳过动画
+                currentElement.classList.remove('current');
+                currentElement.classList.add('skipped');
+
+                setTimeout(() => {
+                    currentElement.classList.add('fade-out');
+                }, 200);
+
+                // 移动到下一个索引
+                this.skipLimitCurrentIndex++;
+
+                // 处理下一个skip步骤
+                setTimeout(() => {
+                    this.processSkippingStep();
+                }, 300);
+            } else {
+                this.processSkippingStep();
+            }
+        } else if (this.skipLimitCurrentStep === 'limiting') {
+            // 检查当前是否有高亮的元素需要处理
+            const currentElement = document.querySelector('#skip-students .student-card.current');
+            if (currentElement) {
+                // 执行选择动画
+                currentElement.classList.remove('current');
+                currentElement.classList.add('selected');
+
+                // 复制到结果区域
+                const clone = currentElement.cloneNode(true);
+                clone.classList.add('selected', 'fade-in');
+                this.skipLimitOutputContainer.appendChild(clone);
+
+                // 移动到下一个索引
+                this.skipLimitCurrentIndex++;
+
+                // 检查是否完成选择
+                const selectedCount = this.skipLimitOutputContainer.querySelectorAll('.student-card').length;
+                if (selectedCount >= Math.min(this.limitCount, this.skipLimitInputStudents.length - this.skipCount)) {
+                    this.completeLimiting();
+                } else {
+                    // 不再自动调用processLimitingStep，等待用户再次点击
+                }
+            } else {
+                // 没有当前高亮元素，寻找下一个合适的元素
+                this.processLimitingStep();
+            }
+        } else if (this.skipLimitCurrentStep === 'complete') {
+            // 分页完成
+            if (this.skipLimitStatus) {
+                this.skipLimitStatus.innerHTML = '<p><strong>✓ 分页完成！获取第2页数据</strong></p>';
+            }
+        }
+    },
+
+    startSkippingStep: function() {
+        // 开始skip阶段
+        this.skipLimitCurrentStep = 'skipping';
+        this.skipLimitCurrentIndex = 0;
+
+        if (this.skipLimitPaginationInfo) {
+            this.skipLimitPaginationInfo.innerHTML = `
+                <div class="operation active">skip(${this.skipCount})</div>
+                <div class="arrow down">⬇</div>
+                <div class="operation">limit(${this.limitCount})</div>
+            `;
+        }
+
+        if (this.skipLimitStatus) {
+            this.skipLimitStatus.innerHTML = `<p><strong>开始跳过前${this.skipCount}个元素...</strong></p>`;
+        }
+
+        // 移到第一个skip步骤
+        this.processSkippingStep();
+    },
+
+    processSkippingStep: function() {
+        if (this.skipLimitCurrentIndex >= this.skipCount) {
+            // skip阶段完成
+            this.completeSkipping();
+            return;
+        }
+
+        const currentStudent = this.skipLimitInputStudents[this.skipLimitCurrentIndex];
+
+        if (currentStudent) {
+            // 高亮当前处理的元素
+            this.skipLimitInputStudents.forEach(el => el.classList.remove('current'));
+            currentStudent.classList.add('current');
+
+            // 更新状态显示
+            const remainingSkip = this.skipCount - this.skipLimitCurrentIndex - 1;
+            if (this.skipLimitStatus) {
+                this.skipLimitStatus.innerHTML = `
+                    <p><strong>跳过第${this.skipLimitCurrentIndex + 1}/${this.skipCount}个元素:</strong></p>
+                    <p>学生: ${currentStudent.querySelector('.student-name').textContent}</p>
+                    ${remainingSkip > 0 ? `<p>还需跳过 ${remainingSkip} 个元素</p>` : ''}
+                `;
+            }
+
+            // 执行skip动画 - 不自动移动到下一个，等待用户点击
+        }
+        // 注意：这里不再自动增加索引，而是等待用户再次点击
+    },
+
+    completeSkipping: function() {
+        // skip阶段完成，开始limiting阶段
+        setTimeout(() => {
+            this.skipLimitCurrentStep = 'limiting';
+            this.skipLimitCurrentIndex = this.skipCount;
+
+            if (this.skipLimitPaginationInfo) {
+                this.skipLimitPaginationInfo.innerHTML = `
+                    <div class="operation completed">skip(${this.skipCount}) ✓</div>
+                    <div class="arrow down">⬇</div>
+                    <div class="operation active">limit(${this.limitCount})</div>
+                `;
+            }
+
+            if (this.skipLimitStatus) {
+                this.skipLimitStatus.innerHTML = `<p><strong>跳过完成！开始选择${this.limitCount}个元素...</strong></p>`;
+            }
+
+            this.processLimitingStep();
+        }, 500);
+    },
+
+    processLimitingStep: function() {
+        if (!this.skipLimitInputStudents || this.skipLimitCurrentIndex >= this.skipLimitInputStudents.length) {
+            this.completeLimiting();
+            return;
+        }
+
+        const startIndex = this.skipCount;
+        const endIndex = Math.min(startIndex + this.limitCount, this.skipLimitInputStudents.length);
+
+        // 检查当前索引是否在limit范围内
+        if (this.skipLimitCurrentIndex >= startIndex && this.skipLimitCurrentIndex < endIndex) {
+            const currentStudent = this.skipLimitInputStudents[this.skipLimitCurrentIndex];
+
+            if (currentStudent && !currentStudent.classList.contains('skipped') && !currentStudent.classList.contains('selected')) {
+                // 高亮当前处理的元素
+                this.skipLimitInputStudents.forEach(el => el.classList.remove('current'));
+                currentStudent.classList.add('current');
+
+                // 更新状态显示
+                const currentLimitIndex = this.skipLimitCurrentIndex - startIndex + 1;
+                if (this.skipLimitStatus) {
+                    this.skipLimitStatus.innerHTML = `
+                        <p><strong>选择第${currentLimitIndex}/${this.limitCount}个元素:</strong></p>
+                        <p>学生: ${currentStudent.querySelector('.student-name').textContent}</p>
+                        <p>成绩: ${currentStudent.querySelector('.student-score').textContent}</p>
+                    `;
+                }
+                // 注意：这里不再自动执行选择动画，而是等待用户点击
+            } else {
+                // 如果当前元素不符合条件，移动到下一个
+                this.skipLimitCurrentIndex++;
+                this.processLimitingStep();
+            }
+        } else if (this.skipLimitCurrentIndex >= endIndex) {
+            // 超出limit范围，完成选择
+            this.completeLimiting();
+        } else {
+            // 还没到开始索引，直接移动到下一个
+            this.skipLimitCurrentIndex++;
+            // 继续处理下一个元素，但不要无限递归
+            if (this.skipLimitCurrentIndex < startIndex) {
+                this.processLimitingStep(); // 只有在还没到达skip范围时才递归
+            }
+        }
+    },
+
+    completeLimiting: function() {
+        // limiting阶段完成
+        this.skipLimitCurrentStep = 'complete';
+
+        if (this.skipLimitPaginationInfo) {
+            this.skipLimitPaginationInfo.innerHTML = `
+                <div class="operation completed">skip(${this.skipCount}) ✓</div>
+                <div class="arrow down">⬇</div>
+                <div class="operation completed">limit(${this.limitCount}) ✓</div>
+            `;
+        }
+
+        if (this.skipLimitStatus) {
+            const selectedCount = this.skipLimitOutputContainer.querySelectorAll('.student-card').length;
+            this.skipLimitStatus.innerHTML = `
+                <p><strong>✓ 分页完成！获取到 ${selectedCount} 个元素</strong></p>
+                <p>相当于数据库分页：LIMIT ${this.limitCount} OFFSET ${this.skipCount}</p>
+                <p>即第 ${Math.floor(this.skipCount / this.limitCount) + 2} 页数据</p>
+            `;
+        }
+
+        // 标记超出limit的元素
+        for (let i = this.skipCount + this.limitCount; i < this.skipLimitInputStudents.length; i++) {
+            this.skipLimitInputStudents[i].classList.add('excluded');
+        }
     },
 
     // 6. max() / min() 最值查找动画
@@ -575,167 +904,443 @@ const StreamAnimation = {
         const container = document.getElementById('maxMin-animation');
         if (!container) return;
 
+        // 重置状态
+        this.maxMinCurrentIndex = 0;
+        this.maxMinCurrentStep = 'prepare'; // 'prepare', 'comparing', 'complete'
+        this.maxMinCurrentMax = null;
+        this.maxMinCurrentMin = null;
+
         container.innerHTML = `
             <h3>max() / min() 最值演示</h3>
             <div class="animation-controls">
-                <button onclick="StreamAnimation.startMaxMinAnimation()">查找最高分</button>
-                <button onclick="StreamAnimation.resetAnimation('maxMin-animation')">重置</button>
+                <button onclick="StreamAnimation.maxMinStep()">下一步</button>
+                <button onclick="StreamAnimation.resetMaxMin()">重置</button>
             </div>
             <div class="animation-scene">
                 <div class="tournament-container">
                     <div class="stage" id="maxmin-input">
-                        <h4>学生成绩</h4>
+                        <h4>学生成绩列表</h4>
                         <div class="student-list" id="maxmin-students"></div>
                     </div>
+                    <div class="comparison-info" id="comparison-info">
+                        <div class="operation">准备比较...</div>
+                        <div class="current-status" id="current-status">
+                            <p>点击"下一步"开始最值查找演示</p>
+                        </div>
+                    </div>
                     <div class="stage" id="maxmin-result">
-                        <h4>最高分学生</h4>
-                        <div id="winner-container"></div>
+                        <h4>最值结果</h4>
+                        <div class="result-container">
+                            <div class="max-container">
+                                <h5>最高分 (max)</h5>
+                                <div id="max-result"></div>
+                            </div>
+                            <div class="min-container">
+                                <h5>最低分 (min)</h5>
+                                <div id="min-result"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
 
-        this.renderStudents('maxmin-students', sampleStudents.slice(0, 8));
+        this.renderStudents('maxmin-students', sampleStudents.slice(0, 6));
+        this.resetMaxMin();
     },
 
-    startMaxMinAnimation: function() {
-        const students = sampleStudents.slice(0, 8);
-        const winnerContainer = document.getElementById('winner-container');
+    // 新增：单步执行函数
+    maxMinStep: function() {
+        if (this.maxMinCurrentStep === 'prepare') {
+            this.startMaxMinComparison();
+        } else if (this.maxMinCurrentStep === 'comparing') {
+            this.processMaxMinComparison();
+        } else if (this.maxMinCurrentStep === 'complete') {
+            // 比较完成
+            if (this.maxMinStatus) {
+                this.maxMinStatus.innerHTML = '<p><strong>✓ 最值查找完成！</strong></p>';
+            }
+        }
+    },
 
-        // 锦标赛式比较
-        let candidates = [...students];
-        let round = 1;
+    startMaxMinComparison: function() {
+        this.maxMinCurrentStep = 'comparing';
+        this.maxMinCurrentIndex = 0;
+        this.maxMinCurrentMax = null;
+        this.maxMinCurrentMin = null;
 
-        const tournamentRound = () => {
-            if (candidates.length <= 1) {
-                // 显示最终胜利者
-                winnerContainer.innerHTML = `
-                    <div class="winner-card">
-                        <div class="trophy">🏆</div>
-                        <div class="winner-info">
-                            <h4>${candidates[0].name}</h4>
-                            <p>成绩: ${candidates[0].score}</p>
-                        </div>
+        const comparisonInfo = document.getElementById('comparison-info');
+        const operation = comparisonInfo.querySelector('.operation');
+        operation.textContent = '比较中...';
+        operation.classList.add('active');
+
+        this.maxMinStudents = document.querySelectorAll('#maxmin-students .student-card');
+        this.maxMinResult = document.getElementById('max-result');
+        this.maxMinResultMin = document.getElementById('min-result');
+        this.maxMinStatus = document.getElementById('current-status');
+
+        if (this.maxMinStatus) {
+            this.maxMinStatus.innerHTML = '<p><strong>开始查找最高分和最低分...</strong></p>';
+        }
+
+        this.processMaxMinComparison();
+    },
+
+    processMaxMinComparison: function() {
+        if (!this.maxMinStudents || this.maxMinCurrentIndex >= this.maxMinStudents.length) {
+            this.completeMaxMinComparison();
+            return;
+        }
+
+        const currentStudent = this.maxMinStudents[this.maxMinCurrentIndex];
+
+        // 高亮当前处理的元素
+        this.maxMinStudents.forEach(el => el.classList.remove('current', 'max', 'min'));
+        currentStudent.classList.add('current');
+
+        const studentName = currentStudent.querySelector('.student-name').textContent;
+        const studentScore = parseInt(currentStudent.querySelector('.student-score').textContent);
+
+        // 更新最值
+        if (this.maxMinCurrentMax === null || studentScore > this.maxMinCurrentMax.score) {
+            this.maxMinCurrentMax = { name: studentName, score: studentScore };
+        }
+        if (this.maxMinCurrentMin === null || studentScore < this.maxMinCurrentMin.score) {
+            this.maxMinCurrentMin = { name: studentName, score: studentScore };
+        }
+
+        // 更新状态显示
+        if (this.maxMinStatus) {
+            this.maxMinStatus.innerHTML = `
+                <p><strong>处理第${this.maxMinCurrentIndex + 1}个学生:</strong></p>
+                <p>学生: ${studentName}, 成绩: ${studentScore}</p>
+                <p>当前最高分: ${this.maxMinCurrentMax.name} (${this.maxMinCurrentMax.score})</p>
+                <p>当前最低分: ${this.maxMinCurrentMin.name} (${this.maxMinCurrentMin.score})</p>
+            `;
+        }
+
+        // 显示当前的最值结果
+        this.displayMaxMinResults();
+
+        // 移动到下一个索引
+        this.maxMinCurrentIndex++;
+    },
+
+    displayMaxMinResults: function() {
+        if (this.maxMinResult && this.maxMinCurrentMax) {
+            this.maxMinResult.innerHTML = `
+                <div class="result-card max-card">
+                    <div class="result-icon">👑</div>
+                    <div class="result-info">
+                        <h5>${this.maxMinCurrentMax.name}</h5>
+                        <p class="score">${this.maxMinCurrentMax.score}分</p>
                     </div>
-                `;
-                return;
-            }
+                </div>
+            `;
+        }
 
-            // 两两比较
-            const nextRound = [];
-            for (let i = 0; i < candidates.length; i += 2) {
-                if (i + 1 < candidates.length) {
-                    const a = candidates[i];
-                    const b = candidates[i + 1];
-                    const winner = a.score > b.score ? a : b;
-                    const loser = a.score > b.score ? b : a;
-
-                    nextRound.push(winner);
-
-                    // 动画显示比较过程
-                    setTimeout(() => {
-                        this.showComparison(a, b, winner, loser);
-                    }, (i / 2) * 1000 + round * 2000);
-                } else {
-                    nextRound.push(candidates[i]);
-                }
-            }
-
-            candidates = nextRound;
-            round++;
-
-            if (candidates.length > 1) {
-                setTimeout(tournamentRound, candidates.length * 1000 + 1000);
-            }
-        };
-
-        setTimeout(tournamentRound, 500);
+        if (this.maxMinResultMin && this.maxMinCurrentMin) {
+            this.maxMinResultMin.innerHTML = `
+                <div class="result-card min-card">
+                    <div class="result-icon">🎯</div>
+                    <div class="result-info">
+                        <h5>${this.maxMinCurrentMin.name}</h5>
+                        <p class="score">${this.maxMinCurrentMin.score}分</p>
+                    </div>
+                </div>
+            `;
+        }
     },
 
-    showComparison: function(a, b, winner, loser) {
-        // 这里可以添加比较的视觉效果
-        console.log(`比较: ${a.name}(${a.score}) vs ${b.name}(${b.score}) -> 胜者: ${winner.name}`);
+    completeMaxMinComparison: function() {
+        this.maxMinCurrentStep = 'complete';
+
+        const comparisonInfo = document.getElementById('comparison-info');
+        const operation = comparisonInfo.querySelector('.operation');
+        operation.textContent = '比较完成 ✓';
+        operation.classList.remove('active');
+        operation.classList.add('completed');
+
+        // 高亮最终的最值学生
+        this.maxMinStudents.forEach(el => {
+            el.classList.remove('current');
+            const studentName = el.querySelector('.student-name').textContent;
+            if (studentName === this.maxMinCurrentMax.name) {
+                el.classList.add('max');
+            }
+            if (studentName === this.maxMinCurrentMin.name) {
+                el.classList.add('min');
+            }
+        });
+
+        if (this.maxMinStatus) {
+            this.maxMinStatus.innerHTML = `
+                <p><strong>✓ 最值查找完成！</strong></p>
+                <p>最高分: ${this.maxMinCurrentMax.name} (${this.maxMinCurrentMax.score}分)</p>
+                <p>最低分: ${this.maxMinCurrentMin.name} (${this.maxMinCurrentMin.score}分)</p>
+            `; // <p>等价于: students.stream().max(Comparator.comparing(Student::getScore))</p>
+        }
     },
 
+    resetMaxMin: function() {
+        // 重置所有状态
+        this.maxMinCurrentIndex = 0;
+        this.maxMinCurrentStep = 'prepare';
+        this.maxMinCurrentMax = null;
+        this.maxMinCurrentMin = null;
+
+        const students = document.querySelectorAll('#maxmin-students .student-card');
+        students.forEach(el => {
+            el.classList.remove('current', 'max', 'min', 'processed');
+        });
+
+        // 清空结果区域
+        const maxResult = document.getElementById('max-result');
+        const minResult = document.getElementById('min-result');
+        if (maxResult) maxResult.innerHTML = '<p class="placeholder">等待查找...</p>';
+        if (minResult) minResult.innerHTML = '<p class="placeholder">等待查找...</p>';
+
+        // 重置比较信息
+        const comparisonInfo = document.getElementById('comparison-info');
+        if (comparisonInfo) {
+            const operation = comparisonInfo.querySelector('.operation');
+            operation.textContent = '准备比较...';
+            operation.classList.remove('active', 'completed');
+        }
+
+        // 重置状态信息
+        const maxMinStatus = document.getElementById('current-status');
+        if (maxMinStatus) {
+            maxMinStatus.innerHTML = '<p>点击"下一步"开始最值查找演示</p>';
+        }
+    },
+
+    
     // 7. reduce() 规约操作动画
     reduceDemo: function() {
         const container = document.getElementById('reduce-animation');
         if (!container) return;
 
+        // 重置状态
+        this.reduceCurrentIndex = 0;
+        this.reduceCurrentStep = 'prepare'; // 'prepare', 'reducing', 'complete'
+        this.reduceAccumulator = 0;
+
         container.innerHTML = `
             <h3>reduce() 规约演示</h3>
             <div class="animation-controls">
-                <button onclick="StreamAnimation.startReduceAnimation()">计算成绩总和</button>
-                <button onclick="StreamAnimation.resetAnimation('reduce-animation')">重置</button>
+                <button onclick="StreamAnimation.reduceStep()">下一步</button>
+                <button onclick="StreamAnimation.resetReduce()">重置</button>
             </div>
             <div class="animation-scene">
                 <div class="reduce-container">
                     <div class="stage" id="reduce-input">
-                        <h4>学生成绩</h4>
+                        <h4>学生成绩列表</h4>
                         <div class="score-list" id="reduce-scores"></div>
                     </div>
-                    <div class="reduce-flow" id="reduce-accumulator">
-                        <div class="accumulator">累加器: <span id="accumulator-value">0</span></div>
-                        <div class="reduce-step" id="reduce-step"></div>
+                    <div class="reduce-flow" id="reduce-process">
+                        <div class="process-info">
+                            <div class="operation" id="reduce-operation">准备规约...</div>
+                            <div class="accumulator-display">
+                                <span class="label">累加器:</span>
+                                <span class="value" id="accumulator-value">0</span>
+                            </div>
+                        </div>
+                        <div class="reduce-step" id="reduce-step">
+                            <div class="step-info">
+                                <p>点击"下一步"开始规约操作</p>
+                            </div>
+                        </div>
                     </div>
                     <div class="stage" id="reduce-result">
                         <h4>最终结果</h4>
-                        <div class="result-display" id="result-display"></div>
+                        <div class="result-display" id="result-display">
+                            <div class="placeholder">等待计算完成...</div>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
 
         // 渲染成绩列表
+        this.renderReduceScores();
+        this.resetReduce();
+    },
+
+    renderReduceScores: function() {
         const scoresContainer = document.getElementById('reduce-scores');
-        sampleStudents.slice(0, 6).forEach(student => {
+        if (!scoresContainer) return;
+
+        scoresContainer.innerHTML = '';
+        sampleStudents.slice(0, 5).forEach((student, index) => {
             const scoreEl = document.createElement('div');
             scoreEl.className = 'score-item';
             scoreEl.textContent = student.score;
+            scoreEl.setAttribute('data-index', index);
             scoresContainer.appendChild(scoreEl);
         });
     },
 
-    startReduceAnimation: function() {
-        const scores = sampleStudents.slice(0, 6).map(s => s.score);
-        const accumulatorEl = document.getElementById('accumulator-value');
-        const stepEl = document.getElementById('reduce-step');
-        const resultEl = document.getElementById('result-display');
+    // 新增：单步执行函数
+    reduceStep: function() {
+        if (this.reduceCurrentStep === 'prepare') {
+            this.startReducing();
+        } else if (this.reduceCurrentStep === 'reducing') {
+            this.processReduceStep();
+        } else if (this.reduceCurrentStep === 'complete') {
+            // 规约完成
+            if (this.reduceStepInfo) {
+                this.reduceStepInfo.innerHTML = '<p><strong>✓ 规约操作完成！</strong></p>';
+            }
+        }
+    },
 
-        let accumulator = 0;
+    startReducing: function() {
+        this.reduceCurrentStep = 'reducing';
+        this.reduceCurrentIndex = 0;
+        this.reduceAccumulator = 0;
 
-        scores.forEach((score, index) => {
-            setTimeout(() => {
-                // 高亮当前处理的分数
-                document.querySelectorAll('.score-item').forEach((el, i) => {
-                    el.classList.toggle('highlighted', i === index);
-                });
+        // 更新操作状态
+        const operation = document.getElementById('reduce-operation');
+        if (operation) {
+            operation.textContent = '规约中...';
+            operation.classList.add('active');
+        }
 
-                // 显示累加步骤
-                const oldAccumulator = accumulator;
-                accumulator += score;
+        this.reduceScores = sampleStudents.slice(0, 5).map(s => s.score);
+        this.reduceScoreItems = document.querySelectorAll('.score-item');
+        this.reduceAccumulatorEl = document.getElementById('accumulator-value');
+        this.reduceStepInfo = document.querySelector('#reduce-step .step-info');
+        this.reduceResultEl = document.getElementById('result-display');
 
-                stepEl.innerHTML = `
-                    <div class="reduce-operation">
-                        ${oldAccumulator} + ${score} = ${accumulator}
-                    </div>
-                `;
+        if (this.reduceStepInfo) {
+            this.reduceStepInfo.innerHTML = '<p><strong>开始规约操作...</strong></p>';
+        }
 
-                // 更新累加器显示
-                accumulatorEl.textContent = accumulator;
+        this.processReduceStep();
+    },
 
-                // 最后显示最终结果
-                if (index === scores.length - 1) {
-                    setTimeout(() => {
-                        resultEl.innerHTML = `
-                            <div class="final-result">
-                                总和: <span class="result-value">${accumulator}</span>
-                            </div>
-                        `;
-                    }, 800);
-                }
-            }, index * 1200);
+    processReduceStep: function() {
+        if (!this.reduceScores || this.reduceCurrentIndex >= this.reduceScores.length) {
+            this.completeReducing();
+            return;
+        }
+
+        const currentScore = this.reduceScores[this.reduceCurrentIndex];
+        const oldAccumulator = this.reduceAccumulator;
+        this.reduceAccumulator += currentScore;
+
+        // 高亮当前处理的分数
+        this.reduceScoreItems.forEach((el, i) => {
+            el.classList.toggle('current', i === this.reduceCurrentIndex);
+            el.classList.toggle('processed', i < this.reduceCurrentIndex);
         });
+
+        // 更新累加器显示
+        if (this.reduceAccumulatorEl) {
+            this.reduceAccumulatorEl.textContent = this.reduceAccumulator;
+        }
+
+        // 显示规约步骤
+        if (this.reduceStepInfo) {
+            this.reduceStepInfo.innerHTML = `
+                <p><strong>第${this.reduceCurrentIndex + 1}步规约:</strong></p>
+                <div class="operation-display">
+                    <span class="old-value">${oldAccumulator}</span>
+                    <span class="operator">+</span>
+                    <span class="current-value">${currentScore}</span>
+                    <span class="equals">=</span>
+                    <span class="new-value">${this.reduceAccumulator}</span>
+                </div>
+                <p class="step-description">
+                    ${this.reduceCurrentIndex === 0 ? '开始累加第一个元素' : `累加第${this.reduceCurrentIndex + 1}个元素`}
+                </p>
+            `;
+        }
+
+        // 移动到下一个索引
+        this.reduceCurrentIndex++;
+    },
+
+    completeReducing: function() {
+        this.reduceCurrentStep = 'complete';
+
+        // 更新操作状态
+        const operation = document.getElementById('reduce-operation');
+        if (operation) {
+            operation.textContent = '规约完成 ✓';
+            operation.classList.remove('active');
+            operation.classList.add('completed');
+        }
+
+        // 显示最终结果
+        if (this.reduceResultEl) {
+            this.reduceResultEl.innerHTML = `
+                <div class="final-result">
+                    <div class="result-title">计算完成</div>
+                    <div class="result-operation">
+                        sum = ${this.reduceScores.join(' + ')} = ${this.reduceAccumulator}
+                    </div>
+                    <div class="result-value">
+                        总和: <strong>${this.reduceAccumulator}</strong>
+                    </div>
+
+                </div>
+            `;
+        }
+
+        // 更新步骤信息
+        if (this.reduceStepInfo) {
+            this.reduceStepInfo.innerHTML = `
+                <p><strong>✓ 规约操作完成！</strong></p>
+                <p>共处理了 ${this.reduceScores.length} 个成绩</p>
+                <p>最终累加结果: ${this.reduceAccumulator}</p>
+            `;
+        }
+
+        // 标记所有分数为已处理
+        this.reduceScoreItems.forEach(el => {
+            el.classList.remove('current');
+            el.classList.add('processed');
+        });
+    },
+
+    resetReduce: function() {
+        // 重置所有状态
+        this.reduceCurrentIndex = 0;
+        this.reduceCurrentStep = 'prepare';
+        this.reduceAccumulator = 0;
+
+        // 重置分数项目状态
+        const scoreItems = document.querySelectorAll('.score-item');
+        scoreItems.forEach(el => {
+            el.classList.remove('current', 'processed');
+        });
+
+        // 重置累加器显示
+        const accumulatorEl = document.getElementById('accumulator-value');
+        if (accumulatorEl) {
+            accumulatorEl.textContent = '0';
+        }
+
+        // 重置操作状态
+        const operation = document.getElementById('reduce-operation');
+        if (operation) {
+            operation.textContent = '准备规约...';
+            operation.classList.remove('active', 'completed');
+        }
+
+        // 重置步骤信息
+        const stepInfo = document.querySelector('#reduce-step .step-info');
+        if (stepInfo) {
+            stepInfo.innerHTML = '<p>点击"下一步"开始规约操作</p>';
+        }
+
+        // 清空结果区域
+        const resultEl = document.getElementById('result-display');
+        if (resultEl) {
+            resultEl.innerHTML = '<div class="placeholder">等待计算完成...</div>';
+        }
     },
 
     // 8. collect() 收集操作动画
