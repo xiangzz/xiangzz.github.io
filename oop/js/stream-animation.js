@@ -1348,13 +1348,25 @@ const StreamAnimation = {
         const container = document.getElementById('collect-animation');
         if (!container) return;
 
+        // 重置状态
+        this.collectCurrentIndex = 0;
+        this.collectCurrentStep = 'prepare'; // 'prepare', 'collecting', 'complete'
+        this.collectMode = 'toList'; // 'toList' 或 'groupingBy'
+
         container.innerHTML = `
             <h3>collect() 收集演示</h3>
             <div class="animation-controls">
-                <button onclick="StreamAnimation.startCollectAnimation()">收集到List</button>
-                <button onclick="StreamAnimation.startGroupingAnimation()">按专业分组</button>
-                <button onclick="StreamAnimation.resetAnimation('collect-animation')">重置</button>
+                <button onclick="StreamAnimation.collectStep()">下一步</button>
+                <button onclick="StreamAnimation.toggleCollectMode()">切换模式</button>
+                <button onclick="StreamAnimation.resetCollect()">重置</button>
+               
             </div>
+             <div class="current-mode-display">
+                    <h5>当前收集模式</h5>
+                    <div class="mode-code" id="mode-code">
+                        <code>students.stream().collect(Collectors.toList())</code>
+                    </div>
+                </div>
             <div class="animation-scene">
                 <div class="collect-container">
                     <div class="stage" id="collect-input">
@@ -1363,80 +1375,296 @@ const StreamAnimation = {
                     </div>
                     <div class="arrow" id="collect-arrow">
                         <div class="arrow-body"></div>
-                        <div class="arrow-head">collect(Collectors.toList())</div>
+                        <div class="arrow-head" id="arrow-operation">模式 1</div>
                     </div>
                     <div class="stage" id="collect-output">
                         <h4>收集结果</h4>
-                        <div class="list-container" id="list-result"></div>
+                        <div class="collect-info" id="collect-info">未开始，点击“下一步”开始演示</div>
+                        <div class="result-container" id="collect-result">
+                            <div class="placeholder">点击"下一步"开始收集演示</div>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
 
         // 创建Stream数据项
+        this.renderCollectStreamItems();
+        this.updateModeDisplay();
+        this.resetCollect();
+    },
+
+    renderCollectStreamItems: function() {
         const streamContainer = document.getElementById('stream-items');
-        sampleStudents.slice(0, 5).forEach((student, index) => {
+        if (!streamContainer) return;
+
+        streamContainer.innerHTML = '';
+        this.collectStudents = sampleStudents.slice(0, 5);
+
+        this.collectStudents.forEach((student, index) => {
             const streamItem = document.createElement('div');
             streamItem.className = 'stream-item';
             streamItem.textContent = student.name;
-            streamItem.style.animationDelay = `${index * 0.2}s`;
+            streamItem.setAttribute('data-index', index);
             streamContainer.appendChild(streamItem);
         });
     },
 
-    startCollectAnimation: function() {
-        const streamItems = document.querySelectorAll('.stream-item');
-        const listResult = document.getElementById('list-result');
-        const arrow = document.getElementById('collect-arrow');
-
-        listResult.innerHTML = '';
-        arrow.classList.add('active');
-
-        streamItems.forEach((item, index) => {
-            setTimeout(() => {
-                // Stream项飞入List容器
-                item.classList.add('flying');
-
-                setTimeout(() => {
-                    const listItem = document.createElement('div');
-                    listItem.className = 'list-item fade-in';
-                    listItem.textContent = item.textContent;
-                    listResult.appendChild(listItem);
-
-                    item.classList.add('collected');
-                }, 500);
-            }, index * 300);
-        });
+    // 新增：单步执行函数
+    collectStep: function() {
+        if (this.collectCurrentStep === 'prepare') {
+            this.startCollecting();
+        } else if (this.collectCurrentStep === 'collecting') {
+            this.processCollectStep();
+        } else if (this.collectCurrentStep === 'complete') {
+            // 收集完成
+            if (this.collectResultEl) {
+                this.collectResultEl.innerHTML = `
+                    <div class="completion-message">
+                        <p><strong>✓ 收集操作完成！</strong></p>
+                        <p>模式: ${this.collectMode === 'toList' ? 'List收集' : '分组收集'}</p>
+                    </div>
+                `;
+            }
+        }
     },
 
-    startGroupingAnimation: function() {
-        // 分组动画
-        const majors = [...new Set(sampleStudents.map(s => s.major))];
-        const resultContainer = document.getElementById('list-result');
+    toggleCollectMode: function() {
+        this.collectMode = this.collectMode === 'toList' ? 'groupingBy' : 'toList';
+        this.updateModeDisplay();
 
-        resultContainer.innerHTML = '';
-        document.getElementById('collect-arrow').querySelector('.arrow-head').textContent = 'groupingBy(Student::getMajor)';
+        // 如果已经开始收集，重置以应用新模式
+        if (this.collectCurrentStep !== 'prepare') {
+            this.resetCollect();
+        }
+    },
 
-        majors.forEach((major, index) => {
+    updateModeDisplay: function() {
+        const arrowOperationEl = document.getElementById('arrow-operation');
+        const modeCodeEl = document.getElementById('mode-code');
+
+        if (this.collectMode === 'toList') {
+            if (arrowOperationEl) {
+                arrowOperationEl.textContent = '模式 1';
+            }
+            if (modeCodeEl) {
+                modeCodeEl.innerHTML = '<code>students.stream().collect(Collectors.toList())</code>';
+            }
+        } else {
+            if (arrowOperationEl) {
+                arrowOperationEl.textContent = '模式 2';
+            }
+            if (modeCodeEl) {
+                modeCodeEl.innerHTML = '<code>students.stream().collect(Collectors.groupingBy(Student::getMajor))</code>';
+            }
+        }
+    },
+
+    startCollecting: function() {
+        this.collectCurrentStep = 'collecting';
+        this.collectCurrentIndex = 0;
+
+        // 激活箭头
+        const arrow = document.getElementById('collect-arrow');
+        if (arrow) {
+            arrow.classList.add('active');
+        }
+
+        this.collectStreamItems = document.querySelectorAll('.stream-item');
+        this.collectResultEl = document.getElementById('collect-result');
+
+        // 清空结果区域
+        if (this.collectResultEl) {
+            this.collectResultEl.innerHTML = this.collectMode === 'toList' ?
+                '<div class="list-result" id="list-result"></div>' :
+                '<div class="group-result" id="group-result"></div>';
+        }
+
+        if (this.collectMode === 'groupingBy') {
+            this.initGroupingResult();
+        }
+
+        // 初始化进度信息
+        this.updateCollectInfo();
+
+        this.processCollectStep();
+    },
+
+    initGroupingResult: function() {
+        const groupResultEl = document.getElementById('group-result');
+        if (!groupResultEl) return;
+
+        // 获取所有专业
+        this.collectMajors = [...new Set(sampleStudents.map(s => s.major))];
+
+        // 创建分组容器
+        this.collectMajors.forEach((major, index) => {
             const groupContainer = document.createElement('div');
             groupContainer.className = 'group-container';
             groupContainer.innerHTML = `
                 <h5>${major}</h5>
                 <div class="group-members" id="group-${index}"></div>
             `;
-            resultContainer.appendChild(groupContainer);
-
-            // 该专业的学生飞入对应组
-            sampleStudents
-                .filter(s => s.major === major)
-                .forEach((student, sIndex) => {
-                    setTimeout(() => {
-                        const studentCard = this.createStudentCard(student);
-                        studentCard.classList.add('fade-in');
-                        document.getElementById(`group-${index}`).appendChild(studentCard);
-                    }, (index * 3 + sIndex) * 200);
-                });
+            groupResultEl.appendChild(groupContainer);
         });
+    },
+
+    processCollectStep: function() {
+        if (!this.collectStudents || this.collectCurrentIndex >= this.collectStudents.length) {
+            this.completeCollecting();
+            return;
+        }
+
+        const currentStudent = this.collectStudents[this.collectCurrentIndex];
+        const currentItem = this.collectStreamItems[this.collectCurrentIndex];
+
+        // 高亮当前处理的元素
+        this.collectStreamItems.forEach((el, i) => {
+            el.classList.toggle('current', i === this.collectCurrentIndex);
+            el.classList.toggle('collected', i < this.collectCurrentIndex);
+        });
+
+        if (this.collectMode === 'toList') {
+            this.processToListStep(currentStudent);
+        } else {
+            this.processGroupingStep(currentStudent);
+        }
+
+        // 移动到下一个索引
+        this.collectCurrentIndex++;
+
+        // 更新进度信息
+        this.updateCollectInfo();
+    },
+
+    processToListStep: function(student) {
+        const listResultEl = document.getElementById('list-result');
+        if (!listResultEl) return;
+
+        // 添加到List结果
+        const listItem = document.createElement('div');
+        listItem.className = 'list-item fade-in';
+        listItem.textContent = student.name;
+        listResultEl.appendChild(listItem);
+    },
+
+    processGroupingStep: function(student) {
+        // 找到对应的专业分组
+        const groupIndex = this.collectMajors.indexOf(student.major);
+        if (groupIndex !== -1) {
+            const groupEl = document.getElementById(`group-${groupIndex}`);
+            if (groupEl) {
+                const studentCard = this.createStudentCard(student);
+                studentCard.classList.add('fade-in');
+                groupEl.appendChild(studentCard);
+            }
+        }
+    },
+
+    completeCollecting: function() {
+        this.collectCurrentStep = 'complete';
+
+        // 停用箭头
+        const arrow = document.getElementById('collect-arrow');
+        if (arrow) {
+            arrow.classList.remove('active');
+            arrow.classList.add('completed');
+        }
+
+        // 显示完成信息
+        if (this.collectResultEl) {
+            const collectedCount = this.collectStudents.length;
+
+            if (this.collectMode === 'toList') {
+                this.collectResultEl.innerHTML = `
+                    <div class="final-result">
+                        <div class="result-title">收集完成</div>
+                        <div class="result-info">
+                            <p>成功收集了 <strong>${collectedCount}</strong> 个学生到List中</p>
+                            <p>Stream → List 转换完成</p>
+                        </div>
+                        <div class="stream-equivalent">
+                            等价于: students.stream().collect(Collectors.toList())
+                        </div>
+                    </div>
+                `;
+            } else {
+                const groupCount = this.collectMajors.length;
+                this.collectResultEl.innerHTML = `
+                    <div class="final-result">
+                        <div class="result-title">分组完成</div>
+                        <div class="result-info">
+                            <p>成功将 <strong>${collectedCount}</strong> 个学生按专业分为 <strong>${groupCount}</strong> 组</p>
+                            <p>Stream → Map<String, List<Student>> 转换完成</p>
+                        </div>
+                        <div class="stream-equivalent">
+                            等价于: students.stream().collect(Collectors.groupingBy(Student::getMajor))
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // 标记所有元素为已收集
+        this.collectStreamItems.forEach(el => {
+            el.classList.remove('current');
+            el.classList.add('collected');
+        });
+
+        // 完成后的进度提示
+        this.updateCollectInfo(true);
+    },
+
+    resetCollect: function() {
+        // 重置所有状态
+        this.collectCurrentIndex = 0;
+        this.collectCurrentStep = 'prepare';
+        this.collectMode = 'toList';
+
+        // 重置流元素状态
+        const streamItems = document.querySelectorAll('.stream-item');
+        streamItems.forEach(el => {
+            el.classList.remove('current', 'collected');
+        });
+
+        // 重置箭头状态
+        const arrow = document.getElementById('collect-arrow');
+        if (arrow) {
+            arrow.classList.remove('active', 'completed');
+        }
+
+        // 更新模式显示
+        this.updateModeDisplay();
+
+        // 清空结果区域
+        const resultEl = document.getElementById('collect-result');
+        if (resultEl) {
+            resultEl.innerHTML = '<div class="placeholder">点击"下一步"开始收集演示</div>';
+        }
+
+        // 重置进度信息
+        const infoEl = document.getElementById('collect-info');
+        if (infoEl) {
+            infoEl.textContent = '未开始，点击“下一步”开始演示';
+        }
+    },
+
+    // 更新进度信息显示（completed 为 true 时显示完成文案）
+    updateCollectInfo: function(completed = false) {
+        const infoEl = document.getElementById('collect-info');
+        if (!infoEl || !this.collectStudents) return;
+
+        const total = this.collectStudents.length;
+        const processed = Math.min(this.collectCurrentIndex, total);
+        const modeText = this.collectMode === 'toList' ? '收集到 List' : '按专业分组';
+
+        if (completed) {
+            infoEl.textContent = `已完成：共处理 ${total} 项（模式：${modeText}）`;
+        } else if (this.collectCurrentStep === 'collecting') {
+            infoEl.textContent = `进度：${processed}/${total}（模式：${modeText}）`;
+        } else {
+            infoEl.textContent = '未开始，点击“下一步”开始演示';
+        }
     },
 
     // 9. parallel() 并行操作动画
@@ -1444,72 +1672,307 @@ const StreamAnimation = {
         const container = document.getElementById('parallel-animation');
         if (!container) return;
 
+        // 重置状态
+        this.parallelCurrentStep = 'prepare'; // 'prepare', 'sequential', 'parallel', 'complete'
+        this.parallelCurrentTaskIndex = 0;
+        this.parallelSequentialTime = 0;
+        this.parallelParallelTime = 0;
+
         container.innerHTML = `
             <h3>parallel() 并行处理演示</h3>
             <div class="animation-controls">
-                <button onclick="StreamAnimation.startParallelAnimation()">并行 vs 串行对比</button>
-                <button onclick="StreamAnimation.resetAnimation('parallel-animation')">重置</button>
+                <button onclick="StreamAnimation.parallelStep()">下一步</button>
+                <button onclick="StreamAnimation.resetParallel()">重置</button>
             </div>
             <div class="animation-scene">
                 <div class="parallel-comparison">
                     <div class="comparison-side">
                         <h4>串行处理 (Sequential)</h4>
+                        <div class="processing-info">
+                            <div class="status" id="sequential-status">准备开始...</div>
+                            <div class="task-counter" id="sequential-counter">任务: 0/8</div>
+                        </div>
                         <div class="processing-timeline" id="sequential-timeline">
                             <div class="timeline-track"></div>
                         </div>
                         <div class="time-display" id="sequential-time">时间: 0ms</div>
+                        <div class="performance-info">
+                            <div class="info-label">总耗时:</div>
+                            <div class="info-value" id="sequential-total">0ms</div>
+                        </div>
                     </div>
                     <div class="comparison-side">
                         <h4>并行处理 (Parallel)</h4>
+                        <div class="processing-info">
+                            <div class="status" id="parallel-status">准备开始...</div>
+                            <div class="task-counter" id="parallel-counter">任务: 0/8</div>
+                        </div>
                         <div class="processing-timeline" id="parallel-timeline">
                             <div class="timeline-track"></div>
                         </div>
                         <div class="time-display" id="parallel-time">时间: 0ms</div>
+                        <div class="performance-info">
+                            <div class="info-label">总耗时:</div>
+                            <div class="info-value" id="parallel-total">0ms</div>
+                        </div>
                     </div>
+                </div>
+                <div class="comparison-result" id="comparison-result">
+                    <p>点击"下一步"开始并行处理对比演示</p>
                 </div>
             </div>
         `;
 
-        this.startParallelProcessing();
+        this.resetParallel();
     },
 
-    startParallelProcessing: function() {
-        const dataItems = Array(8).fill(0).map((_, i) => ({ id: i + 1, value: Math.random() * 100 }));
-        const sequentialTime = 1000; // 模拟串行时间
-        const parallelTime = 300; // 模拟并行时间
+    // 新增：单步执行函数
+    parallelStep: function() {
+        if (this.parallelCurrentStep === 'prepare') {
+            this.startSequentialProcessing();
+        } else if (this.parallelCurrentStep === 'sequential') {
+            this.processSequentialStep();
+        } else if (this.parallelCurrentStep === 'parallel') {
+            this.processParallelStep();
+        } else if (this.parallelCurrentStep === 'complete') {
+            // 对比完成
+            if (this.comparisonResultEl) {
+                this.comparisonResultEl.innerHTML = `
+                    <div class="completion-summary">
+                        <h4>性能对比完成</h4>
+                        <div class="performance-comparison">
+                            <div class="comparison-item sequential-result">
+                                <h5>串行处理</h5>
+                                <p>总耗时: <strong>${this.parallelSequentialTime}ms</strong></p>
+                                <p>处理方式: 逐个执行</p>
+                            </div>
+                            <div class="comparison-item parallel-result">
+                                <h5>并行处理</h5>
+                                <p>总耗时: <strong>${this.parallelParallelTime}ms</strong></p>
+                                <p>处理方式: 同时执行</p>
+                            </div>
+                        </div>
+                        <div class="efficiency-gain">
+                            <p>性能提升: <strong>${Math.round((this.parallelSequentialTime - this.parallelParallelTime) / this.parallelSequentialTime * 100)}%</strong></p>
+                        </div>
+                        <div class="stream-equivalent">
+                            等价于: students.parallelStream().map(this::processTask).collect(Collectors.toList())
+                        </div>
+                    </div>
+                `;
+            }
+        }
+    },
 
-        // 串行处理动画
-        const sequentialTimeline = document.getElementById('sequential-timeline');
-        dataItems.forEach((item, index) => {
+    startSequentialProcessing: function() {
+        this.parallelCurrentStep = 'sequential';
+        this.parallelCurrentTaskIndex = 0;
+        this.parallelSequentialTime = 0;
+        this.parallelTasks = Array(8).fill(0).map((_, i) => ({ id: i + 1, duration: 300 + Math.random() * 200 }));
+
+        // 获取DOM元素
+        this.sequentialTimeline = document.getElementById('sequential-timeline');
+        this.parallelTimeline = document.getElementById('parallel-timeline');
+        this.sequentialStatus = document.getElementById('sequential-status');
+        this.sequentialCounter = document.getElementById('sequential-counter');
+        this.sequentialTime = document.getElementById('sequential-time');
+        this.sequentialTotal = document.getElementById('sequential-total');
+        this.comparisonResultEl = document.getElementById('comparison-result');
+
+        // 更新状态
+        if (this.sequentialStatus) {
+            this.sequentialStatus.textContent = '开始串行处理...';
+            this.sequentialStatus.className = 'status active';
+        }
+
+        this.processSequentialStep();
+    },
+
+    processSequentialStep: function() {
+        if (!this.parallelTasks || this.parallelCurrentTaskIndex >= this.parallelTasks.length) {
+            this.completeSequentialProcessing();
+            return;
+        }
+
+        const currentTask = this.parallelTasks[this.parallelCurrentTaskIndex];
+
+        // 创建任务元素
+        const taskEl = document.createElement('div');
+        taskEl.className = 'task-item sequential';
+        taskEl.textContent = `任务${currentTask.id}`;
+
+        // 添加到时间线
+        if (this.sequentialTimeline) {
+            this.sequentialTimeline.appendChild(taskEl);
+        }
+
+        // 更新状态和计数器
+        if (this.sequentialStatus) {
+            this.sequentialStatus.textContent = `处理任务 ${currentTask.id}...`;
+        }
+        if (this.sequentialCounter) {
+            this.sequentialCounter.textContent = `任务: ${this.parallelCurrentTaskIndex + 1}/8`;
+        }
+
+        // 模拟任务执行时间
+        this.parallelSequentialTime += Math.round(currentTask.duration);
+        if (this.sequentialTime) {
+            this.sequentialTime.textContent = `时间: ${this.parallelSequentialTime}ms`;
+        }
+        if (this.sequentialTotal) {
+            this.sequentialTotal.textContent = `${this.parallelSequentialTime}ms`;
+        }
+
+        this.parallelCurrentTaskIndex++;
+    },
+
+    completeSequentialProcessing: function() {
+        this.parallelCurrentStep = 'parallel';
+        this.parallelCurrentTaskIndex = 0;
+        this.parallelParallelTime = 0;
+
+        // 更新串行完成状态
+        if (this.sequentialStatus) {
+            this.sequentialStatus.textContent = '串行处理完成';
+            this.sequentialStatus.className = 'status completed';
+        }
+
+        // 准备并行处理
+        if (this.sequentialStatus) {
+            this.sequentialStatus.textContent = '串行处理完成';
+        }
+        if (this.sequentialStatus) {
+            this.sequentialStatus.className = 'status completed';
+        }
+
+        // 更新并行状态
+        const parallelStatus = document.getElementById('parallel-status');
+        const parallelCounter = document.getElementById('parallel-counter');
+        if (parallelStatus) {
+            parallelStatus.textContent = '开始并行处理...';
+            parallelStatus.className = 'status active';
+        }
+
+        this.processParallelStep();
+    },
+
+    processParallelStep: function() {
+        if (!this.parallelTasks || this.parallelCurrentTaskIndex >= this.parallelTasks.length) {
+            this.completeParallelProcessing();
+            return;
+        }
+
+        const currentTask = this.parallelTasks[this.parallelCurrentTaskIndex];
+
+        // 创建任务元素（并行处理同时开始）
+        const taskEl = document.createElement('div');
+        taskEl.className = 'task-item parallel';
+        taskEl.textContent = `任务${currentTask.id}`;
+        taskEl.style.animationDelay = '0s';
+
+        // 所有并行任务同时开始
+        if (this.parallelTimeline && this.parallelCurrentTaskIndex === 0) {
+            // 清空并行时间线并添加所有任务
+            this.parallelTimeline.innerHTML = '';
+
+            // 计算最长任务时间（并行处理的总时间）
+            const maxDuration = Math.max(...this.parallelTasks.map(t => t.duration));
+            this.parallelParallelTime = Math.round(maxDuration);
+
+            // 添加所有任务
+            this.parallelTasks.forEach(task => {
+                const parallelTaskEl = document.createElement('div');
+                parallelTaskEl.className = 'task-item parallel';
+                parallelTaskEl.textContent = `任务${task.id}`;
+                parallelTaskEl.style.animationDelay = '0s';
+                this.parallelTimeline.appendChild(parallelTaskEl);
+            });
+
+            // 更新并行显示
+            const parallelTime = document.getElementById('parallel-time');
+            const parallelTotal = document.getElementById('parallel-total');
+            const parallelCounter = document.getElementById('parallel-counter');
+
+            if (parallelTime) {
+                parallelTime.textContent = `时间: ${this.parallelParallelTime}ms`;
+            }
+            if (parallelTotal) {
+                parallelTotal.textContent = `${this.parallelParallelTime}ms`;
+            }
+            if (parallelCounter) {
+                parallelCounter.textContent = `任务: 8/8`;
+            }
+
+            // 延迟完成
             setTimeout(() => {
-                const taskEl = document.createElement('div');
-                taskEl.className = 'task-item sequential';
-                taskEl.textContent = `任务${item.id}`;
-                taskEl.style.animationDelay = '0s';
-                sequentialTimeline.appendChild(taskEl);
-            }, index * sequentialTime);
-        });
+                this.completeParallelProcessing();
+            }, 500);
+        }
 
-        // 并行处理动画
+        this.parallelCurrentTaskIndex++;
+    },
+
+    completeParallelProcessing: function() {
+        this.parallelCurrentStep = 'complete';
+
+        // 更新并行完成状态
+        const parallelStatus = document.getElementById('parallel-status');
+        if (parallelStatus) {
+            parallelStatus.textContent = '并行处理完成';
+            parallelStatus.className = 'status completed';
+        }
+
+        // 等待用户点击查看对比结果
+        if (this.comparisonResultEl) {
+            this.comparisonResultEl.innerHTML = '<p>点击"下一步"查看性能对比结果</p>';
+        }
+    },
+
+    resetParallel: function() {
+        // 重置所有状态
+        this.parallelCurrentStep = 'prepare';
+        this.parallelCurrentTaskIndex = 0;
+        this.parallelSequentialTime = 0;
+        this.parallelParallelTime = 0;
+
+        // 清空时间线
+        const sequentialTimeline = document.getElementById('sequential-timeline');
         const parallelTimeline = document.getElementById('parallel-timeline');
-        dataItems.forEach(item => {
-            const taskEl = document.createElement('div');
-            taskEl.className = 'task-item parallel';
-            taskEl.textContent = `任务${item.id}`;
-            taskEl.style.animationDelay = '0s';
-            parallelTimeline.appendChild(taskEl);
+        if (sequentialTimeline) {
+            sequentialTimeline.innerHTML = '<div class="timeline-track"></div>';
+        }
+        if (parallelTimeline) {
+            parallelTimeline.innerHTML = '<div class="timeline-track"></div>';
+        }
+
+        // 重置状态显示
+        const elements = ['sequential-status', 'parallel-status', 'sequential-counter', 'parallel-counter'];
+        elements.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.className = 'status';
+                if (id.includes('status')) {
+                    el.textContent = '准备开始...';
+                } else if (id.includes('counter')) {
+                    el.textContent = '任务: 0/8';
+                }
+            }
         });
 
-        // 更新时间显示
-        const updateTime = () => {
-            document.getElementById('sequential-time').textContent =
-                `时间: ${Math.min(sequentialTime, dataItems.length * sequentialTime)}ms`;
-            document.getElementById('parallel-time').textContent =
-                `时间: ${parallelTime}ms`;
-        };
+        // 重置时间显示
+        const timeElements = ['sequential-time', 'parallel-time', 'sequential-total', 'parallel-total'];
+        timeElements.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.textContent = '时间: 0ms';
+            }
+        });
 
-        setTimeout(updateTime, 100);
-        setTimeout(updateTime, dataItems.length * sequentialTime + 100);
+        // 重置结果区域
+        const comparisonResultEl = document.getElementById('comparison-result');
+        if (comparisonResultEl) {
+            comparisonResultEl.innerHTML = '<p>点击"下一步"开始并行处理对比演示</p>';
+        }
     },
 
     // 10. 完整Stream链综合动画
