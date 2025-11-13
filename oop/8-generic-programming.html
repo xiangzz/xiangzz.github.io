@@ -4,407 +4,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>泛型程序设计</title>
+    <title>Java 泛型语法系统讲解</title>
     <link rel="stylesheet" href="./css/style.css">
     <link rel="stylesheet" href="./css/animation.css">
-    <link rel="stylesheet" href="./css/hacker-cmd.css">
     <link rel="stylesheet" href="../prism/prism.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 </head>
 
 <body>
 
     <main id="presentation">
-        <!-- Slide 1: Title -->
         <section class="slide title-slide active">
-            <h1>泛型程序设计</h1>
-            <p>Generic Programming - Deep Dive</p>
-            <strong>深入理解泛型原理、掌握类型安全编程实践</strong>
-        </section>
-
-        <!-- Quote Slide -->
-        <section class="slide">
-            <div class="slide-content" style="text-align: center;">
-                <blockquote
-                    style="font-size: 1.3em; font-style: italic; border-left: 4px solid var(--accent-color); padding-left: 20px;">
-                    <p>泛型让我们能够编写类型安全且可重用的代码，是Java编程的重要基石</p>
-                    <cite style="display: block; text-align: right; margin-top: 20px;">— Effective Java</cite>
-                </blockquote>
-            </div>
+            <h1>Java 泛型语法系统讲解</h1>
+            <p>从基础到高级，结合大量代码示例</p>
+            <strong>牢记 PECS 原则与类型擦除机制</strong>
         </section>
 
         <section class="slide">
             <div class="slide-content">
-                <h2>学习目标</h2>
+                <h2>1. 什么是泛型？</h2>
+                <p>没有泛型时，类型不安全且需强制转换；泛型让类型成为参数，从源头保证类型安全与可读性。</p>
                 <ul>
-                    <li><strong>深入理解泛型原理</strong>：掌握类型安全机制、类型擦除原理与实现机制</li>
-                    <li><strong>精通泛型语法</strong>：泛型类、泛型方法、泛型接口的高级应用技巧</li>
-                    <li><strong>掌握泛型界限</strong>：通配符、extends/super界限的灵活运用</li>
-                    <li><strong>实践泛型设计</strong：自定义泛型集合类、工具类的设计与实现</li>
-                    <li><strong>泛型与现代Java</strong>：泛型与Lambda、Stream API的结合使用</li>
+                    <li>问题与痛点：运行期强转易错、IDE 难以推断、通用代码难以维护</li>
+                    <li>解决思路：把“类型”提升为参数，在声明处约束输入和输出</li>
+                    <li>核心收益：编译期发现错误、自动类型推断、语义更清晰</li>
                 </ul>
+                <h3>为了更通用：使用 Object</h3>
+                <div class="code-block">
+                    <pre><code class="language-java">class Box {
+    private Object item;
+    public void set(Object item) { this.item = item; }
+    public Object get() { return item; }
+}
+
+Box box = new Box();
+box.set("Hello");
+// String text = (String) box.get(); // 需要强制转换，且可能 ClassCastException</code></pre>
+                </div>
+                <h3>更好的通用：使用类型参数 T</h3>
+                <div class="code-block">
+                    <pre><code class="language-java">class Box&lt;T&gt; {
+    private T item;
+    public void set(T item) { this.item = item; }
+    public T get() { return item; }
+}
+
+Box&lt;String&gt; stringBox = new Box&lt;&gt;();
+stringBox.set("Hello");
+// stringBox.set(123); // 编译错误：类型不匹配
+String text = stringBox.get(); // 无需强制转换</code></pre>
+                </div>
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
-                <h2>类型安全问题：从Object到泛型</h2>
-                <p><strong>问题场景</strong>：设计学生成绩管理系统，需要支持不同类型的成绩表示</p>
-
-                <h3>传统Object方案的缺陷</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">public class Score {
-    String name;
-    String id;
-    Object value;  //使用Object存储不同类型
-
-    public Score(String name, String id, Object value) {
-        this.name = name;
-        this.id = id;
-        this.value = value;
-    }
-
-    // 问题：类型不安全，运行时才暴露错误
-    public Integer getScore() {
-        return (Integer) value;  //可能抛出ClassCastException
-    }
-}</code></pre>
-                </div>
-
-                <h3>Object方案的核心问题</h3>
+                <h2>2.1 泛型类</h2>
+                <p>在类名后用 &lt;T&gt; 声明类型参数，常用命名：T/E/K/V。泛型类定义一套可复用的“类型模板”。</p>
                 <ul>
-                    <li><strong>编译时类型安全缺失</strong>：无法在编译阶段发现类型错误</li>
-                    <li><strong>强制类型转换</strong>：需要手动转换，增加代码复杂度</li>
-                    <li><strong>运行时异常风险</strong>：ClassCastException难以预测</li>
-                    <li><strong>代码可读性差</strong>：无法从类型推断出实际用途</li>
+                    <li>命名约定：T（Type）、E（Element）、K/V（Key/Value）</li>
+                    <li>设计意图：在类的声明处绑定能力与约束，避免运行期错误</li>
+                    <li>实践建议：优先只读暴露，减少可变性带来的复杂度</li>
                 </ul>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型的解决方案</h2>
-                <p><strong>泛型的核心价值</strong>：将类型安全从运行时前移到编译时</p>
-
                 <div class="code-block">
-                    <pre><code class="language-java">// 泛型解决方案
-public class Score&lt;T&gt; {
-    private final String name;
-    private final String id;
-    private final T value;   //类型参数T
-
-    public Score(String name, String id, T value) {
-        this.name = name;
-        this.id = id;
-        this.value = value;
-    }
-
-    public T getValue() {
-        return value;  //无需强制转换，类型安全
-    }
-}</code></pre>
-                </div>
-
-                <h3>泛型带来的改进</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">// 编译时类型安全
-Score&lt;String&gt; score1 = new Score&lt;&gt;("计算机网络", "EP074512", "优秀");
-Score&lt;Integer&gt; score2 = new Score&lt;&gt;("数据结构", "EP074513", 95);
-
-// 类型明确，IDE智能提示
-String result1 = score1.getValue();  //自动推断为String
-Integer result2 = score2.getValue(); //自动推断为Integer
-
-// 编译时错误检查
-score1.setValue(100);  //编译错误：类型不匹配</code></pre>
-                </div>
-
-                <p class="conclusion">泛型通过类型参数将类型安全从运行时前移到编译时，实现了真正的类型安全编程。</p>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型的类型参数系统</h2>
-                <p><strong>类型参数命名规范</strong>：使用有意义的单个大写字母</p>
-
-                <div class="code-block">
-                    <pre><code class="language-java">// 常用类型参数命名
-E - Element (集合中的元素类型)
-K - Key (映射中的键类型)
-V - Value (映射中的值类型)
-T - Type (通用类型参数)
-N - Number (数值类型)
-S, U, V - 第二、三、四个类型参数</code></pre>
-                </div>
-
-                <h3>多个类型参数的应用</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">// 泛型类支持多个类型参数
-public class Pair&lt;K, V&gt; {
-    private final K key;
-    private final V value;
-
-    public Pair(K key, V value) {
-        this.key = key;
-        this.value = value;
-    }
-
+                    <pre><code class="language-java">public class Pair&lt;K, V&gt; {
+    private K key;
+    private V value;
+    public Pair(K key, V value) { this.key = key; this.value = value; }
     public K getKey() { return key; }
     public V getValue() { return value; }
 }
-
-// 实际使用
-Pair&lt;String, Integer&gt; student = new Pair&lt;&gt;("张三", 95);
-Pair&lt;String, String&gt; course = new Pair&lt;&gt;("Java", "优秀");</code></pre>
+// 右侧原来应该是&lt;Integer, String&gt;, 可以省略
+Pair&lt;Integer, String&gt; pair = new Pair&lt;&gt;(1, "One");
+Integer id = pair.getKey();
+String name = pair.getValue();</code></pre>
                 </div>
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
-                <h2>泛型的使用限制</h2>
-                <p>由于类型擦除机制，泛型在使用时有一些重要限制</p>
-
-                <h3>1. 基本类型不支持</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">// 错误：不能使用基本类型
-List&lt;int&gt; list = new ArrayList&lt;&gt;();  //编译错误
-
-// 正确：使用包装类
-List&lt;Integer&gt; list = new ArrayList&lt;&gt;();</code></pre>
-                </div>
-
-                <h3>2. 静态上下文限制</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">public class GenericClass&lt;T&gt; {
-    // 错误：静态方法不能使用类的类型参数
-    public static void staticMethod(T param) { }  //编译错误
-
-    // 正确：静态方法需要定义自己的类型参数
-    public static &lt;E&gt; void staticMethod(E param) { }
-}</code></pre>
-                </div>
-
-                <h3>3. 其他重要限制</h3>
+                <h2>2.2 泛型接口</h2>
+                <p>接口层的类型参数用于约束“协议”的输入输出类型，具体实现可以继续保持泛型或选定具体类型。</p>
                 <ul>
-                    <li><strong>不能创建泛型数组</strong>：T[] array = new T[10]; // 编译错误</li>
-                    <li><strong>不能进行泛型类型判断</strong>：obj instanceof List&lt;String&gt; // 编译错误</li>
-                    <li><strong>不能创建泛型实例</strong>：T t = new T(); // 编译错误</li>
+                    <li>抽象升级：同一协议可适配多种类型而不损失类型安全</li>
+                    <li>实现灵活：泛型实现与具体化实现可共存</li>
                 </ul>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型通配符</h2>
-                <p>使用?通配符可以接受任意类型的泛型对象</p>
                 <div class="code-block">
-                    <pre><code class="language-java">public static void main(String[] args) {
-    Test&lt;?&gt; test = new Test&lt;Integer&gt;();
-    test = new Test&lt;String&gt;();
-    Object o = test.value;    //通配符类型为Object
-}</code></pre>
-                </div>
-                <p><strong>多个类型变量</strong>：使用逗号分隔</p>
-                <div class="code-block">
-                    <pre><code class="language-java">public class Test&lt;A, B, C&gt; {
-    public A a;
-    public B b;
-    public C c;
+                    <pre><code class="language-java">public interface Comparator&lt;T&gt; {
+    int compare(T o1, T o2);
 }
 
-Test&lt;String, Integer, Character&gt; test = new Test&lt;&gt;();</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型与多态</h2>
-                <p>接口和抽象类都支持泛型，子类可以明确类型或继续使用泛型</p>
-                <div class="code-block">
-                    <pre><code class="language-java">public interface Study&lt;T&gt; {
-    T test();
-}
-
-// 明确泛型类型
-static class A implements Study&lt;Integer&gt; {
-    @Override
-    public Integer test() {
-        return null;
-    }
-}
-
-// 继续使用泛型
-static class B&lt;T&gt; implements Study&lt;T&gt; {
-    @Override
-    public T test() {
-        return null;
-    }
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型方法</h2>
-                <p>当方法需要接受的参数类型不确定时，可以定义泛型方法</p>
-                <div class="code-block">
-                    <pre><code class="language-java">public class Main {
-    public static void main(String[] args) {
-        String str = test("Hello World!");
-    }
-
-    private static &lt;T&gt; T test(T t){
-        // 在返回值类型前添加&lt;&gt;并填写泛型变量
-        return t;
-    }
-}</code></pre>
-                </div>
-                <p><strong>实际应用示例</strong>：</p>
-                <div class="code-block">
-                    <pre><code class="language-java">private &lt;T&gt; void add(T[] arr, T t){
-    arr[0] = t;
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型方法的应用</h2>
-                <p>Java工具类中大量使用泛型方法</p>
-                <div class="code-block">
-                    <pre><code class="language-java">// Arrays.sort()使用泛型接口
-Integer[] arr = {1, 4, 5, 2, 6, 3, 0, 7, 9, 8};
-Arrays.sort(arr, new Comparator&lt;Integer&gt;() {
-    @Override
-    public int compare(Integer o1, Integer o2) {
-        return o2 - o1;    // 降序排序
-    }
-});
-
-// 使用Lambda表达式简化
-Arrays.sort(arr, (o1, o2) -&gt; o2 - o1);</code></pre>
-                </div>
-                <div class="code-block">
-                    <pre><code class="language-java">// 数组复制方法
-String[] arr = {"AAA", "BBB", "CCC"};
-String[] newArr = Arrays.copyOf(arr, 3);  //泛型方法</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型界限</h2>
-                <p>可以限制泛型的类型范围，只允许特定类型或其子类</p>
-                <div class="code-block">
-                    <pre><code class="language-java">public class Score&lt;T extends Number&gt; {
-    // 设定类型参数上界，必须是Number或是Number的子类
-    private final String name;
-    private final String id;
-    private final T value;
-
-    public Score(String name, String id, T value) {
-        this.name = name;
-        this.id = id;
-        this.value = value;
-    }
-}</code></pre>
-                </div>
-                <p><strong>使用限制</strong>：具体类型只能是指定上界类型或其子类</p>
-                <div class="code-block">
-                    <pre><code class="language-java">Score&lt;Integer&gt; score1 = new Score&lt;&gt;("数据结构", "EP074512", 95);  //正确
-Score&lt;String&gt; score2 = new Score&lt;&gt;("计算机网络", "EP074513", "优秀");  //编译错误</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型界限的通配符使用</h2>
-                <p>通配符也支持泛型界限</p>
-                <div class="code-block">
-                    <pre><code class="language-java">// 上界通配符
-Score&lt;? extends Integer&gt; score = new Score&lt;&gt;("数据结构", "EP074512", 60);
-Number o = score.getValue();   //类型为上界Number
-
-// 下界通配符（仅适用于通配符）
-Score&lt;? super Number&gt; score2 = new Score&lt;&gt;("数据结构", "EP074512", 60);
-Object obj = score2.getValue();   //类型仍为Object</code></pre>
-                </div>
-                <p class="conclusion">通过设定泛型上限，可以更灵活地控制泛型的具体类型范围。</p>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>类型擦除深度解析</h2>
-                <p><strong>什么是类型擦除</strong>：Java泛型是编译时特性，在运行时类型信息会被擦除</p>
-
-                <h3>类型擦除的基本规则</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">// 编译时：泛型版本
-public class GenericContainer&lt;T&gt; {
-    private T element;
-
-    public void set(T element) { this.element = element; }
-    public T get() { return element; }
-}
-
-// 运行时：类型擦除后
-public class GenericContainer {
-    private Object element;
-
-    public void set(Object element) { this.element = element; }
-    public Object get() { return element; }
-}</code></pre>
-                </div>
-
-                <h3>类型擦除的两种情况</h3>
-                <ul>
-                    <li><strong>无界类型擦除</strong>：&lt;T&gt; → Object</li>
-                    <li><strong>有界类型擦除</strong>：&lt;T extends Number&gt; → Number</li>
-                </ul>
-
-                <p class="conclusion">类型擦除保证了向后兼容性，但同时也带来了一些限制。</p>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>类型擦除的影响与桥接方法</h2>
-                <h3>类型擦除的核心影响</h3>
-                <ul>
-                    <li><strong>编译时类型检查</strong>：泛型仅在编译阶段进行类型安全检查</li>
-                    <li><strong>运行时类型信息丢失</strong>：泛型类型信息在运行时被擦除</li>
-                    <li><strong>自动类型转换</strong>：编译器自动插入强制类型转换</li>
-                    <li><strong>桥接方法生成</strong>：保持多态的兼容性</li>
-                </ul>
-
-                <h3>桥接方法的生成</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">// 源代码
-public class StringComparator implements Comparator&lt;String&gt; {
+class StringComparator implements Comparator&lt;String&gt; {
     @Override
     public int compare(String s1, String s2) {
         return s1.length() - s2.length();
     }
-}
-
-// 编译后：实际生成两个方法
-public class StringComparator implements Comparator {
-    // 原始方法
-    public int compare(String s1, String s2) {
-        return s1.length() - s2.length();
-    }
-
-    // 桥接方法（编译器自动生成）
-    public int compare(Object o1, Object o2) {
-        return compare((String) o1, (String) o2);
-    }
 }</code></pre>
                 </div>
             </div>
@@ -412,784 +108,708 @@ public class StringComparator implements Comparator {
 
         <section class="slide">
             <div class="slide-content">
-                <h2>泛型与反射的结合</h2>
-                <p>虽然类型擦除会丢失泛型信息，但Java通过反射机制保留部分泛型元数据</p>
-
-                <h3>获取泛型信息</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">public class GenericClass&lt;T&gt; {
-    private List&lt;T&gt; items;
-    private Map&lt;String, T&gt; cache;
-
-    // 通过反射获取字段的泛型类型信息
-    public static void analyzeGenericFields() throws Exception {
-        Field itemsField = GenericClass.class.getDeclaredField("items");
-        Type itemsType = itemsField.getGenericType();
-
-        if (itemsType instanceof ParameterizedType) {
-            ParameterizedType pType = (ParameterizedType) itemsType;
-            System.out.println("原始类型: " + pType.getRawType());
-            System.out.println("类型参数: " + Arrays.toString(pType.getActualTypeArguments()));
-        }
-    }
-}</code></pre>
-                </div>
-
-                <h3>反射操作泛型</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">// 创建泛型类型的实例
-public static &lt;T&gt; T createInstance(Class&lt;T&gt; clazz) throws Exception {
-    return clazz.getDeclaredConstructor().newInstance();
-}
-
-// 获取方法的泛型返回类型
-Method method = GenericClass.class.getMethod("getItems");
-Type returnType = method.getGenericReturnType();</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>函数式接口概述</h2>
-                <p>JDK 1.8新增的专门用于Lambda表达式的接口</p>
+                <h2>2.3 泛型方法</h2>
+                <p>将类型参数声明在方法返回类型之前，仅作用于当前方法。</p>
                 <ul>
-                    <li><strong>Supplier&lt;T&gt;</strong>：供给型函数式接口，提供对象</li>
-                    <li><strong>Consumer&lt;T&gt;</strong>：消费型函数式接口，消费对象</li>
-                    <li><strong>Function&lt;T,R&gt;</strong>：函数型函数式接口，转换对象</li>
-                    <li><strong>Predicate&lt;T&gt;</strong>：断言型函数式接口，判断条件</li>
+                    <li>类型推断：编译器依据入参自动推断 T</li>
+                    <li>显式调用：当推断不足时使用 <code>Class.&lt;Type&gt;method(...)</code></li>
+                    <li>静态方法：需独立声明其类型参数，不依赖类上的 T</li>
                 </ul>
-                <p class="conclusion">这些接口都可以直接使用Lambda表达式，极大简化代码编写。</p>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>Supplier供给型接口</h2>
-                <p>专门用于供给使用的接口，只有一个get方法</p>
                 <div class="code-block">
-                    <pre><code class="language-java">@FunctionalInterface
-public interface Supplier&lt;T&gt; {
-    T get();   //实现此方法，实现供给功能
-}</code></pre>
-                </div>
-                <div class="code-block">
-                    <pre><code class="language-java">public class Student {
-    public void hello(){
-        System.out.println("我是学生！");
-    }
-}
+                    <pre><code class="language-java">public class Util {
+    // 这里用 &lt;T&gt; 来声明类型参数 T
+    public static &lt;T&gt; T pick(T a1, T a2) { return a2; }
 
-// 专门供给Student对象的Supplier
-private static final Supplier&lt;Student&gt; STUDENT_SUPPLIER = Student::new;
-public static void main(String[] args) {
-    Student student = STUDENT_SUPPLIER.get();
-    student.hello();
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>Consumer消费型接口</h2>
-                <p>专门用于消费某个对象的接口</p>
-                <div class="code-block">
-                    <pre><code class="language-java">@FunctionalInterface
-public interface Consumer&lt;T&gt; {
-    void accept(T t);    //消费方法，没有返回值
-
-    default Consumer&lt;T&gt; andThen(Consumer&lt;? super T&gt; after) {
-        Objects.requireNonNull(after);
-        return (T t) -&gt; { accept(t); after.accept(t); };
-    }
-}</code></pre>
-                </div>
-                <div class="code-block">
-                    <pre><code class="language-java">// 专门消费Student对象的Consumer
-private static final Consumer&lt;Student&gt; STUDENT_CONSUMER =
-    student -&gt; System.out.println(student + " 真好吃！");
-
-public static void main(String[] args) {
-    Student student = new Student();
-    STUDENT_CONSUMER.accept(student);
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>Consumer链式调用</h2>
-                <p>使用andThen方法实现连续消费</p>
-                <div class="code-block">
-                    <pre><code class="language-java">public static void main(String[] args) {
-    Student student = new Student();
-    STUDENT_CONSUMER
-        .andThen(stu -&gt; System.out.println("我是吃完之后的操作！"))
-        .andThen(stu -&gt; System.out.println("好了好了，吃饱了！"))
-        .accept(student);   //执行链式操作
-}</code></pre>
-                </div>
-                <p class="conclusion">使用简洁的代码就可以实现复杂的消费逻辑链。</p>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>Function函数型接口</h2>
-                <p>消费一个对象，供给一个对象（前两个的融合体）</p>
-                <div class="code-block">
-                    <pre><code class="language-java">@FunctionalInterface
-public interface Function&lt;T, R&gt; {
-    R apply(T t);   //接受的参数类型，返回的结果类型
-
-    default &lt;V&gt; Function&lt;V, R&gt; compose(Function&lt;? super V, ? extends T&gt; before) { }
-    default &lt;V&gt; Function&lt;T, V&gt; andThen(Function&lt;? super R, ? extends V&gt; after) { }
-    static &lt;T&gt; Function&lt;T, T&gt; identity() { return t -&gt; t; }
-}</code></pre>
-                </div>
-                <div class="code-block">
-                    <pre><code class="language-java">// 将int参数转换为字符串
-private static final Function&lt;Integer, String&gt; INTEGER_STRING_FUNCTION =
-    Object::toString;
-public static void main(String[] args) {
-    String str = INTEGER_STRING_FUNCTION.apply(10);
-    System.out.println(str);
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>Function组合操作</h2>
-                <p>使用compose和andThen进行函数组合</p>
-                <div class="code-block">
-                    <pre><code class="language-java">public static void main(String[] args) {
-    // compose：将指定函数的结果作为当前函数的实参
-    String str = INTEGER_STRING_FUNCTION
-        .compose((String s) -&gt; s.length())
-        .apply("lbwnb");
-
-    // andThen：将当前实现的返回值进行进一步处理
-    Boolean result = INTEGER_STRING_FUNCTION
-        .andThen(String::isEmpty)
-        .apply(10);
-}</code></pre>
-                </div>
-                <div class="code-block">
-                    <pre><code class="language-java">// identity：原样返回
-Function&lt;String, String&gt; function = Function.identity();
-System.out.println(function.apply("不会吧不会吧，不会有人听到现在还是懵逼的吧"));</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>Predicate断言型接口</h2>
-                <p>接收一个参数，进行自定义判断并返回boolean结果</p>
-                <div class="code-block">
-                    <pre><code class="language-java">@FunctionalInterface
-public interface Predicate&lt;T&gt; {
-    boolean test(T t);    //判断方法
-
-    default Predicate&lt;T&gt; and(Predicate&lt;? super T&gt; other) { }
-    default Predicate&lt;T&gt; negate() { return (t) -&gt; !test(t); }
-    default Predicate&lt;T&gt; or(Predicate&lt;? super T&gt; other) { }
-    static &lt;T&gt; Predicate&lt;T&gt; isEqual(Object targetRef) { }
-}</code></pre>
-                </div>
-                <div class="code-block">
-                    <pre><code class="language-java">public class Student {
-    public int score;
-}
-
-private static final Predicate&lt;Student&gt; STUDENT_PREDICATE =
-    student -&gt; student.score &gt;= 60;
-
-public static void main(String[] args) {
-    Student student = new Student();
-    student.score = 80;
-    if(STUDENT_PREDICATE.test(student)) {
-        System.out.println("及格了，真不错，今晚奖励自己一次");
-    }
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>Predicate组合条件</h2>
-                <p>支持多个条件的组合判断</p>
-                <div class="code-block">
-                    <pre><code class="language-java">public static void main(String[] args) {
-    Student student = new Student();
-    student.score = 80;
-
-    // and操作：需要同时满足所有条件
-    boolean b1 = STUDENT_PREDICATE
-        .and(stu -&gt; stu.score &gt; 90)
-        .test(student);
-
-    // negate操作：取反
-    boolean b2 = STUDENT_PREDICATE.negate().test(student);
-
-    // or操作：满足任意一个条件
-    boolean b3 = STUDENT_PREDICATE
-        .or(stu -&gt; student.score &gt; 90)
-        .test(student);
-}</code></pre>
-                </div>
-                <div class="code-block">
-                    <pre><code class="language-java">// isEqual：判断两个对象是否相等
-Predicate&lt;String&gt; predicate = Predicate.isEqual("Hello World");
-System.out.println(predicate.test("Hello World"));  //true</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>Optional判空包装</h2>
-                <p>Java8新增的判空包装类，有效处理空指针问题</p>
-                <div class="code-block">
-                    <pre><code class="language-java">// 传统方式：容易出现空指针异常
-private static void test(String str){
-    if(!str.isEmpty()) {   //传入null时直接爆炸
-        System.out.println("字符串长度为："+str.length());
-    }
-}
-
-// 传统解决方案：需要手动判空
-private static void test(String str){
-    if(str == null) return;
-    if(!str.isEmpty()) {
-        System.out.println("字符串长度为："+str.length());
-    }
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>Optional优雅处理空值</h2>
-                <p>使用Optional让空值处理更加优雅</p>
-                <div class="code-block">
-                    <pre><code class="language-java">private static void test(String str){
-    Optional
-        .ofNullable(str)   //将传入的对象包装进Optional中
-        .ifPresent(s -&gt; System.out.println("字符串长度为："+s.length()));
-        // 如果不为空，则执行Consumer实现
-}</code></pre>
-                </div>
-                <p><strong>Optional的常用方法</strong>：</p>
-                <div class="code-block">
-                    <pre><code class="language-java">// get方法：获取被包装的对象（为空会抛出异常）
-String s = Optional.ofNullable(str).get();
-
-// orElse方法：为空时返回备选方案
-String s = Optional.ofNullable(str).orElse("我是为null的情况备选方案");
-
-// map方法：转换为另一种类型
-Integer i = Optional.ofNullable(str)
-    .map(String::length)
-    .orElse(-1);</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型实战应用：自定义集合框架</h2>
-                <p><strong>目标</strong>：通过实现自定义泛型集合类，深入理解泛型的实际应用</p>
-
-                <h3>实战1：泛型动态数组实现</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">public class GenericArrayList&lt;E&gt; {
-    private static final int DEFAULT_CAPACITY = 10;
-    private Object[] elements;
-    private int size;
-
-    public GenericArrayList() {
-        this.elements = new Object[DEFAULT_CAPACITY];
-        this.size = 0;
-    }
-
-    // 泛型添加方法
-    public boolean add(E element) {
-        ensureCapacity();
-        elements[size++] = element;
-        return true;
-    }
-
-    // 泛型获取方法
-    @SuppressWarnings("unchecked")
-    public E get(int index) {
-        checkIndex(index);
-        return (E) elements[index];
-    }
-
-    // 泛型设置方法
-    @SuppressWarnings("unchecked")
-    public E set(int index, E element) {
-        checkIndex(index);
-        E oldValue = (E) elements[index];
-        elements[index] = element;
-        return oldValue;
-    }
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型动态数组：进阶功能</h2>
-                <h3>实现迭代器和类型安全</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">public class GenericArrayList&lt;E&gt; implements Iterable&lt;E&gt; {
-    // ... 前面的代码
-
-    // 实现Iterable接口
-    @Override
-    public Iterator&lt;E&gt; iterator() {
-        return new GenericArrayListIterator();
-    }
-
-    // 内部迭代器类
-    private class GenericArrayListIterator implements Iterator&lt;E&gt; {
-        private int currentIndex = 0;
-
-        @Override
-        public boolean hasNext() {
-            return currentIndex &lt; size;
-        }
-
-        @Override
-        @SuppressWarnings("unchecked")
-        public E next() {
-            if (!hasNext()) {
-                throw new NoSuchElementException();
-            }
-            return (E) elements[currentIndex++];
-        }
-    }
-
-    // 泛型删除方法
-    @SuppressWarnings("unchecked")
-    public E remove(int index) {
-        checkIndex(index);
-        E oldValue = (E) elements[index];
-
-        int numMoved = size - index - 1;
-        if (numMoved &gt; 0) {
-            System.arraycopy(elements, index + 1, elements, index, numMoved);
-        }
-
-        elements[--size] = null; // 清理引用
-        return oldValue;
-    }
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型实战应用：工具类设计</h2>
-                <h3>实战2：泛型工具类</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">public class GenericUtils {
-    // 泛型交换方法
     public static &lt;T&gt; void swap(T[] array, int i, int j) {
-        T temp = array[i];
-        array[i] = array[j];
-        array[j] = temp;
-    }
-
-    // 泛型查找最大值
-    public static &lt;T extends Comparable&lt;T&gt;&gt; T findMax(T[] array) {
-        if (array == null || array.length == 0) {
-            return null;
+        if (i &gt;= 0 &amp;&amp; i &lt; array.length &amp;&amp; j &gt;= 0 &amp;&amp; j &lt; array.length) {
+            T temp = array[i];
+            array[i] = array[j];
+            array[j] = temp;
         }
-
-        T max = array[0];
-        for (int i = 1; i &lt; array.length; i++) {
-            if (array[i].compareTo(max) &gt; 0) {
-                max = array[i];
-            }
-        }
-        return max;
-    }
-
-    // 泛型反转数组
-    public static &lt;T&gt; void reverse(T[] array) {
-        int left = 0;
-        int right = array.length - 1;
-        while (left &lt; right) {
-            swap(array, left, right);
-            left++;
-            right--;
-        }
-    }
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型实战应用：设计模式</h2>
-                <h3>实战3：泛型工厂模式</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">// 泛型工厂接口
-public interface GenericFactory&lt;T&gt; {
-    T create();
-}
-
-// 具体工厂实现
-public class StudentFactory implements GenericFactory&lt;Student&gt; {
-    @Override
-    public Student create() {
-        return new Student();
     }
 }
 
-// 泛型工厂管理器
-public class FactoryManager {
-    private static final Map&lt;Class&lt;?&gt;, GenericFactory&lt;?&gt;&gt; factories = new HashMap&lt;&gt;();
-
-    @SuppressWarnings("unchecked")
-    public static &lt;T&gt; T createInstance(Class&lt;T&gt; type) {
-        GenericFactory&lt;T&gt; factory = (GenericFactory&lt;T&gt;) factories.get(type);
-        if (factory == null) {
-            throw new IllegalArgumentException("No factory registered for " + type);
-        }
-        return factory.create();
-    }
-
-    public static &lt;T&gt; void registerFactory(Class&lt;T&gt; type, GenericFactory&lt;T&gt; factory) {
-        factories.put(type, factory);
-    }
-}</code></pre>
+String selected = Util.pick("apple", "banana");
+String[] fruits = {"Apple", "Orange", "Banana"};
+Util.swap(fruits, 0, 2);</code></pre>
                 </div>
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
-                <h2>泛型实战应用：Builder模式</h2>
-                <h3>实战4：类型安全的Builder</h3>
+                <h2>3. 类型参数的限定</h2>
+                <p>使用 extends 与多重限定将类型能力前置到编译期。</p>
+                <ul>
+                    <li>上界限定：<code>&lt;T extends Number&gt;</code> 保证可用 Number 的方法</li>
+                    <li>多重限定：类在前、接口以 <code>&amp;</code> 连接，如 <code>&lt;T extends Number &amp; Comparable&lt;T&gt;&gt;</code></li>
+                    <li>意图清晰：把“可数值”“可比较”等能力写进签名，便于维护</li>
+                </ul>
                 <div class="code-block">
-                    <pre><code class="language-java">public class GenericBuilder&lt;T&gt; {
-    private final Supplier&lt;T&gt; supplier;
-    private final List&lt;Consumer&lt;T&gt;&gt; modifiers = new ArrayList&lt;&gt;();
+                    <pre><code class="language-java">public static &lt;T extends Number&gt; double calculateSum(T num1, T num2) {
+    return num1.doubleValue() + num2.doubleValue();
+}
 
-    private GenericBuilder(Supplier&lt;T&gt; supplier) {
-        this.supplier = supplier;
+public static &lt;T extends Number &amp; Comparable&lt;T&gt;&gt; T findMax(T[] array) {
+    if (array == null || array.length == 0) { return null; }
+    T max = array[0];
+    for (T t : array) {
+        if (t.compareTo(max) &gt; 0) { max = t; }
     }
+    return max;
+}</code></pre>
+                </div>
+                <p>下界限定通常与通配符结合使用，将在下一节说明。</p>
+            </div>
+        </section>
 
-    public static &lt;T&gt; GenericBuilder&lt;T&gt; of(Supplier&lt;T&gt; supplier) {
-        return new GenericBuilder&lt;&gt;(supplier);
+        <section class="slide">
+            <div class="slide-content">
+                <h2>4.1 无界通配符</h2>
+                <p>List&lt;?&gt; 表示未知类型的容器，读取为 Object，仅可写入 null。</p>
+                <ul>
+                    <li>读取视作 Object：适用于日志、调试、通用遍历</li>
+                    <li>写入受限：类型未知，仅允许 <code>null</code></li>
+                    <li>设计原则：通配符用于“使用点”，不用于“声明处”</li>
+                </ul>
+                <div class="code-block">
+                    <pre><code class="language-java">public static void printList(java.util.List&lt;?&gt; list) {
+    for (Object elem : list) { System.out.print(elem + " "); }
+    System.out.println();
+    list.add(null);
+}
+
+printList(java.util.Arrays.asList(1,2,3));
+printList(java.util.Arrays.asList("a","b","c"));</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>4.2上界通配符</h2>
+                <p>生产者只读：List&lt;? extends Number&gt; 允许读取 Number，但不可写入非 null。</p>
+                <ul>
+                    <li>读取安全：返回上界类型</li>
+                    <li>写入受限：子类型未知，除 <code>null</code> 外不可写</li>
+                    <li>典型场景：聚合、统计、求和</li>
+                </ul>
+                <div class="code-block">
+                    <pre><code class="language-java">public static double sumOfList(java.util.List&lt;? extends Number&gt; numbers) {
+    double sum = 0.0;
+    for (Number n : numbers) { sum += n.doubleValue(); }
+    return sum;
+}
+
+System.out.println(sumOfList(java.util.Arrays.asList(1,2,3)));
+System.out.println(sumOfList(java.util.Arrays.asList(1.1,2.2)));</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>4.2 下界通配符</h2>
+                <p>消费者只写：List&lt;? super Integer&gt; 可写入 Integer，读取为 Object。</p>
+                <ul>
+                    <li>写入安全：目标类型的父类都能接收子类型</li>
+                    <li>读取退化：只能视作 Object，需要强转</li>
+                    <li>典型场景：收集、填充、批量追加</li>
+                </ul>
+                <div class="code-block">
+                    <pre><code class="language-java">public static void addNumbers(java.util.List&lt;? super Integer&gt; dest) {
+    for (int i = 1; i &lt;= 5; i++) { dest.add(i); }
+}
+
+java.util.List&lt;Number&gt; numList = new java.util.ArrayList&lt;&gt;();
+java.util.List&lt;Object&gt; objList = new java.util.ArrayList&lt;&gt;();
+addNumbers(numList);
+addNumbers(objList);</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>5.1 类型擦除</h2>
+                
+                <div class="concept-intro">
+                    <h3>🎭 一句话理解类型擦除</h3>
+                    <p class="highlight-text">在编译时看得见，在运行时却消失。</p>
+                </div>
+
+                <h3>🤔 什么是类型擦除？</h3>
+                <div class="explanation-box">
+                    <p><strong>类型擦除</strong>是Java泛型的核心机制：编译器在生成字节码时，会<strong>偷偷擦掉所有泛型信息</strong>，把它们变成普通的原始类型。</p>
+                </div>
+
+                <div class="interactive-demo">
+                    <div class="code-comparison">
+                        <div class="code-before">
+                            <h5>📝 你写的代码（编译前）</h5>
+                            <pre><code class="language-java">List&lt;String&gt; names = new ArrayList&lt;&gt;();
+names.add("张三");
+String name = names.get(0);  // 很自然，不需要转换</code></pre>
+                        </div>
+                        
+                        <div class="code-after">
+                            <h5>🔍 JVM看到的代码（编译后）</h5>
+                            <pre><code class="language-java">List names = new ArrayList();  // 泛型信息被擦除！
+names.add("张三");
+String name = (String) names.get(0);  // 编译器加了强制转换！</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="key-insight">
+                    <h4>💡 关键洞察</h4>
+                    <div class="insight-grid">
+                        <div class="insight-item">
+                            <strong>编译时</strong><br>
+                            ✅ 类型检查严格<br>
+                            ✅ 编码更安全<br>
+                            ✅ IDE智能提示
+                        </div>
+                        <div class="insight-item">
+                            <strong>运行时</strong><br>
+                            ❌ 泛型信息消失<br>
+                            ❌ List&lt;String&gt; == List&lt;Integer&gt;<br>
+                            ❌ 无法知道具体类型
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>5.2 擦除过程详解</h2>
+                
+                <div class="magic-show">
+                    <h3>🎩 魔术开始：泛型类的"变身"</h3>
+                    <p>让我们通过一个完整的例子，看看编译器是如何施展它的"魔术"的：</p>
+                </div>
+
+                <div class="step-by-step-demo">
+                    <div class="step step-1">
+                        <h4>📝 第一步：你写的优雅代码</h4>
+                        <div class="code-block">
+                            <pre><code class="language-java">public class Box&lt;T&gt; {
+    private T treasure;  // 神秘的宝藏，类型是T
+    
+    public void put(T item) {
+        this.treasure = item;
+        System.out.println("放入了：" + item);
     }
-
-    public &lt;P&gt; GenericBuilder&lt;T&gt; with(BiConsumer&lt;T, P&gt; consumer, P value) {
-        Consumer&lt;T&gt; modifier = instance -&gt; consumer.accept(instance, value);
-        modifiers.add(modifier);
-        return this;
-    }
-
-    public T build() {
-        T instance = supplier.get();
-        modifiers.forEach(modifier -&gt; modifier.accept(instance));
-        return instance;
+    
+    public T take() {
+        System.out.println("取出了：" + treasure);
+        return treasure;
     }
 }
 
-// 使用示例
-Student student = GenericBuilder.of(Student::new)
-    .with(Student::setName, "张三")
-    .with(Student::setAge, 20)
-    .with(Student::setScore, 95.5)
-    .build();</code></pre>
-                </div>
-            </div>
-        </section>
+// 使用泛型
+Box&lt;String&gt; stringBox = new Box&lt;&gt;();
+stringBox.put("钻石");
+String gem = stringBox.take();  // 不需要转换，很优雅</code></pre>
+                        </div>
+                    </div>
 
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型实战应用：类型安全的容器</h2>
-                <h3>实战5：泛型缓存容器</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">public class GenericCache&lt;K, V&gt; {
-    private final Map&lt;K, V&gt; cache = new HashMap&lt;&gt;();
-    private final Function&lt;K, V&gt; loader;
-    private final int maxSize;
 
-    public GenericCache(Function&lt;K, V&gt; loader, int maxSize) {
-        this.loader = loader;
-        this.maxSize = maxSize;
+
+                    <div class="step step-2">
+                        <h4>🔍 第二步：编译器眼中的代码（擦除后）</h4>
+                        <div class="code-block">
+                            <pre><code class="language-java">public class Box {
+    private Object treasure;  // T变成了Object！
+    
+    public void put(Object item) {  // T变成了Object
+        this.treasure = item;
+        System.out.println("放入了：" + item);
     }
-
-    public V get(K key) {
-        V value = cache.get(key);
-        if (value == null) {
-            value = loader.apply(key);
-            if (cache.size() &gt;= maxSize) {
-                // 简单的LRU策略：移除第一个元素
-                K firstKey = cache.keySet().iterator().next();
-                cache.remove(firstKey);
-            }
-            cache.put(key, value);
-        }
-        return value;
+    
+    public Object take() {  // T变成了Object
+        System.out.println("取出了：" + treasure);
+        return treasure;
     }
-
-    public void put(K key, V value) {
-        if (cache.size() &gt;= maxSize) {
-            K firstKey = cache.keySet().iterator().next();
-            cache.remove(firstKey);
-        }
-        cache.put(key, value);
-    }
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型实战应用：事件处理系统</h2>
-                <h3>实战6：类型安全的事件总线</h3>
-                <div class="code-block">
-                    <pre><code class="language-java">public class GenericEventBus {
-    private final Map&lt;Class&lt;?&gt;, List&lt;Consumer&lt;?&gt;&gt;&gt; listeners = new ConcurrentHashMap&lt;&gt;();
-
-    @SuppressWarnings("unchecked")
-    public &lt;T&gt; void subscribe(Class&lt;T&gt; eventType, Consumer&lt;T&gt; listener) {
-        listeners.computeIfAbsent(eventType, k -&gt; new ArrayList&lt;&gt;())
-                  .add(listener);
-    }
-
-    @SuppressWarnings("unchecked")
-    public &lt;T&gt; void publish(T event) {
-        Class&lt;T eventType = (Class&lt;T&gt;) event.getClass();
-        List&lt;Consumer&lt;?&gt;&gt; eventListeners = listeners.get(eventType);
-
-        if (eventListeners != null) {
-            eventListeners.forEach(listener -&gt;
-                ((Consumer&lt;T&gt;) listener).accept(event));
-        }
-    }
-
-    public &lt;T&gt; void unsubscribe(Class&lt;T&gt; eventType, Consumer&lt;T&gt; listener) {
-        List&lt;Consumer&lt;?&gt;&gt; eventListeners = listeners.get(eventType);
-        if (eventListeners != null) {
-            eventListeners.remove(listener);
-            if (eventListeners.isEmpty()) {
-                listeners.remove(eventType);
-            }
-        }
-    }
-}</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>泛型实战练习：类型安全的JSON解析器</h2>
-                <p><strong>目标</strong>：实现一个支持泛型的简单JSON解析器，展示泛型在实际项目中的应用</p>
-
-                <div class="code-block">
-                    <pre><code class="language-java">// 泛型JSON解析器接口
-public interface JsonParser&lt;T&gt; {
-    T parse(String json);
-    String toJson(T object);
 }
 
-// 通用JSON解析器实现
-public class GenericJsonParser {
+// 编译器自动添加类型转换
+Box stringBox = new Box();
+stringBox.put("钻石");
+String gem = (String) stringBox.take();  // 编译器偷偷加了强制转换！</code></pre>
+                        </div>
+                    </div>
+                </div>
 
-    @SuppressWarnings("unchecked")
-    public static &lt;T&gt; T parse(String json, Class&lt;T&gt; clazz) {
-        if (json == null || json.trim().isEmpty()) {
-            return null;
-        }
+                <div class="compiler-secrets">
+                    <h4>🔧 编译器的"秘密操作"</h4>
+                    <div class="secrets-grid">
+                        <div class="secret-item">
+                            <h5>1️⃣ 类型替换</h5>
+                            <p>所有的&lt;T&gt;都被替换为边界类型（通常是Object）</p>
+                        </div>
+                        <div class="secret-item">
+                            <h5>2️⃣ 自动加转换</h5>
+                            <p>在需要的地方自动插入强制类型转换</p>
+                        </div>
+                        <div class="secret-item">
+                            <h5>3️⃣ 生成桥接方法</h5>
+                            <p>为了保持多态性，有时会生成额外的方法</p>
+                        </div>
+                    </div>
+                </div>
 
-        // 简化实现：仅支持基本类型和字符串
-        if (clazz == String.class) {
-            return (T) json.replace("\"", "");
-        } else if (clazz == Integer.class || clazz == int.class) {
-            return (T) Integer.valueOf(json);
-        } else if (clazz == Boolean.class || clazz == boolean.class) {
-            return (T) Boolean.valueOf(json);
-        } else {
-            throw new IllegalArgumentException("Unsupported type: " + clazz);
-        }
-    }
-
-    public static &lt;T&gt; String toJson(T object) {
-        if (object == null) {
-            return "null";
-        } else if (object instanceof String) {
-            return "\"" + object + "\"";
-        } else {
-            return object.toString();
-        }
-    }
+                <div class="reality-check">
+                    <h4>🤯 现实检验：运行时的真相</h4>
+                    <div class="truth-box">
+                        <p><strong>真相1：</strong> <code>List&lt;String&gt;</code> 和 <code>List&lt;Integer&gt;</code> 在运行时就是同一个类！</p>
+                        <div class="code-block">
+                            <pre><code class="language-java">List&lt;String&gt; strList = new ArrayList&lt;&gt;();
+List&lt;Integer&gt; intList = new ArrayList&lt;&gt;();
+System.out.println(strList.getClass() == intList.getClass()); // true！</code></pre>
+                        </div>
+                        
+                        <p><strong>真相2：</strong> 你无法在运行时知道一个泛型对象的具体类型参数</p>
+                        <div class="code-block">
+                            <pre><code class="language-java">if (strList instanceof List&lt;String&gt;) { // 编译错误！
+    // 这是不允许的，因为运行时没有泛型信息
 }</code></pre>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
-                <h2>泛型实战练习：类型安全的配置管理器</h2>
-                <p><strong>目标</strong>：实现一个类型安全的配置管理器，避免运行时类型转换错误</p>
+                <h2>5.3 为什么选择类型擦除？</h2>
+                
+                <div class="historical-context">
+                    <h3>🕰️ 回到2004年：Java面临的艰难选择</h3>
+                    <p>2004年，Java准备引入泛型时，站在了一个历史的十字路口。设计者们面临两个选择：</p>
+                </div>
 
-                <div class="code-block">
-                    <pre><code class="language-java">public class GenericConfigManager {
-    private final Map&lt;String, Object&gt; configurations = new HashMap&lt;&gt;();
+                <table>
+                    <thead>
+                        <tr>
+                            <th>维度</th>
+                            <th>🅰️ 方案A：彻底革命（像C++模板那样）</th>
+                            <th>🅱️ 方案B：妥协方案（类型擦除）</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>✅ 优点</td>
+                            <td>
+                                <ul>
+                                    <li>运行时保留完整的泛型信息</li>
+                                    <li>可以创建泛型数组和实例</li>
+                                    <li>类型系统更加纯粹和强大</li>
+                                </ul>
+                            </td>
+                            <td>
+                                <ul>
+                                    <li>无需修改JVM，向后兼容</li>
+                                    <li>老代码可以无缝运行</li>
+                                    <li>生态迁移成本极低</li>
+                                </ul>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>❌ 缺点</td>
+                            <td>
+                                <ul>
+                                    <li>需要修改JVM和字节码结构</li>
+                                    <li>老代码无法在新JVM上运行</li>
+                                    <li>Java生态将面临大灾难</li>
+                                </ul>
+                            </td>
+                            <td>
+                                <ul>
+                                    <li>运行时丢失泛型信息</li>
+                                    <li>带来一系列使用限制</li>
+                                    <li>类型系统不够完美</li>
+                                </ul>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
 
-    // 类型安全的配置设置
-    public &lt;T&gt; void setConfig(String key, T value) {
-        configurations.put(key, value);
-    }
+                <div class="final-decision">
+                    <h3>🏆 最终选择：类型擦除</h3>
+                    <div class="decision-reasons concept-grid">
+                        <div class="concept-item">
+                            <h4>🛡️ 向后兼容性</h4>
+                            <p>Java最大的优势就是其庞大的生态系统。类型擦除确保了：</p>
+                            <ul>
+                                <li>JDK 1.4的代码可以在JDK 5.0上运行</li>
+                                <li>新的泛型代码可以与旧的非泛型代码互操作</li>
+                                <li>企业可以逐步迁移，而不是重写所有代码</li>
+                            </ul>
+                        </div>
+                        <div class="concept-item">
+                            <h4>⚡ 平滑迁移</h4>
+                            <p>开发者可以：</p>
+                            <ul>
+                                <li>先学习泛型，但保持现有代码不变</li>
+                                <li>逐步将关键部分改为泛型</li>
+                                <li>新旧代码可以完美协作</li>
+                            </ul>
+                        </div>
+                        <div class="concept-item">
+                            <h4>🎯 工程现实</h4>
+                            <p>这是一个务实的工程决策：</p>
+                            <ul>
+                                <li>牺牲了理论上的完美性</li>
+                                <li>换来了现实中的可行性</li>
+                                <li>让Java生态得以平稳进化</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
 
-    // 类型安全的配置获取
-    @SuppressWarnings("unchecked")
-    public &lt;T&gt; T getConfig(String key, Class&lt;T&gt; type) {
-        Object value = configurations.get(key);
-        if (value == null) {
-            return null;
-        }
-
-        if (!type.isInstance(value)) {
-            throw new ClassCastException(
-                String.format("Configuration '%s' is of type %s, but %s was requested",
-                    key, value.getClass().getSimpleName(), type.getSimpleName()));
-        }
-
-        return (T) value;
-    }
-
-    // 带默认值的配置获取
-    public &lt;T&gt; T getConfig(String key, Class&lt;T&gt; type, T defaultValue) {
-        T value = getConfig(key, type);
-        return value != null ? value : defaultValue;
-    }
-
-    // 批量配置加载
-    public void loadFromProperties(Properties properties) {
-        properties.forEach((key, value) -&gt; {
-            if (value instanceof String) {
-                setConfig(key.toString(), value);
-            } else {
-                setConfig(key.toString(), value.toString());
-            }
-        });
-    }
-}</code></pre>
+                <div class="wisdom-quote">
+                    <h4>💭 设计者的智慧</h4>
+                    <blockquote>
+                        "完美的设计往往是不现实的。真正的工程艺术在于在约束条件下做出最好的选择。
+                        类型擦除不是最优雅的解决方案，但它是最务实的选择。"
+                        <cite>—— Java泛型设计团队</cite>
+                    </blockquote>
                 </div>
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
-                <h2>泛型实战练习：泛型仓储模式</h2>
-                <p><strong>目标</strong>：实现泛型仓储模式，展示泛型在企业级应用中的实践</p>
+                <h2>5.4 类型擦除的限制</h2>
+                
+                <div class="limitations-intro">
+                    <h3>⚠️ 类型擦除带来的"怪癖"</h3>
+                    <p>理解了类型擦除，你就会明白为什么Java泛型总有一些"奇怪"的限制。这些不是设计缺陷，而是类型擦除的必然结果。</p>
+                </div>
 
-                <div class="code-block">
-                    <pre><code class="language-java">// 泛型仓储接口
-public interface GenericRepository&lt;T, ID&gt; {
-    T save(T entity);
-    Optional&lt;T&gt; findById(ID id);
-    List&lt;T&gt; findAll();
-    void deleteById(ID id);
-    boolean existsById(ID id);
+                <div class="limitation-item">
+                    <h4>🚫 限制1：基本类型不能作为类型参数</h4>
+                    <div class="problem-demo">
+                        <div class="wrong-code">
+                            <h5>❌ 这样写会报错</h5>
+                            <pre><code class="language-java">List&lt;int&gt; numbers = new ArrayList&lt;&gt;();  // 编译错误！</code></pre>
+                        </div>
+                        <div class="correct-code">
+                            <h5>✅ 正确的写法</h5>
+                            <pre><code class="language-java">List&lt;Integer&gt; numbers = new ArrayList&lt;&gt;();  // 使用包装类</code></pre>
+                        </div>
+                    </div>
+                    <div class="explanation">
+                        <h5>🤔 为什么会这样？</h5>
+                        <p>因为擦除后，<code>List&lt;T&gt;</code> 变成了 <code>List</code>，里面的元素类型是 <code>Object</code>。</p>
+                        <p>但是 <code>int</code> 不是对象，不能存放在 <code>Object</code> 中，而 <code>Integer</code> 可以。</p>
+                    </div>
+                </div>
+
+                <div class="limitation-item">
+                    <h4>🚫 限制2：不能创建泛型实例</h4>
+                    <div class="problem-demo">
+                        <div class="wrong-code">
+                            <h5>❌ 这样写会报错</h5>
+                            <pre><code class="language-java">public class Factory&lt;T&gt; {
+    public T create() {
+        return new T();  // 编译错误！
+    }
+}</code></pre>
+                        </div>
+                        <div class="solution">
+                            <h5>✅ 解决方案：使用反射</h5>
+                            <pre><code class="language-java">public class Factory&lt;T&gt; {
+    private Class&lt;T&gt; clazz;
+    public Factory(Class&lt;T&gt; clazz) {
+        this.clazz = clazz;
+    }
+    public T create() throws Exception {
+        return clazz.newInstance();  // 通过反射创建
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="explanation">
+                        <h5>🤔 为什么会这样？</h5>
+                        <p>擦除后，<code>T</code> 变成了 <code>Object</code>，所以 <code>new T()</code> 实际上会变成 <code>new Object()</code>，这显然不是你想要的。编译器无法知道 <code>T</code> 具体是什么类型。</p>
+                    </div>
+                </div>
+
+                <div class="limitation-item">
+                    <h4>🚫 限制3：不能创建泛型数组</h4>
+                    <div class="problem-demo">
+                        <div class="wrong-code">
+                            <h5>❌ 这样写会报错</h5>
+                            <pre><code class="language-java">List&lt;String&gt;[] array = new List&lt;String&gt;[10];  // 编译错误！</code></pre>
+                        </div>
+                        <div class="danger-scenario">
+                            <h5>⚠️ 如果不禁止会发生什么？</h5>
+                            <pre><code class="language-java">// 假设这是合法的
+List&lt;String&gt;[] stringLists = new List&lt;String&gt;[1];
+Object[] objects = stringLists;  // 数组协变，这是允许的
+objects[0] = new ArrayList&lt;Integer&gt;();  // 运行时检查通过！
+// 灾难！
+String s = stringLists[0].get(0);  // ClassCastException！</code></pre>
+                        </div>
+                    </div>
+                    <div class="explanation">
+                        <h5>🤔 为什么会这样？</h5>
+                        <p>数组在Java中是"协变"的，并且会在运行时做类型检查。如果允许泛型数组，就会绕过泛型的类型安全检查，导致运行时异常。</p>
+                    </div>
+                </div>
+
+                <div class="limitation-item">
+                    <h4>🚫 限制4：不能在静态上下文中使用类型参数</h4>
+                    <div class="problem-demo">
+                        <div class="wrong-code">
+                            <h5>❌ 这样写会报错</h5>
+                            <pre><code class="language-java">public class Container&lt;T&gt; {
+    private static T staticItem;  // 编译错误！
+    public static T getStatic() {  // 编译错误！
+        return null;
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="explanation">
+                        <h5>🤔 为什么会这样？</h5>
+                        <p>泛型是"实例级别"的概念，每个实例可以有不同的类型参数。但静态成员是"类级别"的，属于整个类，不属于任何特定实例。如果允许静态泛型，那么 <code>Container&lt;String&gt;.getStatic()</code> 和 <code>Container&lt;Integer&gt;.getStatic()</code> 应该返回什么类型呢？</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>5.5 桥接方法</h2>
+                
+                <div class="bridge-intro">
+                    <h3>🎯 什么是桥接方法？</h3>
+                    <p>桥接方法是编译器为了保持泛型继承中的多态性而<strong>自动生成</strong>的方法。它们是类型擦除的"副作用"，但对程序的正确运行至关重要。</p>
+                </div>
+
+                <div class="bridge-scenario">
+                    <h4>🎭 问题场景：继承中的类型冲突</h4>
+                    <div class="scenario-demo">
+                        <div class="parent-class">
+                            <h5>父类（泛型）</h5>
+                            <pre><code class="language-java">class Node&lt;T&gt; {
+    public void setData(T data) {
+        System.out.println("Node.setData: " + data);
+    }
+}</code></pre>
+                        </div>
+                        
+                        <div class="child-class">
+                            <h5>子类（指定具体类型）</h5>
+                            <pre><code class="language-java">class IntNode extends Node&lt;Integer&gt; {
+    @Override
+    public void setData(Integer data) {
+        System.out.println("IntNode.setData: " + data);
+        super.setData(data);
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="the-problem">
+                    <h4>🚨 问题出现：擦除后的签名不匹配</h4>
+                    <div class="problem-analysis">
+                        <div class="after-erasure">
+                            <h5>擦除后的真实情况</h5>
+                            <div class="code-comparison-sidebyside">
+                                <div class="erased-parent">
+                                    <h6>父类变成：</h6>
+                                    <pre><code class="language-java">class Node {
+    public void setData(Object data) {
+        System.out.println("Node.setData: " + data);
+    }
+}</code></pre>
+                                </div>
+                                <div class="erased-child">
+                                    <h6>子类变成：</h6>
+                                    <pre><code class="language-java">class IntNode extends Node {
+    public void setData(Integer data) {
+        System.out.println("IntNode.setData: " + data);
+        super.setData(data);
+    }
+}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="conflict-explanation">
+                            <h5>💥 冲突分析</h5>
+                            <ul>
+                                <li><strong>父类方法：</strong> <code>setData(Object)</code></li>
+                                <li><strong>子类方法：</strong> <code>setData(Integer)</code></li>
+                                <li><strong>问题：</strong> 这两个方法<strong>签名不同</strong>，<code>setData(Integer)</code> 并没有重写 <code>setData(Object)</code>！</li>
+                                <li><strong>后果：</strong> 多态性被破坏，运行时调用会出现问题</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="the-solution">
+                    <h4>🔧 解决方案：编译器自动生成桥接方法</h4>
+                    <div class="bridge-creation">
+                        <p>为了解决这个问题，编译器会在 <code>IntNode</code> 类中<strong>偷偷生成</strong>一个桥接方法：</p>
+                        
+                        <div class="code-block">
+                            <pre><code class="language-java">class IntNode extends Node {
+    // 这是程序员写的方法
+    public void setData(Integer data) {
+        System.out.println("IntNode.setData: " + data);
+        super.setData(data);
+    }
+    
+    // 🔧 这是编译器自动生成的桥接方法！
+    // 它真正重写了父类的 setData(Object) 方法
+    public void setData(Object data) {
+        // 先检查类型，然后调用真正的方法
+        this.setData((Integer) data);
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bridge-benefits">
+                    <h4>✨ 桥接方法的作用</h4>
+                    <div class="benefits-grid">
+                        <div class="benefit">
+                            <h5>🎯 保持多态性</h5>
+                            <p>确保通过父类引用调用时，能正确找到子类的方法</p>
+                        </div>
+                        <div class="benefit">
+                            <h5>🔒 类型安全</h5>
+                            <p>在桥接方法中进行类型检查和转换，保证运行安全</p>
+                        </div>
+                        <div class="benefit">
+                            <h5>🤝 无缝协作</h5>
+                            <p>让泛型代码和非泛型代码能够和谐共存</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="see-it-yourself">
+                    <h4>👀 亲眼见证：如何看到桥接方法</h4>
+                    <p>你可以通过反射来观察到这些"隐藏"的桥接方法：</p>
+                    <div class="code-block">
+                        <pre><code class="language-java">Class&lt;?&gt; clazz = IntNode.class;
+Method[] methods = clazz.getDeclaredMethods();
+for (Method method : methods) {
+    System.out.println("方法：" + method.getName() + 
+                      " 参数：" + Arrays.toString(method.getParameterTypes()) +
+                      " 是否是桥接方法：" + method.isBridge());
 }
-
-// 内存实现示例
-public class InMemoryRepository&lt;T, ID&gt; implements GenericRepository&lt;T, ID&gt; {
-    private final Map&lt;ID, T&gt; storage = new ConcurrentHashMap&lt;&gt;();
-    private final Function&lt;T, ID&gt; idExtractor;
-
-    public InMemoryRepository(Function&lt;T, ID&gt; idExtractor) {
-        this.idExtractor = idExtractor;
-    }
-
-    @Override
-    public T save(T entity) {
-        ID id = idExtractor.apply(entity);
-        storage.put(id, entity);
-        return entity;
-    }
-
-    @Override
-    public Optional&lt;T&gt; findById(ID id) {
-        return Optional.ofNullable(storage.get(id));
-    }
-
-    @Override
-    public List&lt;T&gt; findAll() {
-        return new ArrayList&lt;&gt;(storage.values());
-    }
-
-    @Override
-    public void deleteById(ID id) {
-        storage.remove(id);
-    }
-
-    @Override
-    public boolean existsById(ID id) {
-        return storage.containsKey(id);
-    }
-}</code></pre>
+// 输出中会看到两个setData方法，其中一个isBridge()为true</code></pre>
+                    </div>
                 </div>
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
-                <h2>总结</h2>
-                <div class="summary-points">
-                    <h3>🎯 泛型核心原理</h3>
-                    <ul>
-                        <li><strong>类型安全机制</strong>：从Object到泛型，实现编译时类型检查</li>
-                        <li><strong>类型擦除原理</strong>：深入理解泛型在编译后的处理机制</li>
-                        <li><strong>桥接方法</strong>：保证泛型重写的技术实现与多态兼容性</li>
-                        <li><strong>反射结合</strong>：通过反射获取和操作泛型类型信息</li>
-                    </ul>
-
-                    <h3>🔧 泛型语法精通</h3>
-                    <ul>
-                        <li><strong>泛型类与接口</strong>：类型参数的定义、约束与继承关系</li>
-                        <li><strong>泛型方法</strong>：静态方法中的泛型应用与类型推断</li>
-                        <li><strong>通配符机制</strong>：?extends与?super的灵活运用场景</li>
-                        <li><strong>泛型界限</strong>：通过extends和super约束类型范围</li>
-                    </ul>
-
-                    <h3>🚀 泛型实战应用</h3>
-                    <ul>
-                        <li><strong>自定义集合框架</strong>：泛型动态数组的完整实现</li>
-                        <li><strong>泛型工具类</strong>：类型安全的通用工具方法设计</li>
-                        <li><strong>设计模式应用</strong>：泛型工厂、Builder模式的最佳实践</li>
-                        <li><strong>企业级应用</strong>：配置管理、事件总线、仓储模式等实战案例</li>
-                    </ul>
-
-                    <h3>🌟 泛型与现代Java</h3>
-                    <ul>
-                        <li><strong>函数式编程</strong>：泛型与Lambda、Stream API的完美结合</li>
-                        <li><strong>Optional类</strong>：优雅处理空值的泛型包装方案</li>
-                        <li><strong>类型安全</strong>：在现代Java开发中的不可替代作用</li>
-                    </ul>
+                <h2>5.6 终极挑战：类型擦除知识大考验</h2>
+                
+                <div class="challenge-intro">
+                    <h3>🎯 互动挑战：你真的理解类型擦除了吗？</h3>
+                    <p>让我们通过几个有趣的挑战来检验你对类型擦除的理解程度！</p>
                 </div>
-                <p class="conclusion"><strong>泛型是Java类型系统的基石</strong>，它不仅解决了类型安全问题，更为现代Java开发提供了强大的抽象能力。掌握泛型，就是掌握编写高质量、类型安全代码的关键技能。</p>
+
+                <div class="interactive-challenges">
+                    <div class="challenge challenge-1">
+                        <h4>🧩 挑战1：猜猜看，哪个会编译失败？</h4>
+                        <div class="code-options">
+                            <div class="option">
+                                <h5>选项A</h5>
+                                <pre><code class="language-java">List&lt;String&gt; list1 = new ArrayList&lt;&gt;();
+List&lt;Object&gt; list2 = list1;  // 这行会？</code></pre>
+                            </div>
+                            <div class="option">
+                                <h5>选项B</h5>
+                                <pre><code class="language-java">List&lt;String&gt; list1 = new ArrayList&lt;&gt;();
+List&lt;?&gt; list2 = list1;  // 这行会？</code></pre>
+                            </div>
+                        </div>
+                        <div class="answer-box">
+                            <h5>🎯 答案揭晓</h5>
+                            <p><strong>选项A会编译失败！</strong> 因为 <code>List&lt;String&gt;</code> 不是 <code>List&lt;Object&gt;</code> 的子类型，即使String是Object的子类型。这是泛型的<strong>不变性</strong>。</p>
+                            <p><strong>选项B可以编译！</strong> 无界通配符 <code>List&lt;?&gt;</code> 可以引用任何类型的List。</p>
+                        </div>
+                    </div>
+
+                    <div class="challenge challenge-2">
+                        <h4>🧩 挑战2：运行时类型判断</h4>
+                        <div class="code-puzzle">
+                            <pre><code class="language-java">List&lt;String&gt; strList = new ArrayList&lt;&gt;();
+List&lt;Integer&gt; intList = new ArrayList&lt;&gt;();
+
+System.out.println(strList.getClass() == intList.getClass()); // 输出什么？
+System.out.println(strList instanceof List); // 输出什么？
+System.out.println(strList instanceof List&lt;String&gt;); // 会怎样？</code></pre>
+                        </div>
+                        <div class="answer-box">
+                            <h5>🎯 答案揭晓</h5>
+                            <ul>
+                                <li><code>strList.getClass() == intList.getClass()</code> 返回 <strong>true</strong>！运行时它们都是同一个ArrayList类</li>
+                                <li><code>strList instanceof List</code> 返回 <strong>true</strong></li>
+                                <li><code>strList instanceof List&lt;String&gt;</code> <strong>编译错误！</strong> 运行时无法知道泛型参数</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="challenge challenge-3">
+                        <h4>🧩 挑战3：反射获取泛型信息</h4>
+                        <div class="code-puzzle">
+                            <pre><code class="language-java">public class StringList extends ArrayList&lt;String&gt; {}
+
+StringList myList = new StringList();
+Type genericSuperclass = myList.getClass().getGenericSuperclass();
+System.out.println(genericSuperclass); // 会输出什么？</code></pre>
+                        </div>
+                        <div class="answer-box">
+                            <h5>🎯 答案揭晓</h5>
+                            <p>输出：<code>java.util.ArrayList&lt;java.lang.String&gt;</code></p>
+                            <p><strong>神奇吧！</strong> 虽然运行时泛型被擦除，但通过继承关系，我们还是可以获取到泛型信息！这就是很多框架（如Spring、Jackson）能够实现类型安全序列化的秘密。</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="key-takeaways">
+                    <h3>🎓 核心要点回顾</h3>
+                    <div class="takeaways-grid">
+                        <div class="takeaway">
+                            <h4>🎭 类型擦除的本质</h4>
+                            <p>编译时的"隐形斗篷"，运行时的"类型消失术"</p>
+                        </div>
+                        <div class="takeaway">
+                            <h4>🛡️ 历史的选择</h4>
+                            <p>为了向后兼容性做出的务实妥协</p>
+                        </div>
+                        <div class="takeaway">
+                            <h4>⚠️ 限制的来源</h4>
+                            <p>所有"奇怪"的限制都源于运行时类型信息的缺失</p>
+                        </div>
+                        <div class="takeaway">
+                            <h4>🔧 编译器的智慧</h4>
+                            <p>桥接方法等机制保证了多态性的正常工作</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="final-wisdom">
+                    <h3>💭 最后的话</h3>
+                    <div class="wisdom-box">
+                        <p>类型擦除可能不是最优雅的设计，但它是最务实的选择。它让Java能够在保持生态兼容性的同时，享受到泛型带来的类型安全。</p>
+                        <p><strong>理解类型擦除，你就掌握了Java泛型的精髓！</strong></p>
+                    </div>
+                </div>
             </div>
         </section>
 
