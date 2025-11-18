@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java NIO：非阻塞IO</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+        <section class="slide title-slide active">
+            <h1>Java NIO：非阻塞IO</h1>
+            <p>面向对象程序设计（Java）</p>
+            <strong>理解Buffer、Channel、Selector，掌握构建高性能IO模型的能力</strong>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>传统IO vs NIO</h2>
+                <p class="problem-intro">一个请求处理一个线程，当成千上万的连接涌入时，服务器线程数爆炸，CPU在线程切换上疲于奔命——<strong>传统BIO（Blocking IO）的瓶颈</strong>。</p>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>传统IO：面向流、阻塞</h3>
+                        <ul>
+                            <li><strong>面向流 (Stream Oriented)</strong>: 数据像水流一样，单向、连续、顺序读取。你无法跳跃读取。</li>
+                            <li><strong>阻塞 (Blocking)</strong>: 当调用 `read()` 或 `write()` 时，线程会被阻塞，直到数据准备好或写入完成。</li>
+                            <li><strong>简单性</strong>: 模型简单，易于理解和编程。</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <h3>NIO：面向缓冲区、非阻塞</h3>
+                        <ul>
+                            <li><strong>面向缓冲区 (Buffer Oriented)</strong>: 数据被读入缓冲区，你可以灵活地在缓冲区中移动和操作数据。</li>
+                            <li><strong>非阻塞 (Non-blocking)</strong>: `read()` 或 `write()` 调用立即返回，不管数据是否准备好。你的程序可以继续做其他事。</li>
+                            <li><strong>选择器 (Selectors)</strong>: 允许单个线程监控多个通道（Channel）的IO事件（如连接、读、写）。</li>
+                        </ul>
+                    </div>
+                </div>
+                <p class="conclusion">NIO用更少的线程处理更多的连接，是构建高性能网络应用（如Netty, Tomcat）的基石。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>核心组件：Buffer（缓冲区）</h2>
+                <p>Buffer是一块内存区域，NIO的读写都通过它进行。理解Buffer的关键在于它的四个核心属性：</p>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <ul>
+                            <li><strong>capacity</strong>: 容量，Buffer的最大数据量，创建后不可变。</li>
+                            <li><strong>position</strong>: 位置，下一个要被读或写的数据的索引。</li>
+                            <li><strong>limit</strong>: 界限，缓冲区中有效数据的末尾位置。</li>
+                            <li><strong>mark</strong>: 标记，一个备忘位置，可以通过`reset()`恢复到这个位置。</li>
+                        </ul>
+                        <p>核心操作: `flip()` (切换读写模式), `rewind()` (重新读取), `clear()` (清空), `compact()` (压缩)。</p>
+                    </div>
+                    <div class="media-block__visual">
+                        <div class="buffer-demo">
+                            <div class="buffer-controls">
+                                <button id="buf-put">put()</button>
+                                <button id="buf-flip">flip()</button>
+                                <button id="buf-get">get()</button>
+                                <button id="buf-rewind">rewind()</button>
+                                <button id="buf-clear">clear()</button>
+                            </div>
+                            <div id="buffer-container" class="buffer-container"></div>
+                            <div id="buffer-state" class="buffer-state"></div>
+                        </div>
+                    </div>
+                </div>
+                <pre><code class="language-java">// Buffer 使用示例
+ByteBuffer buf = ByteBuffer.allocate(10);
+buf.put((byte)'H').put((byte)'e').put((byte)'l').put((byte)'l').put((byte)'o'); // 写模式
+// buf state: pos=5, lim=10, cap=10
+
+buf.flip(); // 切换到读模式
+// buf state: pos=0, lim=5, cap=10
+
+byte[] dst = new byte[buf.limit()];
+buf.get(dst); // 读数据
+// buf state: pos=5, lim=5, cap=10
+
+buf.clear(); // 清空缓冲区，准备下次写入
+// buf state: pos=0, lim=10, cap=10
+</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>核心组件：Channel（通道）</h2>
+                <p>Channel是数据源和目标之间的连接，负责数据的传输。它类似于传统IO的Stream，但有关键区别：</p>
+                <ul>
+                    <li>Channel是双向的，可以同时进行读写，而Stream是单向的。</li>
+                    <li>Channel必须与Buffer交互。数据总是先读到Buffer，或从Buffer写入。</li>
+                </ul>
+                <h3>主要实现：</h3>
+                <div class="columns-3">
+                    <div class="highlight-box">
+                        <strong>FileChannel</strong>
+                        <p>用于文件IO。可以从文件中的任意位置读写。</p>
+                        <pre><code class="language-java" style="font-size: 12px;">// 从文件读取
+FileInputStream fis = new FileInputStream("data.txt");
+FileChannel fc = fis.getChannel();
+ByteBuffer buf = ByteBuffer.allocate(1024);
+fc.read(buf);
+</code></pre>
+                    </div>
+                    <div class="highlight-box">
+                        <strong>SocketChannel</strong>
+                        <p>用于TCP网络IO的客户端。可以配置为非阻塞模式。</p>
+                         <pre><code class="language-java" style="font-size: 12px;">// 连接服务器
+SocketChannel sc = SocketChannel.open();
+sc.connect(new InetSocketAddress("host", 80));
+sc.configureBlocking(false);
+</code></pre>
+                    </div>
+                    <div class="highlight-box">
+                        <strong>ServerSocketChannel</strong>
+                        <p>用于TCP网络IO的服务器端。监听新的客户端连接。</p>
+                         <pre><code class="language-java" style="font-size: 12px;">// 监听端口
+ServerSocketChannel ssc = ServerSocketChannel.open();
+ssc.bind(new InetSocketAddress(8080));
+ssc.configureBlocking(false);
+</code></pre>
+                    </div>
+                </div>
+                <p class="conclusion">FileChannel是阻塞的，但网络相关的Channel（SocketChannel, ServerSocketChannel, DatagramChannel）都可以配置为非阻塞模式。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>核心组件：Selector（选择器）</h2>
+                <p class="problem-intro">如何用一个线程管理成百上千个网络连接，而不错过任何一个连接的IO请求？轮询所有连接会浪费大量CPU——<strong>Selector就是答案</strong>。</p>
+                <p>Selector允许单个线程监视多个Channel的IO事件。这种模型称为“IO多路复用”。</p>
+                <h3>工作流程：</h3>
+                <ol>
+                    <li>创建一个Selector。</li>
+                    <li>将Channel注册到Selector上，并指定你感兴趣的事件（`SelectionKey.OP_READ`, `OP_WRITE`, `OP_CONNECT`, `OP_ACCEPT`）。</li>
+                    <li>调用`selector.select()`方法。这个方法会阻塞，直到至少有一个你感兴趣的事件发生。</li>
+                    <li>获取所有发生事件的`SelectionKey`集合。</li>
+                    <li>遍历`SelectionKey`，根据事件类型进行相应的处理。</li>
+                </ol>
+                <pre><code class="language-java">Selector selector = Selector.open();
+channel.configureBlocking(false);
+SelectionKey key = channel.register(selector, SelectionKey.OP_READ);
+
+while(true) {
+    int readyChannels = selector.select();
+    if(readyChannels == 0) continue;
+    
+    Set<SelectionKey> selectedKeys = selector.selectedKeys();
+    Iterator<SelectionKey> keyIterator = selectedKeys.iterator();
+    
+    while(keyIterator.hasNext()) {
+        SelectionKey k = keyIterator.next();
+        if(k.isAcceptable()) {
+            // a connection was accepted by a ServerSocketChannel.
+        } else if (k.isConnectable()) {
+            // a connection was established with a remote server.
+        } else if (k.isReadable()) {
+            // a channel is ready for reading
+        } else if (k.isWritable()) {
+            // a channel is ready for writing
+        }
+        keyIterator.remove(); // 必须移除，否则会重复处理
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实践项目：NIO Echo服务器</h2>
+                <p>让我们用NIO的组件构建一个简单的非阻塞回显服务器。它能接收客户端消息，并在消息前加上"Echo: "前缀后返回。</p>
+                <pre><code class="language-java">public class NioEchoServer {
+    public static void main(String[] args) throws IOException {
+        Selector selector = Selector.open();
+        ServerSocketChannel serverSocket = ServerSocketChannel.open();
+        serverSocket.bind(new InetSocketAddress("localhost", 8080));
+        serverSocket.configureBlocking(false);
+        serverSocket.register(selector, SelectionKey.OP_ACCEPT);
+        ByteBuffer buffer = ByteBuffer.allocate(256);
+
+        System.out.println("Server started on port 8080");
+
+        while (true) {
+            selector.select(); // Block until events happen
+            Set<SelectionKey> selectedKeys = selector.selectedKeys();
+            Iterator<SelectionKey> iter = selectedKeys.iterator();
+            while (iter.hasNext()) {
+                SelectionKey key = iter.next();
+
+                if (key.isAcceptable()) {
+                    SocketChannel client = serverSocket.accept();
+                    client.configureBlocking(false);
+                    client.register(selector, SelectionKey.OP_READ);
+                    System.out.println("Accepted new connection from " + client.getRemoteAddress());
+                }
+
+                if (key.isReadable()) {
+                    SocketChannel client = (SocketChannel) key.channel();
+                    buffer.clear();
+                    int bytesRead = client.read(buffer);
+                    if (bytesRead == -1) {
+                        // Connection closed
+                        key.cancel();
+                        client.close();
+                        System.out.println("Connection closed by " + client.getRemoteAddress());
+                    } else {
+                        buffer.flip();
+                        String received = new String(buffer.array(), 0, bytesRead).trim();
+                        System.out.println("Received: " + received);
+                        
+                        // Echo back
+                        ByteBuffer outBuffer = ByteBuffer.wrap(("Echo: " + received + "\n").getBytes());
+                        client.write(outBuffer);
+                    }
+                }
+                iter.remove();
+            }
+        }
+    }
+}
+</code></pre>
+                <p class="conclusion">这个服务器只用一个线程，就能处理所有客户端的连接和读写请求。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>NIO.2 (Java 7+)：更现代的IO</h2>
+                <p>Java 7对NIO进行了重大升级，引入了NIO.2，主要特性是新的文件系统API。</p>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>Path 接口</h3>
+                        <p>一个与操作系统无关的路径表示。可以看作是`java.io.File`的升级版。</p>
+                        <pre><code class="language-java">Path p = Paths.get("C:\temp\data.txt");
+System.out.println(p.getFileName()); // data.txt
+</code></pre>
+                        <h3>Files 工具类</h3>
+                        <p>提供了大量静态方法，用于常见的文件操作，极大简化了代码。</p>
+                        <ul>
+                            <li>`Files.exists(path)`</li>
+                            <li>`Files.createFile(path)`</li>
+                            <li>`Files.copy(from, to)`</li>
+                            <li>`Files.move(from, to)`</li>
+                            <li>`Files.delete(path)`</li>
+                            <li>`Files.readAllBytes(path)`</li>
+                            <li>`Files.write(path, bytes)`</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <h3>异步IO</h3>
+                        <p>NIO.2还引入了真正的异步IO操作，通过`Future`或`CompletionHandler`来处理结果。</p>
+                        <pre><code class="language-java">Path path = Paths.get("file.txt");
+AsynchronousFileChannel fileChannel = AsynchronousFileChannel.open(path, StandardOpenOption.READ);
+ByteBuffer buffer = ByteBuffer.allocate(1024);
+
+Future<Integer> operation = fileChannel.read(buffer, 0);
+
+while(!operation.isDone()); // 等待完成
+
+buffer.flip();
+// ... process data ...
+buffer.clear();
+</code></pre>
+                    </div>
+                </div>
+                <p class="conclusion">日常文件操作，优先使用`Path`和`Files`类，代码更简洁、功能更强大。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>课堂练习与自测</h2>
+                <div class="columns-2">
+                    <div class="highlight-box">
+                        <h3>练习1：文件拷贝</h3>
+                        <p>使用`FileChannel`和`ByteBuffer`实现一个文件拷贝功能。尝试两种方式：</p>
+                        <ol>
+                            <li>通过`read()`和`write()`循环读写。</li>
+                            <li>使用`transferTo()`或`transferFrom()`方法，看看哪种更简洁。</li>
+                        </ol>
+                    </div>
+                    <div class="highlight-box">
+                        <h3>练习2：客户端实现</h3>
+                        <p>为上一节的NIO Echo服务器编写一个客户端。客户端应该：</p>
+                        <ol>
+                            <li>连接到服务器。</li>
+                            <li>从控制台读取用户输入。</li>
+                            <li>将输入发送给服务器。</li>
+                            <li>打印服务器返回的"Echo"消息。</li>
+                        </ol>
+                    </div>
+                </div>
+                <h3>自测题目：</h3>
+                <ul>
+                    <li>Buffer的`flip()`方法做了什么？为什么在读写切换时必须调用它？</li>
+                    <li>Selector是如何实现单线程管理多路连接的？`select()`方法为什么会阻塞？</li>
+                    <li>NIO和传统IO最大的区别是什么？分别适用于哪些场景？</li>
+                    <li>`Files.readAllLines()`和自己用`FileChannel`循环读取文件有什么优缺点？</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>总结与延伸阅读</h2>
+                <h3>本章重点</h3>
+                <ul>
+                    <li><strong>三大核心组件</strong>: Buffer（数据容器）、Channel（数据通道）、Selector（事件派发器）。</li>
+                    <li><strong>IO模型</strong>: NIO是非阻塞、面向缓冲区的，适合高并发、连接数多的场景（如网络服务器）。传统IO是阻塞、面向流的，适合连接数少、顺序读写的场景。</li>
+                    <li><strong>NIO.2</strong>: 提供了现代化的文件操作API（`Path`, `Files`），是`java.io.File`的替代者。</li>
+                </ul>
+                <h3>常见问题解答</h3>
+                <p><strong>Q: NIO这么好，为什么还有人用传统IO？</strong><br>A: 传统IO模型简单，代码直观，对于IO负载不高的应用来说，开发效率更高。NIO编程相对复杂，需要处理更多的状态和细节。</p>
+                <p><strong>Q: Netty和NIO是什么关系？</strong><br>A: Netty是一个基于Java NIO构建的高性能网络应用框架。它极大地简化了NIO的编程复杂性，提供了更高级、更易用的API，是开发网络服务的首选。</p>
+                <h3>延伸阅读</h3>
+                <ul>
+                    <li><a href="https://docs.oracle.com/javase/8/docs/api/java/nio/package-summary.html" target="_blank">Java NIO API官方文档</a></li>
+                    <li><a href="https://www.baeldung.com/java-nio-selector" target="_blank">Baeldung: Java NIO Selector Tutorial</a></li>
+                    <li><a href="https://jenkov.com/tutorials/java-nio/index.html" target="_blank">Jenkov's Java NIO Tutorial</a></li>
+                </ul>
+            </div>
+        </section>
+
+        <div class="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div class="controls">
+            <button id="prevBtn">上一页</button>
+            <span id="slide-counter">1 / X</span>
+            <button id="nextBtn">下一页</button>
+        </div>
+    </main>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/ppt.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

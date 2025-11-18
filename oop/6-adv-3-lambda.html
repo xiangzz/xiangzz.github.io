@@ -274,83 +274,124 @@ names.forEach(name -> System.out.println("姓名: " + name));</code></pre>
         <!-- Slide: BiFunction & Method Reference Intro -->
         <section class="slide">
             <div class="slide-content">
-                <h2>双参数场景</h2>
+                <h2>双参数场景：BiFunction</h2>
                 <p>当函数需要两个参数时，可以使用 <code>BiFunction&lt;T, U, R&gt;</code> 接口，它接受两个参数并返回一个结果。</p>
-                <pre><code class="language-java">
-// Lambda 表达式
+                
+                <div class="interface-example">
+                    <h3>BiFunction 基本用法</h3>
+                    <pre><code class="language-java">
+// BiFunction&lt;T, U, R&gt;：T-第一个参数，U-第二个参数，R-返回值
 BiFunction&lt;Integer, Integer, Integer&gt; adder = (a, b) -> a + b;
-System.out.println(adder.apply(10, 20)); // 30
-</code></pre>
-                <hr style="margin: 1rem 0;">
-                <h3>方法引用 (Method Reference)</h3>
-                <p>当 Lambda 表达式只是调用一个现有方法时，可以使用<strong>方法引用</strong>来简化。它是 Lambda 的语法糖。</p>
-                <pre><code class="language-java">
-// 上面的 Lambda 如果是调用一个已有的静态方法，就可以改写
-// 使用 `::` 操作符，格式：ClassName::staticMethodName
-BiFunction&lt;Integer, Integer, Integer&gt; adderRef = Math::addExact; // ✅
+BiFunction&lt;String, String, Boolean&gt; isEqual = (s1, s2) -> s1.equals(s2);
+BiFunction&lt;Integer, String, String&gt; repeat = (n, s) -> s.repeat(n);
 
+// 使用 .apply() 方法调用
+System.out.println(adder.apply(10, 20));        // 30
+System.out.println(isEqual.apply("A", "B"));    // false
+System.out.println(repeat.apply(3, "Hi"));      // HiHiHi
+</code></pre>
+                </div>
+                
+                <hr style="margin: 1rem 0;">
+                
+                <div class="method-ref-intro">
+                    <h3>方法引用简介</h3>
+                    <p>当 Lambda 表达式只是调用一个现有方法时，可以使用<strong>方法引用</strong>来简化。它是 Lambda 的语法糖。</p>
+                    <pre><code class="language-java">
+// Lambda 表达式
+BiFunction&lt;Integer, Integer, Integer&gt; adder = (a, b) -> Math.addExact(a, b);
+
+// 方法引用 - 使用 `::` 操作符
+BiFunction&lt;Integer, Integer, Integer&gt; adderRef = Math::addExact;
+
+// 两者完全等价，调用方式相同
 System.out.println(adderRef.apply(10, 20)); // 30
-                </code></pre>
-                <p class="highlight">这里的 <code>Math::addExact</code> 就是一个方法引用，它等价于 <code>(a, b) -> Math.addExact(a, b)</code>。</p>
+                    </code></pre>
+                    <p class="highlight">方法引用让代码更简洁，<code>Math::addExact</code> 等价于 <code>(a, b) -> Math.addExact(a, b)</code>。</p>
+                </div>
             </div>
         </section>
 
-        <!-- Slide: Static vs Instance Method Reference -->
+        <!-- Slide: Instance Method Reference Parameter Mapping -->
         <section class="slide">
             <div class="slide-content">
-                <h2>实例方法 vs. 静态方法引用</h2>
-                <p>当引用<strong>实例方法</strong>时，函数式接口的第一个参数会成为方法调用者 (<code>this</code>)。</p>
+                <h2>实例方法引用的参数映射</h2>
+                <p>实例方法引用有一个特殊的参数映射规则：<strong>函数式接口的第一个参数会成为方法的调用者</strong>。</p>
 
-                <div style="margin-top: 1.5rem;">
+                <div class="parameter-mapping-explanation">
+                    <h3>参数映射规则</h3>
+                    <div class="mapping-rule">
+                        <p><strong>对于实例方法引用：</strong></p>
+                        <ul>
+                            <li>函数式接口的第一个参数 → 方法的调用者（this）</li>
+                            <li>函数式接口的其余参数 → 方法的参数</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="example-section">
                     <h3>示例1: <code>String.equals()</code></h3>
                     <pre><code class="language-java">
-// Lambda：两个参数
+// Lambda 表达式：两个参数
 BiPredicate&lt;String, String&gt; checker = (s1, s2) -> s1.equals(s2);
 
-// 方法引用：看起来没参数，实则 s1.equals(s2)
+// 实例方法引用：看起来没有参数
 BiPredicate&lt;String, String&gt; checkerRef = String::equals;
-</code></pre>
-                    <p class="highlight"><b>参数映射:</b><br>1. <code>BiPredicate</code> 的参数1 → <code>String::equals</code> 的调用者 (s1)<br>2. <code>BiPredicate</code> 的参数2 → <code>String::equals</code> 的方法参数 (s2)</p>
+                    </code></pre>
+                    <div class="parameter-mapping">
+                        <p class="highlight"><strong>参数映射：</strong></p>
+                        <ul>
+                            <li><code>BiPredicate</code> 的参数1 → <code>String::equals</code> 的调用者 (s1)</li>
+                            <li><code>BiPredicate</code> 的参数2 → <code>String::equals</code> 的方法参数 (s2)</li>
+                        </ul>
+                    </div>
                 </div>
 
-                <div style="margin-top: 1.5rem;">
+                <div class="example-section">
                     <h3>示例2: <code>String.startsWith()</code></h3>
                     <pre><code class="language-java">
-// Lambda：两个参数
+// Lambda 表达式：两个参数
 BiPredicate&lt;String, String&gt; starts = (str, prefix) -> str.startsWith(prefix);
 
-// 方法引用
-BiPredicate&lt;String, String&gt; startsRef = String::startsWith; // ✅
-</code></pre>
-                    <p class="highlight"><b>参数映射:</b><br>1. <code>BiPredicate</code>的参数1 → <code>String::startsWith</code> 的调用者 (str)<br>2. <code>BiPredicate</code>的参数2 → <code>String::startsWith</code> 的方法参数 (prefix)</p>
+// 实例方法引用
+BiPredicate&lt;String, String&gt; startsRef = String::startsWith;
+                    </code></pre>
+                    <div class="parameter-mapping">
+                        <p class="highlight"><strong>参数映射：</strong></p>
+                        <ul>
+                            <li><code>BiPredicate</code> 的参数1 → <code>String::startsWith</code> 的调用者 (str)</li>
+                            <li><code>BiPredicate</code> 的参数2 → <code>String::startsWith</code> 的方法参数 (prefix)</li>
+                        </ul>
+                    </div>
                 </div>
 
-
-                <h2>对比总结</h2>
-                <table class="comparison-table">
-                    <thead>
-                        <tr>
-                            <th>场景</th>
-                            <th>Lambda 表达式</th>
-                            <th>方法引用</th>
-                            <th>参数映射</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><strong>静态方法</strong> (2个参数)</td>
-                            <td><code>(a, b) -> Math.max(a, b)</code></td>
-                            <td><code>Math::max</code></td>
-                            <td>直接匹配，参数一一对应</td>
-                        </tr>
-                        <tr>
-                            <td><strong>实例方法</strong> (1个调用者 + 1个参数)</td>
-                            <td><code>(s1, s2) -> s1.equals(s2)</code></td>
-                            <td><code>String::equals</code></td>
-                            <td>第一个参数成为调用者</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div class="comparison-table">
+                    <h3>对比总结</h3>
+                    <table class="comparison-table">
+                        <thead>
+                            <tr>
+                                <th>方法引用类型</th>
+                                <th>Lambda 表达式</th>
+                                <th>方法引用</th>
+                                <th>参数映射规则</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>静态方法引用</strong></td>
+                                <td><code>(a, b) -> Math.max(a, b)</code></td>
+                                <td><code>Math::max</code></td>
+                                <td>参数一一对应</td>
+                            </tr>
+                            <tr>
+                                <td><strong>实例方法引用</strong></td>
+                                <td><code>(s1, s2) -> s1.equals(s2)</code></td>
+                                <td><code>String::equals</code></td>
+                                <td>第一个参数成为调用者</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </section>
 
@@ -376,39 +417,52 @@ System.out.println(sum3.apply(1, 2, 3)); // 6
             </div>
         </section>
 
-        <!-- Slide 7: Method References -->
+        <!-- Slide: Method References Types -->
         <section class="slide">
             <div class="slide-content">
-                <h2>方法引用</h2>
-                <p>当 Lambda 表达式只是调用一个现有方法时，可以使用方法引用让代码更简洁</p>
+                <h2>方法引用的三种类型</h2>
+                <p>方法引用是 Lambda 表达式的简化语法，根据引用的目标不同，分为三种类型</p>
                 
                 <div class="method-ref-types">
                     <div class="ref-type">
-                        <h3>静态方法引用</h3>
+                        <h3>1. 静态方法引用</h3>
+                        <p><strong>格式：</strong><code>ClassName::staticMethodName</code></p>
                         <pre><code class="language-java">// Lambda 表达式
 Function&lt;String, Integer&gt; parser = s -> Integer.parseInt(s);
+BiFunction&lt;Integer, Integer, Integer&gt; max = (a, b) -> Math.max(a, b);
 
 // 方法引用
-Function&lt;String, Integer&gt; parser = Integer::parseInt;</code></pre>
+Function&lt;String, Integer&gt; parser = Integer::parseInt;
+BiFunction&lt;Integer, Integer, Integer&gt; max = Math::max;</code></pre>
                     </div>
 
                     <div class="ref-type">
-                        <h3>实例方法引用</h3>
+                        <h3>2. 实例方法引用</h3>
+                        <p><strong>格式：</strong><code>object::instanceMethodName</code></p>
                         <pre><code class="language-java">// Lambda 表达式
 Consumer&lt;String&gt; printer = s -> System.out.println(s);
+Predicate&lt;String&gt; isEmpty = s -> s.isEmpty();
 
 // 方法引用
-Consumer&lt;String&gt; printer = System.out::println;</code></pre>
+Consumer&lt;String&gt; printer = System.out::println;
+Predicate&lt;String&gt; isEmpty = String::isEmpty;</code></pre>
                     </div>
 
                     <div class="ref-type">
-                        <h3>构造器引用</h3>
+                        <h3>3. 构造器引用</h3>
+                        <p><strong>格式：</strong><code>ClassName::new</code></p>
                         <pre><code class="language-java">// Lambda 表达式
 Supplier&lt;List&lt;String&gt;&gt; listSupplier = () -> new ArrayList&lt;&gt;();
+Function&lt;String, Integer&gt; intParser = s -> new Integer(s);
 
 // 构造器引用
-Supplier&lt;List&lt;String&gt;&gt; listSupplier = ArrayList::new;</code></pre>
+Supplier&lt;List&lt;String&gt;&gt; listSupplier = ArrayList::new;
+Function&lt;String, Integer&gt; intParser = Integer::new;</code></pre>
                     </div>
+                </div>
+                
+                <div class="method-ref-note">
+                    <p class="highlight"><strong>注意：</strong>方法引用只是 Lambda 的语法糖，两者完全等价，选择哪种主要看代码简洁性和可读性。</p>
                 </div>
             </div>
         </section>

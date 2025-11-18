@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java 多线程基础</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+    <link rel="stylesheet" href="./css/multithread.css">
+</head>
+<body>
+
+    <main id="presentation">
+        <section class="slide title-slide active">
+            <h1>多线程基础</h1>
+            <p>面向对象程序设计（Java）</p>
+            <strong>掌握线程创建、状态与同步，理解并发三要素</strong>
+        </section>
+
+
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要多线程</h2>
+                <p class="problem-intro">你点了一下“导出报表”按钮，整个窗口瞬间卡住，进度条一动不动。5秒后界面才恢复——<strong>单线程的代价</strong>。</p>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>案发现场：GUI卡死</h3>
+                        <ul>
+                            <li>主线程既要响应界面，又要执行耗时任务</li>
+                            <li>耗时任务阻塞事件派发线程，界面失去响应</li>
+                            <li>把任务搬出主线程，窗口即可继续流畅操作</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <h3>线程=“不卡”的代价</h3>
+                        <ul>
+                            <li>线程切换开销远小于进程，适合并发与响应式场景</li>
+                            <li>同进程内线程共享堆与方法区，通信零拷贝</li>
+                            <li>但共享可变数据必须正确同步，否则结果错乱</li>
+                        </ul>
+                    </div>
+                </div>
+                <p class="conclusion">先解决“卡”，再解决“乱”——多线程先让程序不卡，再用同步保证不乱。</p>
+                <div class="demo-card" style="margin-top:16px;">
+                    <div>
+                        <button id="blockBtn" style="padding:6px 12px;">模拟耗时任务（会卡）</button>
+                        <button id="threadBtn" style="padding:6px 12px;">放线程执行（不卡）</button>
+                        <div id="status" style="margin-top:8px;font-weight:700;">准备就绪</div>
+                    </div>
+                    <div>
+                        <div class="bar-wrap"><div id="progress" class="bar"></div></div>
+                        <div style="margin-top:4px;font-size:12px;color:#666;">进度条只在右侧流畅更新</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建线程：继承 Thread</h2>
+                <pre><code class="language-java">class MyThread extends Thread {
+    public void run() {
+        for (int i = 0; i &lt; 3; i++) {
+            System.out.println("工作: " + i + " - " + Thread.currentThread().getName());
+        }
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        Thread t = new MyThread();
+        t.start();
+    }
+}</code></pre>
+                <p class="conclusion">继承方式简单直接，但受限于单继承，常用于快速示例。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建线程：实现 Runnable</h2>
+                <pre><code class="language-java">class Task implements Runnable {
+    public void run() {
+        for (int i = 0; i &lt; 3; i++) {
+            System.out.println("任务: " + i + " - " + Thread.currentThread().getName());
+        }
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        Runnable task = new Task();
+        Thread t1 = new Thread(task, "T-1");
+        Thread t2 = new Thread(task, "T-2");
+        t1.start();
+        t2.start();
+    }
+}</code></pre>
+                <p class="conclusion">推荐使用 Runnable，便于共享任务逻辑与解耦线程执行。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建线程：Callable + FutureTask</h2>
+                <pre><code class="language-java">import java.util.concurrent.Callable;
+import java.util.concurrent.FutureTask;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        Callable&lt;Integer&gt; work = () -&gt; {
+            int sum = 0;
+            for (int i = 1; i &lt;= 100; i++) sum += i;
+            return sum;
+        };
+        FutureTask&lt;Integer&gt; ft = new FutureTask&lt;&gt;(work);
+        new Thread(ft, "Worker").start();
+        Integer result = ft.get();
+        System.out.println(result);
+    }
+}</code></pre>
+                <p class="conclusion">Callable支持返回结果与抛出异常，配合FutureTask获取执行结果。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>线程生命周期与状态</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                    <table style="width:100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background:#f8f9fa;">
+                                    <th style="border:1px solid #ddd; padding:.5rem;">状态</th>
+                                    <th style="border:1px solid #ddd; padding:.5rem;">含义</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">NEW</td><td style="border:1px solid #ddd; padding:.5rem;">新建未启动</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">RUNNABLE</td><td style="border:1px solid #ddd; padding:.5rem;">就绪或运行中</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">BLOCKED</td><td style="border:1px solid #ddd; padding:.5rem;">等待锁进入临界区</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">WAITING</td><td style="border:1px solid #ddd; padding:.5rem;">无限期等待通知</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">TIMED_WAITING</td><td style="border:1px solid #ddd; padding:.5rem;">限时等待</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">TERMINATED</td><td style="border:1px solid #ddd; padding:.5rem;">执行完毕</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">public class StateDemo {
+    static final Object lock = new Object();
+    public static void main(String[] args) throws Exception {
+        Thread t = new Thread(() -&gt; {
+            synchronized (lock) {
+                try { Thread.sleep(500); } catch (InterruptedException e) {}
+            }
+        }, "T");
+        System.out.println(t.getState());
+        t.start();
+        System.out.println(t.getState());
+        synchronized (lock) {
+            Thread.sleep(1000);
+        }
+        System.out.println(t.getState());
+        t.join();
+        System.out.println(t.getState());
+    }
+}</code></pre>
+                        <p class="conclusion">通过同步与休眠观察状态变化，理解调度与锁竞争。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>启动与基本控制</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <ul>
+                            <li>start 启动新线程并异步调用 run</li>
+                            <li>sleep 让出CPU一段时间</li>
+                            <li>yield 让出执行机会但不保证切换</li>
+                            <li>join 等待目标线程结束</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">public class ControlDemo {
+    public static void main(String[] args) throws Exception {
+        Thread t = new Thread(() -&gt; {
+            for (int i = 0; i &lt; 3; i++) {
+                System.out.println("A" + i);
+                try { Thread.sleep(100); } catch (InterruptedException e) {}
+            }
+        });
+        t.start();
+        t.join();
+        System.out.println("done");
+    }
+}</code></pre>
+                        <p class="conclusion">不要直接调用 run，否则不会创建并发执行。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>并发问题：原子性与可见性</h2>
+                <p class="problem-intro">两个线程各给计数器加100000，结果应该200000，却常常只有180000——<strong>中间的20000次更新凭空消失</strong>。</p>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <div class="highlight-box">
+                            <strong>案发现场：20000次更新去哪了？</strong>
+                            <ul>
+                                <li>i++在字节码里是“取值→+1→写回”三步</li>
+                                <li>线程A写回前，线程B也读到旧值，+1后覆盖A的结果</li>
+                                <li>一次自增丢失，累加就是“少”</li>
+                            </ul>
+                        </div>
+                        <p>原子性=“中间状态外人看不见”，锁能把三步打包成一步。</p>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">public class RaceCounter {
+    static int counter = 0;
+    public static void main(String[] args) throws Exception {
+        Runnable r = () -&gt; {
+            for (int i = 0; i &lt; 100000; i++) counter++;
+        };
+        Thread t1 = new Thread(r);
+        Thread t2 = new Thread(r);
+        t1.start(); t2.start();
+        t1.join(); t2.join();
+        System.out.println(counter);
+    }
+}</code></pre>
+                        <p class="conclusion">给“读-改-写”加锁，三步变一步，200000次更新不再丢失。</p>
+                        <div class="demo-card" style="margin-top:12px;">
+                            <div>
+                                <button id="raceBtn" style="padding:6px 12px;">无锁竞速</button>
+                                <button id="safeBtn" style="padding:6px 12px;">加锁竞速</button>
+                                <div style="margin-top:8px;font-size:12px;">预计200000，当前：<span id="raceRes" class="result-bad">未开始</span></div>
+                            </div>
+                            <div style="display:flex;gap:8px;">
+                                <div style="flex:1;">线程1<br><div class="bar-wrap"><div id="r1" class="bar"></div></div></div>
+                                <div style="flex:1;">线程2<br><div class="bar-wrap"><div id="r2" class="bar"></div></div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>synchronized：互斥与可重入</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <ul>
+                            <li>对象监视器互斥进入临界区</li>
+                            <li>方法与代码块两种写法</li>
+                            <li>同一线程可重入同一锁</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">class SafeCounter {
+    private int value;
+    private final Object lock = new Object();
+    public void inc() {
+        synchronized (lock) { value++; }
+    }
+    public synchronized int get() { return value; }
+}
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        SafeCounter c = new SafeCounter();
+        Runnable r = () -&gt; { for (int i = 0; i &lt; 100000; i++) c.inc(); };
+        Thread t1 = new Thread(r); Thread t2 = new Thread(r);
+        t1.start(); t2.start(); t1.join(); t2.join();
+        System.out.println(c.get());
+    }
+}</code></pre>
+                        <p class="conclusion">选择稳定的锁对象，避免将锁暴露给外部。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>对象监视器：wait/notify</h2>
+                <p class="problem-intro">生产者速度翻倍，仓库瞬间爆仓OOM；消费者速度翻倍，CPU空转飙高——<strong>快慢不协调，资源全浪费</strong>。</p>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <div class="highlight-box">
+                            <strong>案发现场：爆仓与空转</strong>
+                            <ul>
+                                <li>while(size==cap) 空转sleep→CPU狂飙</li>
+                                <li>while(size==0) 空转sleep→内存暴涨</li>
+                                <li>快的一方需要“睡”，慢的一方负责“叫醒”</li>
+                            </ul>
+                        </div>
+                        <p>wait让线程睡并放锁；notify/notifyAll精准叫醒等待者。</p>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">import java.util.LinkedList;
+
+class BoundedQueue&lt;T&gt; {
+    private final LinkedList&lt;T&gt; q = new LinkedList&lt;&gt;();
+    private final int cap;
+    public BoundedQueue(int cap) { this.cap = cap; }
+    public synchronized void put(T x) throws InterruptedException {
+        while (q.size() == cap) wait();
+        q.add(x);
+        notifyAll();
+    }
+    public synchronized T take() throws InterruptedException {
+        while (q.isEmpty()) wait();
+        T x = q.removeFirst();
+        notifyAll();
+        return x;
+    }
+}</code></pre>
+                        <p class="conclusion">用wait/notify把“空转”变“睡眠”，仓库不再爆仓，CPU不再空转。</p>
+                        <div class="demo-card" style="margin-top:12px;">
+                            <div>
+                                <label>生产者速度：<input type="range" id="prodSpeed" min="1" max="10" value="5"></label><br>
+                                <label>消费者速度：<input type="range" id="consSpeed" min="1" max="10" value="5"></label>
+                                <div style="margin-top:8px;">仓库容量：<span id="cap">0</span>/10 <span id="warn"></span></div>
+                            </div>
+                            <div style="display:flex;gap:4px;height:20px;" id="boxes"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>volatile：可见性与有序性</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <ul>
+                            <li>保证写对其他线程可见</li>
+                            <li>禁止特定指令重排序</li>
+                            <li>不提供复合操作原子性</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">public class VolatileStop {
+    static volatile boolean running = true;
+    public static void main(String[] args) throws Exception {
+        Thread t = new Thread(() -&gt; {
+            long i = 0;
+            while (running) { i++; }
+            System.out.println(i);
+        });
+        t.start();
+        Thread.sleep(200);
+        running = false;
+        t.join();
+    }
+}</code></pre>
+                        <p class="conclusion">适用于状态标志等场景，复合更新需配合同步或原子类。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>ThreadLocal：每线程独立变量</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <ul>
+                            <li>避免共享可变状态</li>
+                            <li>适合格式化器、上下文信息</li>
+                            <li>注意显式清理避免泄漏</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">import java.text.SimpleDateFormat;
+
+public class TL {
+    static final ThreadLocal&lt;SimpleDateFormat&gt; fmt = ThreadLocal.withInitial(() -&gt; new SimpleDateFormat("yyyy-MM-dd"));
+    public static void main(String[] args) throws Exception {
+        Runnable r = () -&gt; {
+            String s = fmt.get().format(new java.util.Date());
+            System.out.println(Thread.currentThread().getName() + " - " + s);
+            fmt.remove();
+        };
+        new Thread(r, "T1").start();
+        new Thread(r, "T2").start();
+    }
+}</code></pre>
+                        <p class="conclusion">使用remove在任务结束后清理，避免线程池中的跨任务污染。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见陷阱与避免</h2>
+                <div class="columns-3">
+                    <div class="highlight-box">
+                        <strong>死锁</strong>
+                        <pre><code class="language-java">class Dead { Object a = new Object(); Object b = new Object();
+    void f1() { synchronized(a) { synchronized(b) {} } }
+    void f2() { synchronized(b) { synchronized(a) {} } }
+}</code></pre>
+                        <ul>
+                            <li>统一加锁顺序</li>
+                            <li>减少持锁时间</li>
+                        </ul>
+                    </div>
+                    <div class="highlight-box">
+                        <strong>活锁/饥饿</strong>
+                        <ul>
+                            <li>过度让步导致无进展</li>
+                            <li>高优先级长期占用</li>
+                        </ul>
+                    </div>
+                    <div class="highlight-box">
+                        <strong>错误协调</strong>
+                        <ul>
+                            <li>用sleep代替通知</li>
+                            <li>条件判断未用while</li>
+                        </ul>
+                    </div>
+                </div>
+                <p class="conclusion">采用固定锁序与条件循环，使用通知机制进行正确协作。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>课堂练习</h2>
+                <ul>
+                    <li>实现多线程售票系统，比较非同步与同步输出差异</li>
+                    <li>编写生产者-消费者模型，控制队列容量与吞吐</li>
+                    <li>使用volatile实现停止信号，与synchronized版本对比</li>
+                </ul>
+                <p class="conclusion">提交可运行代码与结果截图，标注关键同步点与原因。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>回到最初问题：我们解决了什么？</h2>
+                <div class="columns-3">
+                    <div class="highlight-box">
+                        <strong>1. 界面卡死</strong><br>
+                        <span style="color:#2e7d32;">✅ 耗时任务放线程，窗口依旧流畅</span>
+                    </div>
+                    <div class="highlight-box">
+                        <strong>2. 200000次自增少了</strong><br>
+                        <span style="color:#2e7d32;">✅ 给“读-改-写”加锁，三步变一步</span>
+                    </div>
+                    <div class="highlight-box">
+                        <strong>3. 仓库爆仓/空转</strong><br>
+                        <span style="color:#2e7d32;">✅ wait/notify让快的人睡，慢的人叫</span>
+                    </div>
+                </div>
+                <p class="conclusion">多线程先解决“卡”，再解决“乱”；锁、信号量、阻塞队列都是让“不乱”的工具。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>并发可视化演示：计数器竞态</h2>
+                <div class="demo-card">
+                    <div>
+                        <div class="demo-controls">
+                            <button id="startRace">开始无锁</button>
+                            <button id="startSync">开始加锁</button>
+                            <button id="resetDemo">重置</button>
+                        </div>
+                        <div style="margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                            <div>
+                                <div class="metric">累计操作：<span id="ops">0</span></div>
+                                <div class="metric">共享计数：<span id="val">0</span></div>
+                            </div>
+                            <div>
+                                <div class="metric">预计结果：<span id="expect">0</span></div>
+                                <div class="metric">正确性：<span id="ok" class="result-bad">未开始</span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <div>线程1进度</div>
+                        <div class="bar-wrap"><div id="bar1" class="bar"></div></div>
+                        <div style="margin-top:12px;">线程2进度</div>
+                        <div class="bar-wrap"><div id="bar2" class="bar"></div></div>
+                    </div>
+                </div>
+                <p class="conclusion">比较无锁与加锁的计数结果，直观感受数据竞争与互斥效果。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>线程池基础（Executor）</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>核心参数</h3>
+                        <table style="width:100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background:#f8f9fa;">
+                                    <th style="border:1px solid #ddd; padding:.5rem;">参数</th>
+                                    <th style="border:1px solid #ddd; padding:.5rem;">作用</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">corePoolSize</td><td style="border:1px solid #ddd; padding:.5rem;">核心线程数</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">maximumPoolSize</td><td style="border:1px solid #ddd; padding:.5rem;">最大线程数</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">keepAliveTime</td><td style="border:1px solid #ddd; padding:.5rem;">非核心线程存活时间</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">workQueue</td><td style="border:1px solid #ddd; padding:.5rem;">任务队列</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">threadFactory</td><td style="border:1px solid #ddd; padding:.5rem;">线程构造器</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">handler</td><td style="border:1px solid #ddd; padding:.5rem;">拒绝策略</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="media-block__visual">
+                        <h3>ThreadPoolExecutor 示例</h3>
+                        <pre><code class="language-java">import java.util.concurrent.*;
+
+public class PoolDemo {
+    public static void main(String[] args) {
+        ExecutorService pool = new ThreadPoolExecutor(
+            2, 4, 60, TimeUnit.SECONDS,
+            new LinkedBlockingQueue&lt;&gt;(100),
+            Executors.defaultThreadFactory(),
+            new ThreadPoolExecutor.AbortPolicy()
+        );
+
+        for (int i = 0; i &lt; 10; i++) {
+            int id = i;
+            pool.submit(() -&gt; {
+                System.out.println("任务" + id + " - " + Thread.currentThread().getName());
+            });
+        }
+
+        pool.shutdown();
+    }
+}</code></pre>
+                        <p class="conclusion">合理设置核心数与队列容量，选择合适的拒绝策略，避免资源耗尽。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常用线程池工厂</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <pre><code class="language-java">ExecutorService fixed = Executors.newFixedThreadPool(4);
+ExecutorService cached = Executors.newCachedThreadPool();
+ExecutorService single = Executors.newSingleThreadExecutor();
+ScheduledExecutorService scheduled = Executors.newScheduledThreadPool(2);
+
+scheduled.scheduleAtFixedRate(() -&gt; {
+    System.out.println("tick");
+}, 0, 1, TimeUnit.SECONDS);</code></pre>
+                    </div>
+                    <div class="media-block__visual">
+                        <ul>
+                            <li>Fixed：固定并发，适合稳定负载</li>
+                            <li>Cached：按需扩容，适合短任务但需警惕过度创建</li>
+                            <li>Single：串行执行，适合顺序任务</li>
+                            <li>Scheduled：定时/周期任务，替代 Timer</li>
+                        </ul>
+                        <p class="conclusion">生产环境优先自定义 ThreadPoolExecutor，避免不受控的线程增长。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Lock 与可重入锁</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <ul>
+                            <li>ReentrantLock 提供可重入、可中断、可限时的锁获取</li>
+                            <li>支持公平锁（按等待顺序）与非公平锁（默认）</li>
+                            <li>必须配合 try/finally 保证 unlock</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+
+public class LockDemo {
+    private final ReentrantLock lock = new ReentrantLock(true);
+    public void work() throws InterruptedException {
+        if (lock.tryLock(100, TimeUnit.MILLISECONDS)) {
+            try {
+                // 临界区
+            } finally {
+                lock.unlock();
+            }
+        } else {
+            System.out.println("获取锁超时");
+        }
+    }
+}</code></pre>
+                        <p class="conclusion">tryLock 超时可降低等待引发的死锁风险，提升系统弹性。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Condition 与生产者/消费者</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <pre><code class="language-java">import java.util.LinkedList;
+import java.util.concurrent.locks.*;
+
+class PCQueue&lt;T&gt; {
+    private final LinkedList&lt;T&gt; q = new LinkedList&lt;&gt;();
+    private final int cap;
+    private final ReentrantLock lock = new ReentrantLock();
+    private final Condition notEmpty = lock.newCondition();
+    private final Condition notFull = lock.newCondition();
+
+    PCQueue(int cap) { this.cap = cap; }
+
+    public void put(T x) throws InterruptedException {
+        lock.lock();
+        try {
+            while (q.size() == cap) notFull.await();
+            q.add(x);
+            notEmpty.signal();
+        } finally { lock.unlock(); }
+    }
+
+    public T take() throws InterruptedException {
+        lock.lock();
+        try {
+            while (q.isEmpty()) notEmpty.await();
+            T x = q.removeFirst();
+            notFull.signal();
+            return x;
+        } finally { lock.unlock(); }
+    }
+}</code></pre>
+                        <p class="conclusion">Condition 比 wait/notify 语义更清晰，支持多条件队列，避免虚假唤醒。</p>
+                    </div>
+                    <div class="media-block__visual">
+                        <h3>BlockingQueue 版本</h3>
+                        <pre><code class="language-java">import java.util.concurrent.*;
+
+BlockingQueue&lt;Integer&gt; q = new ArrayBlockingQueue&lt;&gt;(10);
+
+Runnable producer = () -&gt; {
+    try {
+        for (int i = 0; i &lt; 100; i++) q.put(i);
+    } catch (InterruptedException ignored) {}
+};
+
+Runnable consumer = () -&gt; {
+    try {
+        while (true) {
+            Integer x = q.take();
+            // 处理 x
+        }
+    } catch (InterruptedException ignored) {}
+};</code></pre>
+                        <p class="conclusion">优先使用阻塞队列，减少并发细节错误，提升鲁棒性。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Semaphore 信号量</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <ul>
+                            <li>控制同时访问的许可数，常用于限流与连接池</li>
+                            <li>支持公平模式，保证等待顺序</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">import java.util.concurrent.Semaphore;
+
+public class SemDemo {
+    static final Semaphore sem = new Semaphore(3, true);
+    static void serve() {
+        try {
+            sem.acquire();
+            // 处理请求
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            sem.release();
+        }
+    }
+}</code></pre>
+                        <p class="conclusion">以许可替代锁的互斥，适合资源槽位管理与并发限速。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Deadlock 死锁与排查</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <ul>
+                            <li>四条件：互斥、占有并等待、不可抢占、循环等待</li>
+                            <li>避免策略：统一加锁顺序、限定锁持有时间、拆分临界区</li>
+                            <li>检测工具：`jstack`、线程转储、可视化监控</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+
+class SafePair {
+    private final ReentrantLock a = new ReentrantLock();
+    private final ReentrantLock b = new ReentrantLock();
+    void op() throws InterruptedException {
+        if (a.tryLock(50, TimeUnit.MILLISECONDS)) {
+            try {
+                if (b.tryLock(50, TimeUnit.MILLISECONDS)) {
+                    try { /* 临界区 */ } finally { b.unlock(); }
+                } else {
+                    // 回退与重试
+                }
+            } finally { a.unlock(); }
+        }
+    }
+}</code></pre>
+                        <p class="conclusion">超时与回退能打破循环等待，配合监控工具定位死锁根因。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>定时任务：Timer vs ScheduledExecutor</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <pre><code class="language-java">import java.util.Timer;
+import java.util.TimerTask;
+
+Timer timer = new Timer();
+timer.schedule(new TimerTask() {
+    public void run() { System.out.println("once"); }
+}, 1000);
+</code></pre>
+                        <p class="conclusion">Timer 为单线程，任务异常会终止，延迟易叠加。</p>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">import java.util.concurrent.*;
+
+ScheduledExecutorService ses = Executors.newScheduledThreadPool(2);
+ses.scheduleAtFixedRate(() -&gt; {
+    System.out.println("fixed-rate");
+}, 0, 1, TimeUnit.SECONDS);
+
+ses.scheduleWithFixedDelay(() -&gt; {
+    System.out.println("fixed-delay");
+}, 0, 1, TimeUnit.SECONDS);</code></pre>
+                        <p class="conclusion">建议使用 ScheduledExecutorService，支持多线程与健壮的调度语义。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Fork/Join 框架</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <ul>
+                            <li>工作窃取算法提升吞吐，适合递归分治</li>
+                            <li>核心类型：ForkJoinPool、RecursiveTask/Action</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">import java.util.concurrent.*;
+
+class SumTask extends RecursiveTask&lt;Long&gt; {
+    private final long[] arr; private final int start, end; private static final int THRESHOLD = 10_000;
+    SumTask(long[] arr, int start, int end) { this.arr = arr; this.start = start; this.end = end; }
+    protected Long compute() {
+        int len = end - start;
+        if (len &lt;= THRESHOLD) {
+            long sum = 0; for (int i = start; i &lt; end; i++) sum += arr[i]; return sum;
+        }
+        int mid = start + len / 2;
+        SumTask left = new SumTask(arr, start, mid);
+        SumTask right = new SumTask(arr, mid, end);
+        left.fork();
+        long r = right.compute();
+        long l = left.join();
+        return l + r;
+    }
+}
+
+ForkJoinPool pool = ForkJoinPool.commonPool();
+long[] data = new long[5_000_000];
+long result = pool.invoke(new SumTask(data, 0, data.length));</code></pre>
+                        <p class="conclusion">选择合理的阈值，避免过度拆分造成调度开销大于计算收益。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+                <section class="slide">
+            <div class="slide-content">
+                <h2>Fork/Join 套路</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>六步走</h3>
+                        <ul>
+                            <li>场景判断：CPU 密集、可分治、结果可合并</li>
+                            <li>任务建模：定义 RecursiveTask/Action 表达“拆分+合并”</li>
+                            <li>阈值设计：小任务走顺序算法，大任务继续拆分</li>
+                            <li>拆分策略：二分或 K 分，尽量均衡工作量</li>
+                            <li>合并策略：先右 compute、左 join，或双 fork 后 join</li>
+                            <li>提交执行：ForkJoinPool.invoke/commonPool 并行运行</li>
+                        </ul>
+                        <p class="conclusion">口诀：先判断再拆分，右算左合并，阈值要合理，提交后验证。</p>
+                    </div>
+                    <div class="media-block__visual">
+                        <h3>模板代码</h3>
+                        <pre><code class="language-java">import java.util.concurrent.*;
+
+class DivideTask extends RecursiveTask&lt;Long&gt; {
+    private final long[] arr;
+    private final int start, end;
+    private static final int THRESHOLD = 10_000;
+
+    DivideTask(long[] arr, int start, int end) {
+        this.arr = arr; this.start = start; this.end = end;
+    }
+
+    protected Long compute() {
+        int len = end - start;
+        if (len &lt;= THRESHOLD) {
+            long sum = 0;
+            for (int i = start; i &lt; end; i++) sum += arr[i];
+            return sum;
+        }
+        int mid = start + len / 2;
+        DivideTask left = new DivideTask(arr, start, mid);
+        DivideTask right = new DivideTask(arr, mid, end);
+        left.fork();
+        long r = right.compute();
+        long l = left.join();
+        return l + r;
+    }
+}
+
+public class UseForkJoin {
+    public static void main(String[] args) {
+        long[] data = new long[5_000_000];
+        ForkJoinPool pool = ForkJoinPool.commonPool();
+        long result = pool.invoke(new DivideTask(data, 0, data.length));
+        System.out.println(result);
+    }
+}</code></pre>
+                        <p class="conclusion">将“顺序算法”封装为小任务，用二分递归拆分并在池中并行执行。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Synchronized Collections</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <pre><code class="language-java">import java.util.*;
+
+List&lt;String&gt; syncList = Collections.synchronizedList(new ArrayList&lt;&gt;());
+syncList.add("a");
+
+// 迭代需要外部同步
+synchronized (syncList) {
+    for (String s : syncList) { /* 处理 */ }
+}
+
+Map&lt;String, Integer&gt; syncMap = Collections.synchronizedMap(new HashMap&lt;&gt;());</code></pre>
+                    </div>
+                    <div class="media-block__visual">
+                        <ul>
+                            <li>只提供整体互斥，不保证迭代过程的原子性</li>
+                            <li>并发替代：`ConcurrentHashMap`、`CopyOnWriteArrayList`、`ConcurrentLinkedQueue`</li>
+                            <li>Fail-Fast 迭代器在结构修改时抛 `ConcurrentModificationException`</li>
+                        </ul>
+                        <p class="conclusion">在高并发场景优先选择并发容器，降低锁竞争与迭代风险。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div class="controls">
+            <button id="prevBtn">上一页</button>
+            <span id="slide-counter">1 / X</span>
+            <button id="nextBtn">下一页</button>
+        </div>
+    </main>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/ppt.js"></script>
+    <script src="./js/nav.js"></script>
+    <script src="./js/multithread.js"></script>
+</body>
+</html>
