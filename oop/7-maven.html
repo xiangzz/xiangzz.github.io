@@ -237,11 +237,11 @@ public class Student {
                 <img src="images/7-click-maven-button.png" alt="Maven 生命周期按钮" style="max-width: 90%;" />
                 <p><strong>核心生命周期阶段：</strong></p>
                 <ul>
-                    <li><code>clean</code> - 清理 <code>target</code> 目录</li>
-                    <li><code>compile</code> - 编译源代码到 <code>target/classes</code></li>
+                    <li><code>clean</code> - 清理 <code>target</code> 目录，删除里面文件</li>
+                    <li><code>compile</code> - 编译源代码并拷贝把<code>main/resources</code>里的文件到 <code>target/classes</code>，</li>
                     <li><code>test</code> - 运行测试用例</li>
                     <li><code>package</code> - 打包（JAR/WAR）到 <code>target/</code></li>
-                    <li><code>install</code> - 安装到本地仓库</li>
+                    <li><code>install</code> - 安装到本地仓库（默认<code>~/.m2/repository</code>）</li>
                 </ul>
                 <p><strong>实践：</strong>依次点击这些按钮，观察 <code>target</code> 目录的变化</p>
             </div>
@@ -374,23 +374,118 @@ public class Student {
             <div class="slide-content">
                 <h2>依赖作用域（scope）详解</h2>
                 <p>作用域决定依赖在编译、测试与运行阶段的可见性：</p>
-
-                <h3><code>compile</code>（默认）</h3>
-                <p>编译、测试、运行均有效（大多数依赖）</p>
-
-                <h3><code>provided</code></h3>
-                <p>编译、测试有效；运行时由环境提供（如 Lombok、Servlet API）</p>
-
-                <h3><code>runtime</code></h3>
-                <p>运行、测试有效；编译期不参与（如 JDBC 驱动）</p>
-
-                <h3><code>test</code></h3>
-                <p>仅测试阶段有效（如 JUnit、Mockito）</p>
-
-                <h3><code>system</code></h3>
-                <p>类似 <code>provided</code>，但使用本地路径（不推荐，不可移植）</p>
-
                 <p><strong>实践建议：</strong>正确设置作用域能减少包冲突与最终包体积</p>
+                <div class="scope-table-wrapper" style="margin-top: 12px; overflow-x: auto;">
+                    <table class="scope-table" style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr>
+                                <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">作用域</th>
+                                <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">编译期</th>
+                                <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">测试期</th>
+                                <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">运行期</th>
+                                <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">典型依赖</th>
+                                <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">设置原因/场景</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;"><code>compile</code></td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">✓</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">✓</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">✓</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">通用库（如核心框架）</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">代码在所有阶段都需要</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;"><code>provided</code></td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">✓</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">✓</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">由环境提供</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;"><code>lombok</code>、Servlet API</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">仅编译/测试需要，运行期由容器/工具提供</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;"><code>runtime</code></td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">×</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">✓</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">✓</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">JDBC 驱动</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">编译面向接口，具体实现仅在运行/测试需要</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;"><code>test</code></td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">×</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">✓</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">×</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">JUnit、Mockito</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">仅用于测试代码与运行器</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;"><code>system</code></td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">✓</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">✓</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">环境/本地提供</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">本地路径依赖</td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">不可移植，不推荐</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <h3>为什么这些库要用不同的 scope？</h3>
+                <div class="scope-reasons" style="display: grid; grid-template-columns: 1fr; gap: 12px;">
+                    <div>
+                        <h4>Lombok → provided</h4>
+                        <ul>
+                            <li>编译期通过注解处理器生成字节码；运行期不需要 Lombok 本身。</li>
+                            <li>设置为 <code>provided</code>，避免打包进产物、减小体积且不引入无意义的运行期依赖。</li>
+                        </ul>
+                        <pre><code class="language-xml">&lt;dependency&gt;
+  &lt;groupId&gt;org.projectlombok&lt;/groupId&gt;
+  &lt;artifactId&gt;lombok&lt;/artifactId&gt;
+  &lt;version&gt;1.18.22&lt;/version&gt;
+  &lt;scope&gt;provided&lt;/scope&gt;
+&lt;/dependency&gt;</code></pre>
+                    </div>
+                    <div>
+                        <h4>JDBC 驱动 → runtime</h4>
+                        <ul>
+                            <li>编译面向 <code>java.sql</code> 接口；具体驱动实现仅在运行时通过 SPI/ServiceLoader 加载。</li>
+                            <li>设置为 <code>runtime</code>，不参与编译但在运行和测试阶段可用；若直接引用驱动类（如 <code>com.mysql.cj.jdbc.Driver</code>），可改用 <code>compile</code>。</li>
+                        </ul>
+                        <pre><code class="language-xml">&lt;dependency&gt;
+  &lt;groupId&gt;mysql&lt;/groupId&gt;
+  &lt;artifactId&gt;mysql-connector-j&lt;/artifactId&gt;
+  &lt;version&gt;8.0.33&lt;/version&gt;
+  &lt;scope&gt;runtime&lt;/scope&gt;
+&lt;/dependency&gt;</code></pre>
+                    </div>
+                    <div>
+                        <h4>JUnit → test</h4>
+                        <ul>
+                            <li>仅用于测试代码与测试运行器；不应该出现在生产环境的可运行包中。</li>
+                            <li>设置为 <code>test</code>，确保不会被传递到生产依赖树。</li>
+                        </ul>
+                        <pre><code class="language-xml">&lt;dependency&gt;
+  &lt;groupId&gt;org.junit.jupiter&lt;/groupId&gt;
+  &lt;artifactId&gt;junit-jupiter&lt;/artifactId&gt;
+  &lt;version&gt;5.10.0&lt;/version&gt;
+  &lt;scope&gt;test&lt;/scope&gt;
+&lt;/dependency&gt;</code></pre>
+                    </div>
+                    <div>
+                        <h4>Servlet API → provided（参考）</h4>
+                        <ul>
+                            <li>运行期由容器（Tomcat/Jetty/Spring Boot）提供；项目不应打包它。</li>
+                        </ul>
+                        <pre><code class="language-xml">&lt;dependency&gt;
+  &lt;groupId&gt;jakarta.servlet&lt;/groupId&gt;
+  &lt;artifactId&gt;jakarta.servlet-api&lt;/artifactId&gt;
+  &lt;version&gt;5.0.0&lt;/version&gt;
+  &lt;scope&gt;provided&lt;/scope&gt;
+&lt;/dependency&gt;</code></pre>
+                    </div>
+                </div>
+                <p><strong>选择原则：</strong>编译期才需要 → 使用 <code>provided</code>；仅运行/测试期需要 → 使用 <code>runtime</code>；仅测试代码需要 → 使用 <code>test</code>；跨阶段都需要 → 使用 <code>compile</code>。</p>
             </div>
         </section>
 
@@ -398,6 +493,14 @@ public class Student {
         <section class="slide">
             <div class="slide-content">
                 <h2>可选依赖与排除传递</h2>
+                <div class="dependency-concepts" style="margin-bottom: 20px; padding: 12px; background: rgba(100,150,200,0.1); border-radius: 6px;">
+                    <h3>什么是依赖？什么是传递依赖？</h3>
+                    <ul>
+                        <li><strong>依赖（Dependency）</strong>：项目直接在 <code>&lt;dependencies&gt;</code> 中声明的库，例如 Spring Boot Starter、MySQL 驱动等。</li>
+                        <li><strong>传递依赖（Transitive Dependency）</strong>：你引入的库自身又依赖的其他库，Maven 会自动把这些间接依赖也下载并加入你的项目。例如：引入 <code>spring-boot-starter-web</code> 会自动引入 <code>spring-web</code>、<code>spring-webmvc</code>、<code>spring-boot-starter-tomcat</code> 等。</li>
+                        <li><strong>依赖树</strong>：通过 <code>mvn dependency:tree</code> 可以查看项目的完整依赖关系，包括直接依赖与传递依赖。</li>
+                    </ul>
+                </div>
 
                 <h3>可选依赖（optional）：</h3>
                 <pre><code class="language-xml">&lt;dependency&gt;
@@ -406,7 +509,7 @@ public class Student {
   &lt;version&gt;1.7.30&lt;/version&gt;
   &lt;optional&gt;true&lt;/optional&gt;
 &lt;/dependency&gt;</code></pre>
-                <p><strong>用途：</strong>不希望被传递给下游，适用于可插拔的组件</p>
+                <p><strong>用途：</strong>不希望被传递给下游，适用于可插拔的组件。例如：一个库支持多种日志实现，但不想强制下游项目引入所有实现，可以把这些实现标记为 <code>optional</code>。</p>
 
                 <h3>排除传递依赖（exclusions）：</h3>
                 <pre><code class="language-xml">&lt;dependency&gt;
@@ -420,7 +523,30 @@ public class Student {
     &lt;/exclusion&gt;
   &lt;/exclusions&gt;
 &lt;/dependency&gt;</code></pre>
-                <p><strong>用途：</strong>剔除冲突或不必要的传递依赖</p>
+                <p><strong>用途：</strong>剔除冲突或不必要的传递依赖。例如：项目已引入 <code>log4j2</code>，但某个依赖传递引入了 <code>logback</code>，可通过 <code>&lt;exclusions&gt;</code> 排除 <code>logback</code>，避免日志实现冲突。</p>
+                <div class="example-scenario" style="margin-top: 12px; padding: 12px; background: rgba(200,100,100,0.1); border-radius: 6px;">
+                    <h4>典型场景：排除传递依赖</h4>
+                    <pre><code class="language-xml">&lt;!-- 项目已使用 log4j2 --&gt;
+&lt;dependency&gt;
+  &lt;groupId&gt;org.apache.logging.log4j&lt;/groupId&gt;
+  &lt;artifactId&gt;log4j-core&lt;/artifactId&gt;
+  &lt;version&gt;2.20.0&lt;/version&gt;
+&lt;/dependency&gt;
+
+&lt;!-- 某工具库传递引入了 logback，需要排除 --&gt;
+&lt;dependency&gt;
+  &lt;groupId&gt;com.example&lt;/groupId&gt;
+  &lt;artifactId&gt;some-tool&lt;/artifactId&gt;
+  &lt;version&gt;1.2.3&lt;/version&gt;
+  &lt;exclusions&gt;
+    &lt;exclusion&gt;
+      &lt;groupId&gt;ch.qos.logback&lt;/groupId&gt;
+      &lt;artifactId&gt;logback-classic&lt;/artifactId&gt;
+    &lt;/exclusion&gt;
+  &lt;/exclusions&gt;
+&lt;/dependency&gt;</code></pre>
+                    <p><strong>效果：</strong>避免同时存在两套日志实现，防止类加载冲突与日志输出混乱。</p>
+                </div>
             </div>
         </section>
 
