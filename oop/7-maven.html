@@ -61,7 +61,7 @@
         <section class="slide">
             <div class="slide-content">
                 <h2>旧开发痛点</h2>
-                <img src="images/7-maven-challenging.png" alt="旧开发痛点" style="width: 100%; margin: 15px auto;"> 
+                <img src="images/7-maven-challenging.png" alt="旧开发痛点" style="width: 100%; margin: 15px auto;">
                 <ul>
                     <li><strong>手动管理 JAR：</strong>下载、拷贝、调整依赖关系，耗时且易错</li>
                     <li><strong>环境不一致：</strong>不同环境依赖版本不同，构建结果不可复现</li>
@@ -978,19 +978,22 @@ java -cp target/classes App</code></pre>
                             <td style="border: 1px solid #ddd; padding: 8px;"><strong>compile</strong></td>
                             <td style="border: 1px solid #ddd; padding: 8px;">maven-compiler-plugin:compile</td>
                             <td style="border: 1px solid #ddd; padding: 8px; color: #666;">
-                                <code>Compiler.compile(src)</code></td>
+                                <code>Compiler.compile(src)</code>
+                            </td>
                         </tr>
                         <tr>
                             <td style="border: 1px solid #ddd; padding: 8px;"><strong>test</strong></td>
                             <td style="border: 1px solid #ddd; padding: 8px;">maven-surefire-plugin:test</td>
                             <td style="border: 1px solid #ddd; padding: 8px; color: #666;">
-                                <code>JunitRunner.run(tests)</code></td>
+                                <code>JunitRunner.run(tests)</code>
+                            </td>
                         </tr>
                         <tr>
                             <td style="border: 1px solid #ddd; padding: 8px;"><strong>package</strong></td>
                             <td style="border: 1px solid #ddd; padding: 8px;">maven-jar-plugin:jar</td>
                             <td style="border: 1px solid #ddd; padding: 8px; color: #666;">
-                                <code>JarArchiver.pack(classes)</code></td>
+                                <code>JarArchiver.pack(classes)</code>
+                            </td>
                         </tr>
                     </tbody>
                 </table>
@@ -998,6 +1001,132 @@ java -cp target/classes App</code></pre>
                 <p style="margin-top: 15px; font-style: italic; color: #555;">
                     * 这就是为什么你不需要写任何配置就能把代码打包成 JAR。
                 </p>
+            </div>
+        </section>
+
+        <!-- Slide: 自定义插件开发 (1/3) -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* 自定义插件 (1/3): 项目配置</h2>
+                <p>Maven 插件本质上是一个 Jar 包，包含一个或多个可执行的目标（Goal），称为 <strong>Mojo</strong> (Maven Old Java Object)。</p>
+
+                <div style="background: #f9f9f9; padding: 20px; border-radius: 8px; margin-top: 20px;">
+                    <h3 style="margin-top: 0;">第一步：创建 Maven 项目并配置 POM</h3>
+                    <p>创建一个普通的 Maven 项目，修改 <code>pom.xml</code> 引入必要的依赖和打包方式。</p>
+                    <pre><code class="language-xml">&lt;groupId&gt;com.example&lt;/groupId&gt;
+&lt;artifactId&gt;hello-maven-plugin&lt;/artifactId&gt;
+&lt;version&gt;1.0.0&lt;/version&gt;
+&lt;!-- 1. 关键：设置打包方式为 maven-plugin --&gt;
+&lt;packaging&gt;maven-plugin&lt;/packaging&gt;
+
+&lt;dependencies&gt;
+    &lt;!-- 2. 引入 Maven 插件 API (核心接口) --&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.apache.maven&lt;/groupId&gt;
+        &lt;artifactId&gt;maven-plugin-api&lt;/artifactId&gt;
+        &lt;version&gt;3.8.6&lt;/version&gt;
+        &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+    &lt;!-- 3. 引入注解支持 (用于 @Mojo, @Parameter 等) --&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.apache.maven.plugin-tools&lt;/groupId&gt;
+        &lt;artifactId&gt;maven-plugin-annotations&lt;/artifactId&gt;
+        &lt;version&gt;3.6.4&lt;/version&gt;
+        &lt;scope&gt;provided&lt;/scope&gt;
+    &lt;/dependency&gt;
+&lt;/dependencies&gt;</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: 自定义插件开发 (2/3) -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* 自定义插件 (2/3): 编写 Mojo</h2>
+                <p><strong>Mojo</strong> 是插件的具体执行逻辑。你需要继承 <code>AbstractMojo</code> 并实现 <code>execute</code> 方法。</p>
+
+                <div style="display: flex; gap: 20px;">
+                    <div style="flex: 6;">
+                        <pre style="font-size: 0.85em;"><code class="language-java">package com.example;
+
+import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
+
+// 1. 定义 Goal 的名称，将来使用 mvn plugin:sayhi 调用
+@Mojo(name = "sayhi")
+public class HelloMojo extends AbstractMojo {
+
+    // 2. 定义参数，支持从命令行通过 -Dmsg=xxx 注入
+    // defaultValue 也可以绑定到 POM 中的属性
+    @Parameter(property = "msg", defaultValue = "World")
+    private String msg;
+
+    // 3. 核心执行逻辑
+    public void execute() throws MojoExecutionException {
+        // 使用 getLog() 获取 Maven 的日志记录器
+        getLog().info("Hello, " + msg + "!");
+    }
+}</code></pre>
+                    </div>
+                    <div style="flex: 4; background: #fff3cd; padding: 15px; border-radius: 8px; font-size: 0.9em;">
+                        <h4 style="margin-top: 0; color: #856404;">💡 代码解析</h4>
+                        <ul style="padding-left: 20px; color: #856404;">
+                            <li><strong>@Mojo</strong>: 标记这是一个 Mojo 类，<code>name</code> 属性定义了 Goal 的名字。</li>
+                            <li><strong>@Parameter</strong>: 标记一个字段为可配置参数。
+                                <ul>
+                                    <li><code>property</code>: 允许通过命令行 <code>-D</code> 传参。</li>
+                                    <li><code>defaultValue</code>: 参数默认值。</li>
+                                </ul>
+                            </li>
+                            <li><strong>getLog()</strong>: 类似于 `System.out`，但更规范，支持 info/warn/error 级别。</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: 自定义插件开发 (3/3) -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* 自定义插件 (3/3): 安装与运行</h2>
+
+                <div style="margin-bottom: 20px;">
+                    <h3 style="margin-top: 0;">第三步：安装插件</h3>
+                    <p>在插件项目根目录下运行，将其安装到本地仓库：</p>
+                    <pre><code class="language-bash">mvn clean install</code></pre>
+                </div>
+
+                <div style="display: flex; gap: 20px;">
+                    <div style="flex: 1; background: #f0f4f8; padding: 15px; border-radius: 8px;">
+                        <h3 style="margin-top: 0;">方式 A：命令行直接运行</h3>
+                        <p>格式：<code>groupId:artifactId:version:goal</code></p>
+                        <pre><code class="language-bash"># 使用默认参数
+mvn com.example:hello-maven-plugin:1.0.0:sayhi
+
+# 传递参数
+mvn com.example:hello-maven-plugin:1.0.0:sayhi -Dmsg=Maven</code></pre>
+                    </div>
+
+                    <div style="flex: 1; background: #f0f4f8; padding: 15px; border-radius: 8px;">
+                        <h3 style="margin-top: 0;">方式 B：在其他项目中使用</h3>
+                        <pre style="font-size: 0.8em;"><code class="language-xml">&lt;plugin&gt;
+    &lt;groupId&gt;com.example&lt;/groupId&gt;
+    &lt;artifactId&gt;hello-maven-plugin&lt;/artifactId&gt;
+    &lt;version&gt;1.0.0&lt;/version&gt;
+    &lt;configuration&gt;
+        &lt;msg&gt;Developers&lt;/msg&gt;
+    &lt;/configuration&gt;
+    &lt;executions&gt;
+        &lt;execution&gt;
+            &lt;phase&gt;compile&lt;/phase&gt;
+            &lt;goals&gt;&lt;goal&gt;sayhi&lt;/goal&gt;&lt;/goals&gt;
+        &lt;/execution&gt;
+    &lt;/executions&gt;
+&lt;/plugin&gt;</code></pre>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -1011,7 +1140,7 @@ java -cp target/classes App</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h2>最佳实践总结</h2>
-                <img src="images/7-maven-best-practice-high.png" alt="最佳实践总结" style="width: 100%; margin: 15px auto;"> 
+                <img src="images/7-maven-best-practice-high.png" alt="最佳实践总结" style="width: 100%; margin: 15px auto;">
                 <h3>项目组织：</h3>
                 <ul>
                     <li>遵循标准目录结构，不要随意修改</li>
