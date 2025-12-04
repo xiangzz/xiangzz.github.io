@@ -61,7 +61,10 @@ String text = stringBox.get(); // 无需强制转换</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h2>2.1 泛型类</h2>
-                <p>在类名后用 &lt;T&gt; 声明类型参数，常用命名：T/E/K/V。泛型类定义一套可复用的“类型模板”。</p>
+                <p>当我们描述 Stack 数据结构时，并不限定其是 Integer 还是 Double。更重要的是元素在 Stack 中的活动规律。</p>
+                <p>难道需要为 int 创建一个 IntStack 类，为 double 创建一个 DoubleStack 类吗？显然答案是否定的。</p>
+                <p>所以，最好定义一套针对<strong>任意类型</strong>都适用的“模板”，这个任意的类型我们暂时用 <code>T</code> 来指代。</p>
+                <p>在类名后用 <code>&lt;T&gt;</code> 声明我们要定义的类对任意类型T都适用，即是定义了泛型类。</p>
                 <ul>
                     <li>命名约定：T（Type）、E（Element）、K/V（Key/Value）</li>
                     <li>设计意图：在类的声明处绑定能力与约束，避免运行期错误</li>
@@ -86,20 +89,24 @@ String name = pair.getValue();</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h2>2.2 泛型接口</h2>
+                <p>可以定义泛型类，那么也可以定义泛型接口。</p>
+                <p>普通的接口中定义的是一套行为，当这个<strong>行为对很多类型都具备</strong>时，就可以在后面添加<code>&lt;T&gt;</code>把它定义为泛型接口。</p>
                 <p>接口层的类型参数用于约束“协议”的输入输出类型，具体实现可以继续保持泛型或选定具体类型。</p>
                 <ul>
                     <li>抽象升级：同一协议可适配多种类型而不损失类型安全</li>
                     <li>实现灵活：泛型实现与具体化实现可共存</li>
                 </ul>
                 <div class="code-block">
-                    <pre><code class="language-java">public interface Comparator&lt;T&gt; {
-    int compare(T o1, T o2);
+                    <pre><code class="language-java">// 泛型接口：定义比较协议，T 表示可比较的任意类型
+public interface Comparator&lt;T&gt; {
+    int compare(T o1, T o2);  // 比较两个 T 类型对象
 }
 
+// 具体实现：为 String 类型提供比较器
 class StringComparator implements Comparator&lt;String&gt; {
     @Override
     public int compare(String s1, String s2) {
-        return s1.length() - s2.length();
+        return s1.length() - s2.length();  // 按字符串长度比较
     }
 }</code></pre>
                 </div>
@@ -109,7 +116,8 @@ class StringComparator implements Comparator&lt;String&gt; {
         <section class="slide">
             <div class="slide-content">
                 <h2>2.3 泛型方法</h2>
-                <p>将类型参数声明在方法返回类型之前，仅作用于当前方法。</p>
+                <p>当<strong>方法的行为对许多类型都适用</strong>，且也不依赖类型的特性时，就可以定义泛型方法。</p>
+                <p>定义方式：将类型参数声明在方法<strong>返回类型之前</strong>，仅作用于当前方法。</p>
                 <ul>
                     <li>类型推断：编译器依据入参自动推断 T</li>
                     <li>显式调用：当推断不足时使用 <code>Class.&lt;Type&gt;method(...)</code></li>
@@ -117,21 +125,26 @@ class StringComparator implements Comparator&lt;String&gt; {
                 </ul>
                 <div class="code-block">
                     <pre><code class="language-java">public class Util {
-    // 这里用 &lt;T&gt; 来声明类型参数 T
-    public static &lt;T&gt; T pick(T a1, T a2) { return a2; }
+    // 泛型方法：在返回类型前声明 &lt;T&gt;，T 仅作用于当前方法
+    public static &lt;T&gt; T pick(T a1, T a2) { 
+        return a2;  // 简单选择第二个参数，类型由编译器推断
+    }
 
+    // 泛型方法：交换数组中两个位置的元素
     public static &lt;T&gt; void swap(T[] array, int i, int j) {
+        // 边界检查：确保索引在有效范围内
         if (i &gt;= 0 &amp;&amp; i &lt; array.length &amp;&amp; j &gt;= 0 &amp;&amp; j &lt; array.length) {
-            T temp = array[i];
-            array[i] = array[j];
-            array[j] = temp;
+            T temp = array[i];  // 临时存储第 i 个元素
+            array[i] = array[j];  // 将第 j 个元素放到第 i 个位置
+            array[j] = temp;  // 将临时存储的元素放到第 j 个位置
         }
     }
 }
 
+// 使用示例：编译器自动推断 T 为 String
 String selected = Util.pick("apple", "banana");
 String[] fruits = {"Apple", "Orange", "Banana"};
-Util.swap(fruits, 0, 2);</code></pre>
+Util.swap(fruits, 0, 2);  // 交换 "Apple" 和 "Banana"</code></pre>
                 </div>
             </div>
         </section>
@@ -139,48 +152,79 @@ Util.swap(fruits, 0, 2);</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h2>3. 类型参数的限定</h2>
-                <p>使用 extends 与多重限定将类型能力前置到编译期。</p>
+                <p>当我们希望这个类型不那么"任意"，而是<strong>希望它具备某种"能力"时</strong>，就可以对它进行限定。</p>
+                <p>此时可使用 extends 关键字声明类型T能力前置到编译期。</p>
                 <ul>
                     <li>上界限定：<code>&lt;T extends Number&gt;</code> 保证可用 Number 的方法</li>
                     <li>多重限定：类在前、接口以 <code>&amp;</code> 连接，如 <code>&lt;T extends Number &amp; Comparable&lt;T&gt;&gt;</code></li>
                     <li>意图清晰：把“可数值”“可比较”等能力写进签名，便于维护</li>
                 </ul>
                 <div class="code-block">
-                    <pre><code class="language-java">public static &lt;T extends Number&gt; double calculateSum(T num1, T num2) {
-    return num1.doubleValue() + num2.doubleValue();
+                    <pre><code class="language-java">// 单重限定：T 必须是 Number 或其子类
+public static &lt;T extends Number&gt; double calculateSum(T num1, T num2) {
+    return num1.doubleValue() + num2.doubleValue();  // 可调用 Number 的方法
 }
 
-public static &lt;T extends Number &amp; Comparable&lt;T&gt;&gt; T findMax(T[] array) {
+// 多重限定：T 既是数值类型，又可比较大小
+public static &lt;T extends Number &amp; Comparable&lt;T&gt;&gt; T findMaxAndCalculateAverage(T[] array) {
     if (array == null || array.length == 0) { return null; }
+    
     T max = array[0];
+    double sum = 0.0;
+    
+    // 同时利用 Number 和 Comparable 的能力
     for (T t : array) {
-        if (t.compareTo(max) &gt; 0) { max = t; }
+        if (t.compareTo(max) > 0) { max = t; }  // 使用 Comparable 接口比较
+        sum += t.doubleValue();                 // 使用 Number 类的数值方法
     }
-    return max;
+    
+    System.out.println("平均值: " + (sum / array.length));  // 数值计算
+    return max;  // 返回最大值
 }</code></pre>
                 </div>
-                <p>下界限定通常与通配符结合使用，将在下一节说明。</p>
+                
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
                 <h2>4.1 无界通配符</h2>
-                <p>List&lt;?&gt; 表示未知类型的容器，读取为 Object，仅可写入 null。</p>
+                
+                <p>当我们不关心容器中元素的具体类型，只需要进行通用操作时，使用 <code>?</code> 表示未知类型的容器。</p>
+                <p>为什么用 <code>?</code> 而不是 T？ </p>
+                <p>T 用于<strong>声明</strong>时表示"未知类型"，而 <code>?</code> 用于<strong>使用</strong>泛型时表示"未知类型"。</p>
                 <ul>
-                    <li>读取视作 Object：适用于日志、调试、通用遍历</li>
-                    <li>写入受限：类型未知，仅允许 <code>null</code></li>
-                    <li>设计原则：通配符用于“使用点”，不用于“声明处”</li>
+                    <li>读取视作 Object：适用于日志输出、调试信息、通用遍历等场景</li>
+                    <li>写入严格受限：由于类型未知，编译器无法保证类型安全，仅允许写入 <code>null</code></li>
+                    <li>设计原则：通配符用于"使用点"（方法参数），不用于"声明处"（类定义）</li>
+                    <li>灵活性：可以接受任意类型的 List，实现真正的泛型处理</li>
                 </ul>
                 <div class="code-block">
-                    <pre><code class="language-java">public static void printList(java.util.List&lt;?&gt; list) {
-    for (Object elem : list) { System.out.print(elem + " "); }
-    System.out.println();
-    list.add(null);
+                    <pre><code class="language-java">// 对比：T 用于声明，? 用于使用
+// &lt;T&gt; 声明泛型方法：T 是一个具体的类型参数
+public static &lt;T&gt; void processList(java.util.List&lt;T&gt; list) {
+    // 可以添加 T 类型的元素
+    // list.add(someT);  // ✓ 允许（如果有 T 类型的值）
 }
 
-printList(java.util.Arrays.asList(1,2,3));
-printList(java.util.Arrays.asList("a","b","c"));</code></pre>
+// ? 表示未知类型：可以接受任意类型的 List
+public static void printList(java.util.List&lt;?&gt; list) {
+    // 读取：所有元素都视为 Object 类型
+    for (Object elem : list) { 
+        System.out.print(elem + " "); 
+    }
+    System.out.println();
+    
+    // 写入：只能添加 null，因为类型未知
+    list.add(null);  // ✓ 允许
+    // list.add("hello");  // ✗ 编译错误：类型不匹配
+}
+
+// 使用示例：可以处理不同类型的 List
+// 注意：泛型不支持基本数据类型，这里使用了自动装箱机制
+printList(java.util.Arrays.asList(1, 2, 3));        // int → Integer 自动装箱
+printList(java.util.Arrays.asList("a", "b", "c"));  // 字符串列表
+printList(java.util.Arrays.asList(1.5, true, "test")); // 混合类型列表</code></pre>
                 </div>
             </div>
         </section>
