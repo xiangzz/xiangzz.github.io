@@ -190,53 +190,155 @@ public static &lt;T extends Number &amp; Comparable&lt;T&gt;&gt; T findMaxAndCal
             <div class="slide-content">
                 <h2>4.1 无界通配符</h2>
                 
-                <p>当我们不关心容器中元素的具体类型，只需要进行通用操作时，使用 <code>?</code> 表示未知类型的容器。</p>
-                <p>为什么用 <code>?</code> 而不是 T？ </p>
-                <p>T 用于<strong>声明</strong>时表示"未知类型"，而 <code>?</code> 用于<strong>使用</strong>泛型时表示"未知类型"。</p>
-                <ul>
-                    <li>读取视作 Object：适用于日志输出、调试信息、通用遍历等场景</li>
-                    <li>写入严格受限：由于类型未知，编译器无法保证类型安全，仅允许写入 <code>null</code></li>
-                    <li>设计原则：通配符用于"使用点"（方法参数），不用于"声明处"（类定义）</li>
-                    <li>灵活性：可以接受任意类型的 List，实现真正的泛型处理</li>
-                </ul>
-                <div class="code-block">
-                    <pre><code class="language-java">// 对比：T 用于声明，? 用于使用
-// &lt;T&gt; 声明泛型方法：T 是一个具体的类型参数
-public static &lt;T&gt; void processList(java.util.List&lt;T&gt; list) {
-    // 可以添加 T 类型的元素
-    // list.add(someT);  // ✓ 允许（如果有 T 类型的值）
+                <div class="story-intro" style="background: rgba(255, 152, 0, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3>🎯 情景设定</h3>
+                    <p><strong>需求：</strong>写一个通用工具类，能够处理任意类型的 List 集合</p>
+                </div>
+
+                <h3>🚨 第一阶段：直觉的陷阱</h3>
+                <div class="attempt-box" style="margin-bottom: 15px;">
+                    <h4>尝试1：利用多态（直觉做法）</h4>
+                    <pre><code class="language-java">// 既然大家都继承自 Object，那我就接收 List&lt;Object&gt;
+public void printList(List&lt;Object&gt; list) {
+    for (Object obj : list) {
+        System.out.println(obj);
+    }
 }
 
-// ? 表示未知类型：可以接受任意类型的 List
-public static void printList(java.util.List&lt;?&gt; list) {
-    // 读取：所有元素都视为 Object 类型
-    for (Object elem : list) { 
-        System.out.print(elem + " "); 
+// 测试调用
+List&lt;String&gt; nameList = Arrays.asList("Java", "Python");
+processor.printList(nameList);  // ❌ 编译报错！</code></pre>
+                    <div class="error-box" style="background: rgba(244, 67, 54, 0.1); padding: 10px; border-radius: 6px; margin-top: 10px;">
+                        <strong>💥 关键发现：</strong> <code>List&lt;String&gt;</code> <strong>不是</strong> <code>List&lt;Object&gt;</code> 的子类！<br>
+                        <small>（泛型具有不可变性 Invariance）</small>
+                    </div>
+                </div>
+
+                <h3>😅 第二阶段：使用 T 的尴尬</h3>
+                <div class="attempt-box" style="margin-bottom: 15px;">
+                    <h4>尝试2：使用泛型方法 T（可行但啰嗦）</h4>
+                    <pre><code class="language-java">// 使用泛型方法 &lt;T&gt;
+public &lt;T&gt; void printList(List&lt;T&gt; list) {
+    for (Object obj : list) {
+        System.out.println(obj);
+    }
+}
+
+// 这样确实能工作，但问题来了...
+List&lt;Integer&gt; intList = Arrays.asList(1, 2, 3);
+List&lt;String&gt; strList = Arrays.asList("A", "B", "C");
+
+// 需求：我想要一个"万能引用" myList
+// 它可以指向 intList，也可以指向 strList
+
+// 尝试：用 T？
+// List&lt;T&gt; myList = intList;  // ❌ 报错：T 是谁？找不到符号！</code></pre>
+                    <div class="insight-box" style="background: rgba(33, 150, 243, 0.1); padding: 10px; border-radius: 6px; margin-top: 10px;">
+                        <strong>💡 关键困境：</strong> <code>T</code> 必须依托于类或方法存在！<br>
+                        <small>在普通代码里，我只是想声明一个变量，<code>T</code> 无能为力了。</small>
+                    </div>
+                </div>
+
+                <h3>🌟 第三阶段：引入通配符（救世主降临）</h3>
+                <div class="solution-box" style="background: rgba(76, 175, 80, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <h4>核心需求：表达"这是一个 List，但元素类型我不确定"</h4>
+                    <p>Java 为这种<strong>"不确定的、未知的类型"</strong>专门提供了符号——<strong>问号 <code>?</code></strong></p>
+                </div>
+
+                <div class="attempt-box">
+                    <h4>尝试3：使用通配符（完美解决）</h4>
+                    <pre><code class="language-java">public static void main(String[] args) {
+    List&lt;Integer&gt; intList = Arrays.asList(1, 2, 3);
+    List&lt;String&gt; strList = Arrays.asList("A", "B", "C");
+
+    // 成功！
+    // 读作：myList 是一个 List，它装载某种未知的类型
+    List&lt;?&gt; myList;
+
+    myList = intList;  // ✅ 编译通过
+    myList = strList;  // ✅ 编译通过
+
+    // 打印方法也变得更清爽
+    printList(myList);
+}
+
+// 方法定义：不需要声明 &lt;T&gt;
+public void printList(List&lt;?&gt; list) {
+    for (Object elem : list) {
+        System.out.print(elem + " ");
     }
     System.out.println();
     
-    // 写入：只能添加 null，因为类型未知
-    list.add(null);  // ✓ 允许
-    // list.add("hello");  // ✗ 编译错误：类型不匹配
-}
+    // 写入限制：只能添加 null
+    list.add(null);     // ✅ 允许
+    // list.add("hello"); // ❌ 编译错误：类型不匹配
+}</code></pre>
+                </div>
 
-// 使用示例：可以处理不同类型的 List
-// 注意：泛型不支持基本数据类型，这里使用了自动装箱机制
-printList(java.util.Arrays.asList(1, 2, 3));        // int → Integer 自动装箱
-printList(java.util.Arrays.asList("a", "b", "c"));  // 字符串列表
-printList(java.util.Arrays.asList(1.5, true, "test")); // 混合类型列表</code></pre>
+                <h3>📊 总结对比</h3>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+                    <thead>
+                        <tr style="background: rgba(0, 0, 0, 0.1);">
+                            <th style="padding: 8px; border: 1px solid #ddd;">场景</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;"><code>List&lt;Object&gt;</code></th>
+                            <th style="padding: 8px; border: 1px solid #ddd;"><code>List&lt;T&gt;</code></th>
+                            <th style="padding: 8px; border: 1px solid #ddd;"><code>List&lt;?&gt;</code></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #ddd;"><strong>语义</strong></td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">装且仅装 Object</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">装特定类型 T</td>
+                            <td style="padding: 8px; border: 1px solid #ddd; background: rgba(76, 175, 80, 0.1);"><strong>装任意类型</strong></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #ddd;"><strong>多态性</strong></td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">❌ 差</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ 好</td>
+                            <td style="padding: 8px; border: 1px solid #ddd; background: rgba(76, 175, 80, 0.1);"><strong>✅ 好</strong></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #ddd;"><strong>局部变量声明</strong></td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">✅ (但没法赋值)</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">❌ <strong>不能</strong></td>
+                            <td style="padding: 8px; border: 1px solid #ddd; background: rgba(76, 175, 80, 0.1);"><strong>✅ 完美</strong></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #ddd;"><strong>代码简洁度</strong></td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">简洁</td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">啰嗦</td>
+                            <td style="padding: 8px; border: 1px solid #ddd; background: rgba(76, 175, 80, 0.1);"><strong>最简洁</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="final-conclusion" style="background: rgba(156, 39, 176, 0.1); padding: 15px; border-radius: 8px; margin-top: 20px;">
+                    <h4>🎯 核心结论</h4>
+                    <p><strong><code>T</code></strong> 是一个<strong>确定的</strong>变量（运行时知道具体类型）</p>
+                    <p><strong><code>?</code></strong> 是一个<strong>模糊的</strong>范围（表示"某种未知类型"）</p>
+                    <p><strong>当我们不关心具体类型，或需要声明通用引用时，通配符 <code>?</code> 就是唯一选择！</strong></p>
                 </div>
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
-                <h2>4.2上界通配符</h2>
-                <p>生产者只读：List&lt;? extends Number&gt; 允许读取 Number，但不可写入非 null。</p>
+                <h2>4.2 上界通配符</h2>
+                
+                <div style="background-color: #f8d7da; padding: 10px; border-radius: 5px; margin-bottom: 15px; border-left: 5px solid #dc3545;">
+                    <h4 style="margin-top: 0; color: #721c24; margin-bottom: 5px;">🚫 痛点：多态的失效</h4>
+                    <p style="margin-bottom: 5px; font-size: 0.9em; color: #721c24;">我们需要统计 <code>List&lt;Number&gt;</code> 的总和。直觉写法：</p>
+                    <pre><code class="language-java" style="font-size: 0.85em; background: rgba(255,255,255,0.5);">public double sum(List&lt;Number&gt; list) { ... }
+List&lt;Integer&gt; ints = Arrays.asList(1, 2);
+sum(ints); // ❌ 编译报错！List&lt;Integer&gt; 不是 List&lt;Number&gt; 的子类</code></pre>
+                </div>
+
+                <p><strong>解决方案：</strong>使用 <code>List&lt;? extends Number&gt;</code> 表示“Number 或其子类的列表”。</p>
                 <ul>
-                    <li>读取安全：返回上界类型</li>
-                    <li>写入受限：子类型未知，除 <code>null</code> 外不可写</li>
-                    <li>典型场景：聚合、统计、求和</li>
+                    <li><strong>读取安全</strong>：可以安全地读取为 <code>Number</code>。</li>
+                    <li><strong>写入受限</strong>：除 <code>null</code> 外不可写入（因为不知道具体是哪个子类）。</li>
+                    <li><strong>典型场景</strong>：生产者（Producer），用于数据读取。</li>
                 </ul>
                 <div class="code-block">
                     <pre><code class="language-java">public static double sumOfList(java.util.List&lt;? extends Number&gt; numbers) {
@@ -248,17 +350,34 @@ printList(java.util.Arrays.asList(1.5, true, "test")); // 混合类型列表</co
 System.out.println(sumOfList(java.util.Arrays.asList(1,2,3)));
 System.out.println(sumOfList(java.util.Arrays.asList(1.1,2.2)));</code></pre>
                 </div>
+
+                <div style="margin-top: 15px; padding: 10px; background: #e8f5e9; border-radius: 5px; border-left: 5px solid #4caf50;">
+                    <h4 style="margin-top: 0; color: #2e7d32; margin-bottom: 5px;">🤔 思考：能不能用 T 代替 ?</h4>
+                    <p style="margin-bottom: 5px; font-size: 0.9em; color: #2e7d32;">
+                        可以！<code>public &lt;T extends Number&gt; double sum(List&lt;T&gt; list)</code> 也能工作。<br>
+                        但通配符 <code>?</code> 更简洁，它明确表达了"我不关心具体类型，只关心它是 Number"的语义。
+                    </p>
+                </div>
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
-                <h2>4.2 下界通配符</h2>
-                <p>消费者只写：List&lt;? super Integer&gt; 可写入 Integer，读取为 Object。</p>
+                <h2>4.3 下界通配符</h2>
+
+                <div style="background-color: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 15px; border-left: 5px solid #ffc107;">
+                    <h4 style="margin-top: 0; color: #856404; margin-bottom: 5px;">🚫 痛点：复用性受限</h4>
+                    <p style="margin-bottom: 5px; font-size: 0.9em; color: #856404;">我们需要将整数添加到列表中。直觉写法：</p>
+                    <pre><code class="language-java" style="font-size: 0.85em; background: rgba(255,255,255,0.5);">public void addIntegers(List&lt;Integer&gt; list) { ... }
+List&lt;Number&gt; nums = new ArrayList&lt;&gt;();
+addIntegers(nums); // ❌ 编译报错！List&lt;Number&gt; 无法传给 List&lt;Integer&gt;</code></pre>
+                </div>
+
+                <p><strong>解决方案：</strong>使用 <code>List&lt;? super Integer&gt;</code> 表示“Integer 或其父类的列表”。</p>
                 <ul>
-                    <li>写入安全：目标类型的父类都能接收子类型</li>
-                    <li>读取退化：只能视作 Object，需要强转</li>
-                    <li>典型场景：收集、填充、批量追加</li>
+                    <li><strong>写入安全</strong>：可以安全地写入 <code>Integer</code>（因为它是任何父类的子类型）。</li>
+                    <li><strong>读取退化</strong>：只能读取为 <code>Object</code>。</li>
+                    <li><strong>典型场景</strong>：消费者（Consumer），用于数据写入。</li>
                 </ul>
                 <div class="code-block">
                     <pre><code class="language-java">public static void addNumbers(java.util.List&lt;? super Integer&gt; dest) {
@@ -270,8 +389,138 @@ java.util.List&lt;Object&gt; objList = new java.util.ArrayList&lt;&gt;();
 addNumbers(numList);
 addNumbers(objList);</code></pre>
                 </div>
+
+                <div style="margin-top: 15px; padding: 10px; background: #fff3e0; border-radius: 5px; border-left: 5px solid #ff9800;">
+                    <h4 style="margin-top: 0; color: #ef6c00; margin-bottom: 5px;">🤔 思考：能不能用 T 代替 ?</h4>
+                    <p style="margin-bottom: 5px; font-size: 0.9em; color: #ef6c00;">
+                        <strong>不能！</strong> Java 不支持 <code>&lt;T super Integer&gt;</code> 这样的语法。<br>
+                        这是通配符的<strong>不可替代性</strong>场景——当需要表示"某个类型的父类"时，必须使用 <code>? super</code>。
+                    </p>
+                </div>
             </div>
         </section>
+
+        <!-- PECS原则 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>4.3 PECS原则</h2>
+                
+                <div class="concept-intro">
+                    <h3>🎯 Producer Extends, Consumer Super</h3>
+                    <div style="text-align: center;">
+                        <img src="images/8-generic-pecs.png" alt="PECS原则" style="width: 10%; height: auto;">
+                        <p style="margin-top: 10px; font-size: 0.9em; color: #666;">啤儿茶爽：一种神奇味道的饮料</p>
+                    </div>
+                    <p class="highlight-text">如果你只需要<strong>读取</strong>数据，用 <code>? extends T</code>；如果你只需要<strong>写入</strong>数据，用 <code>? super T</code>。</p>
+                </div>
+
+                <h3>📖 PECS原则详解</h3>
+                <div class="pecs-diagram" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;">
+                    <div class="producer-box" style="padding: 15px; background: rgba(76, 175, 80, 0.1); border-radius: 8px; border-left: 4px solid #4CAF50;">
+                        <h4>🏭 Producer (生产者)</h4>
+                        <p><strong>用途：</strong>只从集合中<strong>读取</strong>数据，不写入</p>
+                        <p><strong>语法：</strong><code>? extends T</code></p>
+                        <p><strong>含义：</strong>可以是 T 或 T 的任意子类</p>
+                        <pre><code class="language-java">// 只能读取，不能写入
+List&lt;? extends Number&gt; numbers = Arrays.asList(1, 2, 3);
+Number n = numbers.get(0);  // ✅ 可以读取
+// numbers.add(1);           // ❌ 不能写入</code></pre>
+                    </div>
+                    
+                    <div class="consumer-box" style="padding: 15px; background: rgba(33, 150, 243, 0.1); border-radius: 8px; border-left: 4px solid #2196F3;">
+                        <h4>🛒 Consumer (消费者)</h4>
+                        <p><strong>用途：</strong>只向集合中<strong>写入</strong>数据，不读取</p>
+                        <p><strong>语法：</strong><code>? super T</code></p>
+                        <p><strong>含义：</strong>可以是 T 或 T 的任意父类</p>
+                        <pre><code class="language-java">// 只能写入，读取受限
+List&lt;? super Integer&gt; numbers = new ArrayList&lt;Number&gt;();
+numbers.add(1);              // ✅ 可以写入
+// Integer n = numbers.get(0); // ❌ 读取类型不确定</code></pre>
+                    </div>
+                </div>
+
+                <h3>🔍 实际应用示例</h3>
+                <div class="example-section">
+                    <h4>示例1：复制集合（PECS的经典应用）</h4>
+                    <pre><code class="language-java">// 局限性写法 - 虽然可以编译，但在使用时非常受限
+public static &lt;T&gt; void copyWrong(List&lt;T&gt; src, List&lt;T&gt; dest) {
+    for (T item : src) {
+        dest.add(item);
+    }
+}
+
+// 正确写法 - 使用PECS原则
+public static &lt;T&gt; void copy(List&lt;? extends T&gt; src, List&lt;? super T&gt; dest) {
+    for (T item : src) {        // src是生产者，只读取
+        dest.add(item);         // dest是消费者，只写入
+    }
+}
+
+// 使用示例
+List&lt;Integer&gt; intList = Arrays.asList(1, 2, 3);
+List&lt;Number&gt; numList = new ArrayList&lt;&gt;();
+copy(intList, numList);  // ✅ 完美工作</code></pre>
+                </div>
+<div class="explanation-note" style="margin: 10px 0; padding: 10px; background: rgba(255, 87, 34, 0.1); border-left: 3px solid #FF5722; font-size: 0.9em;">
+    <p><strong>为什么说"类型过于严格"？</strong></p>
+    <p>在 <code>copyWrong</code> 方法中，<code>src</code> 和 <code>dest</code> 被强制要求是完全相同的类型 <code>List&lt;T&gt;</code>。</p>
+    <p>假设我们要把 <code>List&lt;Integer&gt;</code>（整数列表）复制到 <code>List&lt;Number&gt;</code>（数字列表）中：</p>
+    <ul>
+        <li>逻辑上是完全可行的（整数也是数字）。</li>
+        <li>但 <code>copyWrong</code> 会报错，因为它要求两个列表的泛型类型必须完全一致。</li>
+        <li>如果 T 是 Integer，<code>dest</code> 必须是 <code>List&lt;Integer&gt;</code>（不能是 List&lt;Number&gt;）。</li>
+        <li>如果 T 是 Number，<code>src</code> 必须是 <code>List&lt;Number&gt;</code>（不能是 List&lt;Integer&gt;，因为泛型是不变的）。</li>
+    </ul>
+    <p>这就是为什么我们需要 PECS 原则来放宽类型限制。</p>
+</div>
+
+                <div class="example-section">
+                    <h4>示例2：查找最大值</h4>
+                    <pre><code class="language-java">// 查找集合中的最大值
+public static &lt;T extends Comparable&lt;? super T&gt;&gt; T max(List&lt;? extends T&gt; list) {
+    if (list.isEmpty()) {
+        throw new IllegalArgumentException("空列表");
+    }
+    
+    T max = list.get(0);
+    for (T item : list) {
+        if (item.compareTo(max) &gt; 0) {
+            max = item;
+        }
+    }
+    return max;
+}
+
+// 使用示例
+List&lt;Integer&gt; numbers = Arrays.asList(3, 1, 4, 1, 5);
+Integer maxNum = max(numbers);  // ✅ 返回 5</code></pre>
+                </div>
+
+                <div class="memory-aid" style="margin-top: 20px; padding: 15px; background: rgba(255, 193, 7, 0.1); border-radius: 8px; border-left: 4px solid #FFC107;">
+                    <h4>💡 记忆技巧</h4>
+                    <ul>
+                        <li><strong>Producer Extends：</strong>生产者（提供数据）用 extends，像工厂一样"产出"东西</li>
+                        <li><strong>Consumer Super：</strong>消费者（接收数据）用 super，像垃圾桶一样"接收"东西</li>
+                        <li><strong>读写原则：</strong>extends 只能读，super 只能写</li>
+                        <li><strong>PECS = Get-Put Principle：</strong>Get 用 extends，Put 用 super</li>
+                    </ul>
+                </div>
+
+                <div class="common-mistakes" style="margin-top: 20px; padding: 15px; background: rgba(244, 67, 54, 0.1); border-radius: 8px; border-left: 4px solid #F44336;">
+                    <h4>⚠️ 常见错误</h4>
+                    <pre><code class="language-java">// 错误1：混淆生产者和消费者
+List&lt;? extends Number&gt; list = new ArrayList&lt;Integer&gt;();
+list.add(10);  // ❌ 编译错误：不能写入生产者
+
+// 错误2：读取消费者时类型不安全
+List&lt;? super Integer&gt; list = new ArrayList&lt;Number&gt;();
+Integer num = list.get(0);  // ❌ 编译错误：读取类型不确定
+Object obj = list.get(0);  // ✅ 只能读取为Object</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- PECS原则 -->
 
         <section class="slide">
             <div class="slide-content">
