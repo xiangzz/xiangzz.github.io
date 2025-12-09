@@ -24,12 +24,6 @@
         <section class="slide">
             <div class="slide-content">
                 <h2>1. 什么是泛型？</h2>
-                <p>没有泛型时，类型不安全且需强制转换；泛型让类型成为参数，从源头保证类型安全与可读性。</p>
-                <ul>
-                    <li>问题与痛点：运行期强转易错、IDE 难以推断、通用代码难以维护</li>
-                    <li>解决思路：把“类型”提升为参数，在声明处约束输入和输出</li>
-                    <li>核心收益：编译期发现错误、自动类型推断、语义更清晰</li>
-                </ul>
                 <h3>为了更通用：使用 Object</h3>
                 <div class="code-block">
                     <pre><code class="language-java">class Box {
@@ -78,7 +72,7 @@ String text = stringBox.get(); // 无需强制转换</code></pre>
     public K getKey() { return key; }
     public V getValue() { return value; }
 }
-// 右侧原来应该是&lt;Integer, String&gt;, 可以省略
+// 右侧原来应该是Pair&lt;Integer, String&gt;, 可以省略为Pair&lt;&gt;
 Pair&lt;Integer, String&gt; pair = new Pair&lt;&gt;(1, "One");
 Integer id = pair.getKey();
 String name = pair.getValue();</code></pre>
@@ -89,12 +83,12 @@ String name = pair.getValue();</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h2>2.2 泛型接口</h2>
-                <p>可以定义泛型类，那么也可以定义泛型接口。</p>
+                <p>可以定义泛型类，那么也可以定义<strong>泛型接口</strong>。</p>
                 <p>普通的接口中定义的是一套行为，当这个<strong>行为对很多类型都具备</strong>时，就可以在后面添加<code>&lt;T&gt;</code>把它定义为泛型接口。</p>
-                <p>接口层的类型参数用于约束“协议”的输入输出类型，具体实现可以继续保持泛型或选定具体类型。</p>
+                <p>泛型接口相当于制定了一套通用的“行为规范”。接口里处理的数据类型先用占位符代替，具体是什么类型，可以留到实现的时候再决定。</p>
                 <ul>
-                    <li>抽象升级：同一协议可适配多种类型而不损失类型安全</li>
-                    <li>实现灵活：泛型实现与具体化实现可共存</li>
+                    <li><strong>更通用的规范</strong>：同一个接口，既可以规范字符串的操作，也可以规范整数的操作，不需要重复定义。</li>
+                    <li><strong>更灵活的实现</strong>：实现这个接口时，你可以选择写一个通用的实现类，也可以专门为某种类型写一个定制的实现类。</li>
                 </ul>
                 <div class="code-block">
                     <pre><code class="language-java">// 泛型接口：定义比较协议，T 表示可比较的任意类型
@@ -116,44 +110,65 @@ class StringComparator implements Comparator&lt;String&gt; {
         <section class="slide">
             <div class="slide-content">
                 <h2>2.3 泛型方法</h2>
-                <p>当<strong>方法的行为对许多类型都适用</strong>，且也不依赖类型的特性时，就可以定义泛型方法。</p>
+                <p>当<strong>方法的行为对许多类型都适用</strong>，且也不依赖类型的特性时，就可以定义<strong>泛型方法</strong>。</p>
                 <p>定义方式：将类型参数声明在方法<strong>返回类型之前</strong>，仅作用于当前方法。</p>
-                <ul>
-                    <li>类型推断：编译器依据入参自动推断 T</li>
-                    <li>显式调用：当推断不足时使用 <code>Class.&lt;Type&gt;method(...)</code></li>
-                    <li>静态方法：需独立声明其类型参数，不依赖类上的 T</li>
-                </ul>
+                <p><strong>最常见的是实例泛型方法</strong>（例如处理任意类型的数据）：</p>
                 <div class="code-block">
-                    <pre><code class="language-java">public class Util {
-    // 泛型方法：在返回类型前声明 &lt;T&gt;，T 仅作用于当前方法
-    public static &lt;T&gt; T pick(T a1, T a2) { 
-        return a2;  // 简单选择第二个参数，类型由编译器推断
-    }
-
-    // 泛型方法：交换数组中两个位置的元素
-    public static &lt;T&gt; void swap(T[] array, int i, int j) {
-        // 边界检查：确保索引在有效范围内
-        if (i &gt;= 0 &amp;&amp; i &lt; array.length &amp;&amp; j &gt;= 0 &amp;&amp; j &lt; array.length) {
-            T temp = array[i];  // 临时存储第 i 个元素
-            array[i] = array[j];  // 将第 j 个元素放到第 i 个位置
-            array[j] = temp;  // 将临时存储的元素放到第 j 个位置
-        }
+                    <pre><code class="language-java">public class DataProcessor {
+    // 实例泛型方法：方法自己定义了 &lt;T&gt;，与类无关
+    public &lt;T&gt; T process(T data) {
+        System.out.println("处理数据: " + data);
+        return data;
     }
 }
-
-// 使用示例：编译器自动推断 T 为 String
-String selected = Util.pick("apple", "banana");
-String[] fruits = {"Apple", "Orange", "Banana"};
-Util.swap(fruits, 0, 2);  // 交换 "Apple" 和 "Banana"</code></pre>
+// 调用：
+DataProcessor processor = new DataProcessor();
+String result = processor.process("Hello"); // 自动推断 T 为 String
+Integer num = processor.process(123);       // 自动推断 T 为 Integer</code></pre>
                 </div>
+                
+                <p>除了普通实例方法，还有<strong>三个值得注意的点</strong>：</p>
+                <ul>
+                    <li>
+                        <strong>1. 静态方法需独立声明</strong>：<br>
+                        静态方法不依赖对象，无法使用类的泛型，必须在 <code>static</code> 后独立声明 <code>&lt;T&gt;</code>。
+                        <div class="code-block">
+                            <pre><code class="language-java">public class ArrayUtils {
+    // 静态泛型方法：&lt;T&gt; 必须声明在 static 之后
+    public static &lt;T&gt; T getFirst(T[] arr) {
+        return (arr != null &amp;&amp; arr.length &gt; 0) ? arr[0] : null;
+    }
+}</code></pre>
+                        </div>
+                    </li>
+                    <li>
+                        <strong>2. 自动识别（类型推断）</strong>：<br>
+                        调用时通常无需指定类型，编译器会根据传入的参数自动推导出 T 的类型。
+                        <div class="code-block">
+                            <pre><code class="language-java">// 编译器自动推断 T 为 String
+String first = ArrayUtils.getFirst(new String[]{"A", "B"});</code></pre>
+                        </div>
+                    </li>
+                    <li>
+                        <strong>3. 手动指定（显式调用）</strong>：<br>
+                        当编译器无法推断（如参数类型不一致）时，可以通过 <code>类名.&lt;类型&gt;方法名</code> 显式指定。
+                        <div class="code-block">
+                            <pre><code class="language-java">// 参数一个是 String，一个是 Integer
+// 显式指定 T 为它们的共同父接口 Serializable
+Serializable s = Util.&lt;Serializable&gt;pick("Key", 1);</code></pre>
+                        </div>
+                    </li>
+                </ul>
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
                 <h2>3. 类型参数的限定</h2>
-                <p>当我们希望这个类型不那么"任意"，而是<strong>希望它具备某种"能力"时</strong>，就可以对它进行限定。</p>
-                <p>此时可使用 extends 关键字声明类型T能力前置到编译期。</p>
+                <p>之前我们主要强调类型的"任意性"，所编写的代码也都主要强调"什么类型都可以"</p>
+                <p>但这也意味着无法对这种"任意"的类型有什么要求,比如使用它的某种能力</p>
+                <p>因此,若<strong>希望它具备某种"能力"时</strong>，就应该对它进行限定。</p>
+                <p>此时可使用 <code>extends</code> 关键字声明类型T能力前置到编译期。</p>
                 <ul>
                     <li>上界限定：<code>&lt;T extends Number&gt;</code> 保证可用 Number 的方法</li>
                     <li>多重限定：类在前、接口以 <code>&amp;</code> 连接，如 <code>&lt;T extends Number &amp; Comparable&lt;T&gt;&gt;</code></li>
@@ -192,7 +207,7 @@ public static &lt;T extends Number &amp; Comparable&lt;T&gt;&gt; T findMaxAndCal
                 
                 <div class="story-intro" style="background: rgba(255, 152, 0, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                     <h3>🎯 情景设定</h3>
-                    <p><strong>需求：</strong>写一个通用工具类，能够处理任意类型的 List 集合</p>
+                    <p><strong>新需求：</strong>写一个通用工具类，能够处理任意类型的 List 集合</p>
                 </div>
 
                 <h3>🚨 第一阶段：直觉的陷阱</h3>
@@ -224,8 +239,11 @@ public &lt;T&gt; void printList(List&lt;T&gt; list) {
     }
 }
 
-// 这样确实能工作，但问题来了...
+
 List&lt;Integer&gt; intList = Arrays.asList(1, 2, 3);
+processor.printList(intList);
+
+// 这样确实能工作，但问题来了...
 List&lt;String&gt; strList = Arrays.asList("A", "B", "C");
 
 // 需求：我想要一个"万能引用" myList
@@ -376,7 +394,7 @@ addIntegers(nums); // ❌ 编译报错！List&lt;Number&gt; 无法传给 List&lt
                 <p><strong>解决方案：</strong>使用 <code>List&lt;? super Integer&gt;</code> 表示“Integer 或其父类的列表”。</p>
                 <ul>
                     <li><strong>写入安全</strong>：可以安全地写入 <code>Integer</code>（因为它是任何父类的子类型）。</li>
-                    <li><strong>读取退化</strong>：只能读取为 <code>Object</code>。</li>
+                    <li><strong>读取退化</strong>：只能读取为 <code>Object</code>（因为不知里面的是 Integer还是Number,干脆当Object）。</li>
                     <li><strong>典型场景</strong>：消费者（Consumer），用于数据写入。</li>
                 </ul>
                 <div class="code-block">
@@ -409,13 +427,13 @@ addNumbers(objList);</code></pre>
                     <h3>🎯 Producer Extends, Consumer Super</h3>
                     <div style="text-align: center;">
                         <img src="images/8-generic-pecs.png" alt="PECS原则" style="width: 10%; height: auto;">
-                        <p style="margin-top: 10px; font-size: 0.9em; color: #666;">啤儿茶爽：一种神奇味道的饮料</p>
+                        <p style="margin-top: 10px; font-size: 0.9em; color: #666;">啤(P)儿(E)茶(C)爽(S)：一种神奇味道的饮料</p>
                     </div>
                     <p class="highlight-text">如果你只需要<strong>读取</strong>数据，用 <code>? extends T</code>；如果你只需要<strong>写入</strong>数据，用 <code>? super T</code>。</p>
                 </div>
 
                 <h3>📖 PECS原则详解</h3>
-                <div class="pecs-diagram" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;">
+                <div class="pecs-diagram" style="display: flex; flex-direction: column; gap: 20px; margin: 20px 0;">
                     <div class="producer-box" style="padding: 15px; background: rgba(76, 175, 80, 0.1); border-radius: 8px; border-left: 4px solid #4CAF50;">
                         <h4>🏭 Producer (生产者)</h4>
                         <p><strong>用途：</strong>只从集合中<strong>读取</strong>数据，不写入</p>
@@ -443,7 +461,7 @@ numbers.add(1);              // ✅ 可以写入
                 <div class="example-section">
                     <h4>示例1：复制集合（PECS的经典应用）</h4>
                     <pre><code class="language-java">// 局限性写法 - 虽然可以编译，但在使用时非常受限
-public static &lt;T&gt; void copyWrong(List&lt;T&gt; src, List&lt;T&gt; dest) {
+public static &lt;T&gt; void copyNotGood(List&lt;T&gt; src, List&lt;T&gt; dest) {
     for (T item : src) {
         dest.add(item);
     }
@@ -463,11 +481,11 @@ copy(intList, numList);  // ✅ 完美工作</code></pre>
                 </div>
 <div class="explanation-note" style="margin: 10px 0; padding: 10px; background: rgba(255, 87, 34, 0.1); border-left: 3px solid #FF5722; font-size: 0.9em;">
     <p><strong>为什么说"类型过于严格"？</strong></p>
-    <p>在 <code>copyWrong</code> 方法中，<code>src</code> 和 <code>dest</code> 被强制要求是完全相同的类型 <code>List&lt;T&gt;</code>。</p>
+    <p>在 <code>copyNotGood</code> 方法中，<code>src</code> 和 <code>dest</code> 被强制要求是完全相同的类型 <code>List&lt;T&gt;</code>。</p>
     <p>假设我们要把 <code>List&lt;Integer&gt;</code>（整数列表）复制到 <code>List&lt;Number&gt;</code>（数字列表）中：</p>
     <ul>
         <li>逻辑上是完全可行的（整数也是数字）。</li>
-        <li>但 <code>copyWrong</code> 会报错，因为它要求两个列表的泛型类型必须完全一致。</li>
+        <li>但 <code>copyNotGood</code> 会报错，因为它要求两个列表的泛型类型必须完全一致。</li>
         <li>如果 T 是 Integer，<code>dest</code> 必须是 <code>List&lt;Integer&gt;</code>（不能是 List&lt;Number&gt;）。</li>
         <li>如果 T 是 Number，<code>src</code> 必须是 <code>List&lt;Number&gt;</code>（不能是 List&lt;Integer&gt;，因为泛型是不变的）。</li>
     </ul>
@@ -477,6 +495,8 @@ copy(intList, numList);  // ✅ 完美工作</code></pre>
                 <div class="example-section">
                     <h4>示例2：查找最大值</h4>
                     <pre><code class="language-java">// 查找集合中的最大值
+// &lt;T extends Comparable&lt;? super T&gt;&gt;: T 必须是可比较的，且可以与 T 的父类比较
+// List&lt;? extends T&gt;: 可以传入 T 或 T 的子类列表（生产者）
 public static &lt;T extends Comparable&lt;? super T&gt;&gt; T max(List&lt;? extends T&gt; list) {
     if (list.isEmpty()) {
         throw new IllegalArgumentException("空列表");
@@ -537,7 +557,7 @@ Object obj = list.get(0);  // ✅ 只能读取为Object</code></pre>
                 </div>
 
                 <div class="interactive-demo">
-                    <div class="code-comparison">
+                    <div class="code-comparison" style="display: flex; flex-direction: column; gap: 20px;">
                         <div class="code-before">
                             <h5>📝 你写的代码（编译前）</h5>
                             <pre><code class="language-java">List&lt;String&gt; names = new ArrayList&lt;&gt;();
@@ -579,13 +599,13 @@ String name = (String) names.get(0);  // 编译器加了强制转换！</code></
                 <h2>5.2 擦除过程详解</h2>
                 
                 <div class="magic-show">
-                    <h3>🎩 魔术开始：泛型类的"变身"</h3>
+                    <h3>示例: 泛型类的"变身"</h3>
                     <p>让我们通过一个完整的例子，看看编译器是如何施展它的"魔术"的：</p>
                 </div>
 
                 <div class="step-by-step-demo">
                     <div class="step step-1">
-                        <h4>📝 第一步：你写的优雅代码</h4>
+                        <h4>📝 第一步：你写的代码</h4>
                         <div class="code-block">
                             <pre><code class="language-java">public class Box&lt;T&gt; {
     private T treasure;  // 神秘的宝藏，类型是T
@@ -657,6 +677,10 @@ String gem = (String) stringBox.take();  // 编译器偷偷加了强制转换！
                     <h4>🤯 现实检验：运行时的真相</h4>
                     <div class="truth-box">
                         <p><strong>真相1：</strong> <code>List&lt;String&gt;</code> 和 <code>List&lt;Integer&gt;</code> 在运行时就是同一个类！</p>
+                        <p><strong></strong>为什么运行时是同一个类，但编译时却无法互相赋值？</strong></p>
+                        <p style="font-size: 0.9em; color: #666; margin-top: -10px; margin-bottom: 15px;">
+                            因为类型擦除：编译器在编译时检查类型安全，但运行时泛型信息被擦除，只剩下原始类型 ArrayList。
+                        </p>
                         <div class="code-block">
                             <pre><code class="language-java">List&lt;String&gt; strList = new ArrayList&lt;&gt;();
 List&lt;Integer&gt; intList = new ArrayList&lt;&gt;();
@@ -765,9 +789,8 @@ System.out.println(strList.getClass() == intList.getClass()); // true！</code><
                 <div class="wisdom-quote">
                     <h4>💭 设计者的智慧</h4>
                     <blockquote>
-                        "完美的设计往往是不现实的。真正的工程艺术在于在约束条件下做出最好的选择。
-                        类型擦除不是最优雅的解决方案，但它是最务实的选择。"
-                        <cite>—— Java泛型设计团队</cite>
+                        "完美的设计往往是不现实的。真正的工程艺术在于在约束条件下做出最好的选择。"
+                        <cite>—— Java泛型设计师</cite>
                     </blockquote>
                 </div>
             </div>
@@ -806,10 +829,16 @@ System.out.println(strList.getClass() == intList.getClass()); // true！</code><
                     <div class="problem-demo">
                         <div class="wrong-code">
                             <h5>❌ 这样写会报错</h5>
+                            <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
+                                因为类型擦除，编译器在编译时擦成了 Object, 不知道 T 的具体类型，无法生成 <code>new T()</code> 的字节码指令
+                            </p>
                             <pre><code class="language-java">public class Factory&lt;T&gt; {
     public T create() {
         return new T();  // 编译错误！
     }
+    // 如果让 new T() 等价于调用 new Object(), 那么下面的代码就会出错:
+    // Factory<String> factory = new Factory<>();
+    // String s = factory.create(); <--- create()出的Object无法强转成String
 }</code></pre>
                         </div>
                         <div class="solution">
@@ -869,7 +898,7 @@ String s = stringLists[0].get(0);  // ClassCastException！</code></pre>
                     </div>
                     <div class="explanation">
                         <h5>🤔 为什么会这样？</h5>
-                        <p>泛型是"实例级别"的概念，每个实例可以有不同的类型参数。但静态成员是"类级别"的，属于整个类，不属于任何特定实例。如果允许静态泛型，那么 <code>Container&lt;String&gt;.getStatic()</code> 和 <code>Container&lt;Integer&gt;.getStatic()</code> 应该返回什么类型呢？</p>
+                        <p>静态方法属于类本身，不依赖任何实例。而类的泛型参数（如 Container&lt;T&gt; 中的 T）只有在创建具体实例时才确定。比如 <code>Container&lt;String&gt;</code> 和 <code>Container&lt;Integer&gt;</code> 是同一个类，只是类型参数不同。静态方法无法知道当前应该用哪个类型参数，所以不能使用类的泛型参数。</p>
                     </div>
                 </div>
             </div>
@@ -1096,13 +1125,6 @@ System.out.println(genericSuperclass); // 会输出什么？</code></pre>
                     </div>
                 </div>
 
-                <div class="final-wisdom">
-                    <h3>💭 最后的话</h3>
-                    <div class="wisdom-box">
-                        <p>类型擦除可能不是最优雅的设计，但它是最务实的选择。它让Java能够在保持生态兼容性的同时，享受到泛型带来的类型安全。</p>
-                        <p><strong>理解类型擦除，你就掌握了Java泛型的精髓！</strong></p>
-                    </div>
-                </div>
             </div>
         </section>
 
