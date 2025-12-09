@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大作业：Java Web框架</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/animation.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+
+<body>
+
+    <main id="presentation">
+        <!-- Slide 1: Title -->
+        <section class="slide title-slide active">
+            <h1>Java Web框架实战</h1>
+            <p>Java Web Framework in Practice</p>
+            <strong>从零构建轻量级HTTP服务框架Jinitamy</strong>
+        </section>
+
+        <!-- Slide 2: 需求分析 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>需求分析：轻量级本地Web框架</h2>
+                <div class="section">
+                    <h3>1. 概述</h3>
+                    <p>本项目旨在构建一个轻量级的本地 Web/HTTP 框架。核心要求是能够以最少的依赖在本地环境中启动一个 HTTP 服务。框架需具备灵活的路由、可扩展的中间件机制以及统一的请求处理上下文。</p>
+                </div>
+
+                <div class="section">
+                    <h3>1.1 什么是 Web 框架？</h3>
+                    <img src="images/18-2-web-framework.png" alt="Web框架概念图" class="concept-image" style="width: 80%;">
+                    <p>Web 框架提供了一套标准的工具、组件和规则，用于构建 Web 应用程序。它处理了许多通用的、重复性的任务，例如：</p>
+                    <ul>
+                        <li><strong>监听和响应网络请求</strong>：如何接收来自浏览器的 HTTP 请求并向其发送回一个响应？</li>
+                        <li><strong>路由（Routing）</strong>：如何根据用户访问的 URL（例如 <code>/home</code> 或 <code>/users/123</code>）来决定执行哪一段代码？</li>
+                        <li><strong>数据处理</strong>：如何解析用户提交的数据？如何组织和管理响应内容？</li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>1.2 Web框架的例子</h3>
+                    <img src="images/18-2-web-framework-example.png" alt="Web框架工作流程图" class="workflow-image" style="width: 80%;">
+                    <p>当你在浏览器中输入地址 <code>http://localhost:8080/hello</code> 时：</p>
+                    <ol>
+                        <li><strong>监听与接收</strong>：服务器在 <code>8080</code> 端口上"监听"，捕捉请求信号</li>
+                        <li><strong>解析请求</strong>：将原始请求数据解析成结构化对象</li>
+                        <li><strong>路由分发</strong>：检查请求的路径 <code>/hello</code>，在"路由表"中查找</li>
+                        <li><strong>执行处理器</strong>：调用与该路由关联的业务逻辑代码</li>
+                        <li><strong>处理业务逻辑</strong>：处理器执行具体任务，准备响应数据</li>
+                        <li><strong>构建响应</strong>：框架构建标准 HTTP 响应</li>
+                        <li><strong>发送响应</strong>：将 HTTP 响应发送回浏览器</li>
+                        <li><strong>浏览器渲染</strong>：浏览器显示响应内容</li>
+                    </ol>
+                </div>
+
+                <div class="section">
+                    <h3>2. 核心功能需求</h3>
+
+                    <h4>2.1. HTTP 服务</h4>
+                    <p>HTTP（超文本传输协议）是互联网上应用最广泛的网络协议。一个 HTTP 服务就是一个持续运行的计算机程序，它的主要职责是"监听"特定网络端口上的 HTTP 请求，并根据请求的内容给予响应。</p>
+                    <ul>
+                        <li><strong>本地启动</strong>：项目应支持一键启动 HTTP 服务，对外部依赖降至最低</li>
+                        <li><strong>底层技术</strong>：基于 <b>Netty</b> 构建这个 HTTP 服务</li>
+                    </ul>
+
+                    <h4>2.2. 路由系统（Router）</h4>
+                    <p>路由系统的核心职责是：<b>建立 URL 和处理代码之间的映射关系</b>。</p>
+                    <ul>
+                        <li><strong>请求方法</strong>：必须支持 <code>GET</code> 和 <code>POST</code> 请求</li>
+                        <li><strong>路径匹配</strong>：支持静态路径（<code>/about</code>）、动态参数（<code>/users/:id</code>）、通配符（<code>/static/*</code>）</li>
+                        <li><strong>匹配逻辑</strong>：采用前缀树（Trie）思想实现，保证高效查找</li>
+                    </ul>
+
+                    <h4>2.3. 中间件（Middleware）</h4>
+                    <p>中间件是函数链中的一环，负责处理特定任务。请求像流水线产品，依次流经各个中间件，每个中间件都对其进行一些"加工"。</p>
+                    <ul>
+                        <li><strong>横切关注点</strong>：处理日志记录、用户认证、数据压缩等通用功能</li>
+                        <li><strong>链式处理</strong>：支持注册一个或多个中间件，形成处理链</li>
+                        <li><strong>控制能力</strong>：中间件可以中断（不调用 <code>next</code>）或继续（调用 <code>next</code>）处理链</li>
+                    </ul>
+
+                    <h4>2.4. 请求上下文 (Context)</h4>
+                    <p>Context 是 HTTP 请求的"身份证"和"档案袋"，记录了关于这次请求的一切信息。</p>
+                    <ul>
+                        <li><strong>信息聚合</strong>：将 Request 和 Response 的所有数据封装在统一对象中</li>
+                        <li><strong>数据传递</strong>：在中间件与最终处理器之间沟通的桥梁</li>
+                        <li><strong>状态管理</strong>：持有请求处理过程中的状态</li>
+                    </ul>
+
+                    <h4>2.5. 响应与错误处理</h4>
+                    <ul>
+                        <li><strong>标准响应</strong>：处理器能够控制响应状态码和响应体</li>
+                        <li><strong>404 Not Found</strong>：当没有匹配到任何路由时，自动返回 <code>404</code> 状态码</li>
+                        <li><strong>500 Internal Server Error</strong>：当发生未捕获异常时，自动返回 <code>500</code> 状态码</li>
+                    </ul>
+
+                    <h4>2.6. 模板渲染</h4>
+                    <p>为了避免在 Java 代码中硬编码 HTML，采用<b>"固定模板打底" + "动态变量插入"</b>的方式。</p>
+                    <ul>
+                        <li><strong>模板引擎</strong>：集成 [FreeMarker](https://freemarker.apache.org/) 作为模板引擎</li>
+                        <li><strong>渲染能力</strong>：在路由处理器中调用模板引擎，传入模板名称和数据模型</li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>3. 技术实现要点</h3>
+                    <ul>
+                        <li><strong>服务器启动流程</strong>：<code>Engine</code> 类作为核心引擎，负责服务器启动与配置</li>
+                        <li><strong>请求处理流程</strong>：创建 Context 对象，查找路由，组装处理链，执行处理</li>
+                        <li><strong>路由实现</strong>：使用前缀树数据结构存储路由规则</li>
+                        <li><strong>核心抽象</strong>：<code>Middleware</code> 和 <code>Handler</code> 定义为函数式接口，支持 Lambda 表达式</li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>4. 范围边界与约束</h3>
+                    <ul>
+                        <li><strong>核心焦点</strong>：专注于清晰地演示一个 HTTP 请求的完整生命周期</li>
+                        <li><strong>暂不实现</strong>：内置静态文件服务、用户会话、数据库持久化层抽象、自动请求体解析</li>
+                        <li><strong>错误处理</strong>：仅需实现 <code>404</code> 和 <code>500</code> 两种基本的错误响应</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 3: Part 1 - Router路由器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>大作业Part 1: Router路由器</h2>
+                <div class="section">
+                    <h3>一、 背景介绍</h3>
+                    <p>在现代 Web 应用开发中，我们每天都在与各种网址（URL）打交道。<b>路由器（Router）</b> 正是这个过程中的"交通指挥官"。它的核心职责是解析客户端发来的 HTTP 请求，读取其 URL 路径和请求方法，然后根据预先定义好的路由规则，精确地将这个请求分发给相应的处理代码（Handler）。</p>
+                    <img src="images/18-2-how-router-works.png" alt="路由器工作原理" class="router-image" style="width: 80%;">
+                </div>
+
+                <div class="section">
+                    <h3>路由器如何工作？(一个简单的例子)</h3>
+                    <p>想象一个博客网站，它有以下功能和对应的 URL：</p>
+                    <ul>
+                        <li>显示所有文章列表：<code>GET /posts</code></li>
+                        <li>显示ID为 <code>42</code> 的文章：<code>GET /posts/42</code></li>
+                        <li>提交一篇新文章：<code>POST /posts</code></li>
+                    </ul>
+                    <p>当一个请求到达时，路由器会执行以下操作：</p>
+                    <ol>
+                        <li><strong>接收请求</strong>：收到一个请求，例如 <code>GET /posts/42</code></li>
+                        <li><strong>解析请求</strong>：识别出请求方法是 <code>GET</code>，请求路径是 <code>/posts/42</code></li>
+                        <li><strong>匹配规则</strong>：在规则表里查找，发现规则 <code>/posts/:id</code> 可以匹配 <code>/posts/42</code></li>
+                        <li><strong>提取参数</strong>：把路径中的 <code>42</code> 提取出来，作为参数 <code>id</code> 的值</li>
+                        <li><strong>分发任务</strong>：调用与 <code>/posts/:id</code> 规则绑定的 Handler，传递参数 <code>{id: 42}</code></li>
+                        <li><strong>执行逻辑</strong>：Handler 从上下文中拿到 <code>id=42</code>，查询数据库并返回结果</li>
+                    </ol>
+                </div>
+
+                <div class="section">
+                    <h3>二、 核心概念</h3>
+
+                    <h4>1. HTTP 方法 (HTTP Method)</h4>
+                    <ul>
+                        <li><code>GET</code>: 从服务器获取资源。例如：浏览网页、查看文章</li>
+                        <li><code>POST</code>: 向服务器提交新数据，通常用于创建新资源。例如：用户注册、发布新文章</li>
+                        <li><code>PUT</code>: 更新服务器上已存在的资源</li>
+                        <li><code>DELETE</code>: 从服务器删除资源</li>
+                    </ul>
+                    <p>路由器必须能够为<b>同一个URL路径</b>，根据<b>不同的HTTP方法</b>，绑定不同的 <code>Handler</code>。</p>
+
+                    <h4>2. 请求处理器 (Handler)</h4>
+                    <p>Handler 是一段代码逻辑，它负责处理一个具体的请求并生成响应。简单来说，<b>路由器负责"指路"，而 Handler 负责"干活"</b>。</p>
+                    <pre><code class="language-java">router.addRoute(HttpMethod.GET, "/user/:id", ctx -> {
+    String userId = ctx.getParam("id").get();
+    System.out.println("正在查询用户：" + userId);
+});</code></pre>
+
+                    <h4>3-6. 路由类型</h4>
+                    <ul>
+                        <li><strong>静态路由</strong>：路径是完全固定的字符串。例如：<code>/about</code>、<code>/user/profile</code></li>
+                        <li><strong>动态参数路由</strong>：路径中包含可变的参数部分，通常以冒号 <code>:</code> 作为前缀。例如，规则 <code>/user/:id</code> 可以匹配 <code>/user/123</code>、<code>/user/abc</code> 等</li>
+                        <li><strong>通配符路由</strong>：路径中包含一个星号 <code>*</code>，它可以匹配该位置后的任意路径片段。例如，规则 <code>/static/*filepath</code> 可以匹配 <code>/static/css/style.css</code></li>
+                        <li><strong>路由匹配优先级</strong>：<b>静态路由 > 动态参数路由 > 通配符路由</b></li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>三、 功能需求</h3>
+                    <h4>1. 类设计</h4>
+                    <p>类名：<code>com.jinitamy.core.Router</code>，自行设计 Router 的数据结构，以同时支持静态、动态和通配符路由的存储和匹配。</p>
+
+                    <h4>2. 公开方法</h4>
+                    <pre><code class="language-java">public void addRoute(HttpMethod method, String pattern, Handler handler)
+public Handler getRoute(HttpMethod method, String path, Context ctx)</code></pre>
+                    <p>addRoute 方法用于添加路由规则，getRoute 方法用于查找匹配的 Handler。如果匹配到动态参数路由或通配符路由，必须将捕获到的参数名和值存入传入的 <code>ctx</code> 对象中。</p>
+                </div>
+
+                <div class="section">
+                    <h3>四、 评分标准</h3>
+                    <ul>
+                        <li><strong>正确性 (70%)</strong>：能够正确添加和查找所有类型的路由，路由匹配优先级处理正确，动态参数和通配符参数能够被正确捕获</li>
+                        <li><strong>代码设计与结构 (20%)</strong>：Router 类的内部数据结构设计合理清晰，代码封装性好，逻辑清晰</li>
+                        <li><strong>效率 (10%)</strong>：路由查找算法的时间复杂度应尽可能低</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 4: Part 2 - Context上下文管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>大作业Part 2: Context上下文管理</h2>
+                <div class="section">
+                    <h3>1. 技术背景</h3>
+                    <p>在 Web 框架中，<code>Context</code>（上下文）是一个核心概念。它贯穿于一次 HTTP 请求的整个生命周期。</p>
+                    <img src="images/18-2-context.png" alt="Context概念图" class="context-image" style="width: 80%;">
+                    <p>在 Web 应用中，当服务器收到一个 HTTP 请求时，会创建一个 <code>Context</code> 对象。这个对象会封装：</p>
+                    <ul>
+                        <li><strong>Request (请求)</strong>：客户端发来的所有信息（URL、Method、Headers、Body 等）</li>
+                        <li><strong>Response (响应)</strong>：服务器准备返回给客户端的所有信息（Status Code、Headers、Body 等）</li>
+                        <li><strong>扩展数据</strong>：在请求处理过程中产生的中间数据</li>
+                    </ul>
+                    <p>使用 <code>Context</code> 的好处是，我们不需要在函数的参数列表中传递一大堆单独的参数，只需要传递一个 <code>Context</code> 对象即可。</p>
+                </div>
+
+                <div class="section">
+                    <h3>2. 相关知识</h3>
+                    <p>本项目使用 <code>Netty</code> 作为底层网络通信框架。你需要了解以下 Netty 的 HTTP 相关类：</p>
+                    <ul>
+                        <li><code>FullHttpRequest</code>: 代表一个完整的 HTTP 请求</li>
+                        <li><code>FullHttpResponse</code>: 代表一个完整的 HTTP 响应</li>
+                        <li><code>HttpHeaders</code>: HTTP 头部的集合</li>
+                        <li><code>HttpMethod</code>: 枚举类，定义了 GET, POST, PUT, DELETE 等方法</li>
+                        <li><code>HttpResponseStatus</code>: 定义了 HTTP 状态码，如 <code>OK (200)</code>, <code>NOT_FOUND (404)</code> 等</li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>3. 设计需求</h3>
+                    <h4>类结构</h4>
+                    <pre><code class="language-java">public class Context {
+    // 成员变量
+    private FullHttpRequest request;
+    private FullHttpResponse response;
+    private Map&lt;String, String&gt; params;
+    private Map&lt;String, Object&gt; attributes;
+    private String path;
+
+    // 构造函数
+    public Context(FullHttpRequest request, FullHttpResponse response)
+
+    // 路径管理
+    public String getPath()
+    public void setPath(String path)
+
+    // 请求信息
+    public HttpMethod getMethod()
+    public HttpHeaders getHeaders()
+
+    // 路由参数管理
+    public void setParam(String key, String value)
+    public String getParam(String key)
+    public String removeParam(String key)
+
+    // 自定义属性管理
+    public void setAttribute(String key, Object value)
+    public Object getAttribute(String key)
+
+    // 访问对象
+    public FullHttpRequest getRequest()
+    public FullHttpResponse getResponse()
+
+    // 响应状态管理（支持链式调用）
+    public Context status(int statusCode)
+}</code></pre>
+                </div>
+
+                <div class="section">
+                    <h3>4. 功能描述</h3>
+                    <ul>
+                        <li><strong>构造函数</strong>：初始化 <code>request</code>, <code>response</code>，并实例化 <code>params</code> 和 <code>attributes</code> 的 Map。<code>path</code> 应该从 <code>request.uri()</code> 中获取</li>
+                        <li><strong>路由参数 (Params)</strong>：用于存储动态路由的参数。例如 <code>/user/:id</code> 匹配 <code>/user/123</code> 时，<code>id</code> 为 <code>123</code></li>
+                        <li><strong>自定义属性 (Attributes)</strong>：这是一个通用的存储空间。用于在中间件和处理器之间传递数据</li>
+                        <li><strong>Status 方法</strong>：这是一个便利方法，用于设置 response 的状态码。它应该返回 <code>this</code> 以支持链式调用</li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>5. 测试用例</h3>
+                    <p>需要创建 JUnit 5 测试类来验证实现，包括以下测试场景：</p>
+                    <ul>
+                        <li>构造函数和路径初始化</li>
+                        <li>HTTP 方法和请求头访问</li>
+                        <li>路由参数的设置、获取和移除</li>
+                        <li>自定义属性的设置和获取</li>
+                        <li>状态码设置和链式调用</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 5: Part 3 - HTTP处理器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>大作业Part 3: HTTP处理器</h2>
+                <div class="section">
+                    <h3>一、 背景介绍</h3>
+                    <p>在第一部分中，我们构建了 <code>Router</code>，它像是一个城市的交通地图。然而，一个现代化的城市交通系统，除了地图，还需要一系列的规则和检查站——比如交通信号灯、安检站、收费站等。在 Web 框架中，扮演这些"检查站"角色的就是<b>中间件（Middleware）</b>。</p>
+                    <img src="images/18-2-httphandler.png" alt="HttpHandler架构图" class="handler-image" style="width: 80%;">
+                    <p>本题的任务，就是构建 Web 框架的"交通枢纽"——<code>HttpHandler</code>。它不仅要使用我们之前设计的"地图"（Router），更要建立起一套高效的"检查站系统"（Middleware），真正打通从网络请求到业务处理的"最后一公里"。</p>
+                </div>
+
+                <div class="section">
+                    <h3>二、 核心概念与设计模式</h3>
+                    <h4>1. 设计模式：责任链模式</h4>
+                    <p>中间件的实现，本质上是<b>责任链设计模式</b>的一个经典应用：</p>
+                    <ul>
+                        <li><strong>定义</strong>：允许多个对象都有机会处理同一个请求，从而避免请求的发送者和接收者之间的耦合关系</li>
+                        <li><strong>在我们的框架中</strong>：每一个中间件和一个最终的业务 <code>Handler</code> 都是链上的一个节点。当一个 HTTP 请求到来时，它被交给链的第一个节点，该节点可以对请求进行处理，然后决定是否将其传递给链上的下一个节点</li>
+                    </ul>
+
+                    <h4>2. "洋葱"模型</h4>
+                    <img src="images/18-2-responsibility-chain.png" alt="中间件洋葱模型" class="onion-model" style="width: 80%;">
+                    <p>为了直观地理解中间件的"洋葱"模型，让我们用一个<b>机场登机</b>的例子来类比：</p>
+                    <ul>
+                        <li><strong>进入机场（请求开始）</strong>：值机柜台 → 安全检查 → 登机口</li>
+                        <li><strong>核心处理</strong>：登上飞机，核心任务完成</li>
+                        <li><strong>飞机起飞（响应开始）</strong>：登机口 → 安全检查 → 值机柜台（记录更新）</li>
+                    </ul>
+                    <p>任何一层检查失败（比如签证有问题），都可以直接将旅客"遣返"（中断请求，直接返回错误响应）。</p>
+                </div>
+
+                <div class="section">
+                    <h3>三、 功能需求</h3>
+                    <h4>1. 类定义与构造函数</h4>
+                    <pre><code class="language-java">public class HttpHandler extends SimpleChannelInboundHandler&lt;FullHttpRequest&gt; {
+    private final Engine engine;
+
+    public HttpHandler(Engine engine) {
+        this.engine = engine;
+    }
+}</code></pre>
+
+                    <h4>2. channelRead0 核心逻辑实现</h4>
+                    <ol>
+                        <li><strong>初始化上下文</strong>：创建 <code>DefaultFullHttpResponse</code> 和 <code>Context</code> 对象</li>
+                        <li><strong>路由匹配</strong>：使用 <code>engine.getRouter().getRoute(...)</code> 查找对应的业务 Handler。若未找到，返回 404 错误</li>
+                        <li><strong>构建责任链（关键步骤）</strong>：
+                            <ul>
+                                <li>首先定义一个"最终处理器"，任务是：执行匹配到的业务 Handler，并将 <code>Context</code> 中的响应写回客户端</li>
+                                <li>获取 <code>engine.getMiddlewares()</code> 列表</li>
+                                <li>从后往前遍历中间件列表，将每个中间件层层包裹在当前的 Handler 外面，形成洋葱模型</li>
+                            </ul>
+                        </li>
+                        <li><strong>执行与异常处理</strong>：
+                            <ul>
+                                <li>启动构建好的责任链</li>
+                                <li>全程捕获异常，若发生错误则记录日志并返回 500 错误</li>
+                            </ul>
+                        </li>
+                    </ol>
+                </div>
+
+                <div class="section">
+                    <h3>四、 辅助接口</h3>
+                    <h4>1. Middleware 接口</h4>
+                    <pre><code class="language-java">@FunctionalInterface
+public interface Middleware {
+    void handle(Context ctx, Handler next) throws Exception;
+}</code></pre>
+
+                    <h4>2. Handler 接口</h4>
+                    <pre><code class="language-java">@FunctionalInterface
+public interface Handler {
+    void handle(Context ctx) throws Exception;
+}</code></pre>
+
+                    <h4>3. Engine 类（桩代码）</h4>
+                    <p>提供临时的 Engine 类，用于辅助 HttpHandler 的开发，包含 Router 和 Middleware 的管理方法。</p>
+                </div>
+
+                <div class="section">
+                    <h3>五、 测试与验证</h3>
+                    <h4>TestServer 验证方案</h4>
+                    <pre><code class="language-java">public class TestServer {
+    public static void main(String[] args) throws InterruptedException {
+        Engine engine = new Engine();
+
+        // 注册中间件
+        engine.use((ctx, next) -> {
+            long start = System.currentTimeMillis();
+            System.out.println("=> Request In: " + ctx.getRequest().uri());
+            next.handle(ctx);
+            long duration = System.currentTimeMillis() - start;
+            System.out.println("<= Request Out. Duration: " + duration + "ms");
+        });
+
+        // 注册路由
+        engine.get("/", ctx -> {
+            ctx.getResponse().content().writeBytes("&lt;h1&gt;Welcome Home!&lt;/h1&gt;".getBytes());
+        });
+
+        // 启动Netty服务器...
+    }
+}</code></pre>
+
+                    <h4>验证步骤</h4>
+                    <ul>
+                        <li><strong>测试1：访问首页</strong>：<code>curl -v http://localhost:8080/</code>，预期看到中间件日志和 "Welcome Home!" 响应</li>
+                        <li><strong>测试2：访问带参数的路由</strong>：<code>curl -v http://localhost:8080/user/Gemini</code>，预期看到个性化响应</li>
+                        <li><strong>测试3：访问未定义的路由</strong>：<code>curl -v http://localhost:8080/not-found</code>，预期返回 404 错误</li>
+                        <li><strong>测试4：访问会抛出异常的路由</strong>：<code>curl -v http://localhost:8080/error</code>，预期返回 500 错误</li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>六、 评分标准</h3>
+                    <ul>
+                        <li><strong>核心逻辑正确性 (60%)</strong>：channelRead0 的整体处理流程完整清晰，中间件责任链的构建逻辑正确</li>
+                        <li><strong>健壮性与错误处理 (30%)</strong>：能正确处理 404 和 500 情况，异常处理得当</li>
+                        <li><strong>代码质量 (10%)</strong>：代码结构清晰，逻辑易于理解，遵循 Java 编码规范</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 6: Part 4 - Engine核心引擎 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>大作业Part 4: Engine 核心引擎</h2>
+                <div class="section">
+                    <h3>1. 技术背景</h3>
+                    <p>经过前三个阶段的开发，我们已经拥有了 Web 框架的几个关键组件：</p>
+                    <ul>
+                        <li><strong>Router (路由器)</strong>：负责像地图一样指引方向，将 URL 映射到对应的处理器</li>
+                        <li><strong>Context (上下文)</strong>：负责像包裹一样封装请求和响应数据，在各个环节间传递</li>
+                        <li><strong>HttpHandler (处理器)</strong>：负责像交通枢纽一样调度中间件和业务逻辑，完成 HTTP 请求的完整处理流程</li>
+                    </ul>
+                    <p>然而，目前这些组件还是一堆零散的零件。我们需要一个强有力的"心脏"将它们组装起来，并提供动力让整个系统运转起来。这就是本阶段的任务——实现 <code>Engine</code><b> (引擎)</b> 类。</p>
+                    <img src="images/18-2-engine.png" alt="Engine架构图" class="engine-image" style="width: 80%;">
+                </div>
+
+                <div class="section">
+                    <h3>Engine 的职责</h3>
+                    <p><code>Engine</code> 类是框架的入口点和控制中心。它的职责是：</p>
+                    <ul>
+                        <li><strong>屏蔽底层细节</strong>：封装 Netty 的启动和配置过程，让用户只需一行代码 <code>engine.start()</code> 就能启动服务器</li>
+                        <li><strong>组件组装</strong>：将 Router、Middleware 和 HttpHandler 串联起来</li>
+                        <li><strong>提供 API</strong>：提供简洁的接口供用户注册路由 (<code>get</code>, <code>post</code>) 和中间件 (<code>use</code>)</li>
+                    </ul>
+                    <p>打个比方，如果 <code>Router</code> 是导航仪，<code>HttpHandler</code> 是传动系统，那么 <code>Engine</code> 就是整辆车的<b>发动机和底盘</b>。</p>
+                </div>
+
+                <div class="section">
+                    <h3>2. 相关知识</h3>
+                    <p><code>Engine</code> 的核心任务是启动一个 Netty HTTP 服务器。你需要了解以下 Netty 启动辅助类：</p>
+                    <ul>
+                        <li><strong>ServerBootstrap</strong>：Netty 服务端的启动辅助类，用于配置和启动服务器</li>
+                        <li><strong>EventLoopGroup</strong>：Netty 的线程模型
+                            <ul>
+                                <li><code>bossGroup</code>: 负责接收客户端的连接（通常 1 个线程即可）</li>
+                                <li><code>workerGroup</code>: 负责处理已建立连接的 IO 读写（线程数通常默认为 CPU 核心数 * 2）</li>
+                            </ul>
+                        </li>
+                        <li><strong>ChannelInitializer</strong>：用于初始化每一个新连接的 ChannelPipeline（流水线）
+                            <ul>
+                                <li><code>HttpServerCodec</code>: HTTP 编解码器</li>
+                                <li><code>HttpObjectAggregator</code>: HTTP 消息聚合器（将分块的请求聚合成完整的 <code>FullHttpRequest</code>）</li>
+                                <li><code>HttpHandler</code>: 我们自己实现的请求处理器（注意：这里需要将 Engine 实例传给它）</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>3. 设计需求</h3>
+                    <h4>类结构</h4>
+                    <pre><code class="language-java">public class Engine {
+    private final Router router;
+    private final List&lt;Middleware&gt; middlewares;
+    private int port = 8080;
+    private EventLoopGroup bossGroup;
+    private EventLoopGroup workerGroup;
+    private volatile boolean running = false;
+
+    public Engine() { /* TODO */ }
+
+    // 配置方法
+    public void setPort(int port) { /* TODO */ }
+
+    // 注册方法
+    public void use(Middleware middleware) { /* TODO */ }
+    public void get(String pattern, Handler handler) { /* TODO */ }
+    public void post(String pattern, Handler handler) { /* TODO */ }
+
+    // 核心生命周期方法
+    public void start() throws Exception { /* TODO */ }
+    public void stop() { /* TODO */ }
+
+    // Getters
+    public Router getRouter() { /* TODO */ }
+    public List&lt;Middleware&gt; getMiddlewares() { /* TODO */ }
+}</code></pre>
+                </div>
+
+                <div class="section">
+                    <h3>4. 功能描述</h3>
+                    <h4>start() 方法实现要点</h4>
+                    <ol>
+                        <li><strong>初始化线程组</strong>：
+                            <ul>
+                                <li>创建 bossGroup (NioEventLoopGroup, 线程数1)</li>
+                                <li>创建 workerGroup (NioEventLoopGroup)</li>
+                            </ul>
+                        </li>
+                        <li><strong>配置 ServerBootstrap</strong>：
+                            <ul>
+                                <li>group(bossGroup, workerGroup)</li>
+                                <li>channel(NioServerSocketChannel.class)</li>
+                                <li>childHandler 设置 ChannelInitializer</li>
+                            </ul>
+                        </li>
+                        <li><strong>配置 Pipeline</strong>：
+                            <ul>
+                                <li>HttpServerCodec</li>
+                                <li>HttpObjectAggregator (maxContentLength 设为 65536)</li>
+                                <li>HttpHandler (传入 this)</li>
+                            </ul>
+                        </li>
+                        <li><strong>绑定端口</strong>：b.bind(port).sync()</li>
+                        <li><strong>异常处理</strong>：如果发生异常，调用 shutdownGracefully 并抛出异常</li>
+                    </ol>
+
+                    <h4>stop() 方法实现要点</h4>
+                    <ul>
+                        <li>调用 bossGroup.shutdownGracefully().sync()</li>
+                        <li>调用 workerGroup.shutdownGracefully().sync()</li>
+                        <li>设置 running = false</li>
+                        <li>捕获 InterruptedException</li>
+                    </ul>
+
+                    <h4>其他方法</h4>
+                    <ul>
+                        <li><strong>路由与中间件管理</strong>：<code>Engine</code> 内部持有 <code>Router</code> 和 <code>middlewares</code> 列表，<code>get()</code>, <code>post()</code>, <code>use()</code> 方法是对这些内部组件操作的封装</li>
+                        <li><strong>Pipeline 顺序</strong>：必须先解码 (HttpServerCodec)，再聚合 (HttpObjectAggregator)，最后才是我们的业务处理 (HttpHandler)</li>
+                        <li><strong>HttpHandler 实例化</strong>：需要将 <code>Engine</code> 自身 (<code>this</code>) 传递进去，这样 <code>HttpHandler</code> 才能访问到 <code>Engine</code> 中的 <code>Router</code> 和 <code>middlewares</code></li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>5. 测试与验证</h3>
+                    <h4>演示应用 EngineApp</h4>
+                    <pre><code class="language-java">public class EngineApp {
+    public static void main(String[] args) throws Exception {
+        Engine engine = new Engine();
+        engine.setPort(8080);
+
+        // 注册中间件
+        engine.use((ctx, next) -> {
+            System.out.println("LOG: Request " + ctx.getPath());
+            next.handle(ctx);
+        });
+
+        // 注册路由
+        engine.get("/", ctx -> {
+            ctx.getResponse().content().writeBytes("Hello Engine!".getBytes());
+        });
+
+        engine.get("/user/:name", ctx -> {
+            String name = ctx.getParam("name").orElse("Unknown");
+            ctx.getResponse().content().writeBytes(("Hello " + name).getBytes());
+        });
+
+        // 启动服务器
+        System.out.println("Starting server on port 8080...");
+        engine.start();
+    }
+}</code></pre>
+
+                    <h4>验证步骤</h4>
+                    <ul>
+                        <li>运行 <code>main()</code></li>
+                        <li>使用浏览器或 <code>curl</code> 访问：
+                            <ul>
+                                <li><code>http://localhost:8080/</code> → 应返回 "Hello Engine!" 且控制台打印日志</li>
+                                <li><code>http://localhost:8080/user/Tom</code> → 应返回 "Hello Tom"</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>6. 评分标准</h3>
+                    <ul>
+                        <li><strong>启动逻辑正确性 (50%)</strong>：能够成功启动 Netty 服务器并绑定指定端口，ChannelPipeline 配置正确</li>
+                        <li><strong>功能完整性 (30%)</strong>：get, post, use 等辅助方法实现正确，HttpHandler 能够正确获取到 Router 和 Middleware</li>
+                        <li><strong>代码规范与健壮性 (20%)</strong>：包含优雅停机逻辑，异常处理得当</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 7: Part 5 - 模板引擎 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>大作业Part 5: 模板引擎</h2>
+                <div class="section">
+                    <h3>1. 技术背景</h3>
+                    <p>在之前的作业中，我们的 <code>Handler</code> 返回的响应内容通常是硬编码的字符串（例如 <code>"Hello World"</code>）。但在实际的 Web 应用中，我们通常需要返回复杂的 HTML 页面，并且这些页面中包含动态的数据（例如用户名、商品列表等）。</p>
+                    <p>如果直接在 Java 代码中拼接 HTML 字符串，代码会变得极其混乱且难以维护。<b>模板引擎 (Template Engine)</b> 的出现解决了这个问题，它允许我们将页面结构（HTML）和业务数据（Java 对象）分离。</p>
+                </div>
+
+                <div class="section">
+                    <h3>模板引擎核心概念</h3>
+                    <ul>
+                        <li><strong>模板 (Template)</strong>：包含静态 HTML 和占位符的文件（如 <code>.ftl</code>）</li>
+                        <li><strong>数据 (Model)</strong>：包含动态数据的 Map 或对象</li>
+                        <li><strong>渲染 (Render)</strong>：模板引擎将数据填充到模板的占位符中，生成最终的 HTML 字符串</li>
+                    </ul>
+                    <p>本项目选用 <a href="https://freemarker.apache.org/index.html">FreeMarker</a> 作为模板引擎（请查阅链接，阅读使用手册）。</p>
+                </div>
+
+                <div class="section">
+                    <h3>2. 相关知识</h3>
+                    <p>FreeMarker 是一个成熟的 Java 模板引擎。你需要了解以下基本概念：</p>
+                    <ul>
+                        <li><strong>Configuration</strong>：FreeMarker 的全局配置对象，用于设置模板加载路径、字符集等</li>
+                        <li><strong>Template</strong>：代表一个解析后的模板文件</li>
+                        <li><strong>Data Model</strong>：传给模板的数据，通常是一个 <code>Map&lt;String, Object&gt;</code></li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>3. 设计需求</h3>
+                    <h4>3.1 目录结构</h4>
+                    <pre><code class="language-bash">src/
+├── main/
+│   ├── java/
+│   │   └── com/
+│   │       └── jinitamy/
+│   │           └── core/
+│   │               └── template/
+│   │                   └── TemplateEngine.java
+│   └── resources/
+│       └── templates/
+│           └── index.ftl
+└── test/</code></pre>
+
+                    <h4>3.2 模板文件 (index.ftl)</h4>
+                    <pre><code class="language-html">&lt;!DOCTYPE html&gt;
+&lt;html lang="zh-CN"&gt;
+&lt;head&gt;
+    &lt;meta charset="UTF-8"&gt;
+    &lt;title&gt;${title}&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;h1&gt;欢迎, ${name}!&lt;/h1&gt;
+    &lt;p&gt;当前时间: ${time}&lt;/p&gt;
+    &lt;p&gt;这是一个由 FreeMarker 渲染的页面。&lt;/p&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+                    <p>在这个模板中，<code>${title}</code>, <code>${name}</code>, <code>${time}</code> 是等待替换的变量。</p>
+
+                    <h4>3.3 模板引擎类 (TemplateEngine.java)</h4>
+                    <pre><code class="language-java">public class TemplateEngine {
+    private final Configuration configuration;
+
+    public TemplateEngine() {
+        // TODO: 初始化 FreeMarker 配置
+        // 1. 创建 Configuration 实例 (版本 2.3.32)
+        // 2. 设置模板加载路径 (使用 setClassLoaderForTemplateLoading)
+        // 3. 设置默认编码为 UTF-8
+        // 4. 设置模板异常处理 (TemplateExceptionHandler.RETHROW_HANDLER)
+    }
+
+    /**
+     * 渲染模板
+     * @param viewName 模板文件名 (例如 "index.ftl")
+     * @param model 数据模型
+     * @return 渲染后的 HTML 字符串
+     */
+    public String render(String viewName, Map&lt;String, Object&gt; model) {
+        // TODO: 实现渲染逻辑
+        // 1. 获取模板对象: configuration.getTemplate(viewName)
+        // 2. 创建 StringWriter 用于接收输出
+        // 3. 调用 template.process(model, writer)
+        // 4. 返回 writer.toString()
+        // 注意处理异常
+        return null;
+    }
+}</code></pre>
+                </div>
+
+                <div class="section">
+                    <h3>4. 测试与验证</h3>
+                    <h4>TemplateEngineTest</h4>
+                    <pre><code class="language-java">class TemplateEngineTest {
+    @Test
+    void testRender() {
+        TemplateEngine engine = new TemplateEngine();
+
+        Map&lt;String, Object&gt; model = new HashMap&lt;&gt;();
+        model.put("title", "Jinitamy 测试");
+        model.put("name", "学员");
+        model.put("time", "2025-12-03");
+
+        String result = engine.render("index.ftl", model);
+        System.out.println("渲染结果:\n" + result);
+
+        assertNotNull(result);
+        assertTrue(result.contains("&lt;title&gt;Jinitamy 测试&lt;/title&gt;"));
+        assertTrue(result.contains("欢迎, 学员!"));
+        assertTrue(result.contains("2025-12-03"));
+    }
+}</code></pre>
+
+                    <h4>验证步骤</h4>
+                    <ol>
+                        <li>确保 <code>index.ftl</code> 位于 <code>src/main/resources/templates/</code></li>
+                        <li>运行 <code>TemplateEngineTest</code> 中的 <code>testRender</code> 测试方法</li>
+                        <li>观察控制台输出，确认 <code>${name}</code> 等变量已被正确替换</li>
+                        <li>如果测试通过（绿条），说明模板引擎实现成功</li>
+                    </ol>
+                </div>
+
+                <div class="section">
+                    <h3>5. 评分标准</h3>
+                    <ul>
+                        <li><strong>配置正确性 (40%)</strong>：能够正确加载 resources 目录下的模板文件</li>
+                        <li><strong>渲染功能 (40%)</strong>：render 方法能够正确将 Map 中的数据填充到 ftl 模板中</li>
+                        <li><strong>代码规范 (20%)</strong>：异常处理得当，代码结构清晰</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 8: 综合项目 - 博客站 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>大作业综合：基于 Jinitamy 的博客站</h2>
+                <div class="section">
+                    <h3>1. 任务背景与目标</h3>
+                    <p><strong>恭喜你！</strong></p>
+                    <p>经过前五个阶段的艰苦奋斗，你已经亲手构建了一个麻雀虽小、五脏俱全的 Java Web 框架 —— <b>Jinitamy</b>。</p>
+                    <ul>
+                        <li><strong>Router (路由器)</strong>：你实现了高效的路由分发，让请求能找到归宿</li>
+                        <li><strong>Context (上下文)</strong>：你封装了请求与响应，让数据传递变得优雅</li>
+                        <li><strong>HttpHandler (核心处理器)</strong>：你搭建了责任链模式的中间件机制，让业务逻辑与横切关注点分离</li>
+                        <li><strong>Engine (引擎)</strong>：你屏蔽了 Netty 的底层复杂性，实现了一键启动</li>
+                        <li><strong>TemplateEngine (模板引擎)</strong>：你引入了 FreeMarker，实现了动静分离的页面渲染</li>
+                    </ul>
+                    <p><strong>现在，是时候检验你的"武器"了！</strong></p>
+                    <p>本次作业不再是实现框架的某个组件，而是<b>作为框架的使用者</b>，利用你刚刚写好的 <code>Jinitamy</code> 框架，开发一个真实的 Web 应用 —— <b>简易个人博客系统</b>。这将是一次完整的全栈体验：从数据读取、到业务逻辑处理、再到前端页面展示。</p>
+                </div>
+
+                <div class="section">
+                    <h3>2. 业务需求描述</h3>
+                    <p>请创建一个名为 <code>com.jinitamy.example.BlogApp</code> 的应用，实现以下核心功能：</p>
+
+                    <h4>2.1 数据源管理 (Model)</h4>
+                    <p>我们暂时不连接复杂的数据库（如 MySQL），而是采用<b>本地文件</b>作为数据源。</p>
+                    <ul>
+                        <li>在 <code>src/main/resources</code> 目录下创建一个文本文件 <code>articles.txt</code></li>
+                        <li>文件存储博客文章数据，格式自定（建议使用 <code>|</code> 或 <code>,</code> 分隔）。例如：
+                            <pre>1|Jinitamy框架发布了|这是我写的第一个Web框架...
+2|学习Netty的心得|Netty的EventLoop机制非常...</pre>
+                        </li>
+                        <li><strong>要求</strong>：程序启动时，能够读取该文件，并将其解析为 Java 对象（如 <code>Article</code> 类）存储在内存中（如 <code>List&lt;Article&gt;</code>）</li>
+                    </ul>
+
+                    <h4>2.2 页面展示 (View)</h4>
+                    <p>你需要设计两个 HTML 页面模板，放在 <code>src/main/resources/templates</code> 目录下：</p>
+                    <ul>
+                        <li><strong>首页 (index.ftl)</strong>：展示博客系统的标题，展示<b>文章列表</b>，每篇文章显示标题，且标题是一个超链接，点击可跳转到详情页</li>
+                        <li><strong>文章详情页 (article.ftl)</strong>：展示文章的<b>完整标题</b>和<b>正文内容</b>，提供一个"返回首页"的链接</li>
+                    </ul>
+
+                    <h4>2.3 业务控制 (Controller)</h4>
+                    <p>在 <code>BlogApp</code> 中利用 <code>Engine</code> 注册路由和中间件：</p>
+                    <ul>
+                        <li><strong>全局日志中间件</strong>：记录每一个请求的路径和处理耗时，打印在控制台</li>
+                        <li><strong>首页路由 (GET /)</strong>：获取所有文章数据，将文章列表放入数据模型，调用 <code>TemplateEngine</code> 渲染 <code>index.ftl</code>，将渲染后的 HTML 返回给浏览器</li>
+                        <li><strong>详情页路由 (GET /article/:id)</strong>：从路径参数中获取 <code>id</code>，根据 <code>id</code> 在内存中查找对应的文章
+                            <ul>
+                                <li>如果找到：将文章对象放入 Model，渲染 <code>article.ftl</code></li>
+                                <li>如果未找到：返回 404 状态码和错误提示</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>3. 开发指导</h3>
+                    <h4>3.1 目录结构建议</h4>
+                    <pre><code class="language-bash">src/
+├── main/
+│   ├── java/
+│   │   └── com/
+│   │       └── jinitamy/
+│   │           └── example/
+│   │               ├── BlogApp.java      # ← 你的主程序
+│   │               └── model/
+│   │                   └── Article.java    # ← 文章实体类
+│   └── resources/
+│       ├── articles.txt        # ← 数据文件
+│       └── templates/
+│           ├── index.ftl       # ← 首页模板
+│           └── article.ftl     # ← 详情页模板
+└── test/</code></pre>
+
+                    <h4>3.2 关键代码提示</h4>
+                    <h5>关于文件读取</h5>
+                    <pre><code class="language-java">InputStream is = this.getClass().getClassLoader()
+    .getResourceAsStream("articles.txt");</code></pre>
+
+                    <h5>关于模板渲染</h5>
+                    <p>在 Handler 中，你的代码逻辑通常是三板斧：</p>
+                    <ol>
+                        <li><strong>准备数据</strong>：<code>Map&lt;String, Object&gt; model = ...</code></li>
+                        <li><strong>渲染页面</strong>：<code>String html = TemplateEngine.render("...", model);</code></li>
+                        <li><strong>发送响应</strong>：
+                            <pre><code class="language-java">ctx.getResponse().headers()
+    .set("Content-Type", "text/html; charset=utf-8");
+ctx.getResponse().content()
+    .writeBytes(html.getBytes(StandardCharsets.UTF_8));</code></pre>
+                        </li>
+                    </ol>
+
+                    <h5>关于动态路由参数</h5>
+                    <pre><code class="language-java">String id = ctx.getParam("id").orElse(null);</code></pre>
+                </div>
+
+                <div class="section">
+                    <h3>4. 验证与提交</h3>
+                    <h4>验证步骤</h4>
+                    <ol>
+                        <li>运行 <code>BlogApp</code> 的 <code>main</code> 方法启动服务器</li>
+                        <li>打开浏览器访问 <code>http://localhost:8080/</code>
+                            <ul>
+                                <li><strong>预期</strong>：看到你 <code>articles.txt</code> 中配置的文章列表</li>
+                            </ul>
+                        </li>
+                        <li>点击其中一篇文章
+                            <ul>
+                                <li><strong>预期</strong>：页面跳转到 <code>/article/xxx</code>，并显示该文章的详细内容</li>
+                            </ul>
+                        </li>
+                        <li>观察 IDE 控制台
+                            <ul>
+                                <li><strong>预期</strong>：看到中间件打印的请求日志，例如 <code>[GET] /article/1 took 5ms</code></li>
+                            </ul>
+                        </li>
+                    </ol>
+
+                    <h4>思考题</h4>
+                    <ul>
+                        <li>如果 <code>articles.txt</code> 文件不存在，你的程序会崩溃吗？如何优雅处理？</li>
+                        <li>如果我想添加"发布文章"的功能（<code>POST /article</code>），目前的架构需要做哪些调整？</li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <h3>5. 评分标准</h3>
+                    <ul>
+                        <li><strong>完整性 (40%)</strong>：能够跑通"列表页 → 详情页"的完整流程</li>
+                        <li><strong>正确性 (30%)</strong>：能够正确读取本地文件数据，模板渲染无乱码</li>
+                        <li><strong>规范性 (30%)</strong>：代码结构清晰，路由定义合理，能够熟练使用自己编写的框架 API</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+
+
+        <!-- UI Elements -->
+        <div class="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div class="controls">
+            <button id="prevBtn">上一页</button>
+            <span id="slide-counter">1 / X</span>
+            <button id="nextBtn">下一页</button>
+        </div>
+    </main>
+
+    <script src="./js/animation.js"></script>
+    <script src="./js/ppt.js"></script>
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/nav.js"></script>
+    <script src="./js/imgbed-replacer.js"></script>
+</body>
+
+</html>
