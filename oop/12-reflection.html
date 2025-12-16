@@ -20,9 +20,9 @@
         <!-- Slide 2: Why Need Reflection - Introduction -->
         <section class="slide">
             <div class="slide-content">
-                <h2>为什么需要反射？</h2>
+                <h2>为什么需要反射</h2>
                 <p>理解反射，首先要明白它解决了什么实际问题。让我们从几个"要是能这样就好了"的需求场景开始：</p>
-
+                <img src="images/12-reflection-challenge.png" alt="反射需求场景" style="width: 80%; margin: 20px auto;">
                 <h3>🤔 场景1：插件系统的困境</h3>
                 <div style="background: #fef3c7; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
                     <p><strong>需求：</strong>我想开发一个图片处理软件，用户可以动态加载新的滤镜插件，而不用重新编译主程序。</p>
@@ -45,6 +45,20 @@ public class ImageProcessor {
                 <h3>🤔 场景2：通用工具类的挑战</h3>
                 <div style="background: #dbeafe; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
                     <p><strong>需求：</strong>我想写一个通用的Bean复制工具，自动复制两个相同属性的对象。</p>
+                    <div class="tip-box" style="font-size: 0.9em; margin-bottom: 10px;">
+                        <details>
+                            <summary style="cursor: pointer; color: #2563eb; font-weight: bold;">💡 小知识：什么是 Java Bean？(点击展开)</summary>
+                            <div style="margin-top: 5px; padding-left: 10px; border-left: 2px solid #bfdbfe;">
+                                Java Bean 是一种标准的 Java 类，通常用于封装数据。它遵循特定规范：
+                                <ul style="margin: 5px 0 5px 20px;">
+                                    <li>所有属性为 <code>private</code></li>
+                                    <li>提供公共的 <code>getter/setter</code> 方法</li>
+                                    <li>有一个无参构造器</li>
+                                    <li>实现了 <code>Serializable</code> 接口（可选）</li>
+                                </ul>
+                            </div>
+                        </details>
+                    </div>
                     <pre><code class="language-java">// 😿 传统方式的限制
 public class BeanUtils {
     public void copyUser(User source, User target) {
@@ -69,7 +83,7 @@ public class BeanUtils {
         <!-- Slide 3: More Scenarios -->
         <section class="slide">
             <div class="slide-content">
-                <h2>为什么需要反射？- 更多场景</h2>
+                <h2>为什么需要反射 (续)</h2>
 
                 <h3>🤔 场景3：框架开发的困境</h3>
                 <div style="background: #dcfce7; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
@@ -140,7 +154,8 @@ public class DynamicLoader {
         <section class="slide">
             <div class="slide-content">
                 <h2>反射概述</h2>
-                <p><strong>Java反射（Reflection）</strong>是Java语言的动态特性，允许程序在运行时检查和修改类的行为。反射提供了"自省"能力，让程序能够"看到"自身的结构。</p>
+                <p><strong>Java反射（Reflection）</strong>是Java语言的动态特性，允许程序在运行时检查和修改类的行为。</p>
+                <p>反射提供了"自省"能力，让程序能够"看到"自身的结构。</p>
 
                 <h3>🎯 核心作用</h3>
                 <ul>
@@ -166,12 +181,12 @@ public class DynamicLoader {
         <section class="slide">
             <div class="slide-content">
                 <h2>Class对象：反射的入口</h2>
-                <p><code>Class</code>类是反射机制的入口，每个类在JVM中都有唯一的<code>Class</code>对象。获取<code>Class</code>对象是使用反射的第一步。</p>
+                <p><code>Class</code>类是反射机制的入口（注意C大写），每个类在JVM中都有唯一的<code>Class</code>对象。获取<code>Class</code>对象是使用反射的第一步。</p>
 
                 <h3>🚪 获取Class对象的三种方式</h3>
                 <pre><code class="language-java">public class ReflectionDemo {
     public static void main(String[] args) throws Exception {
-        // 方式1：通过类字面量（推荐）
+        // 方式1：通过类字面量（推荐），比如这里的 String.class 就是
         Class&lt;String&gt; clazz1 = String.class;
         System.out.println("方式1: " + clazz1.getName());
 
@@ -473,26 +488,46 @@ public class PrivateMethodDemo {
                 <h3>✅ 场景1：插件系统的完美实现</h3>
                 <div style="background: #f0fdf4; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
                     <pre><code class="language-java">public class ImageProcessor {
+        // 存储滤镜名称到滤镜类Class对象的映射，而不是存储实例
         private Map&lt;String, Class&lt;? extends Filter&gt;&gt; filterRegistry = new HashMap&lt;&gt;();
 
-        // 注册滤镜类
+        /**
+         * 动态注册滤镜
+         * @param name 滤镜的别名，如 "blur"
+         * @param className 滤镜类的全限定名，如 "com.example.BlurFilter"
+         */
         public void registerFilter(String name, String className) {
             try {
+                // 1. 动态加载类：在运行时根据字符串名称加载类
                 Class&lt;?&gt; clazz = Class.forName(className);
+                
+                // 2. 类型检查：确保加载的类实现了Filter接口
                 if (Filter.class.isAssignableFrom(clazz)) {
+                    // 安全转换并存入注册表
                     filterRegistry.put(name, (Class&lt;? extends Filter&gt;) clazz);
+                } else {
+                    System.out.println("错误：类 " + className + " 未实现 Filter 接口");
                 }
             } catch (ClassNotFoundException e) {
+                // 处理类不存在的情况，避免程序崩溃
                 System.out.println("滤镜类不存在: " + className);
             }
         }
 
-        // 动态应用滤镜
+        /**
+         * 动态应用滤镜
+         */
         public void applyFilter(String filterName, Image image) {
+            // 从注册表中查找对应的Class对象
             Class&lt;? extends Filter&gt; filterClass = filterRegistry.get(filterName);
+            
             if (filterClass != null) {
                 try {
+                    // 3. 动态实例化：使用反射创建对象实例
+                    // 相当于调用 new BlurFilter()，但更灵活
                     Filter filter = filterClass.getDeclaredConstructor().newInstance();
+                    
+                    // 4. 方法调用：调用接口方法处理图片
                     filter.apply(image);
                 } catch (Exception e) {
                     System.out.println("应用滤镜失败: " + e.getMessage());
@@ -501,12 +536,15 @@ public class PrivateMethodDemo {
         }
     }
 
-    // 使用示例
+    // --- 使用示例 ---
     ImageProcessor processor = new ImageProcessor();
+    
+    // 假设这些类名是从配置文件读取的，完全解耦！
     processor.registerFilter("blur", "com.example.BlurFilter");
     processor.registerFilter("sharpen", "com.example.SharpenFilter");
 
-    // 动态加载新滤镜，无需修改主程序代码！
+    // 动态加载并应用新滤镜，无需修改 ImageProcessor 的任何代码！
+    // 这就是"开闭原则"的完美体现：对扩展开放，对修改关闭。
     processor.applyFilter("blur", image);
     processor.applyFilter("sharpen", image);</code></pre>
                     <p><strong>🎉 解决方案优势：</strong>新增滤镜只需要实现Filter接口，无需修改ImageProcessor代码！</p>
@@ -515,41 +553,56 @@ public class PrivateMethodDemo {
                 <h3>✅ 场景2：通用Bean复制工具</h3>
                 <div style="background: #f0f9ff; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
                     <pre><code class="language-java">public class UniversalBeanUtils {
+        /**
+         * 通用对象属性复制工具
+         * 只要字段名和类型相同，就可以跨类复制数据
+         * @param source 数据源对象
+         * @param target 目标对象
+         */
         public static void copyProperties(Object source, Object target) {
+            // 1. 获取元数据：得到两个对象的Class对象
             Class&lt;?&gt; sourceClass = source.getClass();
             Class&lt;?&gt; targetClass = target.getClass();
 
-            // 获取源对象的所有字段
+            // 2. 遍历源对象的所有字段（包括私有字段）
             for (Field sourceField : sourceClass.getDeclaredFields()) {
                 try {
-                    // 在目标类中查找同名字段
+                    // 3. 查找目标：在目标类中查找是否存在同名字段
+                    // 如果找不到会抛出 NoSuchFieldException
                     Field targetField = targetClass.getDeclaredField(sourceField.getName());
 
-                    // 检查类型是否匹配
+                    // 4. 匹配校验：检查两个字段的类型是否完全一致
                     if (targetField.getType().equals(sourceField.getType())) {
-                        // 突破私有访问限制
+                        // 5. 暴力反射：强制设置为可访问，突破 private 限制
                         sourceField.setAccessible(true);
                         targetField.setAccessible(true);
 
-                        // 复制字段值
+                        // 6. 读写操作：
+                        // 读取源对象的字段值
                         Object value = sourceField.get(source);
+                        // 写入到目标对象
                         targetField.set(target, value);
                     }
                 } catch (Exception e) {
-                    // 忽略无法复制的字段
+                    // 忽略目标类不存在该字段或类型不匹配的情况，继续处理下一个字段
                 }
             }
         }
     }
 
-    // 使用示例：一个方法处理所有类型的对象！
+    // --- 使用示例：一个方法处理所有类型的对象！---
+    
+    // 场景 A：同类对象复制（如从数据库实体复制到DTO）
     User user1 = new User("张三", 25, "zhang@example.com");
     User user2 = new User();
+    // 自动将 user1 的数据搬运到 user2，无需一个个调用 getter/setter
     UniversalBeanUtils.copyProperties(user1, user2);
 
+    // 场景 B：不同类但有相同字段的对象复制
     Product product1 = new Product("iPhone", 5999, 100);
-    Product product2 = new Product();
-    UniversalBeanUtils.copyProperties(product1, product2);</code></pre>
+    ProductDTO productDTO = new ProductDTO();
+    // 只要有 name 和 price 字段且类型一致，就能自动复制！
+    UniversalBeanUtils.copyProperties(product1, productDTO);</code></pre>
                     <p><strong>🎉 解决方案优势：</strong>一个通用方法处理所有类型，代码复用率极大提升！</p>
                 </div>
             </div>
@@ -562,32 +615,51 @@ public class PrivateMethodDemo {
 
                 <h3>✅ 场景3：简易依赖注入框架</h3>
                 <div style="background: #fef3c7; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
-                    <pre><code class="language-java">@Retention(RetentionPolicy.RUNTIME)
+                    <pre><code class="language-java">// 1. 定义注解：用于标记需要注入的字段
+    // RUNTIME 使得注解在运行时可以通过反射获取
+    @Retention(RetentionPolicy.RUNTIME)
     @Target(ElementType.FIELD)
     public @interface Autowired {
     }
 
     public class SimpleDIContainer {
+        // 容器核心：存储接口类型到具体实现对象的映射
         private Map&lt;Class&lt;?&gt;, Object&gt; instances = new HashMap&lt;&gt;();
 
-        // 注册实例
+        /**
+         * 注册 Bean：将具体的实现类注册到容器中
+         * @param clazz 接口或父类类型
+         * @param instance 具体的实现对象
+         */
         public void registerInstance(Class&lt;?&gt; clazz, Object instance) {
             instances.put(clazz, instance);
         }
 
-        // 自动注入依赖
+        /**
+         * 核心工厂方法：创建对象并自动注入依赖
+         * @param clazz 要创建的目标类
+         * @return 注入好依赖的完整对象
+         */
         public &lt;T&gt; T createInstance(Class&lt;T&gt; clazz) {
             try {
-                // 创建实例
+                // 1. 实例化：调用无参构造器创建目标对象
+                // 相当于 new UserService()
                 T instance = clazz.getDeclaredConstructor().newInstance();
 
-                // 自动注入字段
+                // 2. 依赖注入：扫描并注入被 @Autowired 标记的字段
                 for (Field field : clazz.getDeclaredFields()) {
+                    // 检查字段是否有 @Autowired 注解
                     if (field.isAnnotationPresent(Autowired.class)) {
-                        field.setAccessible(true);
+                        // 3. 查找依赖：根据字段类型从容器中获取对应的实现对象
                         Object dependency = instances.get(field.getType());
+                        
                         if (dependency != null) {
+                            // 4. 暴力注入：即使是 private 字段也能注入
+                            field.setAccessible(true);
+                            // 相当于 userService.userRepository = repo;
                             field.set(instance, dependency);
+                        } else {
+                            System.err.println("警告: 未找到类型为 " + field.getType().getName() + " 的依赖");
                         }
                     }
                 }
@@ -599,8 +671,10 @@ public class PrivateMethodDemo {
         }
     }
 
-    // 使用示例
+    // --- 使用示例：模拟 Spring 的开发体验 ---
+    
     public class UserService {
+        // 只需要加个注解，不再需要 new UserRepositoryImpl()
         @Autowired
         private UserRepository userRepository;
 
@@ -609,18 +683,24 @@ public class PrivateMethodDemo {
 
         public void registerUser(String username, String email) {
             User user = new User(username, email);
-            userRepository.save(user);
+            userRepository.save(user); // 直接使用注入好的对象
             emailService.sendWelcomeEmail(email);
         }
     }
 
-    // 配置容器
+    // --- 框架启动流程 ---
+    
+    // 1. 初始化容器
     SimpleDIContainer container = new SimpleDIContainer();
+    
+    // 2. 注册依赖（实际框架中通常会自动扫描）
     container.registerInstance(UserRepository.class, new UserRepositoryImpl());
     container.registerInstance(EmailService.class, new EmailServiceImpl());
 
-    // 自动创建并注入依赖
+    // 3. 获取 Bean：容器会自动处理好所有内部依赖
+    // 开发者再也不用关心 UserService 到底依赖了谁！
     UserService userService = container.createInstance(UserService.class);
+    
     userService.registerUser("张三", "zhang@example.com");</code></pre>
                     <p><strong>🎉 解决方案优势：</strong>框架自动管理依赖关系，实现真正的松耦合！</p>
                 </div>
@@ -634,43 +714,66 @@ public class PrivateMethodDemo {
 
                 <h3>✅ 场景4：配置驱动的数据库连接</h3>
                 <div style="background: #fce7f3; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
-                    <pre><code class="language-java">public class DatabaseManager {
-        public Connection getConnection(String configPath) {
-            try {
-                // 读取配置文件
-                Properties props = new Properties();
-                props.load(new FileInputStream(configPath));
+                    <pre><code class="language-java">/**
+ * 数据库连接管理器
+ * 演示：如何利用反射实现"配置驱动"的程序设计
+ * 核心思想：程序逻辑中不硬编码具体的实现类（如MySQL驱动），而是将类名写在配置文件中
+ */
+public class DatabaseManager {
+    
+    /**
+     * 根据配置文件动态获取数据库连接
+     * @param configPath 配置文件路径
+     * @return 数据库连接对象
+     */
+    public Connection getConnection(String configPath) {
+        try {
+            // 1. 读取外部配置文件
+            // 这一步实现了"配置与代码分离"，是灵活性的基础
+            Properties props = new Properties();
+            props.load(new FileInputStream(configPath));
 
-                // 获取驱动类名
-                String driverClassName = props.getProperty("database.driver");
-                String url = props.getProperty("database.url");
-                String username = props.getProperty("database.username");
-                String password = props.getProperty("database.password");
+            // 从配置中获取关键信息，包括那个神秘的"驱动类名"
+            String driverClassName = props.getProperty("database.driver");
+            String url = props.getProperty("database.url");
 
-                // 动态加载驱动类
-                Class&lt;?&gt; driverClass = Class.forName(driverClassName);
-                Driver driver = (Driver) driverClass.getDeclaredConstructor().newInstance();
+            // 2. 动态加载驱动类 (反射的核心应用)
+            // Class.forName() 会将字符串指定的类加载到 JVM 中
+            // 此时，我们根本不需要知道这个类是 com.mysql.cj.jdbc.Driver 还是 oracle.jdbc.Driver
+            Class&lt;?&gt; driverClass = Class.forName(driverClassName);
+            
+            // 3. 动态实例化
+            // 创建驱动类的实例。注意这里转型为接口 Driver
+            // 这就是"面向接口编程"：我们只依赖标准的 java.sql.Driver 接口
+            Driver driver = (Driver) driverClass.getDeclaredConstructor().newInstance();
 
-                // 创建连接
-                return driver.connect(url, props);
+            // 4. 创建连接
+            // 调用接口方法，实际执行的是具体驱动类（如MySQL驱动）的逻辑
+            return driver.connect(url, props);
 
-            } catch (Exception e) {
-                throw new RuntimeException("数据库连接失败", e);
-            }
+        } catch (Exception e) {
+            throw new RuntimeException("数据库连接失败", e);
         }
     }
+}
 
-    // 配置文件 (database.properties)
-    // database.driver=com.mysql.cj.jdbc.Driver
-    // database.url=jdbc:mysql://localhost:3306/mydb
-    // database.username=root
-    // database.password=123456
+// --- 配置文件示例 (database.properties) ---
+// 只需要修改这里，就能切换整个底层数据库！
+// database.driver=com.mysql.cj.jdbc.Driver
+// database.url=jdbc:mysql://localhost:3306/mydb
+// ...
 
-    // 使用示例：切换数据库只需修改配置文件！
-    DatabaseManager manager = new DatabaseManager();
-    Connection mysqlConn = manager.getConnection("mysql-config.properties");
-    Connection oracleConn = manager.getConnection("oracle-config.properties");
-    Connection postgresConn = manager.getConnection("postgres-config.properties");</code></pre>
+// --- 使用示例：体验反射带来的极致解耦 ---
+DatabaseManager manager = new DatabaseManager();
+
+// 场景A：连接 MySQL
+// 系统加载 com.mysql.cj.jdbc.Driver
+Connection mysqlConn = manager.getConnection("mysql-config.properties");
+
+// 场景B：连接 Oracle
+// 甚至不需要修改 DatabaseManager 的任何一行代码，也不需要重新编译！
+// 只需要提供一个新的配置文件，指定 oracle.jdbc.Driver 即可
+Connection oracleConn = manager.getConnection("oracle-config.properties");</code></pre>
                     <p><strong>🎉 解决方案优势：</strong>切换数据库只需要修改配置文件，无需重新编译代码！</p>
                 </div>
 
