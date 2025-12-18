@@ -294,38 +294,19 @@ System.out.println(multiply.calculate(3, 5)); // 15</code></pre>
         <!-- Slide 8: Why Need Meta Annotations -->
         <section class="slide">
             <div class="slide-content">
-                <h2>元注解详解：为什么需要元注解？</h2>
+                <h2>为什么需要元注解？</h2>
                 <p><strong>元注解</strong>是用于修饰其他注解的注解，它们定义了注解的行为和属性。在理解具体元注解之前，我们首先要明白：为什么需要元注解？</p>
+                <img src="images/13-annotation-meta.png" alt="为什么需要元注解" style="width: 80%; margin: 1rem auto;">
+                <h3>从 C 语言自举看元注解</h3>
+                <p>思考：<strong>第一个 C 语言编译器是用什么写的？</strong>答案是 <strong>B 语言</strong>。</p>
+                <p>这就是 <strong>自举 (Bootstrapping)</strong>：先用简陋工具（B 语言）创造出强大工具（C 语言）。</p>
 
-                <h3>🤔 为什么要有元注解？</h3>
-                <p>想象一下，如果没有元注解，我们会遇到什么问题：</p>
-
-                <h4>问题1：注解可以用在哪里？</h4>
-                <pre><code class="language-java">// 如果没有@Target，这个注解可以用在类上吗？方法上？字段上？
-@interface MyAnnotation {
-    String value();
-}
-
-// 编译器不知道这个注解的使用范围！
-@MyAnnotation("类上的注解")          // ✅ 允许吗？
-public class MyClass {
-    @MyAnnotation("方法上的注解")      // ✅ 允许吗？
-    public void myMethod() {}
-}</code></pre>
-
-                <h4>问题2：注解什么时候有效？</h4>
-                <pre><code class="language-java">// 这个注解在编译后还存在吗？运行时能读到吗？
-@interface ConfigAnnotation {
-    String config();
-}
-
-// 没有元注解，我们不知道注解的生命周期！
-@ConfigAnnotation("配置信息")
-public class MyService {
-    // 运行时反射能读到这个注解吗？编译后还存在吗？
-}</code></pre>
-
-                <p class="conclusion">元注解的出现就是为了解决这些规则定义的问题。</p>
+                <p>类比一下，<strong>元注解就是：定义规则的规则</strong></p>
+                <ul>
+                    <li>自定义注解（如 我随便写的<code>@MyNewAnnotation</code>）本身无法被 JVM 识别。</li>
+                    <li><strong>元注解</strong>（如 <code>@Target</code>）扮演了“B 语言”的角色。</li>
+                    <li>元注解赋予自定义注解生命，规定了它<strong>“能用在哪”</strong>以及<strong>“存活多久”</strong>。</li>
+                </ul>
             </div>
         </section>
 
@@ -390,95 +371,136 @@ public class MyService {
             </div>
         </section>
 
-        <!-- Slide 10: @Target and @Retention -->
+        <!-- Slide 10: @Target -->
         <section class="slide">
             <div class="slide-content">
-                <h2>@Target 与 @Retention 注解</h2>
+                <h2>元注解：@Target</h2>
+                
+                <h3>🎯 作用：指定注解的使用目标</h3>
+                <p><code>@Target</code> 决定了你的注解可以放在什么位置（类、方法、字段等）。如果未指定，默认可以用在任何地方。</p>
 
-                <h3>🎯 @Target：指定注解的使用目标</h3>
-                <p>定义注解可以应用在哪些程序元素上：</p>
-                <pre><code class="language-java">@Target(ElementType.METHOD)  // 只能用于方法
-@interface MyMethodAnnotation {
-    String value() default "";
-}
+                <div style="display: flex; gap: 2rem; margin-top: 1rem;">
+                    <div style="flex: 1;">
+                        <h4>常用 ElementType 枚举值</h4>
+                        <ul style="font-size: 0.9em;">
+                            <li><code>TYPE</code>：类、接口、枚举</li>
+                            <li><code>FIELD</code>：字段（成员变量）</li>
+                            <li><code>METHOD</code>：方法</li>
+                            <li><code>PARAMETER</code>：参数</li>
+                            <li><code>CONSTRUCTOR</code>：构造方法</li>
+                            <li><code>LOCAL_VARIABLE</code>：局部变量</li>
+                        </ul>
+                    </div>
+                    <div style="flex: 1.5;">
+                        <h4>代码示例</h4>
+                        <pre><code class="language-java">@Target(ElementType.METHOD)  // 1. 只能用于方法
+@interface MyMethodAnnotation {}
 
 @Target({
-    ElementType.TYPE,     // 类、接口、枚举
-    ElementType.METHOD,   // 方法
-    ElementType.FIELD     // 字段
+    ElementType.TYPE,     // 2. 既可用于类
+    ElementType.FIELD     //    也可用于字段
 })
-@interface MyMultiTargetAnnotation {
-    String info();
-}</code></pre>
+@interface MyMixedAnnotation {}</code></pre>
+                    </div>
+                </div>
+                <p class="conclusion">就像是给注解贴上“专用标签”，防止用户把给方法用的注解错误地贴到了类头上。</p>
+            </div>
+        </section>
 
-                <h3>⏰ @Retention：指定注解的保留策略</h3>
-                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+        <!-- Slide 11: @Retention -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>元注解：@Retention</h2>
+
+                <h3>⏰ 作用：指定注解的生命周期</h3>
+                <p><code>@Retention</code> 决定了注解在什么阶段被丢弃。这是最重要的元注解，因为它决定了反射能否读取到注解。</p>
+
+                <table style="width: 100%; border-collapse: collapse; margin: 1.5rem 0;">
                     <thead>
                         <tr style="background: #f8f9fa;">
-                            <th style="border: 1px solid #ddd; padding: 0.8rem; text-align: left;">策略</th>
-                            <th style="border: 1px solid #ddd; padding: 0.8rem; text-align: left;">作用范围</th>
-                            <th style="border: 1px solid #ddd; padding: 0.8rem; text-align: left;">用途</th>
+                            <th style="border: 1px solid #ddd; padding: 1rem;">策略 (RetentionPolicy)</th>
+                            <th style="border: 1px solid #ddd; padding: 1rem;">存活时间</th>
+                            <th style="border: 1px solid #ddd; padding: 1rem;">典型应用场景</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><strong>SOURCE</strong></td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">源代码</td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">编译器使用，不写入class文件</td>
+                            <td style="border: 1px solid #ddd; padding: 1rem;"><strong>SOURCE</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 1rem;">源文件</td>
+                            <td style="border: 1px solid #ddd; padding: 1rem;">编译器检查（如 <code>@Override</code>），编译后即丢弃</td>
                         </tr>
                         <tr>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><strong>CLASS</strong></td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">class文件</td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">JVM加载时丢弃，运行时不可见</td>
+                            <td style="border: 1px solid #ddd; padding: 1rem;"><strong>CLASS</strong> (默认)</td>
+                            <td style="border: 1px solid #ddd; padding: 1rem;">class文件</td>
+                            <td style="border: 1px solid #ddd; padding: 1rem;">字节码处理工具，JVM 加载时丢弃</td>
                         </tr>
-                        <tr>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><strong>RUNTIME</strong></td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">运行时</td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">运行时可通过反射读取</td>
+                        <tr style="background-color: #e3f2fd;">
+                            <td style="border: 1px solid #ddd; padding: 1rem;"><strong>RUNTIME</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 1rem;">运行时</td>
+                            <td style="border: 1px solid #ddd; padding: 1rem;"><strong>最常用</strong>。程序运行时可通过<strong>反射</strong>读取注解信息</td>
                         </tr>
                     </tbody>
                 </table>
-
-                <p class="conclusion">@Target和@Retention是创建自定义注解时最常用的两个元注解。</p>
+                <p class="conclusion">⚠️ <strong>新手误区</strong>：如果你希望在程序运行时通过反射获取注解，必须显式指定为 <code>RUNTIME</code>，否则默认是 <code>CLASS</code>，反射是读不到的！</p>
             </div>
         </section>
 
-        <!-- Slide 11: @Documented and @Inherited -->
+        <!-- Slide 12: @Documented -->
         <section class="slide">
             <div class="slide-content">
-                <h2>@Documented 与 @Inherited 注解</h2>
+                <h2>元注解：@Documented</h2>
 
-                <h3>📖 @Documented：生成文档时包含注解</h3>
-                <pre><code class="language-java">@Documented  // 使用javadoc生成文档时会包含此注解
-@Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.METHOD)
-@interface DocumentedMethod {
-    String description();
-}</code></pre>
+                <h3>📖 作用：将注解包含在 JavaDoc 中</h3>
+                <p>默认情况下，生成的 JavaDoc 文档是不包含注解信息的。如果你希望你的注解像 <code>@Deprecated</code> 一样出现在 API 文档中，就需要加上它。</p>
 
-                <h3>🧬 @Inherited：允许子类继承父类注解</h3>
-                <pre><code class="language-java">@Inherited  // 子类会继承父类的此注解
+                <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin: 1.5rem 0; border-left: 5px solid #007bff;">
+                    <h4>不加 @Documented vs 加上 @Documented</h4>
+                    <p>假设你写了一个库给别人用：</p>
+                    <ul>
+                        <li><strong>不加</strong>：使用者看文档时，不知道这个类/方法被标记了注解。</li>
+                        <li><strong>加上</strong>：使用者在阅读文档时，能清晰地看到该元素被标记了，这对于作为公共 API 的注解非常重要。</li>
+                    </ul>
+                </div>
+
+                <pre><code class="language-java">@Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-@interface MyInheritedAnnotation {
-    String value() default "";
-}
-
-@MyInheritedAnnotation("父类注解")
-class Parent {
-}
-
-// Child类会自动继承MyInheritedAnnotation注解
-class Child extends Parent {
+public @interface ApiVersion {
+    String value();
 }</code></pre>
+            </div>
+        </section>
 
-                <h3>💡 使用技巧</h3>
-                <ul>
-                    <li><strong>@Documented</strong>：适用于需要在API文档中展示的注解</li>
-                    <li><strong>@Inherited</strong>：只适用于类级别的注解，方法和字段注解不会被继承</li>
-                </ul>
+        <!-- Slide 13: @Inherited -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>元注解：@Inherited</h2>
 
-                <p class="conclusion">元注解是创建自定义注解的基础，合理使用元注解可以让注解更加精确和有用。</p>
+                <h3>🧬 作用：允许子类继承父类的注解</h3>
+                <p>这是一个非常有意思的规则：默认情况下，父类的注解<strong>不会</strong>被子类继承。加上 <code>@Inherited</code> 后，子类会自动拥有父类的这个注解。</p>
+
+                <div style="display: flex; gap: 2rem; align-items: center;">
+                    <div style="flex: 1;">
+                        <pre><code class="language-java">@Inherited // 关键！
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@interface DatabaseConfig { ... }
+
+@DatabaseConfig
+class BaseEntity {}
+
+// User 自动继承了 @DatabaseConfig
+class User extends BaseEntity {}</code></pre>
+                    </div>
+                    <div style="flex: 1; background: #fff3cd; padding: 1.5rem; border-radius: 8px;">
+                        <h4>⚠️ 重要限制</h4>
+                        <ul style="margin: 0; padding-left: 1.2rem;">
+                            <li><strong>仅限类注解</strong>：接口继承、方法重写、字段定义都<strong>无效</strong>。</li>
+                            <li><strong>接口无效</strong>：实现接口的类<strong>不会</strong>继承接口上的注解。</li>
+                        </ul>
+                    </div>
+                </div>
+                <p class="conclusion">在 Spring 等框架中，这常用于让配置类能够传递给子类。</p>
             </div>
         </section>
 
