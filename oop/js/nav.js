@@ -48,12 +48,17 @@
       var slides = document.querySelectorAll('.slide');
       if (!slides || !slides.length) return;
 
+      // 检查是否是移动端
+      function isMobile() {
+        return window.innerWidth <= 640;
+      }
+
       // Create overlay for mobile
       var overlay = document.createElement('div');
       overlay.className = 'slide-toc-overlay';
       document.body.appendChild(overlay);
 
-      // Create toggle button for mobile
+      // Create toggle button
       var toggleBtn = document.createElement('button');
       toggleBtn.className = 'slide-toc-toggle';
       toggleBtn.innerHTML = '☰';
@@ -66,8 +71,9 @@
       var header = document.createElement('div');
       header.className = 'slide-toc-header';
       var title = document.title || '目录';
+      // 桌面端显示收起图标，移动端显示关闭图标，统一样式，通过 CSS 控制显隐或行为
       header.innerHTML = '<div class="slide-toc-title">' + title + '</div>' +
-                        '<button class="slide-toc-close" aria-label="关闭目录">×</button>';
+                        '<button class="slide-toc-close" aria-label="关闭/收起目录">&lt;</button>';
       toc.appendChild(header);
 
       var list = document.createElement('div');
@@ -94,7 +100,9 @@
             updateTOCHighlight(i);
           }
           // Close mobile TOC after selection
-          closeMobileTOC();
+          if (isMobile()) {
+            closeMobileTOC();
+          }
         });
         list.appendChild(item);
       });
@@ -116,11 +124,9 @@
 
       // Mobile interaction handlers
       function openMobileTOC() {
-        if (window.innerWidth <= 640) {
-          toc.classList.add('active');
-          overlay.classList.add('active');
-          document.body.style.overflow = 'hidden';
-        }
+        toc.classList.add('active');
+        overlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
       }
 
       function closeMobileTOC() {
@@ -129,25 +135,42 @@
         document.body.style.overflow = '';
       }
 
-      function toggleMobileTOC() {
-        if (toc.classList.contains('active')) {
-          closeMobileTOC();
-        } else {
-          openMobileTOC();
-        }
+      // Desktop interaction handlers
+      function toggleDesktopTOC() {
+        document.body.classList.toggle('toc-closed');
+        // 保存状态
+        try {
+            localStorage.setItem('toc-closed', document.body.classList.contains('toc-closed'));
+        } catch(e) {}
       }
 
-      // Event listeners for mobile interactions
+      // 恢复上次的状态
+      try {
+        if (localStorage.getItem('toc-closed') === 'true' && !isMobile()) {
+            document.body.classList.add('toc-closed');
+        }
+      } catch(e) {}
+
+      // Event listeners
       toggleBtn.addEventListener('click', function(e) {
         e.stopPropagation();
-        toggleMobileTOC();
+        if (isMobile()) {
+          if (toc.classList.contains('active')) closeMobileTOC();
+          else openMobileTOC();
+        } else {
+          toggleDesktopTOC();
+        }
       });
 
       var closeBtn = toc.querySelector('.slide-toc-close');
       if (closeBtn) {
         closeBtn.addEventListener('click', function(e) {
           e.stopPropagation();
-          closeMobileTOC();
+          if (isMobile()) {
+            closeMobileTOC();
+          } else {
+            toggleDesktopTOC(); // 桌面端点击关闭也是切换（收起）
+          }
         });
       }
 
@@ -158,15 +181,17 @@
 
       // Close TOC on escape key
       document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && toc.classList.contains('active')) {
-          closeMobileTOC();
+        if (e.key === 'Escape') {
+            if (isMobile() && toc.classList.contains('active')) {
+                closeMobileTOC();
+            }
         }
       });
 
       // Handle resize events
       window.addEventListener('resize', function() {
-        if (window.innerWidth > 640) {
-          closeMobileTOC(); // Close mobile TOC when switching to desktop
+        if (!isMobile()) {
+          closeMobileTOC(); // Ensure mobile state is cleared
         }
       });
 
@@ -177,7 +202,7 @@
         if (target) {
           target.classList.add('active');
           // Auto-scroll to active item on mobile
-          if (window.innerWidth <= 640) {
+          if (isMobile()) {
             setTimeout(function() {
               target.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 300);
@@ -190,11 +215,21 @@
       var style = document.createElement('style');
       style.textContent = `
         .slide-toc { position: fixed; top: 0; left: 0; right: auto; bottom: 6px; width: 320px; background: rgba(255,255,255,0.96); border-right: 1px solid var(--border-color); box-shadow: 2px 0 10px rgba(0,0,0,0.06); z-index: 1000; display: flex; flex-direction: column; transform: translateX(0); transition: transform 0.3s ease; }
-        .slide-toc.collapsed { transform: translateX(-100%); }
-        .slide-toc-toggle { display: none; position: fixed; top: 12px; left: 12px; z-index: 1001; background: var(--primary-color); color: white; border: none; border-radius: 50%; width: 36px; height: 36px; font-size: 14px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+        
+        /* 桌面端收起状态 */
+        body.toc-closed .slide-toc { transform: translateX(-100%); }
+        
+        .slide-toc-toggle { position: fixed; top: 12px; left: 12px; z-index: 1001; background: var(--primary-color); color: white; border: none; border-radius: 50%; width: 36px; height: 36px; font-size: 14px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; }
+        
+        /* 桌面端：如果目录没收起，隐藏 toggle 按钮 */
+        @media (min-width: 641px) {
+            body:not(.toc-closed) .slide-toc-toggle { display: none; }
+        }
+
         .slide-toc-header { padding: 12px 16px; border-bottom: 1px solid var(--border-color); color: var(--heading-color); font-weight: 700; display: flex; align-items: center; justify-content: space-between; }
         .slide-toc-title { font-size: 16px; }
-        .slide-toc-close { display: none; background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-color); padding: 4px; }
+        .slide-toc-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-color); padding: 4px; display: block; }
+        
         .slide-toc-list { overflow-y: auto; padding: 8px 0; -webkit-overflow-scrolling: touch; }
         .slide-toc-item { display: flex; align-items: center; gap: 12px; padding: 10px 16px; color: var(--text-color); text-decoration: none; transition: background-color .2s ease, color .2s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; }
         .slide-toc-item:hover { background-color: #F3F4F6; }
@@ -204,19 +239,36 @@
         .slide-toc-item.active .slide-toc-number { background-color: var(--primary-color); color: #fff; }
         .slide-toc-text { flex: 1; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+        /* 内容区域的 Padding 过渡 */
+        .slide { transition: padding-left 0.3s ease; }
+
         /* 大屏幕适配 */
-        @media (min-width: 1200px) { .slide { padding-left: 420px; } }
-        @media (max-width: 1200px) { .slide-toc { width: 260px; } }
-        @media (max-width: 900px) { .slide-toc { width: 220px; opacity: 0.96; } }
+        @media (min-width: 1200px) { 
+            .slide { padding-left: 420px; } 
+            body.toc-closed .slide { padding-left: 100px; } /* 收起时保留一定间距 */
+        }
+        @media (max-width: 1200px) and (min-width: 900px) { 
+             .slide-toc { width: 260px; } 
+             /* 假设中等屏幕也有一定的 padding */
+             .slide { padding-left: 280px; }
+             body.toc-closed .slide { padding-left: 60px; }
+        }
+        @media (max-width: 900px) and (min-width: 641px) { 
+            .slide-toc { width: 220px; opacity: 0.96; } 
+            .slide { padding-left: 240px; }
+            body.toc-closed .slide { padding-left: 40px; }
+        }
 
         /* 平板设备适配 */
-        @media (max-width: 768px) {
-          .slide-toc { width: 280px; }
+        @media (max-width: 768px) and (min-width: 641px) {
+          .slide-toc { width: 200px; }
           .slide-toc-header { padding: 10px 12px; }
           .slide-toc-title { font-size: 15px; }
           .slide-toc-item { padding: 8px 12px; gap: 10px; }
           .slide-toc-number { min-width: 24px; height: 24px; line-height: 24px; font-size: 11px; }
           .slide-toc-text { font-size: 13px; }
+          .slide { padding-left: 220px; }
+          body.toc-closed .slide { padding-left: 20px; }
         }
 
         /* 移动设备适配 */
