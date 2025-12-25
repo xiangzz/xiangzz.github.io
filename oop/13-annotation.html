@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link rel="stylesheet" href="./css/style.css">
     <link rel="stylesheet" href="../prism/prism.css">
 </head>
+
 <body>
 
     <main id="presentation">
@@ -43,14 +45,23 @@ public class User {
 }</code></pre>
 
                 <h4>2. 配置与代码分离的烦恼</h4>
-                <pre><code class="language-xml"><!-- XML配置时代：配置与代码分离，维护困难 -->
-&lt;beans&gt;
-    &lt;bean id="userService" class="com.example.UserService"&gt;
-        &lt;property name="userDao" ref="userDao"/&gt;
-        &lt;property name="cacheEnabled" value="true"/&gt;
-    &lt;/bean&gt;
-    &lt;!-- 大量XML配置，容易出错且难以维护 --&gt;
-&lt;/beans&gt;</code></pre>
+                <pre><code class="language-java">// JDBC配置时代：配置写在单独的properties文件中
+// config.properties 文件内容：
+/** 
+ db.driver=com.mysql.jdbc.Driver
+ db.url=jdbc:mysql://localhost:3306/mydb
+ db.username=root
+ db.password=123456
+**/
+
+// Java代码中读取配置
+Properties prop = new Properties();
+prop.load(new FileInputStream("config.properties"));
+String driver = prop.getProperty("db.driver");
+String url = prop.getProperty("db.url");
+
+// 问题：配置和代码分离，修改配置要打开另一个文件
+// 容易写错属性名，IDE没有提示，编译器也检查不出错误</code></pre>
 
                 <h4>3. 编译时错误难以发现</h4>
                 <pre><code class="language-java">// 父类
@@ -79,43 +90,7 @@ class Dog extends Animal {
                     <li><strong>要是能自动生成getter/setter就好了</strong> → <code>@Data</code></li>
                     <li><strong>要是配置能直接写在代码上就好了</strong> → <code>@Component</code></li>
                     <li><strong>要是编译器能帮我检查重写就好了</strong> → <code>@Override</code></li>
-                    <li><strong>要是测试方法能自动识别就好了</strong> → <code>@Test</code></li>
                 </ul>
-
-                <h3>🎯 注解解决的典型问题</h3>
-                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
-                    <thead>
-                        <tr style="background: #f8f9fa;">
-                            <th style="border: 1px solid #ddd; padding: 0.8rem; text-align: left;">问题</th>
-                            <th style="border: 1px solid #ddd; padding: 0.8rem; text-align: left;">传统方式</th>
-                            <th style="border: 1px solid #ddd; padding: 0.8rem; text-align: left;">注解方式</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">依赖注入</td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">XML配置</td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><code>@Autowired</code></td>
-                        </tr>
-                        <tr>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">测试标记</td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">方法命名约定</td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><code>@Test</code></td>
-                        </tr>
-                        <tr>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">数据库映射</td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">XML映射文件</td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><code>@Entity</code>, <code>@Table</code></td>
-                        </tr>
-                        <tr>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">API路由</td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;">配置文件</td>
-                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><code>@RequestMapping</code></td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <p class="conclusion">注解的出现正是为了解决这些痛点，它让<strong>配置与代码在一起</strong>，<strong>减少样板代码</strong>，<strong>提供编译时检查</strong>，使Java开发变得更加高效和安全。</p>
             </div>
         </section>
 
@@ -123,49 +98,45 @@ class Dog extends Animal {
         <section class="slide">
             <div class="slide-content">
                 <h2>注解概述</h2>
-                <p><strong>注解</strong>是Java 5引入的一种元数据机制，它为代码提供额外的信息。注解本身不影响代码的执行逻辑，但可以被编译器、开发工具或运行时环境读取和处理。</p>
+                <p><strong>注解</strong>是Java 5引入的一种<strong>元数据机制</strong>，它为代码提供额外的信息。</p>
+                <p>注解本身不影响代码的执行逻辑，但可以被编译器、开发工具或运行时环境读取和处理。</p>
 
-                <h3>🔍 什么是注解？</h3>
-                <ul>
-                    <li><strong>元数据</strong>：描述数据的数据</li>
-                    <li><strong>标记</strong>：为类、方法、字段等添加特殊标记</li>
-                    <li><strong>不改变程序逻辑</strong>：注解不会直接改变程序的执行流程</li>
-                </ul>
+                <h3>🔍 什么是元数据？</h3>
+                <p><strong>元数据</strong>就是"描述数据的数据"。理解它需要从生活中的例子入手：</p>
+                <pre><code class="language-java">// 生活中的例子：照片
+// 数据：照片本身（像素组成的图像）
+// 元数据：拍摄时间、地点、相机型号、光圈大小...
+
+// 生活中的例子：图书
+// 数据：书的内容（文字、图片）
+// 元数据：书名、作者、ISBN号、出版日期...
+  
+// Java代码中：
+// 数据：变量、方法、类本身的代码
+// 元数据：注解（描述这些代码的额外信息）</code></pre>
+
+                <h3>🔍 注解长啥样？</h3>
+                <p>注解是一种特殊的语法结构，以 <code>@</code> 开头，用于给代码"贴标签"。它就像给照片写备注一样，本身不改变照片内容，但提供了有用的背景信息。</p>
+
+                <pre><code class="language-java">@Override  // 注解：告诉编译器这个方法是重写父类的
+public void makeSound() {
+    System.out.println("汪汪");
+}
+
+@SuppressWarnings("unchecked")  // 注解：告诉编译器忽略类型警告
+List<String> list = new ArrayList();</code></pre>
+
+                <p><strong>核心特点</strong>：注解只是"备注"，<b>不影响代码执行</b>，但会被编译器、框架或运行时环境读取并据此做处理。</p>
 
                 <p class="conclusion">注解是一种特殊的接口，为代码提供声明式信息。</p>
             </div>
         </section>
 
-        <!-- Slide 5: Annotation Roles and Syntax -->
-        <section class="slide">
-            <div class="slide-content">
-                <h2>注解的作用与语法</h2>
-
-                <h3>⚙️ 注解的作用</h3>
-                <ul>
-                    <li><strong>编译器检查</strong>：如 @Override 确保方法正确重写</li>
-                    <li><strong>代码分析</strong>：帮助IDE和静态分析工具理解代码</li>
-                    <li><strong>框架配置</strong>：Spring、MyBatis等框架的配置方式</li>
-                    <li><strong>运行时处理</strong>：通过反射读取注解信息</li>
-                </ul>
-
-                <h3>📝 基本语法</h3>
-                <pre><code class="language-java">@AnnotationName(element1 = value1, element2 = value2)
-public class MyClass {
-    @AnnotationName
-    public void myMethod() {
-        // 方法实现
-    }
-}</code></pre>
-
-                <p class="conclusion">注解以 <code>@</code> 符号开头，可以修饰类、方法、字段、参数等各种程序元素。它是现代Java开发中的重要特性。</p>
-            </div>
-        </section>
 
         <!-- Slide 6: Built-in Annotations -->
         <section class="slide">
             <div class="slide-content">
-                <h2>内置注解介绍</h2>
+                <h2>内置注解</h2>
                 <p>Java提供了一些常用的内置注解，每个都有特定的用途和意义。</p>
 
                 <h3>🔧 @Override</h3>
@@ -182,12 +153,7 @@ public class MyClass {
                     <li><strong>建议</strong>：提示开发者使用新的替代方案</li>
                 </ul>
 
-                <h3>🔇 @SuppressWarnings</h3>
-                <ul>
-                    <li><strong>作用</strong>：压制编译器的特定警告</li>
-                    <li><strong>参数</strong>：指定要压制的警告类型</li>
-                    <li><strong>常用值</strong>：unchecked, deprecation, rawtypes等</li>
-                </ul>
+
 
                 <h3>🎯 @FunctionalInterface</h3>
                 <ul>
@@ -203,7 +169,7 @@ public class MyClass {
         <!-- Slide 5: Built-in Annotations Code Examples -->
         <section class="slide">
             <div class="slide-content">
-                <h2>内置注解代码示例</h2>
+                <h2>简单注解的使用</h2>
                 <p>让我们通过具体代码来理解内置注解的使用方法和作用。</p>
 
                 <h3>🔧 @Override 示例</h3>
@@ -249,20 +215,7 @@ public class Main {
     }
 }</code></pre>
 
-                <h3>🔇 @SuppressWarnings 示例</h3>
-                <pre><code class="language-java">@SuppressWarnings("unchecked")
-public void processList() {
-    List list = new ArrayList();  // 原始类型，会有警告
-    list.add("Hello");
-    list.add(123);
 
-    // 不使用注解时，编译器会警告
-    // List<String> strings = list;  // 类型不安全
-
-    // 压制多个警告
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    List rawList = new ArrayList();
-}</code></pre>
 
                 <h3>🎯 @FunctionalInterface 示例</h3>
                 <pre><code class="language-java">@FunctionalInterface  // 只能有一个抽象方法
@@ -294,30 +247,142 @@ System.out.println(multiply.calculate(3, 5)); // 15</code></pre>
         <!-- Slide 8: Why Need Meta Annotations -->
         <section class="slide">
             <div class="slide-content">
-                <h2>为什么需要元注解？</h2>
+                <h2>自定义注解（简单版）</h2>
                 <p>内置的注解肯定是远远不够的，因此我们总会想自己定义注解</p>
-                <p>可是，一上来就可以自己定义自己的注解吗？</p>
-                <p><strong>元注解</strong>是用于修饰其他注解的注解，它们定义了注解的行为和属性。在理解具体元注解之前，我们首先要明白：为什么需要元注解？</p>
-                <img src="images/13-annotation-meta.png" alt="为什么需要元注解" style="width: 80%; margin: 1rem auto;">
-                <h3>从 C 语言自举看元注解</h3>
-                <p>思考：<strong>第一个 C 语言编译器是用什么写的？</strong>答案是 <strong>B 语言</strong>。</p>
-                <p>这就是 <strong>自举 (Bootstrapping)</strong>：先用简陋工具（B 语言）创造出强大工具（C 语言）。</p>
 
-                <p>类比一下，<strong>元注解就是：定义规则的规则</strong></p>
-                <ul>
-                    <li>自定义注解（如 我随便写的<code>@MyNewAnnotation</code>）本身无法被 JVM 识别。</li>
-                    <li><strong>元注解</strong>（如 <code>@Target</code>）扮演了“B 语言”的角色。</li>
-                    <li>元注解赋予自定义注解生命，规定了它<strong>“能用在哪”</strong>以及<strong>“存活多久”</strong>。</li>
-                </ul>
+                <!-- 自定义注解的语法 -->
+                <h3>📝 自定义注解的基本语法</h3>
+                <p>自定义注解使用 <code>@interface</code> 关键字定义，语法类似于接口，但有一些特殊规则：</p>
+
+                <pre><code class="language-java">// 基本格式
+[元注解]  // 定义注解的规则（可选但常用）
+public @interface 注解名称 {
+    [数据类型] 元素名称() [default 默认值];  // 注解元素（类似方法）
+}
+
+// 示例：定义一个简单的注解
+public @interface MyAnnotation {
+    String value();  // 元素
+    int level() default 1;  // 带默认值的元素
+}</code></pre>
+
+                <h3>🔧 注解元素的规则</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.8rem; text-align: left;">规则</th>
+                            <th style="border: 1px solid #ddd; padding: 0.8rem; text-align: left;">说明</th>
+                            <th style="border: 1px solid #ddd; padding: 0.8rem; text-align: left;">示例</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><strong>返回类型</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;">只能是基本类型、String、Class、枚举、注解、或它们的数组</td>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><code>String value();</code></td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><strong>参数列表</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;">元素声明后必须加 <code>()</code>，但不能有参数</td>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><code>int count();</code></td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><strong>默认值</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;">可以用 <code>default</code> 关键字指定默认值</td>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;">
+                                <code>boolean enabled() default true;</code>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><strong>特殊元素</strong></td>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;">元素名若为 <code>value</code>，使用时可省略元素名</td>
+                            <td style="border: 1px solid #ddd; padding: 0.8rem;"><code>@MyAnn("hello")</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>🎯 基本示例</h3>
+                <pre><code class="language-java">// 定义一个简单的注解
+public @interface Author {
+    String name();  // 作者名称
+    String version() default "1.0";  // 版本号，有默认值
+}
+
+// 使用自定义注解
+@Author(name = "张三", version = "2.0")
+public class Calculator {
+    @Author(name = "李四")  // 使用默认版本号
+    public int add(int a, int b) {
+        return a + b;
+    }
+
+    @Author(name = "王五", version = "1.5")
+    public int subtract(int a, int b) {
+        return a - b;
+    }
+}</code></pre>
             </div>
         </section>
 
         <!-- Slide 9: Meta Annotation Design Philosophy -->
         <section class="slide">
             <div class="slide-content">
-                <h2>元注解的设计理念</h2>
+                <h2>元注解简介</h2>
 
-                <h3>💡 "要是能告诉编译器注解的规则就好了"</h3>
+                <h3>回顾：没有元注解的自定义注解</h3>
+                <p>在上一页中，我们定义了一个简单的 <code>@Author</code> 注解：</p>
+                <pre><code class="language-java">public @interface Author {
+    String name();
+    String version() default "1.0";
+}</code></pre>
+
+                <h3>⚠️ 没有元注解的隐患</h3>
+                <p>这样定义的注解虽然能用，但功能有限，存在两个主要问题：</p>
+
+                <h4>问题1：无法约束注解的适用范围</h4>
+                <pre><code class="language-java">@Author(name = "张三")  // ✅ 合理：类需要记录作者
+public class Calculator { }
+
+@Author(name = "李四")  // ✅ 合理：方法需要记录作者
+public int add(int a, int b) { return a + b; }
+
+@Author(name = "王五")  // ❌ 不合理：成员变量只是数据，不需要单独记录作者
+private int result;
+
+public void setName(@Author(name = "赵六") String name) {
+    // ❌ 不合理：参数只是输入数据，给它贴作者标签没有意义
+}
+
+public void calculate() {
+    @Author(name = "孙七") int temp = 0;
+    // ❌ 不合理：局部变量临时使用，不需要记录作者
+}</code></pre>
+
+                <h4>问题2：无法控制注解的生命周期</h4>
+                <pre><code class="language-java">@Author(name = "张三")
+public class Calculator {
+    public int add(int a, int b) {
+        return a + b;
+    }
+}
+
+// 在程序运行时，我们想读取 @Author 注解的信息
+Calculator calc = new Calculator();
+Author author = calc.getClass().getAnnotation(Author.class);
+// ❌ 返回 null！因为默认生命周期只在源码阶段，运行时已不存在</code></pre>
+
+                <h3>💡 核心结论</h3>
+                <p><strong>不使用元注解的注解</strong>：</p>
+                <ul>
+                    <li>📍 <strong>可以用在任何地方</strong>：类、方法、变量、参数、局部变量... 甚至不恰当的地方</li>
+                    <li>⏱️ <strong>只在源码阶段存在</strong>：编译后字节码中会被丢弃，运行时无法读取</li>
+                </ul>
+
+                <p class="highlight">因此，为了让注解更强大、更可控，我们需要使用<strong>元注解</strong>为自定义注解添加规则！</p>
+
+                <hr>
+
+                <h3>🚀 元注解的作用</h3>
                 <p>Java设计者意识到需要一种方式来<strong>描述注解本身的规则</strong>，于是诞生了元注解：</p>
                 <ul>
                     <li><strong>要是能指定注解的使用范围就好了</strong> → <code>@Target</code></li>
@@ -369,7 +434,6 @@ System.out.println(multiply.calculate(3, 5)); // 15</code></pre>
                     <li><strong>不多不少，恰到好处</strong>：既满足了主要需求，又不过度复杂</li>
                 </ul>
 
-                <p class="conclusion">元注解的设计体现了Java语言设计者的深思熟虑：通过四个核心维度，为注解系统提供了完整的规则定义机制，让注解既强大又可控。</p>
             </div>
         </section>
 
@@ -377,33 +441,49 @@ System.out.println(multiply.calculate(3, 5)); // 15</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h2>元注解：@Target</h2>
-                
+
                 <h3>🎯 作用：指定注解的使用目标</h3>
                 <p><code>@Target</code> 决定了你的注解可以放在什么位置（类、方法、字段等）。如果未指定，默认可以用在任何地方。</p>
 
-                <div style="display: flex; gap: 2rem; margin-top: 1rem;">
-                    <div style="flex: 1;">
-                        <h4>常用 ElementType 枚举值</h4>
-                        <ul style="font-size: 0.9em;">
-                            <li><code>TYPE</code>：类、接口、枚举</li>
-                            <li><code>FIELD</code>：字段（成员变量）</li>
-                            <li><code>METHOD</code>：方法</li>
-                            <li><code>PARAMETER</code>：参数</li>
-                            <li><code>CONSTRUCTOR</code>：构造方法</li>
-                            <li><code>LOCAL_VARIABLE</code>：局部变量</li>
-                        </ul>
-                    </div>
-                    <div style="flex: 1.5;">
-                        <h4>代码示例</h4>
-                        <pre><code class="language-java">@Target(ElementType.METHOD)  // 1. 只能用于方法
+                <div style="margin-top: 1rem;">
+                    <h4>常用 ElementType 枚举值</h4>
+                    <ul style="font-size: 0.9em; margin: 1rem 0;">
+                        <li><code>TYPE</code>：类、接口、枚举</li>
+                        <li><code>FIELD</code>：字段（成员变量）</li>
+                        <li><code>METHOD</code>：方法</li>
+                        <li><code>PARAMETER</code>：参数</li>
+                        <li><code>CONSTRUCTOR</code>：构造方法</li>
+                        <li><code>LOCAL_VARIABLE</code>：局部变量</li>
+                    </ul>
+
+                    <h4>代码示例</h4>
+                    <pre><code class="language-java">@Target(ElementType.METHOD)  // 1. 只能用于方法
 @interface MyMethodAnnotation {}
 
 @Target({
     ElementType.TYPE,     // 2. 既可用于类
     ElementType.FIELD     //    也可用于字段
 })
-@interface MyMixedAnnotation {}</code></pre>
-                    </div>
+@interface MyMixedAnnotation {}
+
+// ✅ 正确用法
+@MyMixedAnnotation  // 允许：TYPE
+public class TestClass {
+    @MyMixedAnnotation  // 允许：FIELD
+    private String name;
+
+    @MyMethodAnnotation  // 允许：METHOD
+    public void test() { }
+}
+
+// ❌ 错误用法（编译器会报错）
+@MyMethodAnnotation  // ❌ 错误！只能用于方法，不能用于类
+public class ErrorClass1 { }
+
+public class ErrorClass2 {
+    @MyMethodAnnotation  // ❌ 错误！只能用于方法，不能用于字段
+    private String name;
+}</code></pre>
                 </div>
                 <p class="conclusion">就像是给注解贴上“专用标签”，防止用户把给方法用的注解错误地贴到了类头上。</p>
             </div>
@@ -429,21 +509,69 @@ System.out.println(multiply.calculate(3, 5)); // 15</code></pre>
                         <tr>
                             <td style="border: 1px solid #ddd; padding: 1rem;"><strong>SOURCE</strong></td>
                             <td style="border: 1px solid #ddd; padding: 1rem;">源文件</td>
-                            <td style="border: 1px solid #ddd; padding: 1rem;">编译器检查（如 <code>@Override</code>），编译后即丢弃</td>
+                            <td style="border: 1px solid #ddd; padding: 1rem;">编译器检查（如 <code>@Override</code>），编译后即丢弃
+                            </td>
                         </tr>
                         <tr>
                             <td style="border: 1px solid #ddd; padding: 1rem;"><strong>CLASS</strong> (默认)</td>
                             <td style="border: 1px solid #ddd; padding: 1rem;">class文件</td>
-                            <td style="border: 1px solid #ddd; padding: 1rem;">字节码处理工具，JVM 加载时丢弃</td>
+                            <td style="border: 1px solid #ddd; padding: 1rem;">字节码处理工具（如 Lombok 编译时生成代码），JVM 加载时丢弃</td>
                         </tr>
                         <tr style="background-color: #e3f2fd;">
                             <td style="border: 1px solid #ddd; padding: 1rem;"><strong>RUNTIME</strong></td>
                             <td style="border: 1px solid #ddd; padding: 1rem;">运行时</td>
-                            <td style="border: 1px solid #ddd; padding: 1rem;"><strong>最常用</strong>。程序运行时可通过<strong>反射</strong>读取注解信息</td>
+                            <td style="border: 1px solid #ddd; padding: 1rem;">
+                                <strong>最常用</strong>。程序运行时可通过<strong>反射</strong>读取注解信息
+                            </td>
                         </tr>
                     </tbody>
                 </table>
-                <p class="conclusion">⚠️ <strong>新手误区</strong>：如果你希望在程序运行时通过反射获取注解，必须显式指定为 <code>RUNTIME</code>，否则默认是 <code>CLASS</code>，反射是读不到的！</p>
+
+                <h4>代码示例：不同 RetentionPolicy 的对比</h4>
+                <pre><code class="language-java">@Retention(RetentionPolicy.SOURCE)
+@interface SourceAnnotation {}
+
+@Retention(RetentionPolicy.CLASS)  // 默认值
+@interface ClassAnnotation {}
+
+@Retention(RetentionPolicy.RUNTIME)
+@interface RuntimeAnnotation {}
+
+public class TestClass {
+    @SourceAnnotation
+    public void method1() { }
+
+    @ClassAnnotation
+    public void method2() { }
+
+    @RuntimeAnnotation
+    public void method3() { }
+}
+
+// 运行时通过反射读取注解
+public class TestReflection {
+    public static void main(String[] args) throws Exception {
+        Method m1 = TestClass.class.getMethod("method1");
+        Method m2 = TestClass.class.getMethod("method2");
+        Method m3 = TestClass.class.getMethod("method3");
+
+        System.out.println("method1 @SourceAnnotation: " +
+            (m1.getAnnotation(SourceAnnotation.class) != null));  // false
+        System.out.println("method2 @ClassAnnotation: " +
+            (m2.getAnnotation(ClassAnnotation.class) != null));    // false
+        System.out.println("method3 @RuntimeAnnotation: " +
+            (m3.getAnnotation(RuntimeAnnotation.class) != null)); // true
+    }
+}
+
+// 输出结果：
+// method1 @SourceAnnotation: false  (源码阶段就被丢弃)
+// method2 @ClassAnnotation: false    (JVM加载时被丢弃)
+// method3 @RuntimeAnnotation: true    (运行时仍然存在)</code></pre>
+
+                <p class="conclusion">如果你希望在程序运行时通过反射获取注解，必须显式指定为 <code>RUNTIME</code>，否则默认是
+                    <code>CLASS</code>，反射是读不到的！
+                </p>
             </div>
         </section>
 
@@ -455,7 +583,91 @@ System.out.println(multiply.calculate(3, 5)); // 15</code></pre>
                 <h3>📖 作用：将注解包含在 JavaDoc 中</h3>
                 <p>默认情况下，生成的 JavaDoc 文档是不包含注解信息的。如果你希望你的注解像 <code>@Deprecated</code> 一样出现在 API 文档中，就需要加上它。</p>
 
-                <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin: 1.5rem 0; border-left: 5px solid #007bff;">
+                <details
+                    style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin: 1rem 0; border-left: 5px solid #6c757d;">
+                    <summary style="cursor: pointer; font-weight: bold; color: #495057;">拓展：什么是 JavaDoc？</summary>
+                    <div style="margin-top: 1rem; color: #495057;">
+                        <p>JavaDoc 是 Java 官方提供的文档生成工具。它会读取代码中的注释，自动生成 HTML 格式的 API 文档，方便开发者查阅。</p>
+
+                        <p><strong>使用方法</strong>：</p>
+                        <pre><code class="language-java">// 1. 在代码中编写 JavaDoc 注释
+/**
+ * 用户服务类，提供用户注册、登录等功能
+ * 
+ * @author 张三
+ * @version 1.0
+ */
+public class UserService {
+    
+    /**
+     * 注册新用户
+     * 
+     * @param username 用户名，长度为 3-20 个字符
+     * @param password 密码，长度为 6-20 个字符
+     * @return 注册成功返回 true，失败返回 false
+     * @throws IllegalArgumentException 如果用户名或密码不符合要求
+     */
+    public boolean register(String username, String password) {
+        return true;
+    }
+}</code></pre>
+
+                        <p><strong>2. 生成 JavaDoc</strong>：</p>
+
+                        <p><strong>方式一：命令行生成</strong></p>
+                        <pre><code class="language-bash"># 进入有UserService.java 的目录，命令行生成 JavaDoc
+javadoc -d docs -encoding UTF-8 -charset UTF-8 UserService.java
+
+# 生成后会创建 docs 目录，里面是 HTML 文件
+# 打开 docs/index.html 即可查看生成的文档</code></pre>
+
+                        <p><strong>方式二：使用 Maven 生成</strong></p>
+                        <pre><code class="language-xml">&lt;!-- 在 pom.xml 中添加 maven-javadoc-plugin 插件 --&gt;
+&lt;build&gt;
+    &lt;plugins&gt;
+        &lt;plugin&gt;
+            &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+            &lt;artifactId&gt;maven-javadoc-plugin&lt;/artifactId&gt;
+            &lt;version&gt;3.6.0&lt;/version&gt;
+            &lt;configuration&gt;
+                &lt;!-- 指定文档编码 --&gt;
+                &lt;encoding&gt;UTF-8&lt;/encoding&gt;
+                &lt;!-- 指定字符集 --&gt;
+                &lt;charset&gt;UTF-8&lt;/charset&gt;
+                &lt;!-- 指定文档输出目录 --&gt;
+                &lt;outputDirectory&gt;docs&lt;/outputDirectory&gt;
+            &lt;/configuration&gt;
+        &lt;/plugin&gt;
+    &lt;/plugins&gt;
+&lt;/build&gt;
+
+# 运行 Maven 命令生成 JavaDoc
+mvn javadoc:javadoc
+
+# 或者在打包时同时生成 JavaDoc
+mvn package javadoc:javadoc</code></pre>
+
+
+                        <p><strong>3. 生成的文档效果</strong>：</p>
+                        <pre><code class="language-text">┌─────────────────────────────────────────┐
+│  UserService                          │
+│  用户服务类，提供用户注册、登录等功能  │
+│  作者: 张三  版本: 1.0                │
+├─────────────────────────────────────────┤
+│  方法摘要                              │
+│  ┌─────────────────────────────────┐   │
+│  │ register                        │   │
+│  │ boolean register(String username,  │
+│  │                 String password) │   │
+│  │ 注册新用户                       │   │
+│  └─────────────────────────────────┘   │
+└─────────────────────────────────────────┘</code></pre>
+
+                        <p><strong>在线示例</strong>：访问 Oracle 的 Java 官方文档（如 java.util.List）就是通过 JavaDoc 生成的。</p>
+                    </div>
+                </details>
+
+                <div>
                     <h4>不加 @Documented vs 加上 @Documented</h4>
                     <p>假设你写了一个库给别人用：</p>
                     <ul>
@@ -464,12 +676,33 @@ System.out.println(multiply.calculate(3, 5)); // 15</code></pre>
                     </ul>
                 </div>
 
-                <pre><code class="language-java">@Documented
+                <h4>代码示例</h4>
+                <pre><code class="language-java">@Documented  // 关键！加上这个注解
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface ApiVersion {
     String value();
-}</code></pre>
+}
+
+// 使用该注解的类
+@ApiVersion("1.0")
+public class UserService {
+    public void register(String username) { }
+}
+
+// 运行 javadoc 生成文档后：
+
+// 不加 @Documented 时的文档效果：
+// UserService
+// public class UserService
+// public void register(String username)
+
+// 加上 @Documented 时的文档效果：
+// @ApiVersion("1.0")
+// public class UserService
+// public void register(String username)
+// 
+// 使用者能看到这个类标记了 @ApiVersion("1.0")</code></pre>
             </div>
         </section>
 
@@ -479,7 +712,8 @@ public @interface ApiVersion {
                 <h2>元注解：@Inherited</h2>
 
                 <h3>🧬 作用：允许子类继承父类的注解</h3>
-                <p>这是一个非常有意思的规则：默认情况下，父类的注解<strong>不会</strong>被子类继承。加上 <code>@Inherited</code> 后，子类会自动拥有父类的这个注解。</p>
+                <p>这是一个非常有意思的规则：默认情况下，父类的注解<strong>不会</strong>被子类继承。</p>
+                <p>加上 <code>@Inherited</code> 后，子类会自动拥有父类的这个注解。</p>
 
                 <div style="display: flex; gap: 2rem; align-items: center;">
                     <div style="flex: 1;">
@@ -509,59 +743,48 @@ class User extends BaseEntity {}</code></pre>
         <!-- Slide 7: Custom Annotations -->
         <section class="slide">
             <div class="slide-content">
-                <h2>自定义注解</h2>
-                <p>创建自定义注解是Java注解机制的核心功能，可以根据项目需求定义特定的元数据信息。</p>
+                <h2>自定义注解（有元注解版）</h2>
 
-                <h3>🛠️ 自定义注解的基本语法</h3>
-                <pre><code class="language-java">@Target({ElementType.TYPE, ElementType.METHOD})
-@Retention(RetentionPolicy.RUNTIME)
-@interface MyAnnotation {
-    // 注解元素（类似方法）
-    String value() default "";                    // 字符串类型
-    int version() default 1;                      // 整数类型
-    String[] authors();                           // 数组类型
-    boolean isActive() default true;              // 布尔类型
-    Class<?> dataType();                          // Class类型
-    // 枚举类型
-    Status status() default Status.ACTIVE;
+                <h3>📝 完整示例：定义一个 API 接口注解</h3>
+                <p>假设我们在开发一个 Web 框架，需要标记哪些方法是 API 接口：</p>
+
+                <pre><code class="language-java">// 定义注解：使用四个元注解完善功能
+@Target(ElementType.METHOD)              // 只能用在方法上
+@Retention(RetentionPolicy.RUNTIME)      // 运行时需要反射读取
+@Documented                              // 出现在 JavaDoc 文档中
+// @Inherited                              // 这里不需要，因为@Target是METHOD
+public @interface ApiEndpoint {
+    
+    // API 路径（必须提供）
+    String path();
+    
+    // HTTP 请求方法（有默认值）
+    String method() default "GET";
+    
+    // 接口描述（可选）
+    String description() default "";
+    
+    // 需要的权限（数组类型）
+    String[] permissions() default {};
+}</code></pre>
+
+                <h3>🎯 使用注解</h3>
+                <pre><code class="language-java">@ApiEndpoint(
+    path = "/users",
+    method = "POST",
+    description = "创建新用户",
+    permissions = {"user:create", "user:write"}
+)
+public void createUser(String username, String password) {
+    // 实现
 }
 
-enum Status {
-    ACTIVE, INACTIVE, PENDING
+@ApiEndpoint(path = "/users/{id}")
+public User getUserById(String id) {
+    // 实现（使用默认 method = "GET"）
 }</code></pre>
 
-                <h3>📝 使用自定义注解</h3>
-                <pre><code class="language-java">@MyAnnotation(
-    value = "用户实体类",
-    version = 2,
-    authors = {"张三", "李四"},
-    isActive = true,
-    dataType = User.class,
-    status = Status.ACTIVE
-)
-public class User {
 
-    @MyAnnotation(
-        value = "获取用户名",
-        version = 1,
-        authors = {"张三"},
-        dataType = String.class
-    )
-    public String getUsername() {
-        return "张三";
-    }
-}</code></pre>
-
-                <h3>💡 自定义注解的元素类型</h3>
-                <p>注解元素只能是以下类型：</p>
-                <ul>
-                    <li><strong>基本数据类型</strong>：byte, short, int, long, float, double, char, boolean</li>
-                    <li><strong>String类型</strong></li>
-                    <li><strong>Class类型</strong></li>
-                    <li><strong>枚举类型</strong></li>
-                    <li><strong>注解类型</strong>（嵌套注解）</li>
-                    <li><strong>数组类型</strong>（以上类型的数组）</li>
-                </ul>
 
                 <h3>⚠️ 注意事项</h3>
                 <ul>
@@ -584,8 +807,112 @@ public void simpleMethod() {
         <!-- Slide 12: Reflection Basics for Annotations -->
         <section class="slide">
             <div class="slide-content">
-                <h2>注解处理器与反射：基础</h2>
-                <p>通过Java反射API，我们可以在运行时读取和处理注解信息，实现动态的程序行为。</p>
+                <h2>用反射读取注解</h2>
+                <div class="intro-block">
+                    <p>
+                        如果只是给代码打上标记，它就像是写给程序员看的注释一样，仅仅是<strong>“锦上添花”</strong>的装饰，
+                        并不会自动改变程序的原有行为。
+                    </p>
+                    <p>
+                        <strong>但这显然不是我们的目的！</strong> 我们希望这些元数据能够发挥真正的威力。
+                        让注解变得“强力”的关键钥匙就是 —— <strong>Java 反射机制</strong>。
+                    </p>
+                    <p>
+                        通过反射，我们可以在代码中 “读取”这些标记，提取其中的配置信息（如 URL 路径、请求方法），
+                        并据此动态地控制程序的逻辑。
+                    </p>
+                    <p>
+                        现在，让我们回到刚才定义的 <code>ApiEndpoint</code> 注解。
+                        它已经被“打”在了方法上，接下来，我们就编写一个 <strong>API 扫描器 (ApiScanner)</strong>，
+                        看看如何利用反射技术，把这些沉睡的标记“唤醒”！
+                    </p>
+                </div>
+
+                <h3>🔍 通过反射读取注解</h3>
+                <pre><code class="language-java">import java.lang.reflect.Method;
+
+public class ApiScanner {
+    public static void scan(Class<?> clazz) {
+        Method[] methods = clazz.getDeclaredMethods();
+        
+        for (Method method : methods) {
+            ApiEndpoint endpoint = method.getAnnotation(ApiEndpoint.class);
+            
+            if (endpoint != null) {
+                System.out.println("发现 API 接口：");
+                System.out.println("  路径: " + endpoint.path());
+                System.out.println("  方法: " + endpoint.method());
+                System.out.println("  描述: " + endpoint.description());
+                System.out.println("  权限: " + String.join(", ", endpoint.permissions()));
+            }
+        }
+    }
+    
+    // 被扫描的控制器类示例
+    static class UserController {
+        
+        @ApiEndpoint(
+            path = "/users",
+            method = "POST",
+            description = "创建新用户",
+            permissions = {"user:create", "user:write"}
+        )
+        public void createUser(String username, String password) {
+            System.out.println("创建用户: " + username);
+        }
+
+        @ApiEndpoint(
+            path = "/users/{id}",
+            method = "GET",
+            description = "根据ID获取用户信息"
+        )
+        public User getUserById(String id) {
+            System.out.println("获取用户: " + id);
+            return new User();
+        }
+        
+        @ApiEndpoint(
+            path = "/users/{id}",
+            method = "DELETE",
+            permissions = {"user:delete"}
+        )
+        public void deleteUser(String id) {
+            System.out.println("删除用户: " + id);
+        }
+    }
+    
+    // 简单的 User 类示例
+    static class User {}
+    
+    // 主方法：演示如何使用扫描器
+    public static void main(String[] args) {
+        System.out.println("=== API 接口扫描器演示 ===\n");
+        
+        // 扫描 UserController 类中的所有 API 接口
+        ApiScanner.scan(UserController.class);
+    }
+}</code></pre>
+
+                <h3>📤 程序运行输出</h3>
+                <pre><code class="language-text">=== API 接口扫描器演示 ===
+
+发现 API 接口：
+  路径: /users
+  方法: POST
+  描述: 创建新用户
+  权限: user:create, user:write
+
+发现 API 接口：
+  路径: /users/{id}
+  方法: GET
+  描述: 根据ID获取用户信息
+  权限: 
+
+发现 API 接口：
+  路径: /users/{id}
+  方法: DELETE
+  描述: 
+  权限: user:delete</code></pre>
 
                 <h3>🔍 反射读取注解的基本方法</h3>
                 <pre><code class="language-java">// 1. 获取类上的注解
@@ -626,34 +953,45 @@ for (Annotation annotation : annotations) {
         <!-- Slide 13: Practical Test Framework Example -->
         <section class="slide">
             <div class="slide-content">
-                <h2>注解处理器实践：测试框架</h2>
+                <h2>实践：简单测试框架-1</h2>
+                <p class="intro">现在我们尝试利用注解构造一个简单的测试框架，体验注解在实际开发中的强大作用。</p>
 
-                <h3>🛠️ 定义测试注解</h3>
+                <h3>🛠️ 第一步：定义测试注解</h3>
+                <p>首先创建一个标记测试方法的注解，需要在运行时通过反射读取。</p>
                 <pre><code class="language-java">// 定义测试注解
-@Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)  // 运行时保留，允许反射读取
+@Target(ElementType.METHOD)           // 只能作用于方法
 @interface Test {
-    String description() default "";
+    String description() default "";  // 可选的测试描述
 }</code></pre>
 
-                <h3>🏃‍♂️ 测试运行器</h3>
+                <h3>🏃‍♂️ 第二步：实现测试运行器</h3>
+                <p>运行器通过反射扫描带有@Test注解的方法并执行它们。</p>
                 <pre><code class="language-java">public class TestRunner {
     public static void runTests(Class<?> testClass) throws Exception {
         int passed = 0, failed = 0;
 
+        // 获取测试类中声明的所有方法（包括私有方法）
         for (Method method : testClass.getDeclaredMethods()) {
+            // 检查当前方法是否带有@Test注解
             if (method.isAnnotationPresent(Test.class)) {
+                // 获取方法上的@Test注解对象，以便读取注解的属性值
                 Test testAnnotation = method.getAnnotation(Test.class);
                 System.out.println("运行测试: " + method.getName());
+                // 如果注解中有description属性值，则输出测试描述
                 if (!testAnnotation.description().isEmpty()) {
                     System.out.println("描述: " + testAnnotation.description());
                 }
 
                 try {
-                    method.invoke(testClass.getDeclaredConstructor().newInstance());
+                    // 通过无参构造器创建测试类的实例对象
+                    Object instance = testClass.getDeclaredConstructor().newInstance();
+                    // 使用反射调用测试方法，instance是方法所属的对象
+                    method.invoke(instance);
                     System.out.println("✅ 测试通过");
                     passed++;
                 } catch (Exception e) {
+                    // 捕获测试方法执行过程中的异常（如断言失败、空指针等）
                     System.out.println("❌ 测试失败: " + e.getMessage());
                     failed++;
                 }
@@ -664,16 +1002,17 @@ for (Annotation annotation : annotations) {
     }
 }</code></pre>
 
-                <p class="conclusion">这个简单的测试框架展示了注解处理器的核心工作原理：扫描注解、执行相应逻辑、输出结果。</p>
+                <p class="conclusion">这个测试框架的核心思想是：通过反射扫描类中的方法，找到带有@Test注解的方法并自动执行。</p>
             </div>
         </section>
 
         <!-- Slide 14: Using the Test Framework -->
         <section class="slide">
             <div class="slide-content">
-                <h2>使用测试框架示例</h2>
+                <h2>实践：简单测试框架-2</h2>
 
-                <h3>📊 编写测试类</h3>
+                <h3>📊 第三步：编写测试类</h3>
+                <p>创建测试类，使用@Test注解标记需要执行的测试方法。</p>
                 <pre><code class="language-java">public class MathTests {
 
     @Test(description = "测试加法运算")
@@ -694,57 +1033,55 @@ for (Annotation annotation : annotations) {
     }
 }
 
-// 运行测试
+// 第四步：运行测试
 public static void main(String[] args) throws Exception {
     TestRunner.runTests(MathTests.class);
 }</code></pre>
 
-                <h3>🎯 注解处理器的应用场景</h3>
-                <ul>
-                    <li><strong>代码生成</strong>：根据注解自动生成代码</li>
-                    <li><strong>依赖注入</strong>：自动装配对象依赖</li>
-                    <li><strong>序列化/反序列化</strong>：自定义对象的转换规则</li>
-                    <li><strong>配置管理</strong>：读取配置注解并设置程序参数</li>
-                    <li><strong>验证框架</strong>：数据验证和业务规则检查</li>
-                </ul>
 
-                <p class="conclusion">通过反射处理注解，我们可以创建灵活、可扩展的框架和工具，实现代码的自动化处理。</p>
+                <p class="conclusion">通过反射处理注解，我们可以创建灵活、可扩展的框架和工具，实现代码的自动化处理，提升开发效率。</p>
             </div>
         </section>
 
-        <!-- Slide 15: Real-world Applications Introduction -->
-        <section class="slide">
-            <div class="slide-content">
-                <h2>注解在实际开发中的应用</h2>
-                <p>注解在现代Java开发中扮演着重要角色，许多流行框架都大量使用注解来简化开发。</p>
-
-                <h3>🌟 注解的典型应用领域</h3>
-                <ul>
-                    <li><strong>Web开发</strong>：Spring MVC、RESTful API</li>
-                    <li><strong>持久层</strong>：JPA、MyBatis、Hibernate</li>
-                    <li><strong>测试框架</strong>：JUnit、TestNG</li>
-                    <li><strong>代码生成</strong>：Lombok、MapStruct</li>
-                    <li><strong>依赖注入</strong>：Spring、CDI</li>
-                </ul>
-
-                <h3>💡 为什么框架都喜欢用注解？</h3>
-                <ul>
-                    <li><strong>声明式编程</strong>：关注"做什么"而非"怎么做"</li>
-                    <li><strong>配置内聚</strong>：配置与代码在一起，便于维护</li>
-                    <li><strong>类型安全</strong>：编译时检查，减少运行时错误</li>
-                    <li><strong>代码简洁</strong>：减少样板代码和XML配置</li>
-                </ul>
-
-                <p class="conclusion">接下来我们将看看几个主流框架中注解的具体应用。</p>
-            </div>
-        </section>
 
         <!-- Slide 16: Spring Framework Annotations -->
         <section class="slide">
             <div class="slide-content">
-                <h2>Spring框架中的注解</h2>
+                <h2>真实案例：Spring框架</h2>
+                <p class="intro">Spring是Java生态中最流行的框架之一。下面用一个Web开发的例子展示注解如何简化代码。</p>
 
-                <h3>🌱 Spring MVC控制器</h3>
+                <h3>� 没有Spring：处理HTTP请求需要写大量代码</h3>
+                <pre><code class="language-java">public class UserServlet extends HttpServlet {
+    private UserService userService;
+
+    public void init() {
+        userService = new UserService(new UserDao(new DataSource()));
+    }
+
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp)
+            throws ServletException, IOException {
+        String idStr = req.getParameter("id");
+        Long id = Long.parseLong(idStr);
+        User user = userService.findById(id);
+
+        resp.setContentType("application/json");
+        resp.getWriter().write(convertToJson(user));
+    }
+
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp)
+            throws ServletException, IOException {
+        String json = req.getReader().lines().collect(Collectors.joining());
+        User user = parseJson(json);
+        validateUser(user);
+        User saved = userService.save(user);
+
+        resp.setStatus(201);
+        resp.setContentType("application/json");
+        resp.getWriter().write(convertToJson(saved));
+    }
+}</code></pre>
+
+                <h3>🟢 有Spring：只需要加几个注解</h3>
                 <pre><code class="language-java">@RestController
 @RequestMapping("/api/users")
 public class UserController {
@@ -753,84 +1090,75 @@ public class UserController {
     private UserService userService;
 
     @GetMapping("/{id}")
-    @ResponseBody
     public User getUser(@PathVariable Long id) {
         return userService.findById(id);
     }
 
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public User createUser(@Valid @RequestBody User user) {
+    public User createUser(@RequestBody User user) {
         return userService.save(user);
     }
 }</code></pre>
 
-                <h3>⚙️ Spring配置</h3>
-                <pre><code class="language-java">@Configuration
-@ComponentScan("com.example")
-@EnableTransactionManagement
-public class AppConfig {
+                <h3>💡 对比一下</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.6rem; text-align: left;">任务</th>
+                            <th style="border: 1px solid #ddd; padding: 0.6rem; text-align: left;">没有Spring</th>
+                            <th style="border: 1px solid #ddd; padding: 0.6rem; text-align: left;">有Spring</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">创建对象</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">手动new，层层传递依赖</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;"><code>@Autowired</code> 自动注入</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">处理GET请求</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">手动解析参数、转JSON</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;"><code>@GetMapping</code> 自动处理</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">处理POST请求</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">读请求体、解析、验证</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;"><code>@PostMapping</code> + <code>@RequestBody</code></td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">设置响应</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">手动设置状态码、Content-Type</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">自动处理</td>
+                        </tr>
+                    </tbody>
+                </table>
 
-    @Bean
-    public DataSource dataSource() {
-        return new HikariDataSource();
-    }
-}</code></pre>
+                <h3>🔍 @GetMapping到底是怎么工作的？</h3>
+                <p>用大白话来说，Spring框架处理@GetMapping的步骤其实和我们前面写的TestRunner很像：</p>
+                <ol>
+                    <li><strong>启动时扫描</strong>：Spring程序启动时，扫描所有类，找到带<code>@RestController</code>注解的控制器类</li>
+                    <li><strong>查找方法</strong>：遍历控制器中的每个方法，检查是否有<code>@GetMapping("/api/users/{id}")</code>这样的注解</li>
+                    <li><strong>建立映射</strong>：Spring在内存里建立一个"地址本"：<br>
+                    <code style="background: #f0f0f0; padding: 2px 6px;">"GET /api/users/123" → UserController.getUser(123L)</code></li>
+                    <li><strong>接收请求</strong>：当浏览器发送一个GET请求到<code>/api/users/123</code>时</li>
+                    <li><strong>查找方法</strong>：Spring从"地址本"里找到对应的方法<code>getUser</code></li>
+                    <li><strong>提取参数</strong>：从URL路径中提取id值（123），转换成Long类型</li>
+                    <li><strong>调用方法</strong>：用反射调用<code>userService.findById(123L)</code></li>
+                    <li><strong>返回结果</strong>：将返回的User对象自动转换成JSON，发送给浏览器</li>
+                </ol>
 
-                <p class="conclusion">Spring框架通过注解实现了强大的依赖注入和面向切面编程功能。</p>
+                <p class="conclusion">两个例子做的事情完全一样，但Spring版本只需要几个注解，代码量减少80%以上。这就是注解的威力：用"标签"告诉框架"怎么做"，让框架帮你完成繁琐的底层工作。</p>
             </div>
         </section>
 
-        <!-- Slide 17: JUnit Testing Framework -->
+
+        <!-- Slide 18: Lombok Annotations -->
         <section class="slide">
             <div class="slide-content">
-                <h2>JUnit测试框架注解</h2>
+                <h2>真实案例：Lombok注解</h2>
+                <p class="intro">Lombok是一个Java库，通过注解自动生成样板代码，大大减少代码量。</p>
 
-                <h3>🧪 测试类和方法注解</h3>
-                <pre><code class="language-java">@SpringBootTest
-@TestMethodOrder(OrderAnnotation.class)
-class UserServiceTest {
-
-    @Autowired
-    private UserService userService;
-
-    @Test
-    @Order(1)
-    @DisplayName("创建用户测试")
-    void shouldCreateUser() {
-        User user = new User("张三", "zhangsan@example.com");
-        User saved = userService.save(user);
-        assertThat(saved.getId()).isNotNull();
-    }
-
-    @Test
-    @Order(2)
-    @Disabled("待实现")
-    void shouldUpdateUser() {
-        // 测试用户更新功能
-    }
-
-    @BeforeEach
-    void setUp() {
-        System.out.println("测试开始前准备数据");
-    }
-
-    @AfterEach
-    void tearDown() {
-        System.out.println("测试结束后清理数据");
-    }
-}</code></pre>
-
-                <p class="conclusion">JUnit通过注解让测试编写变得简单直观，支持测试生命周期管理和条件执行。</p>
-            </div>
-        </section>
-
-        <!-- Slide 18: Lombok and MyBatis Annotations -->
-        <section class="slide">
-            <div class="slide-content">
-                <h2>Lombok和MyBatis注解</h2>
-
-                <h3>🔧 Lombok工具</h3>
+                <h3>🔧 Lombok常用注解</h3>
                 <pre><code class="language-java">@Data            // 自动生成getter/setter/toString/equals/hashCode
 @AllArgsConstructor // 自动生成全参构造方法
 @NoArgsConstructor  // 自动生成无参构造方法
@@ -857,8 +1185,57 @@ public class User {
     private String internalCode;
 }</code></pre>
 
-                <h3>🔍 MyBatis持久层框架</h3>
-                <pre><code class="language-java">@Mapper
+                <h3>🔍 @Data到底是怎么工作的？</h3>
+                <p>用大白话来说，Lombok处理@Data注解的步骤是这样的：</p>
+                <ol>
+                    <li><strong>你写代码</strong>：你写了一个简洁的User类，只有<code>@Data</code>注解和几个字段</li>
+                    <li><strong>启动编译</strong>：当你运行<code>javac</code>编译器时，Lombok的注解处理器介入</li>
+                    <li><strong>扫描注解</strong>：Lombok扫描到<code>@Data</code>注解，知道"哦，这个类需要生成getter/setter等方法"</li>
+                    <li><strong>生成代码</strong>：Lombok自动把下面这些代码插入到类中：<br>
+                    <code style="background: #f0f0f0; padding: 2px 6px;">public String getName() { return name; }</code><br>
+                    <code style="background: #f0f0f0; padding: 2px 6px;">public void setName(String name) { this.name = name; }</code><br>
+                    <code style="background: #f0f0f0; padding: 2px 6px;">// 还有toString、equals、hashCode...</code></li>
+                    <li><strong>输出.class</strong>：编译生成的<code>User.class</code>文件包含了完整的方法，就像你手写的一样</li>
+                    <li><strong>源码不变</strong>：你的<code>User.java</code>文件依然保持简洁，只有几行代码</li>
+                    <li><strong>IDE显示</strong>：IDEA等IDE安装Lombok插件后，在编辑器里能自动提示这些生成的方法</li>
+                </ol>
+
+                <h3>💡 就像有一个"代码打字员"</h3>
+                <p>Lombok就像你雇佣了一个打字员：你只写关键信息（字段名），打字员自动帮你把重复的代码（getter/setter等）都写好了。你的源文件依然简洁，但最终运行的程序拥有完整的代码。</p>
+
+                <p class="conclusion">Lombok通过注解处理器在编译期自动生成代码，让开发者专注于业务逻辑而非样板代码。一个User类原本需要50行代码，现在只需要5行。</p>
+            </div>
+        </section>
+
+        <!-- Slide 19: MyBatis Annotations -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>真实案例：MyBatis注解</h2>
+                <p class="intro">MyBatis是一个数据库操作框架。下面用一个例子展示注解如何简化数据库访问代码。</p>
+
+                <h3>🔴 没有MyBatis：用JDBC操作数据库很繁琐</h3>
+                <pre><code class="language-java">public User findById(Long id) throws SQLException {
+    String sql = "SELECT * FROM users WHERE id = ?";
+    Connection conn = DriverManager.getConnection(url, user, password);
+    PreparedStatement stmt = conn.prepareStatement(sql);
+    stmt.setLong(1, id);
+    ResultSet rs = stmt.executeQuery();
+
+    User user = null;
+    if (rs.next()) {
+        user = new User();
+        user.setId(rs.getLong("id"));
+        user.setName(rs.getString("name"));
+        user.setEmail(rs.getString("email"));
+    }
+    rs.close();
+    stmt.close();
+    conn.close();
+    return user;
+}</code></pre>
+
+                <h3>🟢 有MyBatis：一个注解搞定</h3>
+                <pre><code class="language-java">@Mapper  // MyBatis自动扫描这个接口
 public interface UserMapper {
 
     @Select("SELECT * FROM users WHERE id = #{id}")
@@ -879,14 +1256,60 @@ public interface UserMapper {
     int deleteById(Long id);
 }</code></pre>
 
-                <p class="conclusion">Lombok通过注解自动生成代码，MyBatis通过注解简化SQL映射。</p>
+                <h3>� @Select到底是怎么工作的？</h3>
+                <p>用大白话来说，MyBatis处理@Select注解的步骤是这样的：</p>
+                <ol>
+                    <li><strong>启动时扫描</strong>：MyBatis程序启动时，扫描所有带<code>@Mapper</code>注解的接口</li>
+                    <li><strong>解析注解</strong>：扫描接口方法上的<code>@Select("SELECT * FROM users WHERE id = #{id}")</code></li>
+                    <li><strong>创建代理对象</strong>：MyBatis使用动态代理技术，为接口创建一个实现类（不用你写！）</li>
+                    <li><strong>调用方法</strong>：当你调用<code>userMapper.findById(123L)</code>时</li>
+                    <li><strong>替换参数</strong>：MyBatis把SQL中的<code>#{id}</code>替换成<code>123</code>，得到<code>SELECT * FROM users WHERE id = 123</code></li>
+                    <li><strong>执行SQL</strong>：通过JDBC执行SQL语句</li>
+                    <li><strong>映射结果</strong>：把数据库返回的每一行数据转换成User对象，字段自动对应</li>
+                    <li><strong>返回对象</strong>：返回完整的User对象给你</li>
+                </ol>
+
+                <h3>💡 对比一下</h3>
+                <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="border: 1px solid #ddd; padding: 0.6rem; text-align: left;">任务</th>
+                            <th style="border: 1px solid #ddd; padding: 0.6rem; text-align: left;">没有MyBatis</th>
+                            <th style="border: 1px solid #ddd; padding: 0.6rem; text-align: left;">有MyBatis</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">查询数据</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">写20行JDBC代码</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;"><code>@Select</code> + 1行SQL</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">设置参数</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">手动setLong(1, id)</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">自动替换<code>#{id}</code></td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">映射结果</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">手动rs.getString、rs.getLong...</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">自动映射到User对象</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">释放资源</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">手动close rs、stmt、conn</td>
+                            <td style="border: 1px solid #ddd; padding: 0.6rem;">自动管理</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p class="conclusion">MyBatis通过注解将SQL语句直接写在Java接口上，实现了SQL与代码的统一。原本20行JDBC代码，现在只需要1个注解，代码量减少90%以上。这就是注解的威力：你只写SQL，框架帮你完成繁琐的JDBC操作。</p>
             </div>
         </section>
 
-        <!-- Slide 19: Annotation Advantages Summary -->
+        <!-- Slide 20: Annotation Advantages Summary -->
         <section class="slide">
             <div class="slide-content">
-                <h2>注解的优势总结</h2>
+                <h2>注解总结</h2>
 
                 <h3>📈 注解的核心优势</h3>
                 <table style="width: 100%; border-collapse: collapse; margin: 1rem 0;">
@@ -955,4 +1378,5 @@ public interface UserMapper {
     <script src="./js/imgbed-replacer.js"></script>
     <script src="js/chat-with-ai.js"></script>
 </body>
+
 </html>
