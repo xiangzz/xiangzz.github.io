@@ -63,7 +63,7 @@
     Promise.all([
         loadResource('css', cssUrl),                                                                 // 本地CSS样式
         loadResource('html', htmlUrl),                                                               // 本地HTML模板
-        loadResource('script', 'https://cdn.jsdelivr.net/npm/marked/marked.min.js'),               // Markdown解析库
+        loadResource('script', 'https://cdnjs.cloudflare.com/ajax/libs/marked/15.0.12/marked.min.js'),               // Markdown解析库
         loadResource('script', 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js'), // 代码高亮库
         loadResource('css', 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css')    // 代码高亮主题
     ]).then(([_, htmlContent]) => {
