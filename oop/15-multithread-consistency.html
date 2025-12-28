@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>银行账户并发存款演示</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        /* 全局覆盖 */
+        html, body {
+            height: auto !important;
+            overflow: visible !important;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 { color: #2c3e50; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; text-align: center; max-width: 800px; font-size: 1.1rem;}
+
+        .main-stage {
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+            justify-content: center;
+            margin-bottom: 30px;
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        /* 线程卡片 */
+        .thread-card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            padding: 20px;
+            width: 280px;
+            border-top: 5px solid #bdc3c7;
+            position: relative;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .thread-card.active {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+
+        #card-a { border-top-color: #3498db; }
+        #card-b { border-top-color: #9b59b6; }
+
+        .thread-title { font-weight: bold; font-size: 1.2rem; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+        .avatar { width: 36px; height: 36px; background: #ddd; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.9rem; }
+        #card-a .avatar { background: #3498db; }
+        #card-b .avatar { background: #9b59b6; }
+
+        .memory-box {
+            background: #f8f9fa;
+            border: 2px dashed #cbd5e0;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .memory-label { font-size: 0.8rem; color: #7f8c8d; display: block; margin-bottom: 5px; }
+        .memory-val { font-family: 'Courier New', monospace; font-weight: bold; font-size: 1.5rem; color: #2c3e50; }
+
+        .code-block {
+            background: #282c34;
+            color: #abb2bf;
+            padding: 10px;
+            border-radius: 6px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+        
+        .code-line { padding: 4px 8px; border-radius: 4px; margin-bottom: 2px; }
+        .code-line.active { background: #3e4451; color: #fff; border-left: 4px solid #61afef; }
+
+        /* 主内存区域 */
+        .shared-memory {
+            background: #fff;
+            border-radius: 12px;
+            padding: 30px;
+            width: 220px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            border: 2px solid #2c3e50;
+            position: relative;
+            align-self: center;
+        }
+        
+        .shared-title { font-weight: bold; color: #2c3e50; margin-bottom: 15px; font-size: 1.1rem; }
+        .shared-val { font-size: 2.5rem; font-weight: bold; color: #27ae60; font-family: 'Courier New', monospace; }
+        .shared-icon { font-size: 2rem; margin-bottom: 10px; display: block; }
+
+        /* 控制区 - 覆盖全局 style.css 的 absolute 定位 */
+        .controls {
+            position: relative !important;
+            bottom: auto !important;
+            right: auto !important;
+            background: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 30px;
+            width: 100%;
+            justify-content: center;
+            max-width: 800px;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            color: white;
+            transition: all 0.2s;
+            font-family: 'Segoe UI', sans-serif;
+            font-weight: 600;
+        }
+
+        .btn-step-a { background: #3498db; }
+        .btn-step-a:hover { background: #2980b9; }
+        
+        .btn-step-b { background: #9b59b6; }
+        .btn-step-b:hover { background: #8e44ad; }
+
+        .btn-auto { background: #e67e22; }
+        .btn-auto:hover { background: #d35400; }
+        
+        .btn-reset { background: #95a5a6; }
+        .btn-reset:hover { background: #7f8c8d; }
+
+        button:disabled { background: #ccc; cursor: not-allowed; opacity: 0.7; }
+
+        /* 历史记录 */
+        .history-log {
+            width: 100%;
+            max-width: 800px;
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .log-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9rem;
+        }
+        .log-item:last-child { border-bottom: none; }
+        .log-action { font-weight: bold; }
+        .log-action.A { color: #3498db; }
+        .log-action.B { color: #9b59b6; }
+        .log-conflict { background: #ffebee; color: #c62828; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-left: 10px; }
+
+    </style>
+</head>
+<body>
+
+    <h1>并发安全演示：银行账户存款</h1>
+    <p class="subtitle">
+        <strong>场景描述：</strong> 账户初始余额为 1000 元。丈夫 (Thread A) 和 妻子 (Thread B) 同时在不同的柜台往该账户存入 100 元。<br>
+        如果操作正常，最终余额应为 1200 元。但如果发生并发问题，100 元可能会“凭空消失”。
+    </p>
+
+    <div class="main-stage">
+        <!-- 线程 A -->
+        <div class="thread-card" id="card-a">
+            <div class="thread-title">
+                <div class="avatar">夫</div> 丈夫 (Thread A)
+            </div>
+            <div class="memory-box">
+                <span class="memory-label">手里拿着的单据 (工作内存)</span>
+                <div class="memory-val" id="local-a">?</div>
+            </div>
+            <div class="code-block">
+                <div class="code-line" id="code-a-0">// 准备存款</div>
+                <div class="code-line" id="code-a-1">1. READ: 查询余额</div>
+                <div class="code-line" id="code-a-2">2. MODIFY: 计算新余额 (+100)</div>
+                <div class="code-line" id="code-a-3">3. WRITE: 更新账户</div>
+            </div>
+        </div>
+
+        <!-- 共享内存 -->
+        <div class="shared-memory">
+            <span class="shared-icon">🏦</span>
+            <div class="shared-title">银行账户余额<br>(Main Memory)</div>
+            <div class="shared-val" id="main-val">1000</div>
+        </div>
+
+        <!-- 线程 B -->
+        <div class="thread-card" id="card-b">
+            <div class="thread-title">
+                <div class="avatar">妻</div> 妻子 (Thread B)
+            </div>
+            <div class="memory-box">
+                <span class="memory-label">手里拿着的单据 (工作内存)</span>
+                <div class="memory-val" id="local-b">?</div>
+            </div>
+            <div class="code-block">
+                <div class="code-line" id="code-b-0">// 准备存款</div>
+                <div class="code-line" id="code-b-1">1. READ: 查询余额</div>
+                <div class="code-line" id="code-b-2">2. MODIFY: 计算新余额 (+100)</div>
+                <div class="code-line" id="code-b-3">3. WRITE: 更新账户</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="btn-step-a" id="btn-a" onclick="step('A')">丈夫执行一步</button>
+        <button class="btn-step-b" id="btn-b" onclick="step('B')">妻子执行一步</button>
+        <div style="width: 20px;"></div>
+        <button class="btn-auto" onclick="playScenario()">演示“钱没了” (数据丢失)</button>
+        <button class="btn-reset" onclick="reset()">重置</button>
+    </div>
+
+    <div class="history-log">
+        <h4 style="margin-top:0; border-bottom:1px solid #ddd; padding-bottom:10px;">操作日志</h4>
+        <div id="log-container">
+            <div class="log-item" style="color:#999; font-style:italic;">请点击按钮开始操作...</div>
+        </div>
+    </div>
+
+    <script>
+        // 状态定义
+        const INITIAL_BALANCE = 1000;
+        const DEPOSIT_AMOUNT = 100;
+        let mainMemory = INITIAL_BALANCE;
+        
+        // 线程状态对象
+        const threads = {
+            A: { step: 0, local: null, elLocal: 'local-a', elCard: 'card-a', completedRuns: 0 },
+            B: { step: 0, local: null, elLocal: 'local-b', elCard: 'card-b', completedRuns: 0 }
+        };
+
+        function updateUI() {
+            document.getElementById('main-val').innerText = mainMemory;
+            
+            ['A', 'B'].forEach(t => {
+                const thread = threads[t];
+                // 更新工作内存显示
+                const localText = thread.local === null ? "?" : thread.local;
+                document.getElementById(thread.elLocal).innerText = localText;
+                
+                // 更新代码高亮
+                for(let i=0; i<=3; i++) {
+                    const line = document.getElementById(`code-${t.toLowerCase()}-${i}`);
+                    if (i === thread.step) line.classList.add('active');
+                    else line.classList.remove('active');
+                }
+                
+                // 更新卡片激活状态
+                const card = document.getElementById(thread.elCard);
+                if (thread.step > 0) card.classList.add('active');
+                else card.classList.remove('active');
+            });
+        }
+
+        function step(threadName) {
+            const t = threads[threadName];
+            const role = threadName === 'A' ? '丈夫' : '妻子';
+            
+            // 状态机流转
+            if (t.step === 0) {
+                // 准备开始
+                t.step = 1;
+                // Step 1: READ
+                t.local = mainMemory;
+                addLog(threadName, `${role} 查询余额，看到是 ${mainMemory}`);
+            } 
+            else if (t.step === 1) {
+                // Step 2: MODIFY
+                t.step = 2;
+                t.local = t.local + DEPOSIT_AMOUNT;
+                addLog(threadName, `${role} 在单据上计算新余额：${t.local - DEPOSIT_AMOUNT} + ${DEPOSIT_AMOUNT} = ${t.local}`);
+            } 
+            else if (t.step === 2) {
+                // Step 3: WRITE
+                t.step = 3;
+                
+                // 冲突检测：如果写入时，主内存的值比我“读入”时的值大（说明期间有人改过），
+                // 或者更简单的判断：我的写入值 <= 主内存当前值（在这个只增不减的场景下，这意味我做的功白费了或者覆盖了别人的大值）
+                // 准确逻辑：在这个场景，如果发生覆盖，主存值不会变成 1200，而是停留在 1100。
+                
+                let conflict = false;
+                // 如果写入后，主存的值没有增加（比如本来就是 1100，我写进去还是 1100），说明覆盖了别人的操作
+                // 或者：如果写入前，主存已经被修改过（不等于我最初读的值）
+                // 这里我们简单判断结果：如果我写完，主存不是 1200（且我是后执行的那个），那就是出事了。
+                // 为了演示直观，我们在 log 里直接标记“覆盖”。
+                
+                // 简单的判定逻辑：如果 mainMemory 已经不等于我当初读取的基础值（t.local - 100），说明中间有人插队修改了
+                if (mainMemory !== (t.local - DEPOSIT_AMOUNT)) {
+                    conflict = true;
+                }
+                
+                mainMemory = t.local;
+                
+                if (conflict) {
+                    addLog(threadName, `${role} 将 ${mainMemory} 写入系统 (覆盖了之前的修改！)`, true);
+                } else {
+                    addLog(threadName, `${role} 将 ${mainMemory} 写入系统`);
+                }
+                
+                // 这一轮结束
+                setTimeout(() => {
+                    t.step = 0;
+                    t.local = null;
+                    t.completedRuns++;
+                    updateUI();
+                }, 800); 
+            }
+
+            updateUI();
+        }
+
+        function addLog(thread, msg, isConflict = false) {
+            const container = document.getElementById('log-container');
+            if (container.children[0] && container.children[0].style.fontStyle === 'italic') {
+                container.innerHTML = '';
+            }
+            
+            const div = document.createElement('div');
+            div.className = 'log-item';
+            
+            const spanAction = document.createElement('span');
+            spanAction.className = `log-action ${thread}`;
+            spanAction.innerText = `[${thread === 'A' ? '丈夫' : '妻子'}]`;
+            
+            const spanMsg = document.createElement('span');
+            spanMsg.innerText = msg;
+            
+            if (isConflict) {
+                const badge = document.createElement('span');
+                badge.className = 'log-conflict';
+                badge.innerText = '覆盖写！丢钱了！';
+                spanMsg.appendChild(badge);
+            }
+
+            div.appendChild(spanAction);
+            div.appendChild(spanMsg);
+            container.prepend(div);
+        }
+
+        function reset() {
+            mainMemory = INITIAL_BALANCE;
+            threads.A = { step: 0, local: null, elLocal: 'local-a', elCard: 'card-a', completedRuns: 0 };
+            threads.B = { step: 0, local: null, elLocal: 'local-b', elCard: 'card-b', completedRuns: 0 };
+            document.getElementById('log-container').innerHTML = '<div class="log-item" style="color:#999; font-style:italic;">请点击按钮开始操作...</div>';
+            updateUI();
+        }
+
+        // 自动演示剧本
+        async function playScenario() {
+            reset();
+            await delay(500);
+            
+            // 剧本：
+            // 1. 丈夫查询余额 (1000)
+            step('A'); 
+            await delay(1200);
+            
+            // 2. 妻子也查询余额 (1000) -> 此时她不知道丈夫也要存钱
+            step('B');
+            await delay(1200);
+            
+            // 3. 丈夫计算 (1100)
+            step('A');
+            await delay(1200);
+            
+            // 4. 妻子计算 (1100)
+            step('B');
+            await delay(1200);
+            
+            // 5. 丈夫提交 (账户变为 1100)
+            step('A');
+            await delay(1200);
+            
+            // 6. 妻子提交 (账户变为 1100) -> 丈夫存的那 100 块被覆盖了！
+            step('B');
+        }
+
+        function delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // Init
+        updateUI();
+
+    </script>
+</body>
+</html>

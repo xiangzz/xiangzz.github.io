@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java 线程状态机演示</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        /* =========================================
+           1. 全局重置与基础样式
+           ========================================= */
+        :root {
+            --primary-color: #3498db;
+            --bg-color: #f4f6f8;
+            --panel-bg: #ffffff;
+            --text-color: #2c3e50;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Roboto', Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            /* 确保 body 是滚动容器 */
+            overflow-y: auto; 
+            min-height: 100vh;
+        }
+
+        /* =========================================
+           2. 核心布局容器
+           ========================================= */
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            display: block; /* 强制块级布局 */
+        }
+
+        /* 顶部标题区 */
+        .header-section {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e1e4e8;
+        }
+
+        .header-section h1 {
+            margin: 0 0 10px 0;
+            font-size: 2rem;
+        }
+
+        .header-section p {
+            color: #7f8c8d;
+            margin: 0;
+            font-size: 1rem;
+        }
+
+        /* =========================================
+           3. 图表显示区域 (Diagram)
+           ========================================= */
+        .diagram-section {
+            width: 100%;
+            /* 强制设置高度，防止塌陷 */
+            height: 550px; 
+            background: var(--panel-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid #dcdcdc;
+            position: relative; /* 为内部绝对定位元素提供锚点 */
+            margin-bottom: 40px; /* 这里的边距至关重要，隔开下方的控制区 */
+            overflow: hidden; /* 防止内部元素溢出 */
+        }
+
+        /* 状态节点 (绝对定位) */
+        .node {
+            position: absolute;
+            width: 140px;
+            height: 70px;
+            background: #95a5a6;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            font-size: 0.9rem;
+            z-index: 5;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: transform 0.3s, box-shadow 0.3s, background-color 0.3s;
+        }
+
+        .node span {
+            font-size: 0.7rem;
+            font-weight: normal;
+            opacity: 0.9;
+            margin-top: 2px;
+        }
+
+        .node.active {
+            transform: scale(1.1);
+            box-shadow: 0 0 15px rgba(0,0,0,0.3);
+            border: 2px solid #2c3e50;
+            z-index: 10;
+        }
+
+        /* 节点坐标定义 (基于 900x550 画布) */
+        /* 第一行 */
+        #node-blocked { top: 40px; left: 380px; background: #e74c3c; }
+
+        /* 第二行 (主轴) */
+        #node-new { top: 220px; left: 50px; background: #95a5a6; }
+        #node-runnable { top: 220px; left: 370px; background: #27ae60; width: 160px; }
+        #node-terminated { top: 220px; left: 750px; background: #34495e; }
+
+        /* 第三行 */
+        #node-waiting { top: 400px; left: 250px; background: #f39c12; }
+        #node-timed { top: 400px; left: 550px; background: #d35400; }
+
+        /* SVG 连线层 */
+        .svg-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* 线程小球 */
+        .token {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: #fff;
+            border: 4px solid #2c3e50;
+            border-radius: 50%;
+            z-index: 20;
+            transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            display: none; /* JS 初始化后显示 */
+        }
+
+        /* =========================================
+           4. 控制台与日志区域 (Dashboard)
+           ========================================= */
+        .dashboard-section {
+            background: var(--panel-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid #dcdcdc;
+            padding: 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 1rem;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            background: var(--primary-color);
+            color: white;
+            font-family: monospace;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            filter: brightness(1.1);
+        }
+
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            opacity: 0.6;
+        }
+
+        .btn-reset { background: #7f8c8d; }
+        .btn-action { background: #e67e22; }
+
+        .log-box {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            height: 150px;
+            overflow-y: auto;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            border-left: 5px solid var(--primary-color);
+        }
+
+        .log-time { color: #95a5a6; margin-right: 10px; font-size: 0.8em; }
+        .log-hl { color: #f1c40f; font-weight: bold; margin-right: 5px; }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    
+    <!-- 1. Header -->
+    <div class="header-section">
+        <h1>Java 线程状态机演示</h1>
+        <p>NEW &rightarrow; RUNNABLE &leftrightarrow; (BLOCKED / WAITING / TIMED) &rightarrow; TERMINATED</p>
+    </div>
+
+    <!-- 2. Diagram (Fixed Height 550px) -->
+    <div class="diagram-section">
+        <!-- Lines -->
+        <svg class="svg-layer">
+            <defs>
+                <marker id="m-gray" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#bdc3c7"/></marker>
+                <marker id="m-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#e74c3c"/></marker>
+                <marker id="m-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#27ae60"/></marker>
+            </defs>
+
+            <!-- NEW -> RUNNABLE -->
+            <line x1="190" y1="255" x2="370" y2="255" stroke="#bdc3c7" stroke-width="2" marker-end="url(#m-gray)" />
+            <text x="250" y="245" fill="#7f8c8d" font-size="12" text-anchor="middle">start()</text>
+
+            <!-- RUNNABLE -> TERMINATED -->
+            <line x1="530" y1="255" x2="750" y2="255" stroke="#bdc3c7" stroke-width="2" marker-end="url(#m-gray)" />
+            <text x="640" y="245" fill="#7f8c8d" font-size="12" text-anchor="middle">run() end</text>
+
+            <!-- RUNNABLE <-> BLOCKED -->
+            <path d="M 420 220 Q 400 150 430 110" fill="none" stroke="#e74c3c" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#m-red)" />
+            <text x="360" y="160" fill="#c0392b" font-size="12">sync</text>
+
+            <path d="M 470 110 Q 500 150 480 220" fill="none" stroke="#27ae60" stroke-width="2" marker-end="url(#m-green)" />
+            <text x="500" y="160" fill="#27ae60" font-size="12">get lock</text>
+
+            <!-- RUNNABLE <-> WAITING -->
+            <path d="M 420 290 Q 350 350 350 400" fill="none" stroke="#f39c12" stroke-width="2" marker-end="url(#m-gray)" />
+            <text x="340" y="340" fill="#d35400" font-size="12">wait()</text>
+
+            <!-- WAITING -> BLOCKED (Corrected) -->
+            <path d="M 390 435 Q 450 435 450 120" fill="none" stroke="#e74c3c" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#m-red)" />
+            <text x="460" y="380" fill="#c0392b" font-size="12">notify()</text>
+
+            <!-- RUNNABLE <-> TIMED -->
+            <path d="M 480 290 Q 550 350 600 400" fill="none" stroke="#d35400" stroke-width="2" marker-end="url(#m-gray)" />
+            <text x="580" y="340" fill="#d35400" font-size="12">sleep(t)</text>
+
+            <path d="M 650 400 Q 650 350 530 280" fill="none" stroke="#27ae60" stroke-width="2" marker-end="url(#m-green)" />
+            <text x="620" y="320" fill="#27ae60" font-size="12">timeout</text>
+
+        </svg>
+
+        <!-- Nodes -->
+        <div id="node-new" class="node">NEW</div>
+        <div id="node-runnable" class="node">RUNNABLE<span>(Ready/Running)</span></div>
+        <div id="node-blocked" class="node">BLOCKED<span>(Monitor)</span></div>
+        <div id="node-waiting" class="node">WAITING<span>(Wait Set)</span></div>
+        <div id="node-timed" class="node">TIMED_WAITING<span>(Sleep/Timeout)</span></div>
+        <div id="node-terminated" class="node">TERMINATED</div>
+
+        <!-- Token -->
+        <div id="token" class="token"></div>
+    </div>
+
+    <!-- 3. Dashboard -->
+    <div class="dashboard-section">
+        <div class="btn-group">
+            <button id="btn-start" onclick="fsm.start()">start()</button>
+            <button id="btn-sleep" class="btn-action" onclick="fsm.sleep()">sleep(1s)</button>
+            <button id="btn-wait" class="btn-action" onclick="fsm.waitObj()">obj.wait()</button>
+            <button id="btn-notify" class="btn-action" onclick="fsm.notifyObj()">obj.notify()</button>
+            <button id="btn-sync" class="btn-action" onclick="fsm.sync()">synchronized</button>
+            <button id="btn-finish" onclick="fsm.finish()">run() end</button>
+            <button class="btn-reset" onclick="fsm.reset()">Reset</button>
+        </div>
+        <div id="console" class="log-box">
+            <div>> 系统就绪。</div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // 简单的状态机逻辑封装
+    const fsm = (function() {
+        const STATE = {
+            NEW: 'node-new',
+            RUNNABLE: 'node-runnable',
+            BLOCKED: 'node-blocked',
+            WAITING: 'node-waiting',
+            TIMED: 'node-timed',
+            TERM: 'node-terminated'
+        };
+
+        let current = STATE.NEW;
+        
+        // DOM Elements
+        const token = document.getElementById('token');
+        const logBox = document.getElementById('console');
+        const btns = {
+            start: document.getElementById('btn-start'),
+            sleep: document.getElementById('btn-sleep'),
+            wait: document.getElementById('btn-wait'),
+            notify: document.getElementById('btn-notify'),
+            sync: document.getElementById('btn-sync'),
+            finish: document.getElementById('btn-finish')
+        };
+
+        function log(action, msg) {
+            const time = new Date().toLocaleTimeString('zh-CN', { hour12: false }); // 24小时格式
+            const line = document.createElement('div');
+            line.innerHTML = `<span class="log-time">[${time}]</span><span class="log-hl">${action}:</span>${msg}`;
+            logBox.prepend(line);
+        }
+
+        function updateUI() {
+            // 1. Disable all
+            Object.values(btns).forEach(b => b.disabled = true);
+            
+            // 2. Reset Text
+            btns.sync.innerText = "synchronized";
+            btns.sync.onclick = fsm.sync;
+
+            // 3. Enable based on state
+            if (current === STATE.NEW) {
+                btns.start.disabled = false;
+            } else if (current === STATE.RUNNABLE) {
+                btns.sleep.disabled = false;
+                btns.wait.disabled = false;
+                btns.sync.disabled = false;
+                btns.finish.disabled = false;
+            } else if (current === STATE.WAITING) {
+                btns.notify.disabled = false;
+            } else if (current === STATE.BLOCKED) {
+                btns.sync.innerText = "获得锁 (Get Lock)";
+                btns.sync.disabled = false;
+                btns.sync.onclick = fsm.getLock;
+            } else if (current === STATE.TERM) {
+                // all disabled
+            } else if (current === STATE.TIMED) {
+                // auto transition
+            }
+
+            // 4. Move Token
+            const target = document.getElementById(current);
+            // 这里使用 offsetTop/Left，相对于 .diagram-section (position:relative)
+            // 加上宽高的一半，减去token半径(10)
+            const top = target.offsetTop + target.offsetHeight/2 - 10;
+            const left = target.offsetLeft + target.offsetWidth/2 - 10;
+            
+            token.style.top = `${top}px`;
+            token.style.left = `${left}px`;
+            token.style.display = 'block';
+
+            // 5. Highlight Node
+            document.querySelectorAll('.node').forEach(n => n.classList.remove('active'));
+            target.classList.add('active');
+        }
+
+        return {
+            init: function() {
+                updateUI();
+            },
+            reset: function() {
+                current = STATE.NEW;
+                log('重置', '线程状态重置为 NEW。');
+                updateUI();
+            },
+            start: function() {
+                if(current !== STATE.NEW) return;
+                current = STATE.RUNNABLE;
+                log('start()', '线程已启动。状态 -> RUNNABLE。');
+                updateUI();
+            },
+            sleep: function() {
+                if(current !== STATE.RUNNABLE) return;
+                current = STATE.TIMED;
+                log('sleep()', '线程进入休眠。状态 -> TIMED_WAITING。');
+                updateUI();
+                setTimeout(() => {
+                    if(current === STATE.TIMED) {
+                        current = STATE.RUNNABLE;
+                        log('时间到', '休眠结束。状态 -> RUNNABLE。');
+                        updateUI();
+                    }
+                }, 1500);
+            },
+            waitObj: function() {
+                if(current !== STATE.RUNNABLE) return;
+                current = STATE.WAITING;
+                log('wait()', '释放锁并进入等待池。状态 -> WAITING。');
+                updateUI();
+            },
+            notifyObj: function() {
+                if(current !== STATE.WAITING) return;
+                current = STATE.BLOCKED;
+                log('notify()', '被唤醒！需重新竞争锁。状态 -> BLOCKED。');
+                updateUI();
+            },
+            sync: function() {
+                if(current !== STATE.RUNNABLE) return;
+                current = STATE.BLOCKED;
+                log('synchronized', '尝试进入同步块，锁被占用。状态 -> BLOCKED。');
+                updateUI();
+            },
+            getLock: function() {
+                if(current !== STATE.BLOCKED) return;
+                current = STATE.RUNNABLE;
+                log('获得锁', '成功竞争到锁。状态 -> RUNNABLE。');
+                updateUI();
+            },
+            finish: function() {
+                if(current !== STATE.RUNNABLE) return;
+                current = STATE.TERM;
+                log('结束', '任务执行完毕。状态 -> TERMINATED。');
+                updateUI();
+            }
+        };
+    })();
+
+    // Init
+    window.onload = fsm.init;
+
+</script>
+
+</body>
+</html>

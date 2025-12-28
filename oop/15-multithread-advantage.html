@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多线程原理演示：串行 vs 并发 vs 并行</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .description {
+            max-width: 1000px;
+            text-align: left;
+            margin-bottom: 20px;
+            color: #555;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+
+        .desc-item h3 {
+            margin-top: 0;
+            color: #2980b9;
+            font-size: 1.1rem;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .desc-item p {
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin: 0;
+        }
+
+        .controls {
+            margin-bottom: 30px;
+            display: flex;
+            gap: 15px;
+            position: sticky;
+            top: 20px;
+            z-index: 100;
+            background: rgba(240, 242, 245, 0.9);
+            padding: 10px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+        }
+
+        button {
+            padding: 12px 30px;
+            font-size: 1rem;
+            cursor: pointer;
+            background-color: #34495e;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            font-weight: 600;
+        }
+
+        button:hover {
+            background-color: #2c3e50;
+            transform: translateY(-2px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+
+        button.primary {
+            background-color: #3498db;
+        }
+        
+        button.primary:hover {
+            background-color: #2980b9;
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 30px;
+            width: 100%;
+            max-width: 1400px;
+            padding: 0 20px;
+        }
+
+        .panel {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            border-top: 5px solid #bdc3c7;
+        }
+
+        .panel.serial { border-top-color: #e67e22; }
+        .panel.concurrent { border-top-color: #f1c40f; }
+        .panel.parallel { border-top-color: #27ae60; }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #f0f0f0;
+            padding-bottom: 15px;
+        }
+
+        .panel-title {
+            font-size: 1.2rem;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+
+        .status-badge {
+            background: #e0e0e0;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: #555;
+            font-family: monospace;
+        }
+
+        .status-badge.running {
+            color: white;
+            animation: pulse 1.5s infinite;
+        }
+        
+        .serial .status-badge.running { background: #e67e22; }
+        .concurrent .status-badge.running { background: #f1c40f; color: #333; }
+        .parallel .status-badge.running { background: #27ae60; }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .cpu-info {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+            padding: 8px;
+            border-radius: 4px;
+            text-align: center;
+            border: 1px dashed #ccc;
+        }
+
+        .task-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .task-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px;
+            border-radius: 8px;
+            background: #f9f9f9;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+            position: relative;
+        }
+
+        /* 激活状态 */
+        .task-row.active {
+            background: #fff;
+            border-color: #3498db;
+            box-shadow: 0 2px 8px rgba(52, 152, 219, 0.15);
+            z-index: 1;
+        }
+
+        .task-icon {
+            width: 36px;
+            height: 36px;
+            background: #bdc3c7;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            font-size: 1rem;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        /* CPU 指针 */
+        .cpu-cursor {
+            position: absolute;
+            left: -8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0; 
+            height: 0; 
+            border-top: 8px solid transparent;
+            border-bottom: 8px solid transparent;
+            border-left: 10px solid #e74c3c;
+            opacity: 0;
+            transition: opacity 0.1s;
+        }
+        
+        .cpu-label {
+            position: absolute;
+            left: -45px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #e74c3c;
+            color: white;
+            font-size: 0.6rem;
+            padding: 2px 4px;
+            border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.1s;
+            white-space: nowrap;
+        }
+
+        .task-row.active .cpu-cursor,
+        .task-row.active .cpu-label {
+            opacity: 1;
+        }
+
+        .task-row.active .task-icon {
+            background: #3498db;
+        }
+        
+        .task-info {
+            flex-grow: 1;
+        }
+
+        .task-name {
+            font-size: 0.9rem;
+            font-weight: bold;
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .task-status-text {
+            font-size: 0.75rem;
+            color: #7f8c8d;
+            font-weight: normal;
+        }
+
+        .progress-track {
+            height: 10px;
+            background: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: #3498db;
+            border-radius: 5px;
+            transition: width 0.1s linear;
+        }
+        
+        .task-row.completed .progress-bar { background: #27ae60; }
+        .task-row.completed .task-icon { background: #27ae60; }
+        
+        .total-time {
+            margin-top: 15px;
+            text-align: right;
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: #2c3e50;
+            height: 20px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>多线程原理演示：串行 vs 并发 vs 并行</h1>
+    
+    <div class="description">
+        <div class="desc-item">
+            <h3>单线程 (串行)</h3>
+            <p><strong>1个 CPU，1个线程。</strong><br>任务必须按顺序执行，前一个不结束，后一个绝不开始。简单但效率低，容易阻塞。</p>
+        </div>
+        <div class="desc-item">
+            <h3>单核并发 (Concurrency)</h3>
+            <p><strong>1个 CPU，多个线程。</strong><br>CPU 在任务间快速切换（时间片轮转）。微观上一次只能做一个，但宏观上像在同时做。解决了阻塞问题。</p>
+        </div>
+        <div class="desc-item">
+            <h3>多核并行 (Parallelism)</h3>
+            <p><strong>多个 CPU，多个线程。</strong><br>真正的同时运行！不同的 CPU 核心同时处理不同的任务。效率最高。</p>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="primary" onclick="startAll()">开始对比演示</button>
+        <button onclick="resetAll()">重置</button>
+    </div>
+
+    <div class="main-container">
+        <!-- 1. 串行 -->
+        <div class="panel serial" id="panel-serial">
+            <div class="panel-header">
+                <span class="panel-title">单线程串行</span>
+                <span class="status-badge" id="badge-serial">IDLE</span>
+            </div>
+            <div class="cpu-info">🖥️ CPU Core: 1</div>
+            <div class="task-container" id="container-serial">
+                <!-- JS 生成任务 -->
+            </div>
+            <div class="total-time" id="time-serial"></div>
+        </div>
+
+        <!-- 2. 并发 -->
+        <div class="panel concurrent" id="panel-concurrent">
+            <div class="panel-header">
+                <span class="panel-title">单核并发 (时间片)</span>
+                <span class="status-badge" id="badge-concurrent">IDLE</span>
+            </div>
+            <div class="cpu-info">🖥️ CPU Core: 1 (Switching)</div>
+            <div class="task-container" id="container-concurrent">
+                <!-- JS 生成任务 -->
+            </div>
+            <div class="total-time" id="time-concurrent"></div>
+        </div>
+
+        <!-- 3. 并行 -->
+        <div class="panel parallel" id="panel-parallel">
+            <div class="panel-header">
+                <span class="panel-title">多核并行</span>
+                <span class="status-badge" id="badge-parallel">IDLE</span>
+            </div>
+            <div class="cpu-info">🖥️ CPU Cores: 3 (Multi-core)</div>
+            <div class="task-container" id="container-parallel">
+                <!-- JS 生成任务 -->
+            </div>
+            <div class="total-time" id="time-parallel"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- 配置 ---
+        const TASKS_CONFIG = [
+            { name: "音乐播放", duration: 100 },
+            { name: "文件下载", duration: 100 },
+            { name: "杀毒扫描", duration: 100 }
+        ];
+
+        // 模拟速度因子 (越小越快)
+        const SPEED_FACTOR = 40; 
+        const TIME_SLICE = 800; // 并发模式下切换时间片的时间 (ms) - 为了看清切换，设长一点
+        const CONCURRENT_WORK_PER_TICK = 2; // 并发模式每帧工作量
+        
+        let timers = { serial: null, concurrent: null, parallel: null };
+        let startTime = 0;
+
+        // --- 初始化 UI ---
+        function initTasks(prefix) {
+            const container = document.getElementById(`container-${prefix}`);
+            container.innerHTML = '';
+            TASKS_CONFIG.forEach((task, index) => {
+                // 根据模式决定 CPU 标签
+                let cpuLabel = "CPU";
+                if (prefix === 'parallel') cpuLabel = `Core ${index + 1}`;
+
+                const html = `
+                    <div class="task-row" id="${prefix}-task-${index}">
+                        <div class="task-icon">
+                            ${index + 1}
+                            <div class="cpu-label">${cpuLabel}</div>
+                            <div class="cpu-cursor"></div>
+                        </div>
+                        <div class="task-info">
+                            <div class="task-name">${task.name} <span class="task-status-text" id="${prefix}-status-${index}">等待中</span></div>
+                            <div class="progress-track">
+                                <div class="progress-bar" id="${prefix}-bar-${index}" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += html;
+            });
+        }
+
+        function resetAll() {
+            Object.values(timers).forEach(t => clearInterval(t));
+            timers = { serial: null, concurrent: null, parallel: null };
+            
+            ['serial', 'concurrent', 'parallel'].forEach(type => {
+                initTasks(type);
+                document.getElementById(`badge-${type}`).textContent = "IDLE";
+                document.getElementById(`badge-${type}`).classList.remove('running');
+                document.getElementById(`time-${type}`).textContent = "";
+            });
+        }
+
+        function startAll() {
+            resetAll();
+            startTime = Date.now();
+            
+            startSerial();
+            startConcurrent();
+            startParallel();
+        }
+
+        // --- 1. 串行逻辑 ---
+        function startSerial() {
+            const type = 'serial';
+            markRunning(type);
+            
+            let currentTaskIdx = 0;
+            let currentProgress = 0;
+            let startT = Date.now();
+
+            timers.serial = setInterval(() => {
+                if (currentTaskIdx >= TASKS_CONFIG.length) {
+                    finish(type, startT);
+                    return;
+                }
+
+                // 增加进度
+                currentProgress += 1;
+                updateTaskUI(type, currentTaskIdx, currentProgress, true);
+
+                if (currentProgress >= 100) {
+                    currentProgress = 0;
+                    currentTaskIdx++;
+                    // 如果还有下一个任务，重置下一个任务的UI
+                    if(currentTaskIdx < TASKS_CONFIG.length) {
+                        updateTaskUI(type, currentTaskIdx, 0, true);
+                    }
+                }
+            }, SPEED_FACTOR / 2); // 串行稍微快一点以便对比
+        }
+
+        // --- 2. 并发逻辑 (时间片) ---
+        function startConcurrent() {
+            const type = 'concurrent';
+            markRunning(type);
+            
+            let tasks = TASKS_CONFIG.map(() => 0); // 所有任务进度
+            let currentTaskIdx = 0;
+            let startT = Date.now();
+            let lastSwitchTime = Date.now();
+
+            timers.concurrent = setInterval(() => {
+                if (tasks.every(p => p >= 100)) {
+                    finish(type, startT);
+                    return;
+                }
+
+                // 时间片轮转调度
+                let now = Date.now();
+                if (now - lastSwitchTime > TIME_SLICE) {
+                    // 切换到下一个未完成的任务
+                    let attempts = 0;
+                    do {
+                        currentTaskIdx = (currentTaskIdx + 1) % tasks.length;
+                        attempts++;
+                    } while (tasks[currentTaskIdx] >= 100 && attempts < tasks.length);
+                    lastSwitchTime = now;
+                }
+                
+                // 再次检查当前任务是否已完成（可能在时间片内刚完成）
+                if (tasks[currentTaskIdx] >= 100) {
+                     let attempts = 0;
+                    do {
+                        currentTaskIdx = (currentTaskIdx + 1) % tasks.length;
+                        attempts++;
+                    } while (tasks[currentTaskIdx] >= 100 && attempts < tasks.length);
+                }
+
+                // 执行当前任务
+                if (tasks[currentTaskIdx] < 100) {
+                    tasks[currentTaskIdx] += CONCURRENT_WORK_PER_TICK; 
+                    if(tasks[currentTaskIdx] > 100) tasks[currentTaskIdx] = 100;
+                }
+
+                // 更新所有 UI
+                tasks.forEach((progress, idx) => {
+                    updateTaskUI(type, idx, progress, idx === currentTaskIdx && progress < 100);
+                });
+
+            }, SPEED_FACTOR);
+        }
+
+        // --- 3. 并行逻辑 (多核) ---
+        function startParallel() {
+            const type = 'parallel';
+            markRunning(type);
+            
+            let tasks = TASKS_CONFIG.map(() => 0);
+            let startT = Date.now();
+
+            timers.parallel = setInterval(() => {
+                if (tasks.every(p => p >= 100)) {
+                    finish(type, startT);
+                    return;
+                }
+
+                // 所有核心同时工作！
+                tasks.forEach((p, idx) => {
+                    if (p < 100) {
+                        tasks[idx] += 1; // 每个核心都在跑
+                    }
+                });
+
+                tasks.forEach((progress, idx) => {
+                    updateTaskUI(type, idx, progress, progress < 100); // 只要没完，都在跑
+                });
+
+            }, SPEED_FACTOR);
+        }
+
+        // --- 辅助函数 ---
+        function markRunning(type) {
+            const badge = document.getElementById(`badge-${type}`);
+            badge.textContent = "RUNNING";
+            badge.classList.add('running');
+        }
+
+        function finish(type, startTime) {
+            clearInterval(timers[type]);
+            const badge = document.getElementById(`badge-${type}`);
+            badge.textContent = "DONE";
+            badge.classList.remove('running');
+            
+            const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+            document.getElementById(`time-${type}`).textContent = `总耗时: ${duration}s`;
+            
+            // 清除所有活动状态
+            TASKS_CONFIG.forEach((_, idx) => {
+                const row = document.getElementById(`${type}-task-${idx}`);
+                row.classList.remove('active');
+                if(!row.classList.contains('completed')) {
+                    row.classList.add('completed');
+                }
+            });
+        }
+
+        function updateTaskUI(prefix, index, progress, isActive) {
+            const row = document.getElementById(`${prefix}-task-${index}`);
+            const bar = document.getElementById(`${prefix}-bar-${index}`);
+            const status = document.getElementById(`${prefix}-status-${index}`);
+
+            bar.style.width = `${progress}%`;
+
+            if (progress >= 100) {
+                row.classList.remove('active');
+                row.classList.add('completed');
+                status.textContent = "已完成";
+            } else {
+                if (isActive) {
+                    row.classList.add('active');
+                    status.textContent = "CPU 处理中...";
+                } else {
+                    row.classList.remove('active');
+                    status.textContent = progress > 0 ? "等待调度..." : "等待中";
+                }
+            }
+        }
+
+        // 初始化
+        resetAll();
+
+    </script>
+</body>
+</html>

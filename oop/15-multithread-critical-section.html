@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>临界区 (Critical Section) 演示</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        /* 全局覆盖 */
+        html, body {
+            height: auto !important;
+            overflow: visible !important;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f6f9;
+            color: #333;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 { color: #2c3e50; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 40px; text-align: center; max-width: 800px; line-height: 1.6; }
+
+        .container {
+            display: flex;
+            justify-content: center;
+            gap: 50px;
+            width: 100%;
+            max-width: 1200px;
+            flex-wrap: wrap;
+        }
+
+        /* 场景容器 */
+        .scenario-box {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            padding: 20px;
+            width: 450px;
+            text-align: center;
+            position: relative;
+        }
+
+        .box-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: block;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .box-title.unsafe { color: #e74c3c; border-bottom-color: #e74c3c; }
+        .box-title.safe { color: #27ae60; border-bottom-color: #27ae60; }
+
+        /* 临界区 (房间) */
+        .critical-section {
+            width: 200px;
+            height: 200px;
+            background-color: #ecf0f1;
+            border: 4px solid #95a5a6;
+            margin: 0 auto 20px auto;
+            position: relative;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+
+        /* 房间状态 */
+        .critical-section.occupied { background-color: #ffe0b2; border-color: #f39c12; }
+        .critical-section.conflict { background-color: #ffcdd2; border-color: #c0392b; animation: shake 0.5s; }
+        .critical-section.locked { border-color: #27ae60; }
+
+        .room-label {
+            position: absolute;
+            top: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            width: 100%;
+        }
+
+        /* 锁图标 */
+        .lock-indicator {
+            position: absolute;
+            top: -20px;
+            right: -20px;
+            font-size: 2rem;
+            opacity: 0.2;
+            transition: opacity 0.3s, transform 0.3s;
+        }
+        .lock-indicator.active { opacity: 1; transform: scale(1.2); }
+
+        /* 线程小人 */
+        .thread-person {
+            width: 40px;
+            height: 40px;
+            background: #3498db;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            position: absolute;
+            transition: all 0.5s ease-in-out;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 10;
+        }
+
+        .thread-queue {
+            height: 60px;
+            border-top: 2px dashed #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+            position: relative;
+        }
+        
+        .queue-label {
+            position: absolute;
+            top: -10px;
+            background: #fff;
+            padding: 0 10px;
+            color: #999;
+            font-size: 0.8rem;
+        }
+
+        /* 代码片段 */
+        .code-snippet {
+            background: #282c34;
+            color: #abb2bf;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.8rem;
+            text-align: left;
+            margin-top: 15px;
+            min-height: 80px;
+        }
+        .code-highlight { background: #3e4451; display: block; }
+        
+        /* 控制按钮 */
+        .controls {
+            margin-top: 40px;
+            display: flex;
+            gap: 20px;
+        }
+
+        button {
+            padding: 10px 25px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            color: white;
+            transition: background 0.2s;
+            background: #3498db;
+        }
+        button:hover { background: #2980b9; }
+        button.reset { background: #95a5a6; }
+        button.reset:hover { background: #7f8c8d; }
+
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>临界区 (Critical Section) 与 互斥 (Mutex)</h1>
+    <p class="subtitle">
+        <strong>临界区</strong>是指访问共享资源（如共享变量、文件、打印机）的代码片段。<br>
+        同一时刻，只能允许一个线程进入临界区执行，否则会导致数据混乱或冲突。
+    </p>
+
+    <div class="container">
+        
+        <!-- 场景 1: 无保护 -->
+        <div class="scenario-box">
+            <div class="box-title unsafe">❌ 无保护 (No Synchronization)</div>
+            
+            <div class="critical-section" id="room-unsafe">
+                <div class="room-label">试衣间 (临界区)</div>
+                <!-- Threads will move here -->
+            </div>
+
+            <div class="code-snippet">
+                <div id="code-unsafe-1">public void tryClothes() {</div>
+                <div id="code-unsafe-2">&nbsp;&nbsp;// 没有任何检查直接闯入</div>
+                <div id="code-unsafe-3">&nbsp;&nbsp;enterChangingRoom();</div>
+                <div id="code-unsafe-4">}</div>
+            </div>
+
+            <div class="thread-queue" id="queue-unsafe">
+                <div class="queue-label">等待队列</div>
+                <!-- Initial Threads -->
+            </div>
+            
+            <p id="status-unsafe" style="height: 20px; color: #e74c3c; font-weight: bold;"></p>
+        </div>
+
+        <!-- 场景 2: 有锁保护 -->
+        <div class="scenario-box">
+            <div class="box-title safe">✅ 互斥锁 (Mutex Lock)</div>
+            
+            <div class="critical-section locked" id="room-safe">
+                <div class="room-label">试衣间 (临界区)</div>
+                <div class="lock-indicator" id="lock-icon">🔒</div>
+            </div>
+
+            <div class="code-snippet">
+                <div id="code-safe-1">public synchronized void tryClothes() {</div>
+                <div id="code-safe-2">&nbsp;&nbsp;// 拿到锁才能进</div>
+                <div id="code-safe-3">&nbsp;&nbsp;enterChangingRoom();</div>
+                <div id="code-safe-4">}</div>
+            </div>
+
+            <div class="thread-queue" id="queue-safe">
+                <div class="queue-label">阻塞队列 (Blocked)</div>
+            </div>
+
+            <p id="status-safe" style="height: 20px; color: #27ae60; font-weight: bold;"></p>
+        </div>
+
+    </div>
+
+    <div class="controls">
+        <button onclick="startDemo()">开始多人抢占</button>
+        <button class="reset" onclick="resetDemo()">重置</button>
+    </div>
+
+    <script>
+        const THREAD_COLORS = ['#3498db', '#9b59b6', '#e67e22', '#1abc9c'];
+        let threadsUnsafe = [];
+        let threadsSafe = [];
+        let isRunning = false;
+
+        class Thread {
+            constructor(id, parentId, isSafe) {
+                this.id = id;
+                this.parentId = parentId;
+                this.isSafe = isSafe;
+                this.el = document.createElement('div');
+                this.el.className = 'thread-person';
+                this.el.innerText = id;
+                this.el.style.backgroundColor = THREAD_COLORS[id-1];
+                this.state = 'waiting'; // waiting, entering, inside, leaving, done
+                
+                // Initial Pos (Relative to parent queue)
+                // We'll append to parent first
+                document.getElementById(parentId).appendChild(this.el);
+                this.setPositionInQueue(id - 1);
+            }
+
+            setPositionInQueue(index) {
+                // Simple layout in queue
+                this.el.style.left = (30 + index * 50) + 'px';
+                this.el.style.top = '10px';
+                this.el.style.transform = 'translate(0, 0)';
+            }
+            
+            moveToRoom(roomEl, callback) {
+                // Calculate relative movement
+                // This is a bit tricky with absolute positioning inside different containers
+                // Simplified: just change parent to roomEl and set center
+                
+                // Visual move:
+                // 1. Get current Rect
+                const currentRect = this.el.getBoundingClientRect();
+                const roomRect = roomEl.getBoundingClientRect();
+                
+                // 2. Move
+                const deltaX = (roomRect.left + roomRect.width/2) - (currentRect.left + currentRect.width/2);
+                const deltaY = (roomRect.top + roomRect.height/2) - (currentRect.top + currentRect.height/2);
+                
+                // We apply transform
+                // Note: randomly jitter a bit so they don't perfectly overlap in unsafe mode
+                const jitterX = this.isSafe ? 0 : (Math.random() * 40 - 20);
+                const jitterY = this.isSafe ? 0 : (Math.random() * 40 - 20);
+
+                this.el.style.transform = `translate(${deltaX + jitterX}px, ${deltaY + jitterY}px)`;
+                
+                setTimeout(() => {
+                    callback();
+                }, 500);
+            }
+            
+            moveToDone(startRect) {
+                 // Disappear or move away
+                 this.el.style.opacity = 0;
+            }
+            
+            reset() {
+                this.el.style.transform = 'none';
+                this.el.style.opacity = 1;
+                this.state = 'waiting';
+                document.getElementById(this.parentId).appendChild(this.el);
+                this.setPositionInQueue(this.id - 1);
+            }
+        }
+
+        function init() {
+            // Create threads
+            for(let i=1; i<=3; i++) {
+                threadsUnsafe.push(new Thread(i, 'queue-unsafe', false));
+                threadsSafe.push(new Thread(i, 'queue-safe', true));
+            }
+        }
+
+        async function startDemo() {
+            if (isRunning) return;
+            isRunning = true;
+            
+            // --- Unsafe Scenario: Chaos ---
+            document.getElementById('status-unsafe').innerText = "并发开始！大家一起冲！";
+            document.getElementById('code-unsafe-3').classList.add('code-highlight');
+            
+            const roomUnsafe = document.getElementById('room-unsafe');
+            let unsafeCount = 0;
+            
+            // All threads move to room almost simultaneously
+            threadsUnsafe.forEach((t, idx) => {
+                setTimeout(() => {
+                    t.moveToRoom(roomUnsafe, () => {
+                        unsafeCount++;
+                        if (unsafeCount > 1) {
+                            roomUnsafe.classList.add('conflict');
+                            document.getElementById('status-unsafe').innerText = "💥 冲突！两个人撞在了一起！";
+                        } else {
+                            roomUnsafe.classList.add('occupied');
+                        }
+                    });
+                }, idx * 200 + Math.random() * 300); // Random slight delay
+            });
+
+
+            // --- Safe Scenario: Orderly ---
+            document.getElementById('status-safe').innerText = "有序排队，获取锁...";
+            const roomSafe = document.getElementById('room-safe');
+            const lockIcon = document.getElementById('lock-icon');
+            
+            // Sequential Execution using simple async loop
+            for (let t of threadsSafe) {
+                // 1. Acquire Lock
+                document.getElementById('code-safe-1').classList.add('code-highlight');
+                // Lock visual
+                lockIcon.classList.add('active'); // Lock glows?
+                
+                await delay(500); 
+                
+                // 2. Enter Room
+                document.getElementById('code-safe-1').classList.remove('code-highlight');
+                document.getElementById('code-safe-3').classList.add('code-highlight');
+                
+                await new Promise(resolve => {
+                    t.moveToRoom(roomSafe, resolve);
+                });
+                
+                roomSafe.classList.add('occupied');
+                document.getElementById('status-safe').innerText = `线程 ${t.id} 正在使用试衣间...`;
+                
+                // 3. Busy work
+                await delay(1500);
+                
+                // 4. Leave
+                t.moveToDone();
+                roomSafe.classList.remove('occupied');
+                document.getElementById('status-safe').innerText = `线程 ${t.id} 离开，释放锁。`;
+                document.getElementById('code-safe-3').classList.remove('code-highlight');
+                
+                // 5. Release Lock
+                lockIcon.classList.remove('active'); 
+                await delay(500);
+            }
+            
+            document.getElementById('status-safe').innerText = "所有线程执行完毕。";
+            isRunning = false;
+        }
+
+        function resetDemo() {
+            isRunning = false;
+            threadsUnsafe.forEach(t => t.reset());
+            threadsSafe.forEach(t => t.reset());
+            
+            document.getElementById('room-unsafe').classList.remove('conflict', 'occupied');
+            document.getElementById('room-safe').classList.remove('occupied');
+            document.getElementById('lock-icon').classList.remove('active');
+            
+            document.getElementById('status-unsafe').innerText = "";
+            document.getElementById('status-safe').innerText = "";
+            
+            document.querySelectorAll('.code-highlight').forEach(el => el.classList.remove('code-highlight'));
+        }
+        
+        function delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        init();
+
+    </script>
+</body>
+</html>

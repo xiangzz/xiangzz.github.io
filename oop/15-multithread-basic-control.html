@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>线程控制方法演示 (sleep/yield/join)</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        /* 覆盖全局样式中的 overflow: hidden */
+        html, body {
+            height: auto !important;
+            overflow: visible !important;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+            color: #333;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 { color: #2c3e50; text-align: center; }
+        .subtitle { color: #666; text-align: center; margin-bottom: 30px; }
+
+        /* 通用容器 */
+        .demo-section {
+            background: #fff;
+            width: 100%;
+            max-width: 800px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            padding: 25px;
+            margin-bottom: 30px;
+            border-left: 5px solid #3498db;
+        }
+
+        .section-title {
+            font-size: 1.4rem;
+            color: #2c3e50;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .method-badge {
+            background: #eee;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #e74c3c;
+        }
+
+        /* 线程轨道 */
+        .thread-track {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            background: #fdfdfd;
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 6px;
+        }
+
+        .thread-label {
+            width: 80px;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .progress-container {
+            flex-grow: 1;
+            height: 20px;
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background-color: #3498db; /* Default Blue */
+            transition: width 0.1s linear;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding-right: 5px;
+            color: white;
+            font-size: 0.7rem;
+            white-space: nowrap;
+        }
+
+        /* 状态颜色 */
+        .progress-bar.sleeping { background-color: #9b59b6; } /* Purple */
+        .progress-bar.waiting { background-color: #f39c12; } /* Orange */
+        .progress-bar.completed { background-color: #27ae60; } /* Green */
+        .progress-bar.yielded { background-color: #95a5a6; } /* Grey */
+
+        .status-text {
+            width: 120px;
+            text-align: right;
+            font-size: 0.85rem;
+            color: #666;
+            margin-left: 10px;
+        }
+
+        /* 按钮组 - 覆盖全局 style.css 中的 absolute 定位 */
+        .controls {
+            position: relative !important;
+            bottom: auto !important;
+            right: auto !important;
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-start;
+            background: transparent;
+            padding: 0;
+            box-shadow: none;
+            width: 100%;
+        }
+
+        button {
+            padding: 8px 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background-color: #3498db;
+            color: white;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+
+        button:hover:not(:disabled) { background-color: #2980b9; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        button.btn-action { background-color: #e67e22; }
+        button.btn-action:hover:not(:disabled) { background-color: #d35400; }
+
+        /* 代码片段 */
+        .code-snippet {
+            background: #282c34;
+            color: #abb2bf;
+            padding: 10px;
+            border-radius: 6px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85rem;
+            margin-top: 15px;
+        }
+        .keyword { color: #c678dd; }
+        .method { color: #61afef; }
+        .string { color: #98c379; }
+        .comment { color: #5c6370; }
+
+    </style>
+</head>
+<body>
+
+    <h1>线程基本控制方法</h1>
+    <p class="subtitle">通过动画演示 Thread.sleep(), Thread.yield(), thread.join() 的效果</p>
+
+    <!-- 1. Sleep 演示 -->
+    <div class="demo-section" id="section-sleep">
+        <div class="section-title">
+            1. 线程休眠 <span class="method-badge">Thread.sleep(ms)</span>
+        </div>
+        <p>让当前线程暂停执行指定的时间，不释放锁（如果有）。</p>
+        
+        <div class="thread-track">
+            <div class="thread-label">Thread-A</div>
+            <div class="progress-container">
+                <div class="progress-bar" id="bar-sleep" style="width: 0%"></div>
+            </div>
+            <div class="status-text" id="status-sleep">Ready</div>
+        </div>
+
+        <div class="controls">
+            <button onclick="startSleepDemo()">开始运行</button>
+            <button class="btn-action" id="btn-trigger-sleep" onclick="triggerSleep()" disabled>调用 sleep(2s)</button>
+            <button onclick="resetSleepDemo()" style="margin-left: auto; background:#7f8c8d">重置</button>
+        </div>
+
+        <div class="code-snippet">
+            <span class="keyword">try</span> {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// 线程暂停执行，进入 TIMED_WAITING 状态</span><br>
+            &nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">Thread</span>.<span class="method">sleep</span>(2000);<br>
+            } <span class="keyword">catch</span> (InterruptedException e) { ... }
+        </div>
+    </div>
+
+
+    <!-- 2. Yield 演示 -->
+    <div class="demo-section" id="section-yield">
+        <div class="section-title">
+            2. 线程礼让 <span class="method-badge">Thread.yield()</span>
+        </div>
+        <p>提示调度器当前线程愿意放弃 CPU 使用权。但这只是一个“提示”，调度器可以忽略。通常会让出给同优先级或更高优先级的线程。</p>
+        
+        <div class="thread-track">
+            <div class="thread-label">Thread-A</div>
+            <div class="progress-container">
+                <div class="progress-bar" id="bar-yield-a" style="width: 0%"></div>
+            </div>
+            <div class="status-text" id="status-yield-a">Ready</div>
+        </div>
+        <div class="thread-track">
+            <div class="thread-label">Thread-B</div>
+            <div class="progress-container">
+                <div class="progress-bar" id="bar-yield-b" style="width: 0%"></div>
+            </div>
+            <div class="status-text" id="status-yield-b">Ready</div>
+        </div>
+
+        <div class="controls">
+            <button onclick="startYieldDemo()">开始竞争</button>
+            <button class="btn-action" id="btn-trigger-yield" onclick="triggerYield()" disabled>Thread-A yield()</button>
+            <button onclick="resetYieldDemo()" style="margin-left: auto; background:#7f8c8d">重置</button>
+        </div>
+        
+        <div class="code-snippet">
+            <span class="comment">// 建议调度器让出 CPU，状态可能从 Running -> Runnable</span><br>
+            <span class="keyword">Thread</span>.<span class="method">yield</span>();
+        </div>
+    </div>
+
+
+    <!-- 3. Join 演示 -->
+    <div class="demo-section" id="section-join">
+        <div class="section-title">
+            3. 线程加入 <span class="method-badge">t.join()</span>
+        </div>
+        <p><strong>场景：</strong> 老板 (Main) 分配任务给员工 (Worker)。老板做到一半时，必须等员工把报告写完，才能继续后续工作。</p>
+        
+        <div class="join-visual-container" style="position: relative; margin: 20px 0;">
+            <!-- 连接线层 -->
+            <svg id="join-connector" style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1;">
+                <path id="join-path" d="" stroke="#e74c3c" stroke-width="3" fill="none" stroke-dasharray="5,5" style="opacity:0; transition: opacity 0.3s;" />
+                <circle id="join-dot-start" r="4" fill="#e74c3c" style="opacity:0;" />
+                <circle id="join-dot-end" r="4" fill="#e74c3c" style="opacity:0;" />
+            </svg>
+
+            <!-- Main Thread -->
+            <div class="thread-track" id="track-main">
+                <div class="thread-label">老板 (Main)</div>
+                <div class="progress-container">
+                    <div class="progress-bar" id="bar-join-main" style="width: 0%"></div>
+                    <!-- 阻塞图标 -->
+                    <div id="lock-icon" style="position:absolute; left: 30%; top:-25px; font-size:1.5rem; opacity:0; transition: opacity 0.3s;">🔒</div>
+                </div>
+                <div class="status-text" id="status-join-main">Ready</div>
+            </div>
+
+            <!-- Worker Thread -->
+            <div class="thread-track" id="track-worker" style="margin-top: 40px;">
+                <div class="thread-label">员工 (Worker)</div>
+                <div class="progress-container">
+                    <div class="progress-bar" id="bar-join-worker" style="width: 0%; background-color: #27ae60;"></div>
+                </div>
+                <div class="status-text" id="status-join-worker">Standby</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button onclick="startJoinDemo()">开始任务</button>
+            <button onclick="resetJoinDemo()" style="margin-left: auto; background:#7f8c8d">重置</button>
+        </div>
+
+        <div class="code-snippet" id="code-join">
+            <div id="line-1"><span class="comment">// 1. 老板开始工作...</span></div>
+            <div id="line-2">Worker worker = <span class="keyword">new</span> Worker(); worker.start();</div>
+            <div id="line-3"><span class="comment">// 2. 老板需要员工的结果，在此阻塞等待</span></div>
+            <div id="line-4" style="padding: 2px 0;">worker.<span class="method">join</span>(); <span class="comment">// &lt;-- 关键点</span></div>
+            <div id="line-5"><span class="comment">// 3. 员工完成，老板继续</span></div>
+            <div id="line-6">System.out.println(<span class="string">"All Done!"</span>);</div>
+        </div>
+        
+        <style>
+            .highlight-line {
+                background-color: #3e4451;
+                border-left: 3px solid #61afef;
+                padding-left: 5px !important; 
+            }
+        </style>
+    </div>
+
+    <script>
+        // === 1. Sleep Demo ===
+        let sleepTimer = null;
+        let sleepProgress = 0;
+        let isSleeping = false;
+
+        function startSleepDemo() {
+            if (sleepTimer) return;
+            document.getElementById('btn-trigger-sleep').disabled = false;
+            
+            sleepTimer = setInterval(() => {
+                if (isSleeping) return; // 暂停进度
+
+                if (sleepProgress >= 100) {
+                    clearInterval(sleepTimer);
+                    document.getElementById('status-sleep').innerText = "Finished";
+                    document.getElementById('bar-sleep').classList.add('completed');
+                    document.getElementById('btn-trigger-sleep').disabled = true;
+                    return;
+                }
+
+                sleepProgress += 0.5;
+                document.getElementById('bar-sleep').style.width = sleepProgress + "%";
+                document.getElementById('status-sleep').innerText = "Running";
+            }, 30);
+        }
+
+        function triggerSleep() {
+            if (isSleeping || sleepProgress >= 100) return;
+            
+            isSleeping = true;
+            const bar = document.getElementById('bar-sleep');
+            bar.classList.add('sleeping');
+            bar.innerText = "Sleeping...";
+            document.getElementById('status-sleep').innerText = "TIMED_WAITING";
+            document.getElementById('btn-trigger-sleep').disabled = true;
+
+            setTimeout(() => {
+                isSleeping = false;
+                bar.classList.remove('sleeping');
+                bar.innerText = "";
+                document.getElementById('status-sleep').innerText = "Running";
+                // 如果还没结束，允许再次 sleep? 这里演示一次即可
+            }, 2000);
+        }
+
+        function resetSleepDemo() {
+            clearInterval(sleepTimer);
+            sleepTimer = null;
+            sleepProgress = 0;
+            isSleeping = false;
+            const bar = document.getElementById('bar-sleep');
+            bar.style.width = "0%";
+            bar.className = "progress-bar";
+            bar.innerText = "";
+            document.getElementById('status-sleep').innerText = "Ready";
+            document.getElementById('btn-trigger-sleep').disabled = true;
+        }
+
+
+        // === 2. Yield Demo ===
+        let yieldTimer = null;
+        let progA = 0, progB = 0;
+        let activeThread = 'A'; // 'A' or 'B'
+
+        function startYieldDemo() {
+            if (yieldTimer) return;
+            document.getElementById('btn-trigger-yield').disabled = false;
+
+            yieldTimer = setInterval(() => {
+                // 模拟简单的调度：每隔一段时间随机切换，或者一直跑一个
+                // 这里默认让 A 跑得更多，直到 Yield 被点击
+                
+                // 为了演示效果，默认 A 占用时间片多
+                if (activeThread === 'A') {
+                    if (progA < 100) progA += 0.8;
+                    updateYieldUI('A', progA);
+                    
+                    // 极小概率自动切换，或者等待用户点击 yield
+                    if (Math.random() < 0.02 && progA < 100 && progB < 100) {
+                        activeThread = 'B'; 
+                    }
+                } else {
+                    if (progB < 100) progB += 0.8;
+                    updateYieldUI('B', progB);
+                    
+                    // B 跑一会后自动切回 A
+                    if (Math.random() < 0.05 && progA < 100) {
+                        activeThread = 'A';
+                    }
+                }
+
+                if (progA >= 100 && progB >= 100) {
+                    clearInterval(yieldTimer);
+                    document.getElementById('status-yield-a').innerText = "Finished";
+                    document.getElementById('status-yield-b').innerText = "Finished";
+                    document.getElementById('btn-trigger-yield').disabled = true;
+                }
+            }, 30);
+        }
+
+        function triggerYield() {
+            if (activeThread === 'A' && progA < 100 && progB < 100) {
+                // 强制 A 礼让，切换到 B
+                activeThread = 'B';
+                
+                // UI 反馈
+                const barA = document.getElementById('bar-yield-a');
+                barA.classList.add('yielded');
+                barA.innerText = "Yield";
+                setTimeout(() => {
+                    barA.classList.remove('yielded');
+                    barA.innerText = "";
+                }, 500);
+            }
+        }
+
+        function updateYieldUI(thread, prog) {
+            const bar = document.getElementById(thread === 'A' ? 'bar-yield-a' : 'bar-yield-b');
+            const status = document.getElementById(thread === 'A' ? 'status-yield-a' : 'status-yield-b');
+            
+            bar.style.width = prog + "%";
+            
+            // Highlight active, dim inactive
+            if (thread === 'A') {
+                document.getElementById('bar-yield-a').style.opacity = 1;
+                document.getElementById('bar-yield-b').style.opacity = 0.5;
+                document.getElementById('status-yield-a').innerText = "Running";
+                if(progB<100) document.getElementById('status-yield-b').innerText = "Runnable";
+            } else {
+                document.getElementById('bar-yield-a').style.opacity = 0.5;
+                document.getElementById('bar-yield-b').style.opacity = 1;
+                if(progA<100) document.getElementById('status-yield-a').innerText = "Runnable";
+                document.getElementById('status-yield-b').innerText = "Running";
+            }
+            
+            if (prog >= 100) {
+                 status.innerText = "Finished";
+                 bar.classList.add('completed');
+            }
+        }
+
+        function resetYieldDemo() {
+            clearInterval(yieldTimer);
+            yieldTimer = null;
+            progA = 0; progB = 0;
+            activeThread = 'A';
+            
+            ['a', 'b'].forEach(t => {
+                const bar = document.getElementById(`bar-yield-${t}`);
+                bar.style.width = "0%";
+                bar.className = "progress-bar";
+                bar.style.opacity = 1;
+                bar.innerText = "";
+                document.getElementById(`status-yield-${t}`).innerText = "Ready";
+            });
+            document.getElementById('btn-trigger-yield').disabled = true;
+        }
+
+
+        // === 3. Join Demo (Enhanced) ===
+        let isJoining = false;
+
+        async function startJoinDemo() {
+            if (isJoining) return;
+            isJoining = true;
+            resetJoinVisuals(); // Ensure clean state
+
+            const barMain = document.getElementById('bar-join-main');
+            const barWorker = document.getElementById('bar-join-worker');
+            const statusMain = document.getElementById('status-join-main');
+            const statusWorker = document.getElementById('status-join-worker');
+            const lockIcon = document.getElementById('lock-icon');
+
+            // --- Step 1: Main Starts ---
+            hlCode(1);
+            statusMain.innerText = "Working...";
+            await animateProgress(barMain, 0, 30, 800); // Main runs to 30%
+
+            // --- Step 2: Main calls Join ---
+            hlCode(2);
+            await delay(500); // Simulate thread start delay
+            
+            hlCode(4); // Highlight worker.join()
+            statusMain.innerText = "WAITING (Blocked)";
+            barMain.classList.add('waiting');
+            lockIcon.style.opacity = 1; // Show Lock
+            drawJoinLine(); // Show dependency line
+
+            // --- Step 3: Worker Runs ---
+            // Main is now blocked
+            statusWorker.innerText = "Working...";
+            // Worker runs from 0 to 100 while Main waits
+            await animateProgress(barWorker, 0, 100, 2000); 
+
+            // --- Step 4: Worker Finish ---
+            barWorker.classList.add('completed');
+            statusWorker.innerText = "Finished";
+            hideJoinLine(); // Remove dependency line
+
+            // --- Step 5: Main Resumes ---
+            hlCode(5);
+            lockIcon.style.opacity = 0; // Hide Lock
+            barMain.classList.remove('waiting');
+            statusMain.innerText = "Resumed";
+            
+            await delay(500);
+            hlCode(6);
+            await animateProgress(barMain, 30, 100, 1000); // Main finishes
+
+            statusMain.innerText = "Finished";
+            barMain.classList.add('completed');
+            isJoining = false;
+        }
+
+        function resetJoinDemo() {
+            isJoining = false; // logic reset requires page reload or more complex cancel token, strictly speaking. 
+                               // For simplicity, we just reset UI, user should wait or refresh if stuck.
+            resetJoinVisuals();
+            
+            // Kill animations (simple hack: replace nodes to kill transitions/promises if needed, 
+            // but here we just reset styles and rely on flag check if we implemented cancellable promises)
+            // In this simple demo, we just reset visual state.
+        }
+
+        function resetJoinVisuals() {
+             const barMain = document.getElementById('bar-join-main');
+             const barWorker = document.getElementById('bar-join-worker');
+             
+             barMain.style.width = "0%";
+             barMain.className = "progress-bar";
+             barMain.innerText = "";
+             
+             barWorker.style.width = "0%";
+             barWorker.className = "progress-bar";
+             
+             document.getElementById('status-join-main').innerText = "Ready";
+             document.getElementById('status-join-worker').innerText = "Standby";
+             document.getElementById('lock-icon').style.opacity = 0;
+             hideJoinLine();
+             
+             // Clear code highlights
+             document.querySelectorAll('.highlight-line').forEach(el => el.classList.remove('highlight-line'));
+        }
+
+        // --- Helpers ---
+
+        function delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function animateProgress(element, start, end, duration) {
+            return new Promise(resolve => {
+                const startTime = performance.now();
+                element.style.width = start + "%";
+                
+                function step(currentTime) {
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const currentVal = start + (end - start) * progress;
+                    
+                    element.style.width = currentVal + "%";
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(step);
+                    } else {
+                        resolve();
+                    }
+                }
+                requestAnimationFrame(step);
+            });
+        }
+
+        function hlCode(lineNum) {
+            document.querySelectorAll('.highlight-line').forEach(el => el.classList.remove('highlight-line'));
+            const line = document.getElementById('line-' + lineNum);
+            if (line) line.classList.add('highlight-line');
+        }
+
+        // SVG Drawing Logic
+        function drawJoinLine() {
+            const svg = document.getElementById('join-connector');
+            const path = document.getElementById('join-path');
+            const lock = document.getElementById('lock-icon');
+            const workerBar = document.getElementById('bar-join-worker');
+            
+            // Get positions relative to the container
+            const containerRect = document.querySelector('.join-visual-container').getBoundingClientRect();
+            const lockRect = lock.getBoundingClientRect();
+            const workerRect = workerBar.parentElement.getBoundingClientRect(); // use container for start of worker track
+
+            // Start point: Bottom of Lock Icon
+            const x1 = (lockRect.left + lockRect.width/2) - containerRect.left;
+            const y1 = (lockRect.bottom) - containerRect.top;
+
+            // End point: Start of Worker Track
+            const x2 = x1; // vertical drop
+            const y2 = (workerRect.top + workerRect.height/2) - containerRect.top;
+
+            // Draw path
+            // Simple curve: down from lock, then to worker
+            // Since we aligned lock roughly above worker start (30% vs 0%), let's just draw to worker bar current pos?
+            // Actually simpler: Draw from Lock (Main) to Worker Head.
+            
+            path.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y2}`);
+            path.style.opacity = 1;
+            
+            // Dots
+            /*
+            const dotStart = document.getElementById('join-dot-start');
+            const dotEnd = document.getElementById('join-dot-end');
+            dotStart.setAttribute('cx', x1); dotStart.setAttribute('cy', y1); dotStart.style.opacity = 1;
+            dotEnd.setAttribute('cx', x2); dotEnd.setAttribute('cy', y2); dotEnd.style.opacity = 1;
+            */
+        }
+
+        function hideJoinLine() {
+            document.getElementById('join-path').style.opacity = 0;
+            document.getElementById('join-dot-start').style.opacity = 0;
+            document.getElementById('join-dot-end').style.opacity = 0;
+        }
+
+    </script>
+</body>
+</html>
