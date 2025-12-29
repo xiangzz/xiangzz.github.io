@@ -25,6 +25,7 @@
                 <div class="media-block">
                     <div class="media-block__text">
                         <h3>进程 = "独立的工厂"</h3>
+                        <img src="images/15-multithread-process.png" alt="进程" style="width: 80%;">
                         <ul>
                             <li>每个进程有独立的内存空间（堆、栈、代码段）</li>
                             <li>进程间通信需要 IPC（管道、共享内存、消息队列）</li>
@@ -34,6 +35,7 @@
                     </div>
                     <div class="media-block__visual">
                         <h3>线程 = "工厂里的工人"</h3>
+                        <img src="images/15-multithread-process-and-thread.png" alt="线程" style="width: 80%;">
                         <ul>
                             <li>线程属于某个进程，共享该进程的内存空间</li>
                             <li>每个线程有自己的栈（局部变量）和程序计数器</li>
@@ -78,27 +80,32 @@
                     </div>
                 </div>
                 <p class="conclusion">先解决“卡”，再解决“乱”——多线程先让程序不卡，再用同步保证不乱。</p>
-                <div class="demo-card" style="margin-top:16px;">
-                    <div>
-                        <button id="blockBtn" style="padding:6px 12px;">模拟耗时任务（会卡）</button>
-                        <button id="threadBtn" style="padding:6px 12px;">放线程执行（不卡）</button>
-                        <div id="status" style="margin-top:8px;font-weight:700;">准备就绪</div>
-                    </div>
-                    <div>
-                        <div class="bar-wrap"><div id="progress" class="bar"></div></div>
-                        <div style="margin-top:4px;font-size:12px;color:#666;">进度条只在右侧流畅更新</div>
-                    </div>
-                </div>
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
                 <h2>创建线程：继承 Thread</h2>
-                <pre><code class="language-java">class MyThread extends Thread {
+                <div class="columns-2">
+                    <div class="text-block">
+                        <p><strong>核心思想：</strong> 定义一个线程类，重写 <code>run()</code> 方法。</p>
+                        <ul>
+                            <li><strong>步骤：</strong>
+                                <ol>
+                                    <li>继承 <code>Thread</code> 类</li>
+                                    <li>重写 <code>run()</code> 方法（定义任务）</li>
+                                    <li>创建子类对象</li>
+                                    <li>调用 <code>start()</code> 启动</li>
+                                </ol>
+                            </li>
+                            <li class="warn"><strong>缺点：</strong> Java 是单继承机制，继承了 Thread 就无法继承其他业务类，耦合度高。</li>
+                        </ul>
+                    </div>
+                    <div class="code-block">
+                        <pre><code class="language-java">class MyThread extends Thread {
     public void run() {
         for (int i = 0; i &lt; 3; i++) {
-            System.out.println("工作: " + i + " - " + Thread.currentThread().getName());
+            System.out.println("工作: " + i);
         }
     }
 }
@@ -106,105 +113,84 @@
 public class Main {
     public static void main(String[] args) {
         Thread t = new MyThread();
-        t.start();
+        t.start(); // 必须调用 start 而不是 run
     }
 }</code></pre>
-                <p class="conclusion">继承方式简单直接，但受限于单继承，常用于快速示例。</p>
+                    </div>
+                </div>
+                <p class="conclusion">继承方式简单直接，常用于快速测试，但在实际开发中较少使用。</p>
             </div>
         </section>
 
         <section class="slide">
             <div class="slide-content">
                 <h2>创建线程：实现 Runnable</h2>
-                <pre><code class="language-java">class Task implements Runnable {
+                <div class="columns-2">
+                    <div class="text-block">
+                        <p><strong>核心思想：</strong> 将“任务”与“线程”分离，实现解耦。</p>
+                        <ul>
+                            <li><strong>优势：</strong>
+                                <ul>
+                                    <li><strong>避免单继承局限：</strong> 任务类还可以继承其他类。</li>
+                                    <li><strong>资源共享：</strong> 多个线程可以共享同一个 Runnable 对象（适合卖票等场景）。</li>
+                                    <li><strong>线程池支持：</strong> 线程池只接收 Runnable/Callable 任务。</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="code-block">
+                        <pre><code class="language-java">class Task implements Runnable {
     public void run() {
-        for (int i = 0; i &lt; 3; i++) {
-            System.out.println("任务: " + i + " - " + Thread.currentThread().getName());
-        }
+        System.out.println("任务执行中...");
     }
 }
 
 public class Main {
     public static void main(String[] args) {
         Runnable task = new Task();
-        Thread t1 = new Thread(task, "T-1");
-        Thread t2 = new Thread(task, "T-2");
-        t1.start();
-        t2.start();
+        // 将任务交给线程执行
+        new Thread(task, "T-1").start();
+        new Thread(task, "T-2").start();
     }
 }</code></pre>
-                <p class="conclusion">推荐使用 Runnable，便于共享任务逻辑与解耦线程执行。</p>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>创建线程：Callable + FutureTask</h2>
-                <pre><code class="language-java">import java.util.concurrent.Callable;
-import java.util.concurrent.FutureTask;
-
-public class Main {
-    public static void main(String[] args) throws Exception {
-        Callable&lt;Integer&gt; work = () -&gt; {
-            int sum = 0;
-            for (int i = 1; i &lt;= 100; i++) sum += i;
-            return sum;
-        };
-        FutureTask&lt;Integer&gt; ft = new FutureTask&lt;&gt;(work);
-        new Thread(ft, "Worker").start();
-        Integer result = ft.get();
-        System.out.println(result);
-    }
-}</code></pre>
-                <p class="conclusion">Callable支持返回结果与抛出异常，配合FutureTask获取执行结果。</p>
-            </div>
-        </section>
-
-        <section class="slide">
-            <div class="slide-content">
-                <h2>线程生命周期与状态</h2>
-                <div class="media-block">
-                    <div class="media-block__text">
-                    <table style="width:100%; border-collapse: collapse;">
-                            <thead>
-                                <tr style="background:#f8f9fa;">
-                                    <th style="border:1px solid #ddd; padding:.5rem;">状态</th>
-                                    <th style="border:1px solid #ddd; padding:.5rem;">含义</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr><td style="border:1px solid #ddd; padding:.5rem;">NEW</td><td style="border:1px solid #ddd; padding:.5rem;">新建未启动</td></tr>
-                                <tr><td style="border:1px solid #ddd; padding:.5rem;">RUNNABLE</td><td style="border:1px solid #ddd; padding:.5rem;">就绪或运行中</td></tr>
-                                <tr><td style="border:1px solid #ddd; padding:.5rem;">BLOCKED</td><td style="border:1px solid #ddd; padding:.5rem;">等待锁进入临界区</td></tr>
-                                <tr><td style="border:1px solid #ddd; padding:.5rem;">WAITING</td><td style="border:1px solid #ddd; padding:.5rem;">无限期等待通知</td></tr>
-                                <tr><td style="border:1px solid #ddd; padding:.5rem;">TIMED_WAITING</td><td style="border:1px solid #ddd; padding:.5rem;">限时等待</td></tr>
-                                <tr><td style="border:1px solid #ddd; padding:.5rem;">TERMINATED</td><td style="border:1px solid #ddd; padding:.5rem;">执行完毕</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="media-block__visual">
-                        <pre><code class="language-java">public class StateDemo {
-    static final Object lock = new Object();
-    public static void main(String[] args) throws Exception {
-        Thread t = new Thread(() -&gt; {
-            synchronized (lock) {
-                try { Thread.sleep(500); } catch (InterruptedException e) {}
-            }
-        }, "T");
-        System.out.println(t.getState());
-        t.start();
-        System.out.println(t.getState());
-        synchronized (lock) {
-            Thread.sleep(1000);
-        }
-        System.out.println(t.getState());
-        t.join();
-        System.out.println(t.getState());
-    }
-}</code></pre>
-                        <p class="conclusion">通过同步与休眠观察状态变化，理解调度与锁竞争。</p>
                     </div>
                 </div>
+                <p class="conclusion">这是最常用的基础创建方式，不仅解耦，还更方便资源共享。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* 创建线程：Callable + FutureTask</h2>
+                <div class="columns-2">
+                    <div class="text-block">
+                        <p><strong>痛点：</strong> Runnable 没有返回值，也不能抛出 checked exception。</p>
+                        <ul>
+                            <li><strong>Callable&lt;V&gt;：</strong> 类似 Runnable，但有返回值 <code>call()</code>。</li>
+                            <li><strong>FutureTask：</strong>
+                                <ul>
+                                    <li>它是 Runnable 的实现类（可交给 Thread 执行）。</li>
+                                    <li>它是 Future 的实现类（可管理任务结果）。</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="code-block">
+                        <pre><code class="language-java">/* 这里的泛型 Integer 是返回值的类型 */
+Callable&lt;Integer&gt; work = () -&gt; {
+    int sum = 0;
+    for (int i = 1; i &lt;= 100; i++) sum += i;
+    return sum; // 可以返回值
+};
+
+FutureTask&lt;Integer&gt; ft = new FutureTask&lt;&gt;(work);
+new Thread(ft).start();
+
+// get() 会阻塞直到任务完成
+System.out.println("结果: " + ft.get());</code></pre>
+                    </div>
+                </div>
+                <p class="conclusion">当需要获取异步计算结果时，Callable 是最佳选择。</p>
             </div>
         </section>
 
@@ -226,7 +212,7 @@ public class Main {
         Thread t = new Thread(() -&gt; {
             for (int i = 0; i &lt; 3; i++) {
                 System.out.println("A" + i);
-                try { Thread.sleep(100); } catch (InterruptedException e) {}
+                try { Thread.sleep(100); } catch (InterruptedException e) { e.printStackTrace(); }
             }
         });
         t.start();
@@ -325,6 +311,54 @@ public class Main {
 
         <section class="slide">
             <div class="slide-content">
+                <h2>线程生命周期与状态</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                    <table style="width:100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background:#f8f9fa;">
+                                    <th style="border:1px solid #ddd; padding:.5rem;">状态</th>
+                                    <th style="border:1px solid #ddd; padding:.5rem;">含义</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">NEW</td><td style="border:1px solid #ddd; padding:.5rem;">新建未启动</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">RUNNABLE</td><td style="border:1px solid #ddd; padding:.5rem;">就绪或运行中</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">BLOCKED</td><td style="border:1px solid #ddd; padding:.5rem;">等待锁 (如 synchronized)</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">WAITING</td><td style="border:1px solid #ddd; padding:.5rem;">无限期等待通知</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">TIMED_WAITING</td><td style="border:1px solid #ddd; padding:.5rem;">限时等待 (如 sleep)</td></tr>
+                                <tr><td style="border:1px solid #ddd; padding:.5rem;">TERMINATED</td><td style="border:1px solid #ddd; padding:.5rem;">执行完毕</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">public class StateDemo {
+    static final Object lock = new Object();
+    public static void main(String[] args) throws Exception {
+        Thread t = new Thread(() -&gt; {
+            synchronized (lock) {
+                try { Thread.sleep(500); } catch (InterruptedException e) { e.printStackTrace(); }
+            }
+        }, "T");
+        System.out.println(t.getState());
+        t.start();
+        System.out.println(t.getState());
+        synchronized (lock) {
+            Thread.sleep(1000);
+        }
+        System.out.println(t.getState());
+        t.join();
+        System.out.println(t.getState());
+    }
+}</code></pre>
+                        <p class="conclusion">通过同步与休眠观察状态变化，理解调度与锁竞争。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
                 <h2>对象监视器：wait/notify</h2>
                 <p class="problem-intro">生产者速度翻倍，仓库瞬间爆仓OOM；消费者速度翻倍，CPU空转飙高——<strong>快慢不协调，资源全浪费</strong>。</p>
                 <div class="media-block">
@@ -347,11 +381,13 @@ class BoundedQueue&lt;T&gt; {
     private final int cap;
     public BoundedQueue(int cap) { this.cap = cap; }
     public synchronized void put(T x) throws InterruptedException {
+        // 必须使用 while 循环检查条件，防止虚假唤醒
         while (q.size() == cap) wait();
         q.add(x);
         notifyAll();
     }
     public synchronized T take() throws InterruptedException {
+        // 必须使用 while 循环检查条件，防止虚假唤醒
         while (q.isEmpty()) wait();
         T x = q.removeFirst();
         notifyAll();
