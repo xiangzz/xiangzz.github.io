@@ -24,7 +24,7 @@
                 <h2>前置知识：进程与线程</h2>
                 <div class="media-block">
                     <div class="media-block__text">
-                        <h3>进程 = "独立的工厂"</h3>
+                        <h3>进程 = "独立的舞台"</h3>
                         <img src="images/15-multithread-process.png" alt="进程" style="width: 80%;">
                         <ul>
                             <li>每个进程有独立的内存空间（堆、栈、代码段）</li>
@@ -34,7 +34,7 @@
                         </ul>
                     </div>
                     <div class="media-block__visual">
-                        <h3>线程 = "工厂里的工人"</h3>
+                        <h3>线程 = "舞台上的演员"</h3>
                         <img src="images/15-multithread-process-and-thread.png" alt="线程" style="width: 80%;">
                         <ul>
                             <li>线程属于某个进程，共享该进程的内存空间</li>
@@ -47,10 +47,10 @@
                 <div class="highlight-box">
                     <strong>类比记忆</strong>
                     <ul>
-                        <li>进程就像"公司"：独立的办公大楼、独立的财务系统、独立的人员管理</li>
-                        <li>线程就像"员工"：共享公司的资源（会议室、打印机），协作完成任务</li>
-                        <li>多进程 = 开多个公司，各干各的，协作成本高但互不影响</li>
-                        <li>多线程 = 一个公司多个员工，协作效率高但需要协调（同步）避免冲突</li>
+                        <li>进程就像"舞台"：独立的场地，独立的灯光、独立的音响、独立的道具</li>
+                        <li>线程就像"演员"：共享舞台的资源（灯光、音响），各自表演</li>
+                        <li>多进程 = 多个舞台，各演各的戏，互不干扰但成本高</li>
+                        <li>多线程 = 一个舞台多个演员，资源共享但需要协调（同步）避免冲突</li>
                     </ul>
                 </div>
                 <p class="conclusion">Java 程序默认有一个主线程（main），可以通过创建新线程实现并发执行。</p>
@@ -83,10 +83,50 @@
             </div>
         </section>
 
+        <!-- 在这里我觉得先要介绍一下“线程”与“任务” -->
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>线程与任务：演员与剧本</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <div class="highlight-box">
+                            <strong>核心概念</strong>
+                            <ul>
+                                <li><strong>线程（Thread）= 演员</strong>：被动的表演者，拥有独立的栈和程序计数器，由JVM调度上台</li>
+                                <li><strong>任务（Task/Runnable）= 剧本</strong>：演员表演的具体内容，定义在 run() 方法中</li>
+                                <li><strong>调度器 = 导演</strong>：决定哪个演员上台，换演员时当前演员就停止表演</li>
+                            </ul>
+                        </div>
+                        <p><strong>为什么要分离？</strong></p>
+                        <ul>
+                            <li><strong>灵活复用</strong>：同一剧本可以由多个演员表演（如多窗口卖票）</li>
+                            <li><strong>资源优化</strong>：演员可以表演不同剧本（线程池复用）</li>
+                            <li><strong>解耦设计</strong>：剧本内容与演员管理分离，代码更清晰</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">// 剧本 = 表演内容（演什么）
+Runnable script = () -> {
+    System.out.println("表演中...");
+};
+
+// 演员 = 表演载体（谁来演）
+Thread actor1 = new Thread(script);
+Thread actor2 = new Thread(script);
+
+actor1.start(); // 演员1上台表演
+actor2.start(); // 演员2上台表演</code></pre>
+                        <p class="conclusion">演员只是被动的表演者，它不"理解"剧本的情节，只是按顺序表演台词。导演决定谁上台，不关心演员在表演什么剧本。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <section class="slide">
             <div class="slide-content">
                 <h2>创建线程：继承 Thread</h2>
-                <div class="columns-2">
+                <div class="columns-2-vertical">
                     <div class="text-block">
                         <p><strong>核心思想：</strong> 定义一个线程类，重写 <code>run()</code> 方法。</p>
                         <ul>
@@ -125,7 +165,7 @@ public class Main {
         <section class="slide">
             <div class="slide-content">
                 <h2>创建线程：实现 Runnable</h2>
-                <div class="columns-2">
+                <div class="columns-2-vertical">
                     <div class="text-block">
                         <p><strong>核心思想：</strong> 将“任务”与“线程”分离，实现解耦。</p>
                         <ul>
@@ -162,7 +202,7 @@ public class Main {
         <section class="slide">
             <div class="slide-content">
                 <h2>* 创建线程：Callable + FutureTask</h2>
-                <div class="columns-2">
+                <div class="columns-2-vertical">
                     <div class="text-block">
                         <p><strong>痛点：</strong> Runnable 没有返回值，也不能抛出 checked exception。</p>
                         <ul>
@@ -197,30 +237,103 @@ System.out.println("结果: " + ft.get());</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h2>启动与基本控制</h2>
-                <div class="media-block">
-                    <div class="media-block__text">
-                        <ul>
-                            <li>start 启动新线程并异步调用 run</li>
-                            <li>sleep 让出CPU一段时间</li>
-                            <li>yield 让出执行机会但不保证切换</li>
-                            <li>join 等待目标线程结束</li>
-                        </ul>
+                <div class="method-cards">
+                    <div class="method-card">
+                        <div class="method-card__info">
+                            <h3 class="method-card__title">start()</h3>
+                            <p class="method-card__desc">启动新线程，JVM会在新线程中异步调用该线程的run()方法。</p>
+                            <ul class="method-card__points">
+                                <li>创建新线程并分配资源</li>
+                                <li>调用start后线程进入RUNNABLE状态</li>
+                                <li>多次调用start会抛出IllegalThreadStateException</li>
+                            </ul>
+                            <p class="method-card__note">🎭 导演（调度器）喊"开拍"，演员（线程）上台开始表演。直接调用run()就像自己在后台念剧本，根本没上台！</p>
+                        </div>
+                        <div class="method-card__code">
+                            <pre><code class="language-java">Thread t = new Thread(() -> {
+    System.out.println("新线程执行中...");
+});
+t.start(); // 启动新线程
+System.out.println("主线程继续...");</code></pre>
+                        </div>
                     </div>
-                    <div class="media-block__visual">
-                        <pre><code class="language-java">public class ControlDemo {
-    public static void main(String[] args) throws Exception {
-        Thread t = new Thread(() -&gt; {
-            for (int i = 0; i &lt; 3; i++) {
-                System.out.println("A" + i);
-                try { Thread.sleep(100); } catch (InterruptedException e) { e.printStackTrace(); }
-            }
-        });
-        t.start();
-        t.join();
-        System.out.println("done");
+
+                    <div class="method-card">
+                        <div class="method-card__info">
+                            <h3 class="method-card__title">sleep(long millis)</h3>
+                            <p class="method-card__desc">让当前线程暂停执行指定的毫秒数，进入TIMED_WAITING状态。</p>
+                            <ul class="method-card__points">
+                                <li>释放CPU但不会释放锁</li>
+                                <li>休眠结束后重新进入就绪队列等待调度</li>
+                                <li>抛出InterruptedException需处理</li>
+                            </ul>
+                            <p class="method-card__note">🎭 演员说"中场休息5分钟"，先到后台歇会儿，让其他演员接着演。休息完再上台继续表演。</p>
+                        </div>
+                        <div class="method-card__code">
+                            <pre><code class="language-java">Thread t = new Thread(() -> {
+    for (int i = 0; i < 3; i++) {
+        System.out.println("任务" + i);
+        try {
+            Thread.sleep(500); // 休眠500ms
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
-}</code></pre>
-                        <p class="conclusion">不要直接调用 run，否则不会创建并发执行。</p>
+});
+t.start();</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="method-card">
+                        <div class="method-card__info">
+                            <h3 class="method-card__title">yield()</h3>
+                            <p class="method-card__desc">建议调度器当前线程愿意让出CPU给其他线程。</p>
+                            <ul class="method-card__points">
+                                <li>只是建议，不保证一定会切换</li>
+                                <li>线程仍处于RUNNABLE状态</li>
+                                <li>优先级相同的线程间更可能有效</li>
+                            </ul>
+                            <p class="method-card__note">🎭 演员礼貌地说"要不先让别的演员演会儿？"但导演可能不理会，继续让这个演员演。</p>
+                        </div>
+                        <div class="method-card__code">
+                            <pre><code class="language-java">Thread t1 = new Thread(() -> {
+    for (int i = 0; i < 5; i++) {
+        Thread.yield(); // 建议让出CPU
+        System.out.println("线程1: " + i);
+    }
+});
+Thread t2 = new Thread(() -> {
+    for (int i = 0; i < 5; i++) {
+        System.out.println("线程2: " + i);
+    }
+});
+t1.start();
+t2.start();</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="method-card">
+                        <div class="method-card__info">
+                            <h3 class="method-card__title">join()</h3>
+                            <p class="method-card__desc">等待目标线程执行完毕后再继续执行当前线程。</p>
+                            <ul class="method-card__points">
+                                <li>调用者线程进入WAITING状态</li>
+                                <li>目标线程执行完毕后调用者恢复</li>
+                                <li>可指定超时时间：join(long millis)</li>
+                            </ul>
+                            <p class="method-card__note">🎭 主角（主线程）在后台等配角（子线程）演完，配角谢幕下台后，主角才继续登台表演。</p>
+                        </div>
+                        <div class="method-card__code">
+                            <pre><code class="language-java">Thread worker = new Thread(() -> {
+    for (int i = 0; i < 3; i++) {
+        System.out.println("工作中..." + i);
+        try { Thread.sleep(300); } catch (Exception e) {}
+    }
+});
+worker.start();
+worker.join(); // 等待worker完成
+System.out.println("工作完成！");</code></pre>
+                        </div>
                     </div>
                 </div>
             </div>
