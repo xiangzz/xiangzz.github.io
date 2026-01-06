@@ -423,37 +423,138 @@ System.out.println("工作完成！");</code></pre>
             </div>
         </section>
 
+        <!-- Slide 11a: 现实生活中的并发问题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>现实生活中的并发问题</h2>
+
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>🎬 场景1：银行存款</h3>
+                        <div class="highlight-box">
+                            <strong>问题：两人同时存钱</strong>
+                            <ul>
+                                <li>账户余额：1000元</li>
+                                <li>丈夫读取余额：1000元</li>
+                                <li>妻子也读取余额：1000元（还没看到丈夫的修改）</li>
+                                <li>丈夫存入500元 → 1500元</li>
+                                <li>妻子存入300元 → 1300元（覆盖了丈夫的1500）</li>
+                                <li><strong style="color:#c62828;">❌ 结果：1300元，应该是1800元！</strong></li>
+                            </ul>
+                        </div>
+
+                        <h3>🎫 场景2：火车票售票</h3>
+                        <div class="highlight-box">
+                            <strong>问题：两个窗口同时卖最后一张票</strong>
+                            <ul>
+                                <li>剩余票数：1张</li>
+                                <li>窗口A查询：有票</li>
+                                <li>窗口B查询：有票（还没看到A的扣减）</li>
+                                <li>窗口A卖出 → 剩余0张</li>
+                                <li>窗口B卖出 → 剩余0张（但已经卖出！）</li>
+                                <li><strong style="color:#c62828;">❌ 结果：超卖1张票！</strong></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="media-block__visual">
+                        <h3>🔍 问题根源</h3>
+                        <div class="highlight-box" style="background:#fff3e0; border-left:4px solid #ff9800;">
+                            <strong>关键发现：</strong>
+                            <ul>
+                                <li><strong>"读-改-写"不是原子操作</strong></li>
+                                <li>在"改"的过程中，其他人可能也在"读"</li>
+                                <li>大家都基于旧值修改，导致数据丢失</li>
+                                <li>这叫做：<strong style="color:#e65100;">竞态条件（Race Condition）</strong></li>
+                            </ul>
+                        </div>
+
+                        <h3>⚡ 为什么会这样？</h3>
+                        <p style="margin-bottom:12px;">在计算机中，一个简单的 <code>i++</code> 操作实际分成三步：</p>
+                        <div style="background:#f5f5f5; padding:12px; border-radius:8px; font-family:monospace;">
+                            1. READ: 读取 i 的值<br>
+                            2. MODIFY: 计算 i+1<br>
+                            3. WRITE: 写回新值
+                        </div>
+                        <p style="margin-top:12px; color:#666;">
+                            如果线程A在步骤2时，线程B执行了步骤1，两个线程都会基于相同的旧值进行修改！
+                        </p>
+
+                        <div class="highlight-box" style="background:#e3f2fd; border-left:4px solid #2196f3; margin-top:16px;">
+                            <strong>💡 解决思路：</strong>
+                            <p style="margin:8px 0;">生活中需要"排队"和"加锁"来避免冲突，程序中也是一样。</p>
+                            <p style="margin:8px 0; font-size:0.95rem;">在多线程环境下，我们必须使用<strong>同步机制</strong>来保证数据的一致性。</p>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="conclusion">
+                    现实中的并发问题时刻发生：银行存款、火车票、库存扣减...
+                    理解这些问题后，让我们看看如何在代码中复现和解决它们。
+                </p>
+            </div>
+        </section>
+
+        <!-- Slide 11b: 并发问题技术层面 -->
         <section class="slide">
             <div class="slide-content">
                 <h2>并发问题：原子性与可见性</h2>
-                <p class="problem-intro">两个线程各给计数器加100000，结果应该200000，却常常只有180000——<strong>中间的20000次更新凭空消失</strong>。</p>
+                <p class="problem-intro">现在让我们用代码复现刚才的问题：<strong>两个线程各给计数器加100000次，结果应该是200000，但实际往往更少</strong>。</p>
+
                 <div class="media-block">
                     <div class="media-block__text">
                         <div class="highlight-box">
-                            <strong>案发现场：20000次更新去哪了？</strong>
+                            <strong>🔍 案发现场：20000次更新去哪了？</strong>
                             <ul>
-                                <li>i++在字节码里是“取值→+1→写回”三步</li>
-                                <li>线程A写回前，线程B也读到旧值，+1后覆盖A的结果</li>
-                                <li>一次自增丢失，累加就是“少”</li>
+                                <li><code>i++</code> 在字节码里是"取值→+1→写回"三步</li>
+                                <li>线程A写回前，线程B也读到旧值</li>
+                                <li>线程B也+1，然后写回，覆盖了A的结果</li>
+                                <li>一次自增丢失，累加就是"少"</li>
                             </ul>
                         </div>
-                        <p>原子性=“中间状态外人看不见”，锁能把三步打包成一步。</p>
+
+                        <h3>💡 核心概念</h3>
+                        <div class="columns-2">
+                            <div class="highlight-box" style="background:#e3f2fd; border-left:4px solid #2196f3;">
+                                <strong>原子性</strong>
+                                <p style="margin:8px 0; font-size:0.9rem;">操作不可分割，要么全做，要么全不做</p>
+                                <p style="margin:0; font-size:0.85rem; color:#666;">"中间状态外人看不见"</p>
+                            </div>
+                            <div class="highlight-box" style="background:#e3f2fd; border-left:4px solid #2196f3;">
+                                <strong>可见性</strong>
+                                <p style="margin:8px 0; font-size:0.9rem;">一个线程的修改对其他线程立即可见</p>
+                                <p style="margin:0; font-size:0.85rem; color:#666;">"改了就要让大家知道"</p>
+                            </div>
+                        </div>
+
+                        <p style="margin-top:16px;"><strong>解决方案：</strong>用锁把三步打包成一步，保证原子性。</p>
                     </div>
                     <div class="media-block__visual">
                         <pre><code class="language-java">public class RaceCounter {
     static int counter = 0;
+
     public static void main(String[] args) throws Exception {
         Runnable r = () -&gt; {
-            for (int i = 0; i &lt; 100000; i++) counter++;
+            for (int i = 0; i &lt; 100000; i++) {
+                counter++; // 非原子操作！
+            }
         };
+
         Thread t1 = new Thread(r);
         Thread t2 = new Thread(r);
-        t1.start(); t2.start();
-        t1.join(); t2.join();
+
+        t1.start();
+        t2.start();
+
+        t1.join();
+        t2.join();
+
         System.out.println(counter);
+        // 输出可能是 180000、195000、198000...
+        // 几乎永远不是 200000
     }
 }</code></pre>
-                        <p class="conclusion">给“读-改-写”加锁，三步变一步，200000次更新不再丢失。</p>
+                        <p class="conclusion">给"读-改-写"加锁，三步变一步，200000次更新不再丢失。</p>
                         <div class="demo-card" style="margin-top:12px;">
                             <div>
                                 <button id="raceBtn" style="padding:6px 12px;">无锁竞速</button>
