@@ -207,7 +207,133 @@ scheduled.scheduleAtFixedRate(() -&gt; {
             </div>
         </section>
 
-        <!-- Slide 6: ThreadPoolExecutor 深度配置与监控 (1) -->
+        <!-- Slide 6: Callable与Future：带返回值的异步任务 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Callable与Future：带返回值的异步任务</h2>
+                <p>前面我们学习了线程池提交 Runnable 任务，但如果任务需要返回结果呢？</p>
+
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>🎯 Runnable vs Callable</h3>
+                        <ul>
+                            <li><strong>Runnable：</strong>
+                                <ul>
+                                    <li>无返回值</li>
+                                    <li>不能抛 checked 异常</li>
+                                    <li><code>void run()</code></li>
+                                </ul>
+                            </li>
+                            <li><strong>Callable&lt;V&gt;：</strong>
+                                <ul>
+                                    <li>有返回值（泛型 V 指定返回类型）</li>
+                                    <li>可以抛 checked 异常</li>
+                                    <li><code>V call() throws Exception</code></li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                        <h3>📦 Future 接口</h3>
+                        <ul>
+                            <li><code>V get()</code>：阻塞获取结果（会等待直到任务完成）</li>
+                            <li><code>boolean cancel(boolean)</code>：尝试取消任务</li>
+                            <li><code>boolean isDone()</code>：检查任务是否完成</li>
+                            <li><code>boolean isCancelled()</code>：检查任务是否被取消</li>
+                        </ul>
+                    </div>
+
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">import java.util.concurrent.*;
+
+public class CallableDemo {
+    public static void main(String[] args) throws Exception {
+        // 1. 定义 Callable 任务
+        Callable&lt;Integer&gt; task = () -&gt; {
+            int sum = 0;
+            for (int i = 1; i &lt;= 100; i++) {
+                sum += i;
+            }
+            return sum; // 返回计算结果
+        };
+
+        // 2. 创建线程池并提交任务
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        Future&lt;Integer&gt; future = pool.submit(task);
+
+        // 3. 获取结果（会阻塞直到任务完成）
+        Integer result = future.get();
+        System.out.println("计算结果: " + result);
+
+        // 4. 关闭线程池
+        pool.shutdown();
+    }
+}</code></pre>
+                        <p class="conclusion">
+                            <code>submit(Callable)</code> 返回 Future 对象，
+                            通过 <code>future.get()</code> 获取异步任务的结果。
+                        </p>
+                    </div>
+                </div>
+
+                <h3>💡 实际应用场景：并发计算</h3>
+                <div class="columns-2-vertical">
+                    <div class="text-block">
+                        <p><strong>场景：</strong>计算 1 到 1000 的和，使用 10 个线程并行计算不同区间。</p>
+                        <ul>
+                            <li>线程 1 计算 1-100</li>
+                            <li>线程 2 计算 101-200</li>
+                            <li>...</li>
+                            <li>线程 10 计算 901-1000</li>
+                        </ul>
+                        <p>最后汇总所有 Future 的结果。</p>
+                    </div>
+                    <div class="code-block">
+                        <pre><code class="language-java">// 并发计算示例
+ExecutorService pool = Executors.newFixedThreadPool(10);
+List&lt;Future&lt;Integer&gt;&gt; futures = new ArrayList&lt;&gt;();
+
+// 提交 10 个计算任务
+for (int i = 0; i &lt; 10; i++) {
+    final int start = i * 100 + 1;
+    Callable&lt;Integer&gt; task = () -&gt; {
+        int sum = 0;
+        for (int j = start; j &lt; start + 100; j++) {
+            sum += j;
+        }
+        return sum;
+    };
+    futures.add(pool.submit(task));
+}
+
+// 汇总所有结果
+int total = 0;
+for (Future&lt;Integer&gt; f : futures) {
+    total += f.get(); // 阻塞等待每个任务完成
+}
+
+System.out.println("总和: " + total); // 500500
+pool.shutdown();</code></pre>
+                    </div>
+                </div>
+
+                <div class="highlight-box" style="background:#fff3e0; border-left:4px solid #ff9800; margin-top: 20px;">
+                    <strong>⚠️ 注意事项：</strong>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li><strong>get() 阻塞：</strong><code>future.get()</code> 会阻塞当前线程，直到任务完成</li>
+                        <li><strong>超时获取：</strong>使用 <code>future.get(5, TimeUnit.SECONDS)</code> 避免无限等待</li>
+                        <li><strong>异常处理：</strong>如果任务抛出异常，get() 会抛出 ExecutionException</li>
+                        <li><strong>任务取消：</strong>调用 <code>future.cancel(true)</code> 可中断正在执行的任务</li>
+                    </ul>
+                </div>
+
+                <p class="conclusion">
+                    Callable + Future 是异步编程的基础。配合线程池可以实现高效的并发计算。
+                    在 Java 8 中，还可以使用更强大的 <strong>CompletableFuture</strong> 进行链式调用和组合操作（详见本章后续内容）。
+                </p>
+            </div>
+        </section>
+
+        <!-- Slide 7: ThreadPoolExecutor 深度配置与监控 (1) -->
         <section class="slide">
             <div class="slide-content">
                 <h2>ThreadPoolExecutor 深度配置与监控 (1)</h2>
