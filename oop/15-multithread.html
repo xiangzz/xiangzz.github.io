@@ -202,35 +202,65 @@ public class Main {
                 <h2>创建线程：实现 Runnable</h2>
                 <div class="columns-2-vertical">
                     <div class="text-block">
-                        <p><strong>核心思想：</strong> 将“任务”与“线程”分离，实现解耦。</p>
+                        <p><strong>核心思想：</strong> 将"任务"与"线程"分离，实现解耦。</p>
                         <ul>
                             <li><strong>优势：</strong>
                                 <ul>
                                     <li><strong>避免单继承局限：</strong> 任务类还可以继承其他类。</li>
-                                    <li><strong>资源共享：</strong> 多个线程可以共享同一个 Runnable 对象（适合卖票等场景）。</li>
+                                    <li><strong>资源共享：</strong> 多个线程可以共享同一个 Runnable 对象中的数据。</li>
                                     <li><strong>线程池支持：</strong> 线程池只接收 Runnable/Callable 任务。</li>
                                 </ul>
                             </li>
                         </ul>
+
+                        <div class="highlight-box" style="background:#fff3e0; border-left:4px solid #ff9800; margin-top:16px;">
+                            <strong>💡 观察要点：</strong>
+                            <ul style="margin:8px 0; padding-left:20px;">
+                                <li>两个线程共享同一个 <code>TicketTask</code> 对象</li>
+                                <li>共享 <code>tickets</code> 变量，从10减到0</li>
+                                <li>两个窗口交替卖票，体现并发执行</li>
+                            </ul>
+                        </div>
                     </div>
                     <div class="code-block">
-                        <pre><code class="language-java">class Task implements Runnable {
+                        <pre><code class="language-java">class TicketTask implements Runnable {
+    private int tickets = 10;  // 共享资源：10张票
+
     public void run() {
-        System.out.println("任务执行中...");
+        while (tickets > 0) {
+            System.out.println(Thread.currentThread().getName() +
+                " 卖出第 " + tickets-- + " 张票");
+            try {
+                Thread.sleep(100);  // 模拟卖票耗时
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
 
 public class Main {
     public static void main(String[] args) {
-        Runnable task = new Task();
-        // 将任务交给线程执行
-        new Thread(task, "T-1").start();
-        new Thread(task, "T-2").start();
+        TicketTask task = new TicketTask();
+
+        // 两个窗口同时卖票，共享同一批票
+        new Thread(task, "窗口A").start();
+        new Thread(task, "窗口B").start();
     }
-}</code></pre>
+}
+
+// 输出示例（每次运行不同）：
+// 窗口A 卖出第 10 张票
+// 窗口B 卖出第 9 张票
+// 窗口A 卖出第 8 张票
+// 窗口B 卖出第 7 张票
+// ...</code></pre>
                     </div>
                 </div>
-                <p class="conclusion">这是最常用的基础创建方式，不仅解耦，还更方便资源共享。</p>
+                <p class="conclusion">
+                    这是最常用的基础创建方式，不仅解耦，还更方便资源共享。
+                    <strong>注意：</strong>这里尚未加锁，后面会学习如何用 synchronized 解决并发问题。
+                </p>
             </div>
         </section>
 
@@ -428,6 +458,20 @@ System.out.println("工作完成！");</code></pre>
             <div class="slide-content">
                 <h2>现实生活中的并发问题</h2>
 
+                <p class="problem-intro">
+                    前面我们学习了如何创建和控制线程。现在让我们思考一个问题：
+                    <strong>当多个线程同时访问和修改共享数据时，会发生什么？</strong>
+                </p>
+
+                <div class="highlight-box" style="background:#fff3e0; border-left:4px solid #ff9800; margin-bottom:20px;">
+                    <strong>🤔 先思考一下：</strong>
+                    <p style="margin:8px 0;">在卖票示例（Slide 7）中，两个线程共享同一个 <code>TicketTask</code> 对象，并发地修改 <code>tickets</code> 变量。你有没有想过：如果两个线程恰好同时执行 <code>tickets--</code>，会发生什么？</p>
+                    <p style="margin:8px 0; font-size:0.9rem; color:#e65100;">
+                        答案是：<strong>可能会卖出相同的票号，或者数据丢失！</strong>
+                        让我们通过生活中的场景来理解这个问题。
+                    </p>
+                </div>
+
                 <div class="media-block">
                     <div class="media-block__text">
                         <h3>🎬 场景1：银行存款</h3>
@@ -495,11 +539,31 @@ System.out.println("工作完成！");</code></pre>
             </div>
         </section>
 
-        <!-- Slide 11b: 并发问题技术层面 -->
+        <!-- Slide 11b: 并发编程的三大特性 -->
         <section class="slide">
             <div class="slide-content">
-                <h2>并发问题：原子性与可见性</h2>
-                <p class="problem-intro">现在让我们用代码复现刚才的问题：<strong>两个线程各给计数器加100000次，结果应该是200000，但实际往往更少</strong>。</p>
+                <h2>并发编程的三大特性</h2>
+
+                <div class="highlight-box" style="background:#e8f5e9; border-left:4px solid #4caf50; margin-bottom:20px;">
+                    <strong>📚 知识框架：</strong>
+                    <p style="margin:8px 0;">在并发编程中，我们面临的线程安全问题都可以归结为三个核心特性：原子性、可见性、有序性。</p>
+                    <p style="margin:8px 0; font-size:0.9rem; color:#2e7d32;">理解这三大特性，是掌握并发编程的基础！</p>
+                </div>
+
+                <p class="problem-intro">
+                    刚才我们看到了生活中的并发问题。现在让我们把视角转回代码：
+                    <strong>两个线程各给计数器加100000次，结果应该是200000，但实际往往更少</strong>。
+                </p>
+
+                <div class="highlight-box" style="background:#f3f5ff; border-left:4px solid #7e57c2; margin-bottom:20px;">
+                    <strong>🎯 学习目标：</strong>
+                    <p style="margin:8px 0;">通过这个例子，我们将学习：</p>
+                    <ul style="margin:8px 0; padding-left:20px; font-size:0.9rem;">
+                        <li>为什么 <code>i++</code> 不是线程安全的？</li>
+                        <li>什么是原子性、可见性、有序性？</li>
+                        <li>如何用 <code>synchronized</code> 解决并发问题？</li>
+                    </ul>
+                </div>
 
                 <div class="media-block">
                     <div class="media-block__text">
@@ -513,21 +577,45 @@ System.out.println("工作完成！");</code></pre>
                             </ul>
                         </div>
 
-                        <h3>💡 核心概念</h3>
-                        <div class="columns-2">
-                            <div class="highlight-box" style="background:#e3f2fd; border-left:4px solid #2196f3;">
-                                <strong>原子性</strong>
-                                <p style="margin:8px 0; font-size:0.9rem;">操作不可分割，要么全做，要么全不做</p>
-                                <p style="margin:0; font-size:0.85rem; color:#666;">"中间状态外人看不见"</p>
-                            </div>
-                            <div class="highlight-box" style="background:#e3f2fd; border-left:4px solid #2196f3;">
-                                <strong>可见性</strong>
-                                <p style="margin:8px 0; font-size:0.9rem;">一个线程的修改对其他线程立即可见</p>
-                                <p style="margin:0; font-size:0.85rem; color:#666;">"改了就要让大家知道"</p>
-                            </div>
+                        <h3>💡 并发编程三大特性</h3>
+                        <p style="margin-bottom:12px; color:#666; font-size:0.95rem;">
+                            Java内存模型（JMM）定义了并发编程需要关注的三个核心问题：
+                        </p>
+
+                        <!-- 原子性 -->
+                        <div class="highlight-box" style="background:#e3f2fd; border-left:4px solid #2196f3; margin-bottom:12px;">
+                            <strong>1. 原子性 (Atomicity)</strong>
+                            <p style="margin:8px 0; font-size:0.9rem;"><strong>定义：</strong>操作不可分割，要么全部执行成功，要么全部不执行。</p>
+                            <p style="margin:8px 0; font-size:0.85rem; color:#666;">
+                                <strong>类比：</strong>就像转账操作，要么"扣款+入账"同时成功，要么同时失败，不能只扣款不入账。<br>
+                                <strong>本例问题：</strong><code>i++</code> 不是原子操作（分三步），导致数据丢失。<br>
+                                <strong>解决方案：</strong>用 <code>synchronized</code> 或锁保证原子性。
+                            </p>
                         </div>
 
-                        <p style="margin-top:16px;"><strong>解决方案：</strong>用锁把三步打包成一步，保证原子性。</p>
+                        <!-- 可见性 -->
+                        <div class="highlight-box" style="background:#e3f2fd; border-left:4px solid #2196f3; margin-bottom:12px;">
+                            <strong>2. 可见性 (Visibility)</strong>
+                            <p style="margin:8px 0; font-size:0.9rem;"><strong>定义：</strong>一个线程对共享变量的修改，其他线程能够立即看到。</p>
+                            <p style="margin:8px 0; font-size:0.85rem; color:#666;">
+                                <strong>类比：</strong>就像公告栏，一个人贴了通知，其他人应该马上能看到。<br>
+                                <strong>问题：</strong>每个线程有自己的缓存，修改不会立即同步到主内存。<br>
+                                <strong>解决方案：</strong>用 <code>volatile</code> 或 <code>synchronized</code> 保证可见性。
+                            </p>
+                        </div>
+
+                        <!-- 有序性 -->
+                        <div class="highlight-box" style="background:#fff3e0; border-left:4px solid #ff9800; margin-bottom:12px;">
+                            <strong>3. 有序性 (Ordering)</strong>
+                            <p style="margin:8px 0; font-size:0.9rem;"><strong>定义：</strong>程序执行的顺序按照代码的先后顺序执行。</p>
+                            <p style="margin:8px 0; font-size:0.85rem; color:#666;">
+                                <strong>问题：</strong>编译器和处理器为了优化性能，可能会<strong>指令重排序</strong>。<br>
+                                <strong>影响：</strong>单线程不影响结果，但多线程可能导致问题。<br>
+                                <strong>解决方案：</strong>用 <code>volatile</code> 禁止指令重排序（详见后续volatile章节）。
+                            </p>
+                        </div>
+
+                        <p style="margin-top:16px;"><strong>🎯 本节重点：</strong>用锁把三步打包成一步，保证原子性。</p>
                     </div>
                     <div class="media-block__visual">
                         <pre><code class="language-java">public class RaceCounter {
@@ -568,6 +656,10 @@ System.out.println("工作完成！");</code></pre>
                         </div>
                     </div>
                 </div>
+
+                <p class="conclusion">
+                    <strong>学习路径：</strong>本节重点讲解原子性（synchronized），可见性和有序性将在后续volatile章节深入展开。
+                </p>
             </div>
         </section>
 
