@@ -1,0 +1,3152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java Stream API详解</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/stream-style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+
+<body>
+
+    <main id="presentation">
+        <!-- Slide 1: Title -->
+        <section class="slide title-slide active">
+            <h1>Stream API</h1>
+            <p>面向对象程序设计（Java）</p>
+            <strong>告别繁琐的循环，拥抱函数式编程</strong>
+        </section>
+
+        <!-- Slide 2: Traditional Collection Processing Pain Points -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>传统集合处理的痛点</h2>
+                <p><strong>场景：</strong>处理一个学生列表，找出年龄>18的女生，按姓名排序，提取姓名列表</p>
+
+                <h3>🔴 传统写法的问题：</h3>
+                <pre><code class="language-java">// 需要多个中间变量和循环
+List&lt;Student&gt; adults = new ArrayList&lt;&gt;();
+for (Student s : students) {
+    if (s.getAge() &gt; 18 &amp;&amp; s.getGender() == FEMALE) {
+        adults.add(s);
+    }
+}
+
+// 还需要手动排序
+adults.sort(Comparator.comparing(Student::getName));
+
+// 还需要再提取姓名
+List&lt;String&gt; names = new ArrayList&lt;&gt;();
+for (Student s : adults) {
+    names.add(s.getName());
+}</code></pre>
+
+                <h3>😤 痛点总结：</h3>
+                <ul>
+                    <li><strong>代码冗长</strong>：需要多个临时集合和多层循环</li>
+                    <li><strong>命令式思维</strong>：需要告诉计算机"如何做"，而非"做什么"</li>
+                    <li><strong>容易出错</strong>：手动管理状态，边界条件处理复杂</li>
+                    <li><strong>可读性差</strong>：业务逻辑被循环语法淹没</li>
+                    <li><strong>难以并行化</strong>：传统循环需要重写才能并行处理</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Slide 3: "要是能这样做就好了！" - Introducing Stream -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>"要是能这样做就好了！"</h2>
+                <p>如果我们能用类似下面的伪代码来表达数据处理逻辑，那该多好啊！</p>
+
+                <h3>💭 理想的伪代码表达：</h3>
+                <pre><code class="language-java">// 🎯 理想方式：声明式表达
+成年女生姓名 = 从(students)
+    中筛选(年龄 >= 18 且 性别 == "女")
+    按姓名排序()
+    提取姓名()
+    收集到列表();
+
+// 🎯 稍微规范化一点：链式调用
+result = students
+    .filter(年龄 >= 18)
+    .filter(性别 == "女")
+    .sortBy(姓名)
+    .map(提取姓名)
+    .collect(转成列表);
+</code></pre>
+
+                <h3>✨ 伪代码的优势：</h3>
+                <ul>
+                    <li><strong>接近自然语言</strong>：像说话一样描述数据处理逻辑</li>
+                    <li><strong>关注意图</strong>：关心"做什么"而不是"怎么做"</li>
+                    <li><strong>无中间变量</strong>：不需要临时的集合和计数器</li>
+                    <li><strong>链式调用</strong>：多个操作可以一气呵成</li>
+                    <li><strong>简洁优雅</strong>：同样的逻辑，代码量减少70%</li>
+                </ul>
+
+                <h3>🚀 伪代码对应的实际Stream代码：</h3>
+                <pre><code class="language-java">// Java Stream API - 理想照进现实！
+List&lt;String&gt; names = students.stream()
+    .filter(student -> student.getAge() >= 18)      // 筛选：年龄 >= 18
+    .filter(student -> student.getGender() == FEMALE) // 筛选：性别 == 女
+    .sorted(Comparator.comparing(Student::getName))   // 排序：按姓名
+    .map(Student::getName)                          // 提取：姓名
+    .collect(Collectors.toList());                    // 收集：转成列表
+
+// 等价于一行表达式的写法
+List&lt;String&gt; names = students.stream()
+    .filter(s -> s.getAge() >= 18 && s.getGender() == FEMALE)
+    .sorted(Comparator.comparing(Student::getName))
+    .map(Student::getName)
+    .collect(Collectors.toList());</code></pre>
+
+                <h3>💡 关键思维转变：</h3>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>传统思维</th>
+                            <th>Stream思维</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>告诉计算机<strong>如何做</strong></td>
+                            <td>告诉计算机<strong>做什么</strong></td>
+                        </tr>
+                        <tr>
+                            <td>关注<strong>过程</strong>和<strong>步骤</strong></td>
+                            <td>关注<strong>结果</strong>和<strong>转换</strong></td>
+                        </tr>
+                        <tr>
+                            <td>需要<strong>显式管理</strong>中间状态</td>
+                            <td>框架<strong>自动管理</strong>数据流</td>
+                        </tr>
+                        <tr>
+                            <td>修改<strong>原数据</strong>或创建临时变量</td>
+                            <td>通过<strong>不可变链</strong>生成新结果</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p class="conclusion"><strong>Stream API 就是把这些理想伪代码变成了现实！<br>
+                        让数据处理变得像写SQL查询一样优雅简洁！</strong></p>
+            </div>
+        </section>
+
+        <!-- Slide: Creating Streams -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>如何构造 Stream</h2>
+                <p>Stream 可以通过多种数据源创建，最常用的是从集合（Collection）创建。</p>
+                <ul>
+                    <li>
+                        <strong>1. 从集合 (Collection)</strong> - 最常用的方式
+                        <pre><code class="language-java">List&lt;String&gt; list = List.of("Java", "Python", "Go");
+Stream&lt;String&gt; stream = list.stream();</code></pre>
+                    </li>
+                    <li>
+                        <strong>2. 从数组 (Array)</strong>
+                        <pre><code class="language-java">String[] arr = {"Java", "Python", "Go"};
+Stream&lt;String&gt; stream = Arrays.stream(arr);</code></pre>
+                    </li>
+                    <li>
+                        <strong>3. 直接通过值 (Stream.of)</strong>
+                        <pre><code class="language-java">Stream&lt;String&gt; stream = Stream.of("Java", "Python", "Go");</code></pre>
+                    </li>
+                    <li>
+                        <strong>4. 构造无限流 (Infinite Streams)</strong>
+                        <pre><code class="language-java">Stream&lt;Double&gt; randoms = Stream.generate(Math::random).limit(5);
+Stream&lt;Integer&gt; evens = Stream.iterate(0, n -> n + 2).limit(10);</code></pre>
+                    </li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Slide: Deep Dive into Infinite Streams -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* 深入理解无限流</h2>
+                <p>无限流是 Stream API 的一大特色，允许定义无穷的数据源，只有在需要时才计算（延迟执行）。</p>
+
+                <div style="display: flex; flex-direction: column; gap: 20px;">
+                    <div>
+                        <h3 style="color: #d63384; margin-bottom: 10px;">1. Stream.generate(Supplier&lt;T&gt; s)</h3>
+                        <p style="margin: 5px 0;"><strong>机制：</strong> 基于 <code>Supplier</code>
+                            接口（无参，有返回值），单纯地"生产"数据，不依赖上一次生成的结果。</p>
+                        <p style="margin: 5px 0;"><strong>适用场景：</strong> 生成随机数、常量流、UUID 等无规律数据。</p>
+                        <pre style="margin-top: 5px;"><code class="language-java">// 示例：生成 3 个随机 UUID
+// UUID::randomUUID 符合 Supplier&lt;UUID&gt; 签名
+Stream.generate(java.util.UUID::randomUUID)
+      .limit(3)
+      .forEach(System.out::println);
+// 输出示例: e58ed763-928c-4155-bee9-fdbaaadc15f3 ...</code></pre>
+                    </div>
+
+                    <div>
+                        <h3 style="color: #0d6efd; margin-bottom: 10px;">2. Stream.iterate(T seed,
+                            UnaryOperator&lt;T&gt; f)</h3>
+                        <p style="margin: 5px 0;"><strong>机制：</strong> 这是一个迭代过程。从种子值 <code>seed</code> 开始，将函数
+                            <code>f</code> 反复应用（seed, f(seed), f(f(seed))...）。</p>
+                        <p style="margin: 5px 0;"><strong>适用场景：</strong> 生成等差/等比数列、时间序列、斐波那契数列等有规律数据。</p>
+                        <pre style="margin-top: 5px;"><code class="language-java">// 示例：生成倍数序列 (1, 2, 4, 8, 16...)
+// n -> n * 2 符合 UnaryOperator&lt;Integer&gt; 签名 (输入=输出)
+Stream.iterate(1, n -> n * 2)
+      .limit(5)
+      .forEach(System.out::println);
+// 过程: 1 -> 2 -> 4 -> 8 -> 16</code></pre>
+                    </div>
+                </div>
+
+                <div
+                    style="background: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; margin-top: 20px; border: 1px solid #ffeeba;">
+                    <strong>⚠️ 警告：</strong> 无限流必须配合 <code>limit()</code> 或其他短路操作（Short-circuiting）使用，否则一旦执行终端操作（如
+                    <code>forEach</code>），程序将陷入死循环！
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 4: Stream API Overview and Operation Categories -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Stream API 全景视图</h2>
+                
+                <div style="display: flex; gap: 20px; height: 100%;">
+                    <!-- 左侧：操作分类与心法 -->
+                    <div style="flex: 1.3;">
+                        <h3 style="margin-top: 0; color: #0d6efd; font-size: 1.1em;">🗺️ 操作分类体系</h3>
+                        <p style="font-size: 0.85em; margin-bottom: 10px;">按功能核心可分为以下6大类别：</p>
+                        <table class="operations-table" style="font-size: 0.7em; width: 100%;">
+                            <thead>
+                                <tr style="background-color: #f8f9fa;">
+                                    <th>类别</th>
+                                    <th>核心方法</th>
+                                    <th>主要用途</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>1. 筛选切片</strong></td>
+                                    <td><code>filter</code>, <code>distinct</code>, <code>limit</code>, <code>skip</code>, <code>take/dropWhile</code></td>
+                                    <td>过滤、去重、截取</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>2. 映射加工</strong></td>
+                                    <td><code>map</code>, <code>flatMap</code>, <code>peek</code></td>
+                                    <td>转换、扁平化、调试</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>3. 排序操作</strong></td>
+                                    <td><code>sorted</code></td>
+                                    <td>排序</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>4. 查找匹配</strong></td>
+                                    <td><code style="color: #dc3545">any/all/noneMatch</code>, <code style="color: #dc3545">findFirst/Any</code></td>
+                                    <td>条件检查、查找</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>5. 遍历收集</strong></td>
+                                    <td><code style="color: #dc3545">collect</code>, <code style="color: #dc3545">forEach(Ordered)</code>, <code style="color: #dc3545">toArray</code></td>
+                                    <td>收集、遍历、数组</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>6. 归约统计</strong></td>
+                                    <td><code style="color: #dc3545">reduce</code>, <code style="color: #dc3545">count</code>, <code style="color: #dc3545">min/max</code></td>
+                                    <td>聚合、统计、最值</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>7. 构建/模式</strong></td>
+                                    <td><code>concat</code>, <code>parallel</code>, <code>unordered</code>, <code>onClose</code></td>
+                                    <td>合并、并行、无序</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div style="background-color: #e3f2fd; border-left: 4px solid #2196f3; padding: 10px; margin-top: 10px; border-radius: 4px;">
+                            <h4 style="color: #1565c0; margin: 0 0 5px 0; font-size: 0.9em;">🧠 记忆心法：SWORD 全景模型</h4>
+                            <ul style="margin: 0; font-size: 0.8em; display: grid; grid-template-columns: 1fr; gap: 2px; padding-left: 15px;">
+                                <li>⚔️ <strong>S</strong>hape (整形): <code>sorted</code>, <code>limit/skip</code>, <code>distinct</code>, <code>take/dropWhile</code></li>
+                                <li>⚔️ <strong>W</strong>here (条件): <code>filter</code>, <code style="color: #dc3545">match</code>, <code style="color: #dc3545">find</code></li>
+                                <li>⚔️ <strong>O</strong>peration (加工): <code>map</code>, <code>flatMap</code>, <code>peek</code></li>
+                                <li>⚔️ <strong>R</strong>educe (聚合): <code style="color: #dc3545">reduce</code>, <code style="color: #dc3545">count</code>, <code style="color: #dc3545">min/max</code></li>
+                                <li>⚔️ <strong>D</strong>estination (终端): <code style="color: #dc3545">collect</code>, <code style="color: #dc3545">forEach</code>, <code style="color: #dc3545">toArray</code></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- 右侧：流水线机制与终端操作 -->
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
+                        <div>
+                            <h3 style="margin-top: 0; color: #198754; font-size: 1.1em;">🏗️ 流水线三大铁律</h3>
+                            <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; border: 1px solid #dee2e6; font-size: 0.85em;">
+                                <ol style="margin: 0; padding-left: 20px;">
+                                    <li><strong>Source 开启</strong>: 集合/数组/IO</li>
+                                    <li><strong>Intermediate 惰性求值</strong>: 只配置不执行</li>
+                                    <li><strong>Terminal 触发执行</strong>: 必须且唯一</li>
+                                </ol>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 style="margin-top: 5px; color: #dc3545; font-size: 1.1em;">🎯 终端操作 (Terminal)</h3>
+                            <p style="font-size: 0.8em; margin: 5px 0;"><strong>判别标准：</strong>返回值不是 Stream (如 void, List, long)。</p>
+                            <div style="background: #fff3cd; padding: 10px; border-radius: 6px; border: 1px solid #ffecb5; font-size: 0.8em;">
+                                <strong>⚠️ 警示：</strong>
+                                <ul style="margin: 5px 0; padding-left: 15px;">
+                                    <li>流是<strong>一次性</strong>的：像水流一样只去不回，不可复用。</li>
+                                    <li>必须有终端操作，否则中间操作<strong>不会执行</strong>。</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 style="margin-top: 5px; color: #6610f2; font-size: 1.1em;">🚀 最佳实践</h3>
+                            <div style="font-size: 0.8em;">
+                                <p style="margin: 5px 0;"><strong>原则：先过滤，后处理</strong> (尽早减少数据量)</p>
+                                <pre style="margin: 0; padding: 8px; font-size: 0.9em;"><code class="language-java">stream
+ .filter(s -> s.score > 60) // ✅ 先过滤
+ .map(s -> complex(s))      // ✅ 后运算
+ .collect(toList());        // ✅ 终结</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 5: Traversal Operations -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 遍历:forEach()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">void forEach(Consumer&lt;? super T&gt; action)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Consumer&lt;? super T&gt;</span> <span class="param-name">action</span> - 对流中每个元素执行的操作，是一个消费型函数式接口</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">void</span> - 无返回值，这是一个终端操作</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">forEach是终端操作，调用后Stream结束。适合遍历处理，但不能改变Stream中的元素。在并行Stream中要注意线程安全问题。</p>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-foreach.png" alt="forEach() 操作" style="width: 100%; height: auto;">
+                <p><code>forEach()</code> 用于遍历Stream中的每个元素，是Stream中最基本的操作。</p>
+
+                <h3>🔴 传统写法的痛点：</h3>
+                <pre><code class="language-java">// 传统的for-each循环
+for (Student student : students) {
+    System.out.println("学生姓名: " + student.getName());
+    System.out.println("学生年龄: " + student.getAge());
+}
+
+// 传统for循环（需要处理索引）
+for (int i = 0; i < students.size(); i++) {
+    Student student = students.get(i);
+    System.out.println("第" + (i + 1) + "个学生: " + student.getName());
+}</code></pre>
+
+                <h3>🟢 Stream forEach() 解决方案：</h3>
+                <pre><code class="language-java">// 简洁的forEach
+students.stream()
+    .forEach(student -> {
+        System.out.println("学生姓名: " + student.getName());
+        System.out.println("学生年龄: " + student.getAge());
+    });
+
+// 使用方法引用（更简洁）
+students.stream()
+    .forEach(System.out::println);
+
+// 带索引的遍历（需要额外处理）
+AtomicInteger index = new AtomicInteger(0);
+students.stream()
+    .forEach(student -> {
+        System.out.println("第" + (index.incrementAndGet()) + "个学生: " + student.getName());
+    });</code></pre>
+
+                <h3>💡 使用场景和注意事项：</h3>
+                <ul>
+                    <li><strong>遍历处理</strong>：需要对每个元素执行相同操作时</li>
+                    <li><strong>终端操作</strong>：forEach是终端操作，调用后Stream结束</li>
+                    <li><strong>无返回值</strong>：不能在forEach中返回结果，适合副作用操作</li>
+                    <li><strong>并行安全</strong>：在并行Stream中要注意线程安全问题</li>
+                </ul>
+
+                <p class="conclusion"><strong>forEach() 让遍历操作更加简洁，但要注意它是终端操作且不能改变Stream中的元素！</strong></p>
+            </div>
+        </section>
+
+  
+
+
+        <!-- Slide 7: Filtering Operations -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>筛选:filter()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Stream&lt;T&gt; filter(Predicate&lt;? super T&gt; predicate)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Predicate&lt;? super T&gt;</span> <span class="param-name">predicate</span> - 断言型函数式接口，返回true表示保留元素，false表示过滤掉</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;T&gt;</span> - 包含所有满足predicate条件的元素的新Stream</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">filter是中间操作，是惰性求值的。可以链式调用多个filter来组合复杂的筛选条件。通常将筛选操作放在链式调用的前面以减少处理的数据量。</p>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-filter.png" alt="filter() 操作" style="width: 100%; height: auto;">
+                <p>筛选操作用于根据条件过滤元素，是Stream中最常用的操作之一。</p>
+
+                <h3>🔍 filter() - 条件过滤</h3>
+                <pre><code class="language-java">// 传统写法 - 繁琐
+List&lt;Student&gt; adults = new ArrayList&lt;&gt;();
+for (Student s : students) {
+    if (s.getAge() >= 18) {
+        adults.add(s);
+    }
+}
+
+// Stream写法 - 简洁
+List&lt;Student&gt; adults = students.stream()
+    .filter(student -> student.getAge() >= 18)
+    .collect(Collectors.toList());
+
+// 复杂条件筛选
+List&lt;Student&gt; qualifiedStudents = students.stream()
+    .filter(s -> s.getAge() >= 18 && s.getScore() > 80 && s.isActive())
+    .collect(Collectors.toList());
+
+// 多次filter链式调用（可读性更好）
+List&lt;Student&gt; result = students.stream()
+    .filter(s -> s.getAge() >= 18)           // 年龄筛选
+    .filter(s -> s.getScore() > 80)          // 成绩筛选
+    .filter(Student::isActive)                 // 状态筛选
+    .collect(Collectors.toList());</code></pre>
+
+
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>筛选:distinct()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Stream&lt;T&gt; distinct()</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">无参数</span> - 使用元素的equals()和hashCode()方法进行去重判断</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;T&gt;</span> - 去重后的新Stream，对于有序流保持原始顺序</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">distinct是中间操作，会去除流中的重复元素。需要元素正确实现equals()和hashCode()方法。对于大型数据集，distinct()的性能开销可能较大。</p>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-distinct.png" alt="distinct() 操作" style="width: 100%; height: auto;">
+                <p>筛选操作用于根据条件过滤元素，是Stream中最常用的操作之一。</p>
+                <h3>🔄 distinct() - 去重筛选</h3>
+                <pre><code class="language-java">// 传统写法 - 需要Set辅助
+Set&lt;String&gt; uniqueNames = new HashSet&lt;&gt;();
+List&lt;String&gt; uniqueNameList = new ArrayList&lt;&gt;();
+for (Student s : students) {
+    String name = s.getName();
+    if (uniqueNames.add(name)) {  // Set.add()返回true表示元素不存在
+        uniqueNameList.add(name);
+    }
+}
+
+// Stream写法 - 优雅
+List&lt;String&gt; uniqueNames = students.stream()
+    .map(Student::getName)
+    .distinct()
+    .collect(Collectors.toList());
+
+// 对自定义对象去重（需要重写equals和hashCode）
+List&lt;Student&gt; uniqueStudents = students.stream()
+    .distinct()
+    .collect(Collectors.toList());</code></pre>
+
+
+            </div>
+        </section>
+
+        <!-- Slide: takeWhile() and dropWhile() Operations -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* 筛选:take/dropWhile()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Stream&lt;T&gt; takeWhile(Predicate&lt;? super T&gt; predicate)
+Stream&lt;T&gt; dropWhile(Predicate&lt;? super T&gt; predicate)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Predicate&lt;? super T&gt;</span> <span class="param-name">predicate</span> - 断言条件，用于判断是否继续处理元素</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;T&gt;</span> - 返回截取后的新Stream</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">takeWhile()取元素直到遇到第一个不满足条件的元素；dropWhile()跳过元素直到遇到第一个不满足条件的元素。这两个都是短路操作，可以提升性能。注意：对于无序流，行为可能不确定。</p>
+                    </div>
+                </div>
+                <p><code>takeWhile()</code> 和 <code>dropWhile()</code> 是 Java 9 新增的短路操作，用于按条件截取数据流。</p>
+
+                <h3>✂️ takeWhile() - 满足条件时取元素</h3>
+                <pre><code class="language-java">// 传统写法 - 需要手动控制循环
+List&lt;Integer&gt; result = new ArrayList&lt;&gt;();
+for (Integer num : numbers) {
+    if (num &lt; 4) {
+        result.add(num);
+    } else {
+        break;  // 遇到不满足的条件就停止
+    }
+}
+
+// Stream写法 - 简洁的短路操作
+List&lt;Integer&gt; numbers = List.of(1, 2, 3, 4, 5, 1, 2);
+List&lt;Integer&gt; result = numbers.stream()
+    .takeWhile(n -> n &lt; 4)  // 取直到遇到不满足条件的元素
+    .collect(Collectors.toList());
+// 结果: [1, 2, 3]  (遇到4就停止，不会继续取后面的1,2)</code></pre>
+
+                <h3>🗑️ dropWhile() - 丢弃满足条件的元素</h3>
+                <pre><code class="language-java">// 传统写法 - 需要标志位控制
+List&lt;Integer&gt; result = new ArrayList&lt;&gt;();
+boolean startTaking = false;
+for (Integer num : numbers) {
+    if (!startTaking && num >= 4) {
+        startTaking = true;
+    }
+    if (startTaking) {
+        result.add(num);
+    }
+}
+
+// Stream写法 - 优雅的短路操作
+List&lt;Integer&gt; result2 = numbers.stream()
+    .dropWhile(n -> n &lt; 4)  // 丢弃直到遇到不满足条件的元素
+    .collect(Collectors.toList());
+// 结果: [4, 5, 1, 2]  (从4开始取，包括后面的所有元素)</code></pre>
+
+                <h3>💡 实际应用场景：</h3>
+                <pre><code class="language-java">// 场景1：处理排序后的数据，取连续满足条件的部分
+List&lt;Student&gt; students = getStudentsByScore();  // 已按成绩排序
+List&lt;Student&gt; topStudents = students.stream()
+    .takeWhile(s -> s.getScore() >= 90)  // 取连续90分以上的学生
+    .collect(Collectors.toList());
+
+// 场景2：跳过日志文件的头部信息
+List&lt;String&gt; dataLines = Files.lines(logFile)
+    .dropWhile(line -> line.startsWith("#"))  // 跳过注释行
+    .collect(Collectors.toList());
+
+// 场景3：处理时间序列数据
+List&lt;Double&gt; temperatures = getTemperatureReadings();
+List&lt;Double&gt; normalTemp = temperatures.stream()
+    .takeWhile(t -> t >= 36.0 && t <= 37.5)  // 取正常体温数据
+    .collect(Collectors.toList());</code></pre>
+
+                <div class="tip-box">
+                    <strong>⚠️ 注意事项：</strong>
+                    <ul>
+                        <li>这是 <strong>Java 9+</strong> 的特性，需要 Java 9 或更高版本</li>
+                        <li>与 <code>filter()</code> 不同：<code>filter()</code> 处理所有元素，而 <code>takeWhile/dropWhile()</code> 是短路操作</li>
+                        <li>对于 <strong>有序流</strong>，行为是确定的；对于 <strong>无序流</strong>，结果可能不同</li>
+                    </ul>
+                </div>
+
+                <p class="conclusion"><strong>takeWhile() 和 dropWhile() 提供了强大的条件截取能力，特别适合处理有序数据和需要短路操作的场景！</strong></p>
+            </div>
+        </section>
+
+
+        <!-- Slide 9: Mapping Operations -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>映射:map()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">&lt;R&gt; Stream&lt;R&gt; map(Function&lt;? super T, ? extends R&gt; mapper)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Function&lt;? super T, ? extends R&gt;</span> <span class="param-name">mapper</span> - 函数式接口，将类型为T的元素转换为类型为R的元素</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;R&gt;</span> - 包含转换后元素的新Stream，元素类型可能不同</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">map是中间操作，可以改变Stream中元素的类型。常用于数据转换、对象属性提取、格式转换等场景。map操作是一对一的映射，每个输入元素只产生一个输出元素。</p>
+                    </div>
+                </div>
+                <p>映射操作用于转换Stream中的元素类型或结构，是Stream API的核心功能。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-map.png" alt="map() 操作" style="width: 100%; height: auto;">
+
+                <h3>🔄 map() - 类型转换</h3>
+                <pre><code class="language-java">// 传统写法 - 需要显式循环
+List&lt;String&gt; names = new ArrayList&lt;&gt;();
+for (Student student : students) {
+    names.add(student.getName());
+}
+
+// Stream写法 - 简洁
+List&lt;String&gt; names = students.stream()
+    .map(Student::getName)
+    .collect(Collectors.toList());
+
+// 复杂转换
+List&lt;StudentDTO&gt; dtos = students.stream()
+    .map(student -> {
+        StudentDTO dto = new StudentDTO();
+        dto.setName(student.getName());
+        dto.setAge(student.getAge());
+        return dto;
+    })
+    .collect(Collectors.toList());
+
+// 多步转换
+List&lt;Integer&gt; nameLengths = students.stream()
+    .map(Student::getName)        // Student -> String
+    .map(String::length)         // String -> Integer
+    .collect(Collectors.toList());</code></pre>
+
+
+                <h3>🔢 基本类型映射：</h3>
+                <pre><code class="language-java">// 基本类型映射 - 避免自动装箱
+IntStream ages = students.stream()
+    .mapToInt(Student::getAge);
+
+DoubleStream scores = students.stream()
+    .mapToDouble(Student::getScore);
+
+LongStream ids = students.stream()
+    .mapToLong(Student::getId);
+
+// 基本类型Stream的优势
+double averageAge = students.stream()
+    .mapToInt(Student::getAge)
+    .average()
+    .orElse(0.0);  // 无需Optional处理</code></pre>
+
+                <p class="conclusion"><strong>映射操作是Stream的核心，map()用于一对一转换，flatMap()用于一对多扁平化！</strong></p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>映射:flatMap()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">&lt;R&gt; Stream&lt;R&gt; flatMap(Function&lt;? super T, ? extends Stream&lt;? extends R&gt;&gt; mapper)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Function&lt;? super T, ? extends Stream&lt;? extends R&gt;&gt;</span> <span class="param-name">mapper</span> - 将每个元素映射为一个Stream的函数式接口</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;R&gt;</span> - 扁平化后的新Stream，包含所有子Stream的元素</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">flatMap是中间操作，实现一对多映射。常用于处理嵌套集合、数组展开、对象扁平化等场景。flatMap会自动将多个Stream合并为一个Stream。</p>
+                    </div>
+                </div>
+                <p>映射操作用于转换Stream中的元素类型或结构，是Stream API的核心功能。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-flatMap.png" alt="flatMap() 操作" style="width: 100%; height: auto;">
+
+
+                <h3>📦 flatMap() - 扁平化映射</h3>
+                <pre><code class="language-java">// 场景：学生选课列表，获取所有课程名称
+List&lt;Student&gt; students = getStudents();
+
+// 传统写法 - 嵌套循环
+List&lt;String&gt; allCourses = new ArrayList&lt;&gt;();
+for (Student student : students) {
+    for (Course course : student.getCourses()) {
+        allCourses.add(course.getName());
+    }
+}
+
+// Stream写法 - 使用flatMap扁平化
+List&lt;String&gt; allCourses = students.stream()
+    .flatMap(student -> student.getCourses().stream())  // 将List&lt;Course&gt;扁平化为Stream&lt;Course&gt;
+    .map(Course::getName)
+    .distinct()
+    .collect(Collectors.toList());
+
+// 字符串分割并扁平化
+List&lt;String&gt; words = Arrays.asList("hello world", "java stream", "functional programming")
+    .stream()
+    .flatMap(sentence -> Arrays.stream(sentence.split(" ")))
+    .distinct()
+    .collect(Collectors.toList());
+// 结果: ["hello", "world", "java", "stream", "functional", "programming"]</code></pre>
+
+
+                <p class="conclusion"><strong>映射操作是Stream的核心，map()用于一对一转换，flatMap()用于一对多扁平化！</strong></p>
+            </div>
+        </section>
+
+        <!-- Slide: peek() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>调试:peek()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Stream&lt;T&gt; peek(Consumer&lt;? super T&gt; action)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Consumer&lt;? super T&gt;</span> <span class="param-name">action</span> - 对Stream中每个元素执行的操作，通常用于调试</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;T&gt;</span> - 原始Stream，peek操作不会修改Stream内容</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">peek是中间操作，主要用于调试和监控。可以在Stream处理链中插入查看点，但不应修改元素状态。适合配合日志输出或断点调试使用。</p>
+                    </div>
+                </div>
+                <p><code>peek()</code> 是一个中间操作，主要用于调试Stream处理过程，让我们能够查看每个处理阶段的数据。</p>
+
+                <h3>🔍 peek() - 调试Stream处理</h3>
+                <pre><code class="language-java">// 传统调试方式 - 需要打断点或打印变量
+List&lt;String&gt; names = new ArrayList&lt;&gt;();
+for (Student student : students) {
+    if (student.getAge() >= 18) {
+        System.out.println("过滤后的学生: " + student.getName());  // 调试输出
+        names.add(student.getName());
+    }
+}
+
+// Stream使用peek()调试 - 链式调试
+List&lt;String&gt; result = students.stream()
+    .filter(student -> student.getAge() >= 18)
+    .peek(student -> System.out.println("过滤后: " + student.getName()))
+    .map(Student::getName)
+    .peek(name -> System.out.println("映射后: " + name))
+    .filter(name -> name.length() > 2)
+    .collect(Collectors.toList());</code></pre>
+
+                <h3>🛠️ peek() 的多种调试用途</h3>
+                <pre><code class="language-java">// 用途1：跟踪数据转换过程
+List&lt;Integer&gt; squares = numbers.stream()
+    .peek(n -> System.out.println("原始: " + n))
+    .map(n -> n * n)
+    .peek(n -> System.out.println("平方: " + n))
+    .filter(n -> n > 50)
+    .peek(n -> System.out.println("过滤后: " + n))
+    .collect(Collectors.toList());
+
+// 用途2：验证数据流内容
+Set&lt;String&gt; categories = products.stream()
+    .peek(p -> {
+        if (p.getCategory() == null) {
+            System.out.println("警告: 产品 " + p.getName() + " 没有分类");
+        }
+    })
+    .filter(p -> p.getCategory() != null)
+    .map(Product::getCategory)
+    .collect(Collectors.toSet());
+
+// 用途3：收集统计信息（副作用）
+AtomicInteger count = new AtomicInteger(0);
+List&lt;Student&gt; processed = students.stream()
+    .peek(student -> count.incrementAndGet())
+    .filter(Student::isActive)
+    .collect(Collectors.toList());
+System.out.println("处理了 " + count.get() + " 个学生");</code></pre>
+
+                <h3>⚠️ 重要注意事项</h3>
+                <pre><code class="language-java">// ❌ 错误：在peek中修改状态（副作用）
+List&lt;Student&gt; result = students.stream()
+    .peek(student -> student.setScore(student.getScore() + 10))  // 不要这样做！
+    .collect(Collectors.toList());
+
+// ✅ 正确：在peek中只进行调试或观察
+List&lt;Student&gt; result = students.stream()
+    .peek(student -> System.out.println("处理: " + student.getName()))
+    .map(student -> {
+        Student newStudent = new Student(student);
+        newStudent.setScore(student.getScore() + 10);  // 在map中创建新对象
+        return newStudent;
+    })
+    .collect(Collectors.toList());
+
+// ✅ 正确：使用peek进行性能监控
+long start = System.currentTimeMillis();
+List&lt;Result&gt; results = data.stream()
+    .peek(d -> {
+        if (System.currentTimeMillis() - start > 5000) {
+            System.out.println("警告：处理超过5秒");
+        }
+    })
+    .map(this::expensiveOperation)
+    .collect(Collectors.toList());</code></pre>
+
+                <div class="tip-box">
+                    <strong>💡 最佳实践：</strong>
+                    <ul>
+                        <li><strong>调试专用</strong>：peek主要用于调试，避免在生产代码中使用</li>
+                        <li><strong>无副作用</strong>：不要在peek中修改Stream中的元素</li>
+                        <li><strong>性能影响</strong>：调试完成后记得移除peek调用</li>
+                        <li><strong>日志级别</strong>：使用适当的日志级别而非System.out</li>
+                    </ul>
+                </div>
+
+                <h3>🔧 高级调试技巧</h3>
+                <pre><code class="language-java">// 技巧1：条件调试 - 只在特定条件下打印
+students.stream()
+    .peek(student -> {
+        if ("计算机科学".equals(student.getMajor())) {
+            System.out.println("计算机专业学生: " + student.getName());
+        }
+    })
+    .collect(Collectors.toList());
+
+// 技巧2：统计调试 - 收集处理信息
+Map&lt;String, AtomicLong&gt; counters = new HashMap&lt;&gt;();
+students.stream()
+    .peek(student ->
+        counters.computeIfAbsent(student.getMajor(), k -> new AtomicLong())
+               .incrementAndGet())
+    .collect(Collectors.toList());
+
+// 技巧3：断言调试 - 验证数据完整性
+students.stream()
+    .peek(student -> {
+        assert student.getName() != null : "学生姓名不能为空";
+        assert student.getAge() >= 0 : "学生年龄不能为负数";
+    })
+    .collect(Collectors.toList());</code></pre>
+
+                <p class="conclusion"><strong>peek() 是Stream调试的利器，让我们能够清晰地看到数据流的每个处理步骤！</strong></p>
+            </div>
+        </section>
+
+
+        <!-- Slide 11: Sorting Operations -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排序:sorted()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Stream&lt;T&gt; sorted()
+Stream&lt;T&gt; sorted(Comparator&lt;? super T&gt; comparator)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Comparator&lt;? super T&gt;</span> <span class="param-name">comparator</span> - 比较器，用于定义排序规则（可选参数）</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;T&gt;</span> - 排序后的新Stream</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">sorted是中间操作，有参数版本使用自定义比较器，无参数版本要求元素实现Comparable接口。sorted是状态ful操作，需要处理所有元素才能完成排序，对性能有影响。</p>
+                    </div>
+                </div>
+                <p>排序操作用于对Stream中的元素进行排序，支持自然排序和自定义排序。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-sorted.png" alt="sorted() 操作" style="width: 100%; height: auto;">
+
+                <h3>📊 sorted() - 基础排序</h3>
+                <pre><code class="language-java">// 传统写法 - 修改原集合
+List&lt;Student&gt; students = new ArrayList&lt;&gt;(originalStudents);
+Collections.sort(students);
+
+// 或者使用Comparator
+students.sort(Comparator.comparing(Student::getScore));
+
+// Stream写法 - 不修改原集合
+List&lt;Student&gt; sortedStudents = students.stream()
+    .sorted()  // 自然排序（需要实现Comparable）
+    .collect(Collectors.toList());
+
+// 使用Comparator排序
+List&lt;Student&gt; sortedByScore = students.stream()
+    .sorted(Comparator.comparing(Student::getScore))
+    .collect(Collectors.toList());
+
+// 降序排序
+List&lt;Student&gt; sortedByScoreDesc = students.stream()
+    .sorted(Comparator.comparing(Student::getScore).reversed())
+    .collect(Collectors.toList());</code></pre>
+
+                <h3>🎯 复杂排序规则：</h3>
+                <pre><code class="language-java">// 多级排序：先按年龄，再按成绩，最后按姓名
+List&lt;Student&gt; multiSort = students.stream()
+    .sorted(Comparator
+        .comparing(Student::getAge)           // 一级排序：年龄
+        .thenComparing(Student::getScore)     // 二级排序：成绩
+        .thenComparing(Student::getName))      // 三级排序：姓名
+    .collect(Collectors.toList());
+
+// 自定义排序规则
+List&lt;Student&gt; customSort = students.stream()
+    .sorted((s1, s2) -> {
+        // 自定义复杂排序逻辑
+        int scoreCompare = Double.compare(s2.getScore(), s1.getScore());  // 成绩降序
+        if (scoreCompare != 0) return scoreCompare;
+        return s1.getName().compareTo(s2.getName());  // 姓名升序
+    })
+    .collect(Collectors.toList());</code></pre>
+
+                <h3>⚡ 排序性能考虑：</h3>
+                <pre><code class="language-java">// 排序后使用limit()获取前N名 - 性能优化
+List&lt;Student&gt; top3Students = students.stream()
+    .sorted(Comparator.comparing(Student::getScore).reversed())
+    .limit(3)  // 只取前3名，减少排序开销
+    .collect(Collectors.toList());
+
+// 注意：在并行Stream中使用sorted()可能影响性能
+List&lt;Student&gt; sortedResult = students.parallelStream()
+    .sorted(Comparator.comparing(Student::getScore))
+    .collect(Collectors.toList());  // 并行排序开销较大</code></pre>
+
+                <h3>💡 实际应用场景：</h3>
+                <ul>
+                    <li><strong>排行榜</strong>：按成绩、分数等排序</li>
+                    <li><strong>数据展示</strong>：按时间、字母顺序展示</li>
+                    <li><strong>优先级处理</strong>：按重要性、紧急程度排序</li>
+                    <li><strong>数据分析</strong>：有序的数据处理</li>
+                </ul>
+            </div>
+        </section>
+
+
+        <!-- Slide 13: Extraction Operations -->
+        <!-- Slide: limit() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>提取:limit()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Stream&lt;T&gt; limit(long maxSize)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">long</span> <span class="param-name">maxSize</span> - 要提取的最大元素数量，不能为负数</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;T&gt;</span> - 截取后的新Stream，最多包含maxSize个元素</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">limit是中间操作，是短路操作。通常用于分页处理、获取前N个元素、限制处理数据量等场景。在并行Stream中，limit的行为可能不保证顺序。</p>
+                    </div>
+                </div>
+                <p><code>limit(n)</code> 用于截取 Stream 中的前 n 个元素。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-limit.png" alt="limit() 操作" style="width: 100%; height: auto;">
+
+                <h3>✂️ limit() - 截取前 N 个</h3>
+                <pre><code class="language-java">// 传统写法 - 需要索引控制
+List&lt;Student&gt; first5Students = new ArrayList&lt;&gt;();
+for (int i = 0; i < Math.min(5, students.size()); i++) {
+    first5Students.add(students.get(i));
+}
+
+// Stream写法 - 简洁
+List&lt;Student&gt; first5Students = students.stream()
+    .limit(5)  // 只取前5个元素
+    .collect(Collectors.toList());</code></pre>
+                
+                <div class="tip-box">
+                     <strong>💡 场景：</strong> 获取 Top N 数据、数据采样、避免处理过多数据。
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: skip() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>提取:skip()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Stream&lt;T&gt; skip(long n)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">long</span> <span class="param-name">n</span> - 要跳过的元素数量，不能为负数</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;T&gt;</span> - 跳过后剩余元素的新Stream</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">skip是中间操作，常与limit()配合实现分页功能。适用于跳过前N个元素、实现偏移量等场景。如果n大于Stream长度，返回空Stream。</p>
+                    </div>
+                </div>
+                <p><code>skip(n)</code> 用于跳过 Stream 中的前 n 个元素，返回剩下的元素。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-skip.png" alt="skip() 操作" style="width: 100%; height: auto;">
+
+                <h3>⏭️ skip() - 跳过前 N 个</h3>
+                <pre><code class="language-java">// 获取除了前 5 名之外的学生
+List&lt;Student&gt; restStudents = students.stream()
+    .skip(5)      // 跳过前5个
+    .collect(Collectors.toList());
+
+// 分页操作：结合 skip + limit
+int pageSize = 10;
+int pageNumber = 2;  // 第2页
+List&lt;Student&gt; pageData = students.stream()
+    .skip((pageNumber - 1) * pageSize)  // 跳过前面的元素
+    .limit(pageSize)                     // 取当前页的元素
+    .collect(Collectors.toList());</code></pre>
+
+                <div class="tip-box">
+                     <strong>💡 场景：</strong> 分页查询、忽略表头/首行数据。
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: findFirst() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 提取:findFirst()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Optional&lt;T&gt; findFirst()</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">无参数</span> - 返回Stream中的第一个元素</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Optional&lt;T&gt;</span> - 包含第一个元素的Optional，如果Stream为空则返回Optional.empty()</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">findFirst是终端操作和短路操作。在并行Stream中总是返回第一个元素（按顺序），具有确定性。常用于查找符合条件的第一个元素。</p>
+                    </div>
+                </div>
+                <p><code>findFirst()</code> 返回 Stream 中的第一个元素（包装在 Optional 中）。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-findFirst.png" alt="findFirst() 操作" style="width: 100%; height: auto;">
+
+                <h3>🥇 findFirst() - 查找第一个</h3>
+                <pre><code class="language-java">// 传统写法 - 需要循环和 break
+Student firstAdult = null;
+for (Student student : students) {
+    if (student.getAge() >= 18) {
+        firstAdult = student;
+        break;
+    }
+}
+
+// Stream写法 - 优雅且语义清晰
+Optional&lt;Student&gt; firstAdult = students.stream()
+    .filter(student -> student.getAge() >= 18)
+    .findFirst();
+
+// 处理结果
+String name = firstAdult
+    .map(Student::getName)
+    .orElse("未找到成年学生");</code></pre>
+
+                <div class="tip-box">
+                     <strong>💡 注意：</strong> 在有序流中（如 List），它总是返回第一个元素；在无序流中（如 HashSet），结果可能不确定。
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: findAny() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 提取:findAny()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Optional&lt;T&gt; findAny()</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">无参数</span> - 返回Stream中的任意一个元素</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Optional&lt;T&gt;</span> - 包含任意一个元素的Optional，如果Stream为空则返回Optional.empty()</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">findAny是终端操作和短路操作。在并行Stream中性能可能更好，但不保证返回哪个元素。当不关心具体返回哪个元素，只需要任意一个时使用。</p>
+                    </div>
+                </div>
+                <p><code>findAny()</code> 返回 Stream 中的任意一个元素（包装在 Optional 中）。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-findAny.png" alt="findAny() 操作" style="width: 100%; height: auto;">
+                <h3>🎲 findAny() - 查找任意一个</h3>
+                <pre><code class="language-java">// findAny() - 在并行 Stream (parallelStream) 中性能更好
+// 因为它不需要等待"第一个"元素，只要有线程找到符合条件的就返回
+Optional&lt;Student&gt; anyAdult = students.parallelStream()
+    .filter(student -> student.getAge() >= 18)
+    .findAny();
+
+// 配合短路操作 anyMatch (返回 boolean)
+boolean hasHighScorer = students.stream()
+    .anyMatch(student -> student.getScore() > 95);</code></pre>
+
+                <div class="tip-box">
+                     <strong>💡 区别：</strong> 
+                     <ul>
+                         <li><code>findFirst()</code>：追求顺序确定性，适合有序流。</li>
+                         <li><code>findAny()</code>：追求性能，适合并行流 (Parallel Stream)，不关心具体是哪一个。</li>
+                     </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: anyMatch/allMatch/noneMatch Operations -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 匹配:anyMatch/allMatch/noneMatch()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">boolean anyMatch(Predicate&lt;? super T&gt; predicate)
+boolean allMatch(Predicate&lt;? super T&gt; predicate)
+boolean noneMatch(Predicate&lt;? super T&gt; predicate)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Predicate&lt;? super T&gt;</span> <span class="param-name">predicate</span> - 断言条件，用于判断元素是否满足条件</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">boolean</span> - 匹配结果：anyMatch(存在满足条件的元素)、allMatch(所有元素都满足条件)、noneMatch(没有元素满足条件)</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">这些都是终端操作和短路操作。anyMatch找到第一个满足条件的就返回true；allMatch遇到第一个不满足的就返回false；noneMatch遇到第一个满足的就返回false。适合用于验证和检查场景。</p>
+                    </div>
+                </div>
+                <p>匹配操作用于检查Stream中的元素是否满足指定条件，返回布尔值，是重要的终端操作。</p>
+
+                <h3>🔍 anyMatch() - 存在匹配元素</h3>
+                <pre><code class="language-java">// 传统写法 - 需要循环和标志位
+boolean hasAdult = false;
+for (Student student : students) {
+    if (student.getAge() >= 18) {
+        hasAdult = true;
+        break;  // 找到一个就够了
+    }
+}
+
+// Stream写法 - 简洁的短路操作
+boolean hasAdult = students.stream()
+    .anyMatch(student -> student.getAge() >= 18);
+
+// 更多anyMatch应用
+boolean hasComputerMajor = students.stream()
+    .anyMatch(s -> "计算机科学".equals(s.getMajor()));
+
+boolean hasHighScore = students.stream()
+    .anyMatch(s -> s.getScore() > 95);</code></pre>
+
+                <h3>✅ allMatch() - 全部匹配</h3>
+                <pre><code class="language-java">// 传统写法 - 需要检查每个元素
+boolean allPassed = true;
+for (Student student : students) {
+    if (student.getScore() < 60) {
+        allPassed = false;
+        break;  // 发现一个不满足的就停止
+    }
+}
+
+// Stream写法 - 优雅的验证
+boolean allPassed = students.stream()
+    .allMatch(student -> student.getScore() >= 60);
+
+// 更多allMatch应用
+boolean allHaveValidEmail = students.stream()
+    .allMatch(s -> s.getEmail() != null && s.getEmail().contains("@"));
+
+boolean allAdults = students.stream()
+    .allMatch(s -> s.getAge() >= 18);</code></pre>
+
+                <h3>❌ noneMatch() - 全部不匹配</h3>
+                <pre><code class="language-java">// 传统写法 - 检查是否没有满足条件的元素
+boolean noneFailed = true;
+for (Student student : students) {
+    if (student.getScore() < 60) {
+        noneFailed = false;
+        break;
+    }
+}
+
+// Stream写法 - 直观的表达
+boolean noneFailed = students.stream()
+    .noneMatch(student -> student.getScore() < 60);
+
+// 更多noneMatch应用
+boolean noneUnderAge = students.stream()
+    .noneMatch(s -> s.getAge() < 16);
+
+boolean noneHaveInvalidName = students.stream()
+    .noneMatch(s -> s.getName() == null || s.getName().trim().isEmpty());</code></pre>
+
+                <h3>🔄 匹配操作的组合使用</h3>
+                <pre><code class="language-java">// 场景：数据验证
+public boolean validateStudentData(List&lt;Student&gt; students) {
+    // 检查是否有学生数据
+    if (students.isEmpty()) {
+        return false;
+    }
+
+    // 检查基本要求
+    boolean hasStudents = students.stream().anyMatch(Objects::nonNull);
+    boolean allHaveNames = students.stream().allMatch(s -> s != null && s.getName() != null);
+    boolean noneHaveNegativeAge = students.stream().noneMatch(s -> s != null && s.getAge() < 0);
+
+    return hasStudents && allHaveNames && noneHaveNegativeAge;
+}
+
+// 场景：权限检查
+public boolean canUserAccessSpecialContent(User user) {
+    return user != null && (
+        user.getRoles().stream().anyMatch(role -> "ADMIN".equals(role)) ||
+        (user.getRoles().stream().allMatch(role -> role.startsWith("VIP_")) &&
+         user.getRoles().stream().noneMatch(role -> "BANNED".equals(role)))
+    );
+}</code></pre>
+
+                <h3>⚡ 性能特点：短路操作</h3>
+                <pre><code class="language-java">// 匹配操作都是短路的，找到结果立即返回
+// anyMatch: 找到第一个匹配的就返回true
+boolean result1 = students.stream()
+    .anyMatch(s -> {
+        System.out.println("检查: " + s.getName());
+        return s.getScore() > 95;
+    });
+// 只会输出到找到第一个95分以上的学生
+
+// allMatch: 找到第一个不匹配的就返回false
+boolean result2 = students.stream()
+    .allMatch(s -> {
+        System.out.println("检查: " + s.getName());
+        return s.getScore() >= 60;
+    });
+// 只会输出到找到第一个不及格的学生
+
+// noneMatch: 找到第一个匹配的就返回false
+boolean result3 = students.stream()
+    .noneMatch(s -> {
+        System.out.println("检查: " + s.getName());
+        return s.getAge() < 16;
+    });
+// 只会输出到找到第一个未满16岁的学生</code></pre>
+
+                <div class="tip-box">
+                    <strong>💡 使用建议：</strong>
+                    <ul>
+                        <li><strong>anyMatch</strong>：检查"是否存在"，配合并行流性能更好</li>
+                        <li><strong>allMatch</strong>：检查"全部满足"，适合数据验证</li>
+                        <li><strong>noneMatch</strong>：检查"全部不满足"，比 !anyMatch 更直观</li>
+                        <li><strong>短路特性</strong>：不需要处理所有元素，性能高效</li>
+                    </ul>
+                </div>
+
+                <h3>🎯 实际应用场景</h3>
+                <pre><code class="language-java">// 数据质量检查
+public boolean isDataValid(List&lt;Transaction&gt; transactions) {
+    return transactions.stream()
+        .allMatch(t -> t.getId() != null &&
+                      t.getAmount() > 0 &&
+                      t.getTimestamp() != null);
+}
+
+// 业务规则验证
+public boolean canApproveLoan(Application app) {
+    return app.getCreditScore() > 650 &&
+           app.getIncome() > 50000 &&
+           app.getDebts().stream().noneMatch(Debt::isOverdue);
+}
+
+// 配置检查
+public boolean isConfigValid(Map&lt;String, String&gt; config) {
+    List&lt;String&gt; requiredKeys = List.of("host", "port", "username", "password");
+    return requiredKeys.stream().allMatch(config::containsKey) &&
+           config.values().stream().noneMatch(String::isEmpty);
+}</code></pre>
+
+                <p class="conclusion"><strong>匹配操作提供了简洁高效的条件检查方式，短路特性让它们在大数据量处理时性能优异！</strong></p>
+            </div>
+        </section>
+
+
+        <!-- Slide 15: Statistical Operations -->
+        <!-- Slide: count() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 统计:count()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">long count()</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">无参数</span> - 返回Stream中的元素数量</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">long</span> - Stream中的元素总数，如果Stream为空则返回0</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">count是终端操作，会遍历整个Stream来计算元素数量。对于大型Stream或无限Stream，可能需要配合limit()等短路操作使用。在并行Stream中性能更好。</p>
+                    </div>
+                </div>
+                <p><code>count()</code> 是一个终结操作，用于返回 Stream 中的元素总数。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-count.png" alt="count() 操作" style="width: 100%; height: auto;">
+
+                <h3>🔢 count() - 计数操作</h3>
+                <pre><code class="language-java">// 传统写法 - 需要计数器
+int adultCount = 0;
+for (Student student : students) {
+    if (student.getAge() >= 18) {
+        adultCount++;
+    }
+}
+
+// Stream写法 - 简洁
+long adultCount = students.stream()
+    .filter(student -> student.getAge() >= 18)
+    .count();
+
+// 分组统计：配合 Collectors.counting()
+Map&lt;String, Long&gt; countByGender = students.stream()
+    .collect(Collectors.groupingBy(
+        Student::getGender,
+        Collectors.counting()
+    ));</code></pre>
+
+                <div class="tip-box">
+                    <strong>💡 注意：</strong> <code>count()</code> 返回的是 <code>long</code> 类型，不是 <code>int</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: min() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 统计:min() & max()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Optional&lt;T&gt; min(Comparator&lt;? super T&gt; comparator)
+Optional&lt;T&gt; max(Comparator&lt;? super T&gt; comparator)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Comparator&lt;? super T&gt;</span> <span class="param-name">comparator</span> - 比较器，用于定义元素的比较规则</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Optional&lt;T&gt;</span> - 包含最小/最大值的Optional，如果Stream为空则返回Optional.empty()</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">min/max是终端操作，需要提供比较器。对于数值类型，建议使用专门的数值Stream操作。如果元素已经实现Comparable接口，可以使用Comparator.naturalOrder()。</p>
+                    </div>
+                </div>
+                <p><code>min()</code> 和 <code>max()</code> 根据指定的比较器，返回 Stream 中的最小值或最大值（包装在 Optional 中）。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-min.png" alt="min() 操作" style="width: 100%; height: auto;">
+
+                <h3>📉 min() - 查找最小值</h3>
+                <pre><code class="language-java">// 查找年龄最小的学生
+Optional&lt;Student&gt; youngestStudent = students.stream()
+    .min(Comparator.comparing(Student::getAge));
+
+// 获取最小年龄数值 (IntStream)
+// mapToInt 将 Stream<Student> 转换为 IntStream
+int minAge = students.stream()
+    .mapToInt(Student::getAge)
+    .min()
+    .orElse(0); // 如果流为空，返回默认值 0</code></pre>
+
+                <div class="tip-box">
+                    <strong>💡 技巧：</strong> 使用 <code>mapToInt</code>/<code>mapToDouble</code> 等转为基本类型流后，<code>min()</code> 会返回 <code>OptionalInt</code> 等特化类型。
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: max() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 统计:max()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Optional&lt;T&gt; max(Comparator&lt;? super T&gt; comparator)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Comparator&lt;? super T&gt;</span> <span class="param-name">comparator</span> - 比较器，用于定义元素的比较规则</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Optional&lt;T&gt;</span> - 包含最大值的Optional，如果Stream为空则返回Optional.empty()</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">max是终端操作，需要提供比较器。对于数值类型，建议使用专门的数值Stream操作。如果元素已经实现Comparable接口，可以使用Comparator.naturalOrder()。</p>
+                    </div>
+                </div>
+                <p><code>max()</code> 根据指定的比较器，返回 Stream 中的最大值（包装在 Optional 中）。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-max.png" alt="max() 操作" style="width: 100%; height: auto;">
+
+                <h3>📈 max() - 查找最大值</h3>
+                <pre><code class="language-java">// 查找分数最高的学生
+Optional&lt;Student&gt; topStudent = students.stream()
+    .max(Comparator.comparing(Student::getScore));
+
+// 复杂场景：查找"大四"学生中分数最高的
+Optional&lt;Student&gt; bestSenior = students.stream()
+    .filter(s -> "Senior".equals(s.getGrade()))
+    .max(Comparator.comparing(Student::getScore));</code></pre>
+            </div>
+        </section>
+
+        <!-- Slide: sum() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 统计:sum()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">int sum()           // IntStream
+long sum()          // LongStream
+double sum()        // DoubleStream</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">无参数</span> - 仅适用于数值Stream (IntStream, LongStream, DoubleStream)</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">int/long/double</span> - Stream中所有元素的和，空Stream返回对应类型的默认值</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">sum是终端操作，专用于数值Stream。需要通过mapToInt()、mapToLong()、mapToDouble()将对象Stream转换为数值Stream。对于大数值计算要注意溢出问题。</p>
+                    </div>
+                </div>
+                <p><code>sum()</code> 用于对数值流（IntStream, LongStream, DoubleStream）中的元素求和。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-sum.png" alt="sum() 操作" style="width: 100%; height: auto;">
+
+                <h3>➕ sum() - 求和计算</h3>
+                <pre><code class="language-java">// 传统写法
+double totalScore = 0;
+for (Student s : students) {
+    totalScore += s.getScore();
+}
+
+// Stream写法
+// 注意：sum() 仅在基本类型流(IntStream等)中可用
+double totalScore = students.stream()
+    .mapToDouble(Student::getScore)
+    .sum();
+
+// 复杂求和：计算所有商品的折后总价
+double totalValue = products.stream()
+    .mapToDouble(p -> p.getPrice() * p.getDiscount())
+    .sum();</code></pre>
+
+                <div class="tip-box">
+                    <strong>⚠️ 警告：</strong> 普通 <code>Stream&lt;T&gt;</code> 没有 <code>sum()</code> 方法，必须先通过 <code>mapToInt/mapToLong/mapToDouble</code> 转换。
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: average() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 统计:average()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">OptionalDouble average()    // IntStream, LongStream
+OptionalDouble average()    // DoubleStream</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">无参数</span> - 仅适用于数值Stream (IntStream, LongStream, DoubleStream)</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">OptionalDouble</span> - 包含平均值的OptionalDouble，空Stream返回OptionalDouble.empty()</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">average是终端操作，专用于数值Stream。返回OptionalDouble避免空Stream异常。可以配合orElse()提供默认值。对于DoubleStream要注意NaN和无穷值的处理。</p>
+                    </div>
+                </div>
+                <p><code>average()</code> 用于计算数值流的平均值，结果包装在 OptionalDouble 中。</p>
+
+                <h3>➗ average() - 计算平均值</h3>
+                <pre><code class="language-java">// 计算平均分
+double averageScore = students.stream()
+    .mapToDouble(Student::getScore)
+    .average()     // 返回 OptionalDouble
+    .orElse(0.0);  // 处理空流的情况
+
+// 综合统计信息 (一次性获取 count, sum, min, max, average)
+IntSummaryStatistics stats = students.stream()
+    .mapToInt(Student::getAge)
+    .summaryStatistics();
+
+System.out.println("平均年龄: " + stats.getAverage());
+System.out.println("最大年龄: " + stats.getMax());
+System.out.println("总人数: " + stats.getCount());</code></pre>
+
+                <div class="tip-box">
+                     <strong>💡 推荐：</strong> 如果需要同时计算最大、最小、平均值，请使用 <code>summaryStatistics()</code>，只需遍历一次流，性能更优！
+                </div>
+            </div>
+        </section>
+
+
+        <!-- Slide 17: Reduction Operations -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 规约:reduce()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Optional&lt;T&gt; reduce(BinaryOperator&lt;T&gt; accumulator)
+T reduce(T identity, BinaryOperator&lt;T&gt; accumulator)
+&lt;U&gt; U reduce(U identity, BiFunction&lt;U, ? super T, U&gt; accumulator, BinaryOperator&lt;U&gt; combiner)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">T</span> <span class="param-name">identity</span> - 初始值，用于第一次累加操作</li>
+                            <li><span class="param-type">BinaryOperator&lt;T&gt;</span> <span class="param-name">accumulator</span> - 累加器函数，定义如何组合两个元素</li>
+                            <li><span class="param-type">BiFunction&lt;U, ? super T, U&gt;</span> <span class="param-name">accumulator</span> - 转换累加器，用于类型转换场景</li>
+                            <li><span class="param-type">BinaryOperator&lt;U&gt;</span> <span class="param-name">combiner</span> - 合并器函数，用于并行Stream的结果合并</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Optional&lt;T&gt;/T/U</span> - 规约结果：无初始值时返回Optional，有初始值时返回具体类型</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">reduce是最灵活的终端操作，可用于求和、求积、字符串拼接等任意聚合操作。有初始值的版本更安全。在并行Stream中，combiner函数用于合并各线程的局部结果。</p>
+                    </div>
+                </div>
+                <p>reduce() 操作用于将Stream中的元素按照指定的规则"规约"成一个值，是最灵活的聚合操作。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-reduce.png" alt="reduce() 操作" style="width: 100%; height: auto;">
+
+                <h3>🔄 基础reduce() - 求和示例</h3>
+                <pre><code class="language-java">// 传统写法 - 显式累加
+double totalScore = 0;
+for (Student student : students) {
+    totalScore += student.getScore();
+}
+
+// Stream写法 - reduce()规约
+Optional&lt;Double&gt; totalScore = students.stream()
+    .map(Student::getScore)
+    .reduce((score1, score2) -> score1 + score2);
+
+// 带初始值的reduce() - 避免Optional
+double totalScoreWithInit = students.stream()
+    .map(Student::getScore)
+    .reduce(0.0, Double::sum);
+
+// 使用方法引用更简洁
+double totalScoreMethodRef = students.stream()
+    .map(Student::getScore)
+    .reduce(0.0, Double::sum);</code></pre>
+
+                <h3>⚙️ 自定义规约逻辑</h3>
+                <pre><code class="language-java">// 找出最高分的学生
+Optional&lt;Student&gt; topStudent = students.stream()
+    .reduce((s1, s2) -> s1.getScore() > s2.getScore() ? s1 : s2);
+
+// 字符串拼接 - 传统方式
+String allNames1 = students.stream()
+    .map(Student::getName)
+    .reduce("", (name1, name2) -> name1 + ", " + name2);
+
+// 字符串拼接 - 更优雅的方式
+String allNames2 = students.stream()
+    .map(Student::getName)
+    .collect(Collectors.joining(", "));
+
+// 复杂对象规约 - 计算加权平均
+WeightedAverageResult weightedAvg = students.stream()
+    .reduce(
+        new WeightedAverageResult(0.0, 0.0),  // 初始值
+        (result, student) -> new WeightedAverageResult(
+            result.totalScore + student.getScore() * student.getCredit(),
+            result.totalCredit + student.getCredit()
+        ),
+        (result1, result2) -> new WeightedAverageResult(
+            result1.totalScore + result2.totalScore,
+            result1.totalCredit + result2.totalCredit
+        )
+    );</code></pre>
+
+                <h3>🎯 reduce() vs collect() 的选择</h3>
+                <pre><code class="language-java">// reduce() - 返回单一值，适合聚合操作
+Integer maxValue = numbers.stream()
+    .reduce(Integer::max)
+    .orElse(0);
+
+// collect() - 返回集合，适合收集操作
+List&lt;Integer&gt; positiveNumbers = numbers.stream()
+    .filter(n -> n > 0)
+    .collect(Collectors.toList());
+
+// reduce() - 自定义聚合逻辑
+String concatenated = words.stream()
+    .reduce("", String::concat);
+
+// collect() - 标准收集操作
+List&lt;String&gt; wordList = words.stream()
+    .collect(Collectors.toList());</code></pre>
+
+                <h3>⚡ 性能考虑：</h3>
+                <ul>
+                    <li><strong>并行安全</strong>：reduce()需要满足结合律才能安全并行执行</li>
+                    <li><strong>初始值选择</strong>：带初始值的reduce()可以避免Optional处理</li>
+                    <li><strong>身份元素</strong>：初始值应该是操作的身份元素（如加法的0、乘法的1）</li>
+                    <li><strong>性能优化</strong>：对于简单聚合，优先使用专门的统计方法（sum、count等）</li>
+                </ul>
+
+                <p class="conclusion"><strong>reduce() 是Stream中最强大的聚合操作，可以实现任何自定义的聚合逻辑！</strong></p>
+            </div>
+        </section>
+
+
+
+        <!-- Slide 19: Collection Operations -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 收集:collect()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">&lt;R, A&gt; R collect(Collector&lt;? super T, A, R&gt; collector)
+&lt;R&gt; R collect(Supplier&lt;R&gt; supplier, BiConsumer&lt;R, ? super T&gt; accumulator, BiConsumer&lt;R, R&gt; combiner)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Collector&lt;? super T, A, R&gt;</span> <span class="param-name">collector</span> - 收集器，定义如何收集元素到结果容器中</li>
+                            <li><span class="param-type">Supplier&lt;R&gt;</span> <span class="param-name">supplier</span> - 结果容器的工厂方法</li>
+                            <li><span class="param-type">BiConsumer&lt;R, ? super T&gt;</span> <span class="param-name">accumulator</span> - 累加器，定义如何将元素添加到容器中</li>
+                            <li><span class="param-type">BiConsumer&lt;R, R&gt;</span> <span class="param-name">combiner</span> - 合并器，用于并行Stream时合并两个容器</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">R</span> - 收集结果，可以是List、Set、Map或任意自定义类型</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">collect是最灵活的终端操作，Collectors类提供了丰富的预定义收集器。常用场景：toList()、toSet()、toMap()、groupingBy()、partitioningBy()等。自定义收集器可以实现复杂的数据转换需求。</p>
+                    </div>
+                </div>
+                <p>collect() 是Stream的终端操作，用于将Stream中的元素收集到容器中，是最灵活的结果收集方式。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-collect.png" alt="collect() 操作" style="width: 100%; height: auto;">
+
+                <h3>📦 基础收集操作</h3>
+                <pre><code class="language-java">// 收集到List
+List&lt;Student&gt; studentList = students.stream()
+    .filter(s -> s.getAge() >= 18)
+    .collect(Collectors.toList());
+
+// 收集到Set（自动去重）
+Set&lt;String&gt; uniqueNames = students.stream()
+    .map(Student::getName)
+    .collect(Collectors.toSet());
+
+// 收集到具体集合类型
+ArrayList&lt;Student&gt; arrayList = students.stream()
+    .filter(s -> s.getScore() > 80)
+    .collect(Collectors.toCollection(ArrayList::new));
+
+// 收集到Map - 简单映射
+Map&lt;Integer, Student&gt; studentMap = students.stream()
+    .collect(Collectors.toMap(
+        Student::getId,      // key mapper
+        student -> student   // value mapper
+    ));
+
+// 收集到Map - 处理重复键
+Map&lt;String, Student&gt; nameToStudent = students.stream()
+    .collect(Collectors.toMap(
+        Student::getName,           // key mapper
+        student -> student,         // value mapper
+        (existing, replacement) -> existing  // 合并函数：保留现有值
+    ));</code></pre>
+
+                <h3>📊 分组操作 - groupingBy()</h3>
+                <pre><code class="language-java">// 按专业分组
+Map&lt;String, List&lt;Student&gt;&gt; studentsByMajor = students.stream()
+    .collect(Collectors.groupingBy(Student::getMajor));
+
+// 分组并统计每组数量
+Map&lt;String, Long&gt; countByMajor = students.stream()
+    .collect(Collectors.groupingBy(
+        Student::getMajor,
+        Collectors.counting()
+    ));
+
+// 分组并计算平均成绩
+Map&lt;String, Double&gt; avgScoreByMajor = students.stream()
+    .collect(Collectors.groupingBy(
+        Student::getMajor,
+        Collectors.averagingDouble(Student::getScore)
+    ));
+
+// 多级分组
+Map&lt;String, Map&lt;String, List&lt;Student&gt;&gt;&gt; multiLevelGroup = students.stream()
+    .collect(Collectors.groupingBy(
+        Student::getMajor,                    // 一级分组：专业
+        Collectors.groupingBy(student -> {   // 二级分组：年龄段
+            int age = student.getAge();
+            if (age < 18) return "未成年";
+            else if (age < 25) return "青年";
+            else return "成年";
+        })
+    ));</code></pre>
+
+                <h3>✂️ 分区操作 - partitioningBy()</h3>
+                <pre><code class="language-java">// 按是否成年分区（只返回true/false两个组）
+Map&lt;Boolean, List&lt;Student&gt;&gt; byAdult = students.stream()
+    .collect(Collectors.partitioningBy(
+        student -> student.getAge() >= 18
+    ));
+
+// 分区并进行进一步收集
+Map&lt;Boolean, String&gt; namesByAdult = students.stream()
+    .collect(Collectors.partitioningBy(
+        student -> student.getAge() >= 18,
+        Collectors.mapping(
+            Student::getName,
+            Collectors.joining(", ")
+        )
+    ));</code></pre>
+
+                <h3>🎯 高级收集操作</h3>
+                <pre><code class="language-java">// 收集统计信息
+IntSummaryStatistics ageStats = students.stream()
+    .collect(Collectors.summarizingInt(Student::getAge));
+
+// 按条件收集（类似SQL的CASE WHEN）
+Map&lt;String, List&lt;Student&gt;&gt; scoreCategories = students.stream()
+    .collect(Collectors.groupingBy(student -> {
+        double score = student.getScore();
+        if (score >= 90) return "优秀";
+        else if (score >= 80) return "良好";
+        else if (score >= 70) return "中等";
+        else if (score >= 60) return "及格";
+        else return "不及格";
+    }));
+
+// 自定义收集器
+String result = students.stream()
+    .collect(CustomCollector.toCustomString());</code></pre>
+
+                <h3>💡 实际应用场景：</h3>
+                <ul>
+                    <li><strong>数据报表</strong>：分组统计、汇总计算</li>
+                    <li><strong>数据转换</strong>：List到Map、Set等容器转换</li>
+                    <li><strong>数据分析</strong>：按多维度分类统计</li>
+                    <li><strong>结果封装</strong>：将Stream结果转换为业务对象</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Slide: toArray() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 数组转换:toArray()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Object[] toArray()
+&lt;A&gt; A[] toArray(IntFunction&lt;A[]&gt; generator)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">IntFunction&lt;A[]&gt;</span> <span class="param-name">generator</span> - 数组工厂函数，根据数组长度创建目标类型的数组</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Object[] / A[]</span> - 包含Stream所有元素的数组</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">toArray是终端操作。无参版本返回Object[]，需要强制类型转换；有参版本可返回指定类型的数组，更安全。适用于需要与数组API交互、性能优化等场景。</p>
+                    </div>
+                </div>
+                <p><code>toArray()</code> 是一个终端操作，用于将Stream转换为数组。这在需要与使用数组的老代码集成时特别有用。</p>
+
+                <h3>🔄 基础toArray() - 转换为Object数组</h3>
+                <pre><code class="language-java">// 传统写法 - 需要手动创建数组
+List&lt;Student&gt; students = getStudents();
+Student[] array = new Student[students.size()];
+for (int i = 0; i < students.size(); i++) {
+    array[i] = students.get(i);
+}
+
+// Stream写法 - 简洁转换
+Object[] objectArray = students.stream()
+    .toArray();  // 返回 Object[]
+
+// 注意：直接调用toArray()返回的是Object[]类型
+Object[] names = students.stream()
+    .map(Student::getName)
+    .toArray();
+// 结果：Object[] containing String objects</code></pre>
+
+                <h3>🎯 指定类型数组 - toArray(IntFunction)</h3>
+                <pre><code class="language-java">// 转换为指定类型的数组
+Student[] studentArray = students.stream()
+    .toArray(Student[]::new);
+
+// 传统方式需要额外转换
+// Object[] objArray = students.stream().toArray();
+// Student[] studentArray = Arrays.copyOf(objArray, objArray.length, Student[].class);
+
+// 字符串数组示例
+String[] nameArray = students.stream()
+    .map(Student::getName)
+    .toArray(String[]::new);
+
+// 基本类型数组需要通过基本类型Stream
+int[] ageArray = students.stream()
+    .mapToInt(Student::getAge)
+    .toArray();  // IntStream.toArray() 返回 int[]
+
+double[] scoreArray = students.stream()
+    .mapToDouble(Student::getScore)
+    .toArray();  // DoubleStream.toArray() 返回 double[]</code></pre>
+
+                <h3>💡 实际应用场景</h3>
+                <pre><code class="language-java">// 场景1：与数组API集成
+// 某些老API只接受数组参数
+Arrays.sort(students.stream()
+    .filter(Student::isActive)
+    .toArray(Student[]::new));
+
+// 场景2：可变参数方法调用
+public void processStudents(Student... students) {
+    // 处理学生数组
+}
+
+// 调用方法
+processStudents(students.stream()
+    .filter(s -> s.getScore() >= 80)
+    .toArray(Student[]::new));
+
+// 场景3：反射调用
+Method method = clazz.getMethod("setStudents", Student[].class);
+method.invoke(obj, students.stream()
+    .toArray(Student[]::new));</code></pre>
+
+                <h3>⚡ 性能考虑</h3>
+                <pre><code class="language-java">// 性能对比：toArray vs ArrayList.toArray
+List&lt;Student&gt; students = getLargeStudentList();
+
+// 方式1：先collect再toArray
+long start1 = System.currentTimeMillis();
+Student[] array1 = students.stream()
+    .filter(Student::isActive)
+    .collect(Collectors.toList())
+    .toArray(new Student[0]);
+long time1 = System.currentTimeMillis() - start1;
+
+// 方式2：直接toArray
+long start2 = System.currentTimeMillis();
+Student[] array2 = students.stream()
+    .filter(Student::isActive)
+    .toArray(Student[]::new);
+long time2 = System.currentTimeMillis() - start2;
+
+// 方式3：toArray(长度为0的数组) - JVM优化
+Student[] array3 = students.stream()
+    .filter(Student::isActive)
+    .toArray(Student[]::new);  // 推荐：JVM会优化数组大小
+
+// 方式4：toArray(预分配大小) - 适用于知道确切大小
+List&lt;Student&gt; filtered = students.stream()
+    .filter(Student::isActive)
+    .collect(Collectors.toList());
+Student[] array4 = filtered.toArray(new Student[filtered.size()]);</code></pre>
+
+                <h3>🔧 高级用法</h3>
+                <pre><code class="language-java">// 复杂数组转换
+// 场景：将学生转换为学生DTO数组
+StudentDTO[] dtoArray = students.stream()
+    .map(student -> {
+        StudentDTO dto = new StudentDTO();
+        dto.setName(student.getName());
+        dto.setAge(student.getAge());
+        dto.setScore(student.getScore());
+        return dto;
+    })
+    .toArray(StudentDTO[]::new);
+
+// 多维数组创建
+// 创建学生姓名和成绩的二维数组
+String[][] nameScorePairs = students.stream()
+    .map(student -> new String[]{
+        student.getName(),
+        String.valueOf(student.getScore())
+    })
+    .toArray(String[][]::new);
+
+// 数组与流的相互转换
+public static &lt;T&gt; Stream&lt;T&gt; arrayToStream(T[] array) {
+    return Arrays.stream(array);
+}
+
+public static &lt;T&gt; T[] streamToArray(Stream&lt;T&gt; stream, Class&lt;T&gt; clazz) {
+    return stream.toArray(size -> (T[]) Array.newInstance(clazz, size));
+}</code></pre>
+
+                <h3>⚠️ 注意事项和最佳实践</h3>
+                <pre><code class="language-java">// ✅ 推荐：使用方法引用指定数组类型
+String[] names = nameList.stream()
+    .toArray(String[]::new);
+
+// ❌ 避免：直接使用toArray()后强制转换
+Object[] objects = nameList.stream().toArray();
+String[] names2 = (String[]) objects;  // 可能抛出ClassCastException
+
+// ✅ 推荐：基本类型使用专门的方法
+int[] ages = students.stream()
+    .mapToInt(Student::getAge)
+    .toArray();
+
+// ✅ 推荐：已知大小时可以优化
+List&lt;Student&gt; filtered = students.stream()
+    .filter(Student::isActive)
+    .collect(Collectors.toList());
+Student[] array = filtered.toArray(new Student[filtered.size()]);
+
+// 💡 小技巧：空数组的处理
+Student[] array = students.stream()
+    .filter(Student::isActive)
+    .toArray(Student[]::new);
+// 如果没有元素，会返回长度为0的数组，不会返回null</code></pre>
+
+                <div class="tip-box">
+                    <strong>💡 使用建议：</strong>
+                    <ul>
+                        <li><strong>类型安全</strong>：使用 <code>toArray(T[]::new)</code> 而非强制转换</li>
+                        <li><strong>基本类型</strong>：使用 <code>mapToInt</code> 等方法转换为基本类型流</li>
+                        <li><strong>性能</strong>：直接调用 <code>toArray()</code> 比先collect再转换更高效</li>
+                        <li><strong>空数组</strong>：<code>toArray()</code> 永远返回数组（可能是空数组），从不返回null</li>
+                    </ul>
+                </div>
+
+                <p class="conclusion"><strong>toArray() 提供了Stream到数组的无缝转换，是连接函数式编程和传统数组编程的桥梁！</strong></p>
+            </div>
+        </section>
+
+
+        <!-- Slide: Combination Operations -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>组合:concat()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">static &lt;T&gt; Stream&lt;T&gt; concat(Stream&lt;? extends T&gt; a, Stream&lt;? extends T&gt; b)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Stream&lt;? extends T&gt;</span> <span class="param-name">a</span> - 第一个要合并的Stream</li>
+                            <li><span class="param-type">Stream&lt;? extends T&gt;</span> <span class="param-name">b</span> - 第二个要合并的Stream</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;T&gt;</span> - 包含两个Stream所有元素的新Stream，保持原始顺序</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">concat是静态方法，用于懒连接两个Stream。连接后的Stream会包含所有元素，先处理第一个Stream的所有元素，再处理第二个Stream。对于大型Stream，可能影响性能。</p>
+                    </div>
+                </div>
+                <p>Stream的组合操作可以将多个流合并为一个流，方便统一处理。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-concat.png" alt="concat() 操作" style="width: 100%; height: auto;">
+                <h3>🔗 concat() - 流合并操作</h3>
+                <pre><code class="language-java">// 传统写法 - 需要手动合并集合
+List&lt;Student&gt; allStudents = new ArrayList&lt;&gt;(undergraduates);
+allStudents.addAll(graduateStudents);
+allStudents.addAll(exchangeStudents);
+
+// Stream写法 - 流合并
+Stream&lt;Student&gt; allStudentStream = Stream.concat(
+    Stream.concat(undergraduates.stream(), graduateStudents.stream()),
+    exchangeStudents.stream()
+);
+
+// 多个流合并
+Stream&lt;Student&gt; mergedStream = Stream.of(
+        undergraduates.stream(),
+        graduateStudents.stream(),
+        exchangeStudents.stream()
+    )
+    .flatMap(Function.identity());  // 扁平化合并
+
+// 合并后进行统一处理
+List&lt;String&gt; allStudentNames = Stream.concat(
+    undergraduates.stream(),
+    graduateStudents.stream()
+)
+.filter(student -> student.isActive())  // 统一筛选
+.map(Student::getName)               // 统一映射
+.collect(Collectors.toList());        // 统一收集</code></pre>
+
+                <div class="tip-box">
+                    <strong>💡 提示：</strong> <code>Stream.concat</code> 是惰性求值的，只有在终端操作执行时才会真正合并。
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide: Parallel Operations -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>并行操作:parallel()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Stream&lt;T&gt; parallel()
+Stream&lt;T&gt; sequential()
+boolean isParallel()</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">无参数</span> - parallel()转换为并行Stream，sequential()转换回顺序Stream，isParallel()检查是否并行</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;T&gt;/boolean</span> - parallel/sequential返回新的Stream，isParallel返回当前并行状态</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">parallel()适合CPU密集型操作和大数据集。要求数据源可分割、操作无状态、无依赖。并行操作可能改变元素处理顺序，可能影响排序和有序性。</p>
+                    </div>
+                </div>
+                <p>Stream API 提供了极其简单的并行处理能力，充分利用多核 CPU 提升性能。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/10-stream-parallel.png" alt="parallel() 操作" style="width: 100%; height: auto;">
+
+                <h3>parallel() - 并行处理</h3>
+                <p>默认并行路数 ：通常等于 <code>Runtime.getRuntime().availableProcessors() - 1</code></p>
+                <p>例如，在8核心CPU上，默认并行路数为7。</p>
+                <pre><code class="language-java">// 串行处理（默认）
+List&lt;Student&gt; result1 = students.stream()
+    .filter(s -> s.getAge() >= 18)
+    .collect(Collectors.toList());
+
+// 并行处理 - 一行代码实现
+List&lt;Student&gt; result2 = students.parallelStream()  // 直接创建并行流
+    .filter(s -> s.getAge() >= 18)
+    .collect(Collectors.toList());
+
+// 或者使用parallel()方法转换
+List&lt;Student&gt; result3 = students.stream()
+    .parallel()  // 转换为并行流
+    .filter(s -> s.getAge() >= 18)
+    .collect(Collectors.toList());
+
+// 串行和并行混合使用
+students.stream()
+    .filter(s -> s.getMajor().equals("计算机科学"))  // 串行：简单筛选
+    .parallel()                                      // 并行：复杂计算
+    .map(this::calculateComplexScore)                // 并行计算
+    .sequential()                                    // 串行：有序收集
+    .sorted(Comparator.comparing(Student::getScore))
+    .collect(Collectors.toList());</code></pre>
+
+                <h3>🚀 并行处理性能优化</h3>
+                <pre><code class="language-java">// 性能测试示例
+List&lt;Integer&gt; largeList = IntStream.range(0, 1_000_000)
+    .boxed()
+    .collect(Collectors.toList());
+
+// 串行处理时间
+long start = System.currentTimeMillis();
+long sum1 = largeList.stream()
+    .mapToLong(Integer::longValue)
+    .filter(n -> n % 2 == 0)
+    .sum();
+long serialTime = System.currentTimeMillis() - start;
+
+// 并行处理时间
+start = System.currentTimeMillis();
+long sum2 = largeList.parallelStream()
+    .mapToLong(Integer::longValue)
+    .filter(n -> n % 2 == 0)
+    .sum();
+long parallelTime = System.currentTimeMillis() - start;
+
+System.out.println("串行时间: " + serialTime + "ms");
+System.out.println("并行时间: " + parallelTime + "ms");
+System.out.println("加速比: " + (double) serialTime / parallelTime);</code></pre>
+
+                <h3>⚠️ 并行处理注意事项：</h3>
+                <pre><code class="language-java">// 适合并行处理的场景
+List&lt;ComplexData&gt; result = largeDataSet.parallelStream()
+    .filter(data -> data.isValid())           // 无状态过滤
+    .map(this::expensiveComputation)        // CPU密集型操作
+    .collect(Collectors.toList());
+
+// 不适合并行处理的场景
+List&lt;Integer&gt; result2 = smallList.stream()     // 数据量小
+    .sorted()                               // 顺序敏感操作
+    .limit(5)                               // 短路操作
+    .collect(Collectors.toList());
+
+// 线程安全问题示例
+List&lt;StringBuilder&gt; unsafeResult = students.parallelStream()
+    .collect(ArrayList::new,                 // 这里有线程安全问题！
+             (list, student) -> list.add(new StringBuilder(student.getName())),
+             List::addAll);
+
+// 正确的线程安全写法
+List&lt;String&gt; safeResult = students.parallelStream()
+    .map(Student::getName)
+    .collect(Collectors.toList());  // 使用线程安全的收集器</code></pre>
+
+                <h3>💡 最佳实践建议：</h3>
+                <ul>
+                    <li><strong>数据量判断</strong>：通常超过10000个元素才考虑并行</li>
+                    <li><strong>操作类型</strong>：CPU密集型操作适合并行，IO密集型不适合</li>
+                    <li><strong>无状态操作</strong>：确保操作函数是无状态的</li>
+                    <li><strong>性能测试</strong>：实际测试并行是否带来性能提升</li>
+                    <li><strong>避免过度并行</strong>：嵌套并行流会降低性能</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Slide: unordered() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>并行优化:unordered()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Stream&lt;T&gt; unordered()</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">无参数</span> - 移除Stream的有序约束，允许并行处理时不保持原始顺序</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;T&gt;</span> - 无序的新Stream，在并行处理中可能提升性能</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">unordered()是中间操作，主要用于并行Stream的性能优化。当结果顺序不重要时使用，可以减少同步开销。对于distinct()、groupingBy()等操作，有序约束可能带来性能损失。</p>
+                    </div>
+                </div>
+                <p><code>unordered()</code> 是一个中间操作，用于移除Stream的有序约束，在并行处理中可以显著提升性能。</p>
+
+                <h3>🚀 unordered() - 移除有序约束</h3>
+                <pre><code class="language-java">// 有序流 - 并行处理时需要维护顺序
+List&lt;Student&gt; result1 = students.parallelStream()
+    .filter(s -> s.getAge() >= 18)
+    .collect(Collectors.toList());
+// 结果保持原始顺序，但并行效率较低
+
+// 无序流 - 并行处理时不需要维护顺序
+List&lt;Student&gt; result2 = students.parallelStream()
+    .unordered()  // 移除顺序约束
+    .filter(s -> s.getAge() >= 18)
+    .collect(Collectors.toList());
+// 结果顺序可能不同，但并行效率更高</code></pre>
+
+                <h3>⚡ 性能对比示例</h3>
+                <pre><code class="language-java">// 性能测试：有序 vs 无序并行流
+List&lt;Integer&gt; largeList = IntStream.range(0, 1_000_000)
+    .boxed()
+    .collect(Collectors.toList());
+
+// 有序并行处理
+long start1 = System.currentTimeMillis();
+long sum1 = largeList.parallelStream()
+    .filter(n -> n % 2 == 0)
+    .mapToLong(n -> n * n)
+    .sum();
+long orderedTime = System.currentTimeMillis() - start1;
+
+// 无序并行处理
+long start2 = System.currentTimeMillis();
+long sum2 = largeList.parallelStream()
+    .unordered()  // 移除顺序约束
+    .filter(n -> n % 2 == 0)
+    .mapToLong(n -> n * n)
+    .sum();
+long unorderedTime = System.currentTimeMillis() - start2;
+
+System.out.println("有序并行: " + orderedTime + "ms");
+System.out.println("无序并行: " + unorderedTime + "ms");
+System.out.println("性能提升: " + (double) orderedTime / unorderedTime + "x");
+// 通常无序并行会快 20-50%</code></pre>
+
+                <h3>💡 何时使用 unordered()</h3>
+                <pre><code class="language-java">// ✅ 适合使用 unordered 的场景
+List&lt;Student&gt; highScoreStudents = students.parallelStream()
+    .unordered()  // 不关心顺序
+    .filter(s -> s.getScore() > 90)
+    .collect(Collectors.toList());
+
+// ✅ 后续有排序操作，可以提前使用 unordered
+List&lt;Student&gt; topStudents = students.parallelStream()
+    .unordered()  // 移除原始顺序约束
+    .filter(s -> s.getAge() >= 18)
+    .sorted(Comparator.comparing(Student::getScore))  // 重新排序
+    .limit(10)
+    .collect(Collectors.toList());
+
+// ✅ 聚合操作，顺序不重要
+double averageScore = students.parallelStream()
+    .unordered()
+    .filter(Student::isActive)
+    .mapToDouble(Student::getScore)
+    .average()
+    .orElse(0.0);
+
+// ❌ 需要保持原始顺序时不要使用
+List&lt;String&gt; orderedNames = students.stream()  // 使用串行流
+    .filter(s -> s.getAge() >= 18)
+    .map(Student::getName)
+    .collect(Collectors.toList());</code></pre>
+
+                <h3>🎯 unordered() 与其他操作的配合</h3>
+                <pre><code class="language-java">// 1. unordered + distinct() - 无序去重更快
+Set&lt;String&gt; uniqueNames = students.parallelStream()
+    .unordered()
+    .map(Student::getName)
+    .distinct()
+    .collect(Collectors.toSet());
+
+// 2. unordered + groupBy() - 分组操作不关心顺序
+Map&lt;String, List&lt;Student&gt;&gt; byMajor = students.parallelStream()
+    .unordered()
+    .collect(Collectors.groupingBy(Student::getMajor));
+
+// 3. unordered + limit() - 非顺序敏感的截取
+List&lt;Student&gt; sample = students.parallelStream()
+    .unordered()
+    .filter(Student::isActive)
+    .limit(100)  // 任意100个活跃学生
+    .collect(Collectors.toList());
+
+// 4. unordered + findAny() - 自然配合
+Optional&lt;Student&gt; anyAdult = students.parallelStream()
+    .unordered()  // findAny 本身就不保证顺序
+    .filter(s -> s.getAge() >= 18)
+    .findAny();</code></pre>
+
+                <h3>📊 不同数据源的影响</h3>
+                <pre><code class="language-java">// List - 有序集合，unordered 效果明显
+List&lt;Integer&gt; list = Arrays.asList(1, 2, 3, 4, 5);
+list.parallelStream()
+    .unordered()  // 移除 List 的顺序约束
+    .map(n -> n * 2)
+    .collect(Collectors.toList());
+
+// Set - 无序集合，unordered 没有额外效果
+Set&lt;Integer&gt; set = new HashSet&lt;&gt;(Arrays.asList(1, 2, 3, 4, 5));
+set.parallelStream()
+    .unordered()  // Set 本来就是无序的，无额外效果
+    .map(n -> n * 2)
+    .collect(Collectors.toList());
+
+// 数组 - 有序，unordered 有效果
+String[] array = {"a", "b", "c", "d", "e"};
+Arrays.stream(array)
+    .parallel()
+    .unordered()  // 移除数组的顺序约束
+    .map(String::toUpperCase)
+    .collect(Collectors.toList());</code></pre>
+
+                <h3>🔧 实际优化案例</h3>
+                <pre><code class="language-java">// 案例1：大数据过滤优化
+public List&lt;Transaction&gt; filterValidTransactions(List&lt;Transaction&gt; transactions) {
+    return transactions.parallelStream()
+        .unordered()  // 顺序不重要，性能优先
+        .filter(t -> t.getAmount() > 0)
+        .filter(t -> t.getTimestamp() != null)
+        .filter(t -> t.isValid())
+        .collect(Collectors.toList());
+}
+
+// 案例2：统计计算优化
+public Statistics calculateOrderStatistics(List&lt;Order&gt; orders) {
+    return orders.parallelStream()
+        .unordered()  // 统计计算不需要顺序
+        .filter(Order::isCompleted)
+        .collect(Collectors.collectingAndThen(
+            Collectors.toList(),
+            list -> {
+                double sum = list.stream().mapToDouble(Order::getAmount).sum();
+                double avg = sum / list.size();
+                double max = list.stream().mapToDouble(Order::getAmount).max().orElse(0);
+                return new Statistics(list.size(), sum, avg, max);
+            }
+        ));
+}
+
+// 案例3：数据转换优化
+public List&lt;ProductDTO&gt; convertProducts(List&lt;Product&gt; products) {
+    return products.parallelStream()
+        .unordered()  // 转换后的顺序不重要
+        .filter(Product::isActive)
+        .map(product -> {
+            ProductDTO dto = new ProductDTO();
+            dto.setId(product.getId());
+            dto.setName(product.getName());
+            dto.setPrice(product.getPrice());
+            return dto;
+        })
+        .collect(Collectors.toList());
+}</code></pre>
+
+                <div class="tip-box">
+                    <strong>💡 最佳实践：</strong>
+                    <ul>
+                        <li><strong>性能优先</strong>：当顺序不重要时，优先使用 <code>unordered()</code></li>
+                        <li><strong>大数据量</strong>：数据量越大，<code>unordered()</code> 的性能提升越明显</li>
+                        <li><strong>复杂操作</strong>：对于复杂的中间操作，<code>unordered()</code> 效果更好</li>
+                        <li><strong>提前调用</strong>：在并行流开始处尽早调用 <code>unordered()</code></li>
+                    </ul>
+                </div>
+
+                <h3>⚠️ 注意事项</h3>
+                <pre><code class="language-java">// 注意1：unordered 的影响是持久的
+Stream&lt;Integer&gt; stream = list.stream()
+    .unordered()  // 一旦设置为无序，后续操作都不保证顺序
+    .filter(n -> n > 5)
+    .map(n -> n * 2);
+// stream 是无序的
+
+// 注意2：某些操作会重新引入顺序
+List&lt;Integer&gt; result = list.parallelStream()
+    .unordered()
+    .filter(n -> n > 5)
+    .sorted()  // sorted() 会重新建立顺序
+    .collect(Collectors.toList());
+
+// 注意3：limit() 在有序和无序流中的行为不同
+List&lt;Integer&gt; orderedSample = list.parallelStream()
+    .limit(10)  // 取前10个元素，保持顺序
+    .collect(Collectors.toList());
+
+List&lt;Integer&gt; unorderedSample = list.parallelStream()
+    .unordered()
+    .limit(10)  // 任意10个元素，顺序不确定
+    .collect(Collectors.toList());</code></pre>
+
+                <p class="conclusion"><strong>unordered() 是并行流的重要优化手段，在不依赖顺序的场景下能显著提升性能！</strong></p>
+            </div>
+        </section>
+
+        <!-- Slide: forEachOrdered() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[T] 有序遍历:forEachOrdered()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">void forEachOrdered(Consumer&lt;? super T&gt; action)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Consumer&lt;? super T&gt;</span> <span class="param-name">action</span> - 对Stream中每个元素执行的操作</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">void</span> - 无返回值，这是一个终端操作</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">forEachOrdered是终端操作，在并行Stream中保持遇到顺序。比forEach()有更多同步开销，只在需要保证顺序时使用。适用于需要维持原始顺序的并行处理场景。</p>
+                    </div>
+                </div>
+                <p><code>forEachOrdered()</code> 是一个终端操作，用于按顺序遍历Stream中的元素。在并行流中，它能保持原始顺序。</p>
+
+                <h3>📋 forEachOrdered() - 保证顺序遍历</h3>
+                <pre><code class="language-java">// 串行流中：forEach 和 forEachOrdered 效果相同
+List&lt;String&gt; names = Arrays.asList("张三", "李四", "王五", "赵六");
+
+System.out.println("使用 forEach (串行流):");
+names.stream()
+    .forEach(name -> System.out.println(name + " "));
+// 输出：张三 李四 王五 赵六
+
+System.out.println("\n使用 forEachOrdered (串行流):");
+names.stream()
+    .forEachOrdered(name -> System.out.println(name + " "));
+// 输出：张三 李四 王五 赵六</code></pre>
+
+                <h3>🔄 并行流中的区别</h3>
+                <pre><code class="language-java">// 并行流中：forEach 顺序不确定
+System.out.println("使用 forEach (并行流):");
+names.parallelStream()
+    .forEach(name -> System.out.println(name + " "));
+// 可能输出：李四 张三 赵六 王五 (顺序不保证)
+
+// 并行流中：forEachOrdered 保证顺序
+System.out.println("\n使用 forEachOrdered (并行流):");
+names.parallelStream()
+    .forEachOrdered(name -> System.out.println(name + " "));
+// 输出：张三 李四 王五 赵六 (保证原始顺序)</code></pre>
+
+                <h3>💡 实际应用场景</h3>
+                <pre><code class="language-java">// 场景1：保持文件处理顺序
+List&lt;File&gt; files = getFilesInOrder();  // 按时间排序的文件列表
+files.parallelStream()
+    .forEachOrdered(file -> {
+        // 并行处理但保持输出顺序
+        String content = processFile(file);
+        System.out.println(file.getName() + ": " + content);
+    });
+
+// 场景2：有序报表生成
+List&lt;SalesRecord&gt; records = getSalesRecords();  // 已按日期排序
+records.parallelStream()
+    .forEachOrdered(record -> {
+        // 并行计算但按日期顺序生成报表
+        ReportData data = calculateReportData(record);
+        addToReport(data);
+    });
+
+// 场景3：批量数据库插入（保持顺序）
+List&lt;User&gt; users = getUsersInPriorityOrder();
+users.parallelStream()
+    .forEachOrdered(user -> {
+        // 并行验证但按优先级顺序插入
+        if (validateUser(user)) {
+            insertUser(user);
+        }
+    });</code></pre>
+
+                <h3>⚠️ 性能考虑</h3>
+                <pre><code class="language-java">// 性能对比测试
+List&lt;Integer&gt; largeList = IntStream.range(0, 1_000_000)
+    .boxed()
+    .collect(Collectors.toList());
+
+// 串行 forEach
+long start1 = System.currentTimeMillis();
+largeList.stream()
+    .forEach(i -> heavyOperation(i));
+long time1 = System.currentTimeMillis() - start1;
+
+// 并行 forEach (不保证顺序)
+long start2 = System.currentTimeMillis();
+largeList.parallelStream()
+    .forEach(i -> heavyOperation(i));
+long time2 = System.currentTimeMillis() - start2;
+
+// 并行 forEachOrdered (保证顺序)
+long start3 = System.currentTimeMillis();
+largeList.parallelStream()
+    .forEachOrdered(i -> heavyOperation(i));
+long time3 = System.currentTimeMillis() - start3;
+
+System.out.println("串行 forEach: " + time1 + "ms");
+System.out.println("并行 forEach: " + time2 + "ms");
+System.out.println("并行 forEachOrdered: " + time3 + "ms");
+// 结果：并行 forEach 最快，forEachOrdered 稍慢但仍比串行快</code></pre>
+
+                <h3>🎯 何时使用 forEachOrdered</h3>
+                <pre><code class="language-java">// ✅ 使用 forEachOrdered 的场景
+List&lt;Order&gt; orders = getOrdersByDate();  // 按日期排序
+orders.parallelStream()
+    .forEachOrdered(order -> {
+        // 需要保持日期顺序的处理
+        processOrderInSequence(order);
+    });
+
+// ❌ 不需要顺序时使用 forEach
+List&lt;Product&gt; products = getAllProducts();
+products.parallelStream()
+    .forEach(product -> {
+        // 不需要顺序的独立操作
+        updateProductCache(product);
+    });
+
+// ✅ 串行流中使用 forEach (性能更好)
+List&lt;Student&gt; students = getStudents();
+students.stream()
+    .forEach(student -> {
+        // 串行流中 forEach 和 forEachOrdered 效果相同
+        printStudentInfo(student);
+    });</code></pre>
+
+                <div class="tip-box">
+                    <strong>💡 最佳实践：</strong>
+                    <ul>
+                        <li><strong>串行流</strong>：使用 <code>forEach()</code>，性能更好</li>
+                        <li><strong>并行流 + 需要顺序</strong>：使用 <code>forEachOrdered()</code></li>
+                        <li><strong>并行流 + 不需要顺序</strong>：使用 <code>forEach()</code>，性能最佳</li>
+                        <li><strong>数据库操作</strong>：如果有顺序依赖，使用 <code>forEachOrdered()</code></li>
+                    </ul>
+                </div>
+
+                <h3>🔄 与其他操作的区别</h3>
+                <pre><code class="language-java">// forEach vs forEachOrdered vs iterator
+List&lt;String&gt; data = Arrays.asList("A", "B", "C");
+
+// 1. forEach - 终端操作，简洁
+data.forEach(System.out::println);
+
+// 2. forEachOrdered - 终端操作，保证顺序
+data.parallelStream().forEachOrdered(System.out::println);
+
+// 3. iterator - 中间操作，需要手动遍历
+Iterator&lt;String&gt; it = data.iterator();
+while (it.hasNext()) {
+    System.out.println(it.next());
+}
+
+// 4. Stream转List后再遍历
+List&lt;String&gt; result = data.stream()
+    .filter(s -> s.length() > 0)
+    .collect(Collectors.toList());
+result.forEach(System.out::println);</code></pre>
+
+                <p class="conclusion"><strong>forEachOrdered() 在并行处理中保持顺序，适合需要有序输出的场景，但会牺牲一些性能！</strong></p>
+            </div>
+        </section>
+
+        <!-- Slide: onClose() Operation -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>资源管理:onClose()</h2>
+                <div class="api-specification">
+                    <h4>📋 方法签名</h4>
+                    <div class="method-signature">
+                        <code class="language-java">Stream&lt;T&gt; onClose(Runnable closeHandler)</code>
+                    </div>
+                    <div class="parameters-list">
+                        <h5>参数说明：</h5>
+                        <ul class="params">
+                            <li><span class="param-type">Runnable</span> <span class="param-name">closeHandler</span> - Stream关闭时执行的回调处理器</li>
+                        </ul>
+                        <h5>返回值：</h5>
+                        <p class="return-type"><span class="type">Stream&lt;T&gt;</span> - 带有资源管理的新Stream</p>
+                        <h5>💡 使用提示：</h5>
+                        <p class="usage-tip">onClose是中间操作，用于资源管理。当Stream调用close()或自动关闭时，注册的回调会被执行。适用于文件流、数据库连接等需要显式关闭的资源，支持链式注册多个回调。</p>
+                    </div>
+                </div>
+                <p><code>onClose()</code> 是一个中间操作，用于注册Stream关闭时的回调处理器。主要用于需要资源管理的场景，特别是文件流等IO操作。</p>
+
+                <h3>🔧 onClose() - 注册关闭回调</h3>
+                <pre><code class="language-java">// 传统资源管理 - 需要 try-with-resources
+try (Stream&lt;String&gt; lines = Files.lines(path)) {
+    lines.forEach(System.out::println);
+} catch (IOException e) {
+    e.printStackTrace();
+}
+
+// Stream with onClose - 自定义关闭处理
+Stream&lt;String&gt; lines = Files.lines(path)
+    .onClose(() -> System.out.println("文件流已关闭"));
+
+try {
+    lines.forEach(System.out::println);
+} finally {
+    lines.close();  // 会触发 onClose 回调
+}</code></pre>
+
+                <h3>📁 文件流中的应用</h3>
+                <pre><code class="language-java">// 处理日志文件示例
+public void processLogFile(Path logFile) throws IOException {
+    try (Stream&lt;String&gt; lines = Files.lines(logFile)
+            .onClose(() -> {
+                System.out.println("日志文件处理完成: " + logFile);
+                updateProcessingStatus(logFile, "COMPLETED");
+            })) {
+
+        List&lt;LogEntry&gt; errors = lines
+            .filter(line -> line.contains("ERROR"))
+            .map(this::parseLogEntry)
+            .collect(Collectors.toList());
+
+        System.out.println("发现 " + errors.size() + " 个错误");
+    }
+    // 自动调用 close()，触发 onClose 回调
+}
+
+// 多个文件批量处理
+public void processMultipleFiles(List&lt;Path&gt; files) {
+    files.forEach(file -> {
+        try {
+            Stream&lt;String&gt; stream = Files.lines(file)
+                .onClose(() -> {
+                    System.out.println("处理完成: " + file.getFileName());
+                    archiveFile(file);  // 归档已处理文件
+                });
+
+            stream
+                .filter(line -> !line.startsWith("#"))
+                .forEach(this::processLine);
+
+        } catch (IOException e) {
+            System.err.println("处理文件失败: " + file);
+        }
+    });
+}</code></pre>
+
+                <h3>🔗 链式 onClose 处理器</h3>
+                <pre><code class="language-java">// 可以链式添加多个 onClose 处理器
+Stream&lt;String&gt; lines = Files.lines(path)
+    .onClose(() -> System.out.println("第一个关闭处理器"))
+    .onClose(() -> System.out.println("第二个关闭处理器"))
+    .onClose(() -> {
+        // 清理临时文件
+        cleanupTempFiles();
+        System.out.println("临时文件已清理");
+    });
+
+// 关闭时的执行顺序与注册顺序相反
+try {
+    lines.forEach(System.out::println);
+} finally {
+    lines.close();
+}
+// 输出:
+// 临时文件已清理
+// 第二个关闭处理器
+// 第一个关闭处理器</code></pre>
+
+                <h3>💾 数据库连接管理</h3>
+                <pre><code class="language-java">// 数据库查询的Stream包装
+public Stream&lt;Product&gt; getProductsStream(String category) {
+    Connection conn = getConnection();
+    PreparedStatement stmt = null;
+    ResultSet rs = null;
+
+    try {
+        stmt = conn.prepareStatement("SELECT * FROM products WHERE category = ?");
+        stmt.setString(1, category);
+        rs = stmt.executeQuery();
+
+        return StreamSupport.stream(
+            new Spliterators.AbstractSpliterator&lt;Product&gt;(Long.MAX_VALUE, 0) {
+                @Override
+                public boolean tryAdvance(Consumer&lt;? super Product&gt; action) {
+                    try {
+                        if (rs.next()) {
+                            action.accept(mapRowToProduct(rs));
+                            return true;
+                        }
+                        return false;
+                    } catch (SQLException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            }, false)
+        .onClose(() -> {
+            // 确保资源被正确关闭
+            try {
+                if (rs != null) rs.close();
+                if (stmt != null) stmt.close();
+                if (conn != null) conn.close();
+                System.out.println("数据库资源已释放");
+            } catch (SQLException e) {
+                System.err.println("关闭数据库资源时出错: " + e.getMessage());
+            }
+        });
+
+    } catch (SQLException e) {
+        // 如果创建Stream失败，需要手动关闭资源
+        closeQuietly(rs, stmt, conn);
+        throw new RuntimeException(e);
+    }
+}
+
+// 使用示例
+public void processElectronicsProducts() {
+    try (Stream&lt;Product&gt; products = getProductsStream("Electronics")) {
+        products
+            .filter(p -> p.getPrice() > 1000)
+            .forEach(p -> System.out.println(p.getName() + ": $" + p.getPrice()));
+    }
+    // 自动关闭数据库连接
+}</code></pre>
+
+                <h3>🔄 自定义资源管理</h3>
+                <pre><code class="language-java">// 网络连接的资源管理
+public Stream&lt;String&gt; fetchUrlsStream(List&lt;String&gt; urls) {
+    HttpClient client = HttpClient.newHttpClient();
+
+    return urls.stream()
+        .map(url -> {
+            try {
+                HttpResponse&lt;String&gt; response = client.send(
+                    HttpRequest.newBuilder(URI.create(url)).build(),
+                    HttpResponse.BodyHandlers.ofString()
+                );
+                return response.body();
+            } catch (Exception e) {
+                return "Error fetching " + url + ": " + e.getMessage();
+            }
+        })
+        .onClose(() -> {
+            // 关闭HTTP客户端（如果需要）
+            System.out.println("HTTP请求完成");
+        });
+}
+
+// 临时文件管理
+public Stream&lt;String&gt; processTempFiles() {
+    List&lt;Path&gt; tempFiles = new ArrayList&lt;&gt;();
+
+    try {
+        // 创建临时文件
+        for (int i = 0; i < 5; i++) {
+            Path tempFile = Files.createTempFile("process", ".txt");
+            tempFiles.add(tempFile);
+            Files.write(tempFile, ("Content " + i).getBytes());
+        }
+
+        return tempFiles.stream()
+            .map(path -> {
+                try {
+                    return Files.readString(path);
+                } catch (IOException e) {
+                    return "Error reading file: " + e.getMessage();
+                }
+            })
+            .onClose(() -> {
+                // 清理所有临时文件
+                tempFiles.forEach(path -> {
+                    try {
+                        Files.deleteIfExists(path);
+                        System.out.println("临时文件已删除: " + path);
+                    } catch (IOException e) {
+                        System.err.println("删除临时文件失败: " + path);
+                    }
+                });
+            });
+
+    } catch (IOException e) {
+        // 如果创建失败，清理已创建的文件
+        tempFiles.forEach(path -> {
+            try {
+                Files.deleteIfExists(path);
+            } catch (IOException ignored) {}
+        });
+        throw new RuntimeException(e);
+    }
+}</code></pre>
+
+                <h3>⚡ 性能和内存管理</h3>
+                <pre><code class="language-java">// 大文件处理的内存管理
+public Stream&lt;String&gt; processLargeFile(Path filePath) {
+    return Files.lines(filePath, StandardCharsets.UTF_8)
+        .onClose(() -> {
+            // 通知垃圾回收
+            System.gc();
+            System.out.println("处理大文件完成，建议进行垃圾回收");
+        });
+}
+
+// 批量处理时的资源池管理
+private final ExecutorService executor = Executors.newFixedThreadPool(10);
+
+public Stream&lt;Future&lt;String&gt;&gt; parallelProcess(List&lt;Task&gt; tasks) {
+    return tasks.stream()
+        .map(task -> executor.submit(() -> processTask(task)))
+        .onClose(() -> {
+            // 所有任务完成后关闭线程池
+            executor.shutdown();
+            try {
+                if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                }
+                System.out.println("线程池已关闭");
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        });
+}</code></pre>
+
+                <h3>⚠️ 注意事项和最佳实践</h3>
+                <pre><code class="language-java">// ✅ 推荐：使用 try-with-resources
+try (Stream&lt;String&gt; lines = Files.lines(path)
+        .onClose(() -> cleanup())) {
+    lines.forEach(System.out::println);
+}
+// 自动调用 close()，确保回调执行
+
+// ✅ 推荐：在 finally 中关闭
+Stream&lt;String&gt; stream = Files.lines(path).onClose(() -> cleanup());
+try {
+    stream.forEach(System.out::println);
+} finally {
+    stream.close();  // 确保回调执行
+}
+
+// ❌ 避免：忘记关闭Stream
+Stream&lt;String&gt; stream = Files.lines(path).onClose(() -> cleanup());
+stream.forEach(System.out::println);
+// 如果没有显式调用 close()，onClose 回调不会执行
+
+// ✅ 推荐：异常处理
+Stream&lt;String&gt; stream = Files.lines(path)
+    .onClose(() -> {
+        try {
+            cleanup();
+        } catch (Exception e) {
+            // 记录错误但不抛出异常
+            System.err.println("清理失败: " + e.getMessage());
+        }
+    });</code></pre>
+
+                <div class="tip-box">
+                    <strong>💡 重要提示：</strong>
+                    <ul>
+                        <li><strong>必须手动关闭</strong>：<code>onClose()</code> 回调只有在调用 <code>close()</code> 方法时才会执行</li>
+                        <li><strong>异常处理</strong>：回调中的异常会被静默忽略或记录到控制台</li>
+                        <li><strong>执行顺序</strong>：多个 <code>onClose()</code> 处理器按注册的相反顺序执行</li>
+                        <li><strong>主要用于</strong>：文件流、数据库连接、网络连接等需要显式关闭的资源</li>
+                    </ul>
+                </div>
+
+                <p class="conclusion"><strong>onClose() 提供了优雅的资源管理机制，特别适合处理需要显式关闭的资源，如文件流和数据库连接！</strong></p>
+            </div>
+        </section>
+
+
+
+        <!-- Slide 23: Comprehensive Practical Example -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>综合实战案例 - 学生成绩分析系统</h2>
+                <p>结合多个Stream操作，实现复杂的业务逻辑处理。</p>
+
+                <h3>📋 业务场景：学生成绩多维度分析</h3>
+                <pre><code class="language-java">// 输入数据：List&lt;Student&gt; students = getAllStudents();
+
+// 综合分析需求：
+// 1. 筛选活跃学生
+// 2. 按专业分组
+// 3. 计算每个专业的统计信息
+// 4. 找出各专业的优秀学生
+// 5. 生成综合报告</code></pre>
+
+                <h3>🔧 综合解决方案：</h3>
+                <pre><code class="language-java">public class StudentAnalysisReport {
+    public void generateComprehensiveReport(List&lt;Student&gt; students) {
+        // 1. 筛选活跃学生并按专业分组
+        Map&lt;String, List&lt;Student&gt;&gt; activeByMajor = students.stream()
+            .filter(Student::isActive)                    // 筛选操作
+            .collect(Collectors.groupingBy(Student::getMajor));  // 分组操作
+
+        // 2. 计算各专业统计信息
+        Map&lt;String, MajorStatistics&gt; statisticsMap = activeByMajor.entrySet()
+            .stream()
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                entry -> calculateMajorStatistics(entry.getValue())
+            ));
+
+        // 3. 找出各专业前3名优秀学生
+        Map&lt;String, List&lt;Student&gt;&gt; topStudentsByMajor = activeByMajor.entrySet()
+            .stream()
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                entry -> entry.getValue().stream()
+                    .sorted(Comparator.comparing(Student::getScore).reversed())
+                    .limit(3)
+                    .collect(Collectors.toList())
+            ));
+
+        // 4. 生成排名前10的全校优秀学生
+        List&lt;Student&gt; top10Overall = students.stream()
+            .filter(Student::isActive)
+            .sorted(Comparator
+                .comparing(Student::getScore).reversed()
+                .thenComparing(Student::getName))
+            .limit(10)
+            .collect(Collectors.toList());
+
+        // 5. 按年龄段分析成绩分布
+        Map&lt;String, Double&gt; averageScoreByAgeGroup = students.stream()
+            .filter(Student::isActive)
+            .collect(Collectors.groupingBy(
+                student -> {
+                    int age = student.getAge();
+                    if (age < 18) return "18岁以下";
+                    else if (age < 22) return "18-21岁";
+                    else if (age < 25) return "22-24岁";
+                    else return "25岁以上";
+                },
+                Collectors.averagingDouble(Student::getScore)
+            ));
+
+        // 6. 输出综合报告
+        printComprehensiveReport(statisticsMap, topStudentsByMajor,
+                              top10Overall, averageScoreByAgeGroup);
+    }
+
+    private MajorStatistics calculateMajorStatistics(List&lt;Student&gt; majorStudents) {
+        IntSummaryStatistics ageStats = majorStudents.stream()
+            .mapToInt(Student::getAge)
+            .summaryStatistics();
+
+        DoubleSummaryStatistics scoreStats = majorStudents.stream()
+            .mapToDouble(Student::getScore)
+            .summaryStatistics();
+
+        long highScoreCount = majorStudents.stream()
+            .mapToLong(s -> s.getScore() >= 90 ? 1 : 0)
+            .sum();
+
+        return new MajorStatistics(
+            majorStudents.size(),
+            ageStats.getAverage(),
+            scoreStats.getAverage(),
+            scoreStats.getMax(),
+            highScoreCount
+        );
+    }
+}</code></pre>
+
+                <h3>📊 复杂数据转换示例：</h3>
+                <pre><code class="language-java">// 学生课程成绩转换和统计
+public List&lt;StudentCourseSummary&gt; generateCourseSummary(List&lt;Student&gt; students) {
+    return students.stream()
+        .filter(Student::isActive)                                    // 筛选活跃学生
+        .flatMap(student -> student.getCourses().stream()               // 扁平化课程列表
+            .map(course -> new StudentCourseInfo(student, course)))     // 组合学生和课程信息
+        .collect(Collectors.groupingBy(                                // 按课程分组
+            StudentCourseInfo::getCourseId,
+            Collectors.collectingAndThen(
+                Collectors.toList(),
+                courseInfos -> {
+                    double averageScore = courseInfos.stream()
+                        .mapToDouble(StudentCourseInfo::getScore)
+                        .average()
+                        .orElse(0.0);
+
+                    long passCount = courseInfos.stream()
+                        .mapToLong(info -> info.getScore() >= 60 ? 1 : 0)
+                        .sum();
+
+                    return new StudentCourseSummary(
+                        courseInfos.get(0).getCourseName(),
+                        courseInfos.size(),
+                        averageScore,
+                        (double) passCount / courseInfos.size() * 100
+                    );
+                }
+            )
+        ))
+        .values()
+        .stream()
+        .sorted(Comparator.comparing(StudentCourseSummary::getAverageScore).reversed())
+        .collect(Collectors.toList());
+}</code></pre>
+
+                <h3>⚡ 性能优化实战：</h3>
+                <pre><code class="language-java">// 大数据量处理优化
+public void processLargeDataSet(List&lt;LargeData&gt; largeDataSet) {
+    // 并行处理 + 短路操作优化
+    List&lt;LargeData&gt; result = largeDataSet.parallelStream()
+        .filter(this::quickFilter)              // 快速筛选
+        .filter(this::complexFilter)             // 复杂筛选
+        .map(this::expensiveTransformation)     // CPU密集型转换
+        .distinct()                            // 去重
+        .sorted(Comparator.comparing(LargeData::getPriority))
+        .limit(1000)                          // 短路操作，避免处理多余数据
+        .collect(Collectors.toList());
+
+    // 批量处理优化
+    int batchSize = 1000;
+    List&lt;List&lt;LargeData&gt;&gt; batches = IntStream.range(0, (largeDataSet.size() + batchSize - 1) / batchSize)
+        .mapToObj(i -> largeDataSet.subList(i * batchSize, Math.min((i + 1) * batchSize, largeDataSet.size())))
+        .collect(Collectors.toList());
+
+    batches.parallelStream()
+        .forEach(this::processBatch);
+}</code></pre>
+
+                <p class="conclusion"><strong>Stream API的强大之处在于可以灵活组合各种操作，实现复杂的数据处理逻辑！</strong></p>
+            </div>
+        </section>
+
+
+
+        <!-- Slide 25: Best Practices and Performance Tips -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践与性能优化</h2>
+                <p>掌握Stream API的使用技巧，让你的代码既优雅又高效！</p>
+
+                <h3>✅ 使用场景判断</h3>
+                <pre><code class="language-java">// 适合使用Stream的场景
+public void goodStreamUsage() {
+    // 1. 复杂数据转换
+    List&lt;StudentDTO&gt; dtos = students.stream()
+        .filter(Student::isActive)
+        .map(this::convertToDTO)
+        .sorted(Comparator.comparing(StudentDTO::getScore))
+        .collect(Collectors.toList());
+
+    // 2. 数据聚合统计
+    Map&lt;String, Long&gt; countByMajor = students.stream()
+        .collect(Collectors.groupingBy(Student::getMajor, Collectors.counting()));
+
+    // 3. 大数据量处理
+    List&lt;Result&gt; results = largeDataSet.parallelStream()
+        .filter(this::heavyFilter)
+        .map(this::heavyComputation)
+        .collect(Collectors.toList());
+}
+
+// 不适合使用Stream的场景
+public void avoidStreamOveruse() {
+    // 1. 简单遍历 - 传统for更清晰
+    for (Student student : students) {
+        System.out.println(student.getName());
+    }
+    // 而不是：students.stream().forEach(s -> System.out.println(s.getName()));
+
+    // 2. 需要索引的操作
+    for (int i = 0; i < students.size(); i++) {
+        Student student = students.get(i);
+        System.out.println("序号" + i + ": " + student.getName());
+    }
+
+    // 3. 需要修改原集合的操作
+    List&lt;Student&gt; copy = new ArrayList&lt;&gt;(students);
+    copy.removeIf(s -> !s.isActive());  // 直接修改，更高效
+}</code></pre>
+
+                <h3>🚀 性能优化技巧</h3>
+                <pre><code class="language-java">// 1. 使用基本类型Stream避免装箱
+IntStream ages = students.stream()
+    .mapToInt(Student::getAge);  // 避免Integer装箱
+
+DoubleStream scores = students.stream()
+    .mapToDouble(Student::getScore);  // 避免Double装箱
+
+// 2. 合理使用短路操作
+List&lt;Student&gt; topStudents = students.stream()
+    .sorted(Comparator.comparing(Student::getScore).reversed())
+    .limit(10)  // 只处理需要的数量，减少排序开销
+    .collect(Collectors.toList());
+
+// 3. 避免多次收集
+// 不推荐：多次collect
+List&lt;Student&gt; filtered = students.stream()
+    .filter(s -> s.getAge() >= 18)
+    .collect(Collectors.toList());
+List&lt;String&gt; names = filtered.stream()
+    .map(Student::getName)
+    .collect(Collectors.toList());
+
+// 推荐：一次链式调用
+List&lt;String&gt; namesOptimized = students.stream()
+    .filter(s -> s.getAge() >= 18)
+    .map(Student::getName)
+    .collect(Collectors.toList());
+
+// 4. 预编译Comparator
+private static final Comparator&lt;Student&gt; SCORE_COMPARATOR =
+    Comparator.comparing(Student::getScore);
+
+List&lt;Student&gt; sorted = students.stream()
+    .sorted(SCORE_COMPARATOR)
+    .collect(Collectors.toList());</code></pre>
+
+                <h3>🔧 调试技巧</h3>
+                <pre><code class="language-java">// 使用peek()进行调试
+List&lt;Student&gt; result = students.stream()
+    .filter(s -> s.getAge() >= 18)
+    .peek(s -> System.out.println("过滤后: " + s.getName()))  // 调试点1
+    .map(Student::getName)
+    .peek(name -> System.out.println("映射后: " + name))    // 调试点2
+    .filter(name -> name.length() > 2)
+    .collect(Collectors.toList());
+
+// 自定义调试收集器
+public class DebuggingCollector&lt;T&gt; implements Collector&lt;T, ?, List&lt;T&gt;&gt; {
+    private final String prefix;
+
+    @Override
+    public Supplier&lt;List&lt;T&gt;&gt; supplier() {
+        System.out.println(prefix + " - 开始收集");
+        return ArrayList::new;
+    }
+
+    @Override
+    public BiConsumer&lt;List&lt;T&gt;, T&gt; accumulator() {
+        return (list, item) -> {
+            System.out.println(prefix + " - 添加元素: " + item);
+            list.add(item);
+        };
+    }
+
+    // ... 其他方法
+}</code></pre>
+
+                <h3>⚠️ 常见陷阱避免</h3>
+                <pre><code class="language-java">// 1. 避免修改Stream中的元素
+// 错误：尝试修改Stream中的元素
+List&lt;Student&gt; result = students.stream()
+    .peek(student -> student.setScore(student.getScore() + 10))  // 副作用！
+    .collect(Collectors.toList());
+
+// 正确：在map中创建新对象
+List&lt;Student&gt; result = students.stream()
+    .map(student -> {
+        Student newStudent = new Student(student);
+        newStudent.setScore(student.getScore() + 10);
+        return newStudent;
+    })
+    .collect(Collectors.toList());
+
+// 2. 避免重复操作
+// 错误：重复计算
+students.stream().mapToInt(Student::getScore).sum();
+students.stream().mapToInt(Student::getScore).average();
+
+// 正确：一次性计算
+IntSummaryStatistics stats = students.stream()
+    .mapToInt(Student::getScore)
+    .summaryStatistics();
+double sum = stats.getSum();
+double average = stats.getAverage();
+
+// 3. 注意并行Stream的线程安全
+// 错误：非线程安全的操作
+List&lt;StringBuilder&gt; result = students.parallelStream()
+    .collect(ArrayList::new,
+             (list, student) -> list.add(new StringBuilder(student.getName())),
+             List::addAll);
+
+// 正确：使用线程安全的方式
+List&lt;String&gt; result = students.parallelStream()
+    .map(Student::getName)
+    .collect(Collectors.toList());</code></pre>
+
+                <p class="conclusion"><strong>Stream API 是强大的工具，但要理性使用！<br>
+                        简单操作用传统方式，复杂处理用Stream优雅解决，性能优化要具体分析！</strong></p>
+            </div>
+        </section>
+
+        <!-- UI Elements -->
+        <div class="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div class="controls">
+            <button id="prevBtn">上一页</button>
+            <span id="slide-counter">1 / X</span>
+            <button id="nextBtn">下一页</button>
+        </div>
+    </main>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/ppt.js"></script>
+    <script src="./js/nav.js"></script>
+        
+    <script src="./js/stream-animation.js"></script>
+    <script src="js/chat-with-ai.js"></script>
+</body>
+</html>

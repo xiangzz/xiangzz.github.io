@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java 多线程基础</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+    <link rel="stylesheet" href="./css/multithread.css">
+</head>
+
+<body>
+
+    <main id="presentation">
+        <section class="slide title-slide active">
+            <h1>多线程基础</h1>
+            <p>面向对象程序设计（Java）</p>
+            <strong>掌握线程创建、状态与同步，理解并发三要素</strong>
+        </section>
+
+
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>前置知识：进程与线程</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>进程 = "独立的舞台"</h3>
+                        <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/15-multithread-process.png" alt="进程" style="width: 80%;">
+                        <ul>
+                            <li>每个进程有独立的内存空间（堆、栈、代码段）</li>
+                            <li>进程间通信需要 IPC（管道、共享内存、消息队列）</li>
+                            <li>创建进程开销大：需要分配内存、复制资源</li>
+                            <li>例子：打开浏览器、启动 IDE、运行音乐播放器，各是一个进程</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <h3>线程 = "舞台上的演员"</h3>
+                        <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/15-multithread-process-and-thread.png" alt="线程" style="width: 80%;">
+                        <ul>
+                            <li>线程属于某个进程，共享该进程的内存空间</li>
+                            <li>每个线程有自己的栈（局部变量）和程序计数器</li>
+                            <li>线程间通信简单：直接读写共享变量</li>
+                            <li>例子：浏览器同时下载文件、渲染页面、响应用户输入，各是线程</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="highlight-box">
+                    <strong>类比记忆</strong>
+                    <ul>
+                        <li>进程就像"舞台"：独立的场地，独立的灯光、独立的音响、独立的道具</li>
+                        <li>线程就像"演员"：共享舞台的资源（灯光、音响），各自表演</li>
+                        <li>多进程 = 多个舞台，各演各的戏，互不干扰但成本高</li>
+                        <li>多线程 = 一个舞台多个演员，资源共享但需要协调（同步）避免冲突</li>
+                    </ul>
+                </div>
+                <p class="conclusion">Java 程序默认有一个主线程（main），可以通过创建新线程实现并发执行。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要多线程</h2>
+                <p class="problem-intro">你点了一下“导出报表”按钮，整个窗口瞬间卡住，进度条一动不动。5秒后界面才恢复——<strong>单线程的代价</strong>。</p>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>问题：GUI卡死</h3>
+                        <ul>
+                            <li>主线程既要响应界面，又要执行耗时任务</li>
+                            <li>耗时任务阻塞事件派发线程，界面失去响应</li>
+                            <li>把任务搬出主线程，窗口即可继续流畅操作</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <h3>线程=“不卡”的代价</h3>
+                        <ul>
+                            <li>线程切换开销远小于进程，适合并发与响应式场景</li>
+                            <li>同进程内线程共享堆与方法区，通信零拷贝</li>
+                            <li>但共享可变数据必须正确同步，否则结果错乱</li>
+                        </ul>
+                    </div>
+                </div>
+                <p class="conclusion">先解决“卡”，再解决“乱”——多线程先让程序不卡，再用同步保证不乱。</p>
+            </div>
+        </section>
+
+        <!-- 演示链接：串并发对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>交互式演示：串行 vs 并发 vs 并行</h2>
+
+                <div class="demo-link-card">
+                    <div class="demo-card-header">
+                        <h3>🎬 可视化对比演示</h3>
+                    </div>
+                    <div class="demo-card-body">
+                        <p class="demo-description">
+                            通过动画直观对比三种执行模式的差异，理解"并发"和"并行"的本质区别。
+                        </p>
+                        <ul class="demo-highlights">
+                            <li>✨ 观察3个任务在不同模式下的执行顺序和时间</li>
+                            <li>✨ 理解单核并发（时间片轮转）vs 多核并行（同时执行）</li>
+                            <li>✨ 感受性能差异，直观理解多线程的优势</li>
+                        </ul>
+                    </div>
+                    <div class="demo-card-footer">
+                        <a href="./15-multithread-advantage.html" target="_blank" class="btn-demo-link">
+                            <span class="btn-icon">🚀</span>
+                            <span class="btn-text">打开串并发对比演示</span>
+                            <span class="btn-hint">（新窗口）</span>
+                        </a>
+                    </div>
+                </div>
+
+                <p class="conclusion">
+                    建议在学习理论后，通过交互式演示加深理解。
+                    观察完成演示后返回教程，继续学习线程与任务的概念。
+                </p>
+            </div>
+        </section>
+
+        <!-- 在这里我觉得先要介绍一下"线程"与"任务" -->
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>线程与任务：演员与剧本</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <div class="highlight-box">
+                            <strong>核心概念</strong>
+                            <ul>
+                                <li><strong>线程（Thread）= 演员</strong>：被动的表演者，拥有独立的栈和程序计数器，由JVM调度上台</li>
+                                <li><strong>任务（Task/Runnable）= 剧本</strong>：演员表演的具体内容，定义在 run() 方法中</li>
+                                <li><strong>调度器 = 导演</strong>：决定哪个演员上台，换演员时当前演员就停止表演</li>
+                            </ul>
+                        </div>
+                        <p><strong>为什么要分离？</strong></p>
+                        <ul>
+                            <li><strong>灵活复用</strong>：同一剧本可以由多个演员表演（如多窗口卖票）</li>
+                            <li><strong>资源优化</strong>：演员可以表演不同剧本（线程池复用）</li>
+                            <li><strong>解耦设计</strong>：剧本内容与演员管理分离，代码更清晰</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">// 剧本 = 表演内容（演什么）
+Runnable script = () -> {
+    System.out.println("表演中...");
+};
+
+// 演员 = 表演载体（谁来演）
+Thread actor1 = new Thread(script);
+Thread actor2 = new Thread(script);
+
+actor1.start(); // 演员1上台表演
+actor2.start(); // 演员2上台表演</code></pre>
+                        <p class="conclusion">演员只是被动的表演者，它不"理解"剧本的情节，只是按顺序表演台词。导演决定谁上台，不关心演员在表演什么剧本。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建线程：继承 Thread</h2>
+                <div class="columns-2-vertical">
+                    <div class="text-block">
+                        <p><strong>核心思想：</strong> 定义一个线程类，重写 <code>run()</code> 方法。</p>
+                        <ul>
+                            <li><strong>步骤：</strong>
+                                <ol>
+                                    <li>继承 <code>Thread</code> 类</li>
+                                    <li>重写 <code>run()</code> 方法（定义任务）</li>
+                                    <li>创建子类对象</li>
+                                    <li>调用 <code>start()</code> 启动</li>
+                                </ol>
+                            </li>
+                            <li class="warn"><strong>缺点：</strong> Java 是单继承机制，继承了 Thread 就无法继承其他业务类，耦合度高。</li>
+                        </ul>
+                    </div>
+                    <div class="code-block">
+                        <pre><code class="language-java">class MyThread extends Thread {
+    public void run() {
+        for (int i = 0; i &lt; 3; i++) {
+            System.out.println("工作: " + i);
+        }
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        Thread t = new MyThread();
+        t.start(); // 必须调用 start 而不是 run
+    }
+}</code></pre>
+                    </div>
+                </div>
+                <p class="conclusion">继承方式简单直接，常用于快速测试，但在实际开发中较少使用。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建线程：实现 Runnable</h2>
+                <div class="columns-2-vertical">
+                    <div class="text-block">
+                        <p><strong>核心思想：</strong> 将"任务"与"线程"分离，实现解耦。</p>
+                        <ul>
+                            <li><strong>优势：</strong>
+                                <ul>
+                                    <li><strong>避免单继承局限：</strong> 任务类还可以继承其他类。</li>
+                                    <li><strong>资源共享：</strong> 多个线程可以共享同一个 Runnable 对象中的数据。</li>
+                                    <li><strong>线程池支持：</strong> 线程池只接收 Runnable/Callable 任务。</li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                        <div class="highlight-box"
+                            style="background:#fff3e0; border-left:4px solid #ff9800; margin-top:16px;">
+                            <strong>💡 观察要点：</strong>
+                            <ul style="margin:8px 0; padding-left:20px;">
+                                <li>两个线程共享同一个 <code>TicketTask</code> 对象</li>
+                                <li>共享 <code>tickets</code> 变量，从10减到0</li>
+                                <li>两个窗口交替卖票，体现并发执行</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="code-block">
+                        <pre><code class="language-java">class TicketTask implements Runnable {
+    private int tickets = 10;  // 共享资源：10张票
+
+    public void run() {
+        while (tickets > 0) {
+            System.out.println(Thread.currentThread().getName() +
+                " 卖出第 " + tickets-- + " 张票");
+            try {
+                Thread.sleep(100);  // 模拟卖票耗时
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        TicketTask task = new TicketTask();
+
+        // 两个窗口同时卖票，共享同一批票
+        new Thread(task, "窗口A").start();
+        new Thread(task, "窗口B").start();
+    }
+}
+
+// 输出示例（每次运行不同）：
+// 窗口A 卖出第 10 张票
+// 窗口B 卖出第 9 张票
+// 窗口A 卖出第 8 张票
+// 窗口B 卖出第 7 张票
+// ...</code></pre>
+                    </div>
+                </div>
+                <p class="conclusion">
+                    这是最常用的基础创建方式，不仅解耦，还更方便资源共享。
+                    <strong>注意：</strong>这里尚未加锁，后面会学习如何用 synchronized 解决并发问题。
+                </p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* 进阶：带返回值的异步任务</h2>
+                <p>在基础多线程中，我们学习了 <code>Thread</code> 和 <code>Runnable</code>。但如果任务需要返回值呢？</p>
+
+                <div class="highlight-box" style="background:#e3f2fd; border-left:4px solid #2196f3; margin: 20px 0;">
+                    <strong>📖 进阶学习：</strong> Callable 和 Future
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li><strong>Callable&lt;V&gt;</strong>：类似 Runnable，但可以返回值并抛出异常</li>
+                        <li><strong>Future</strong>：表示异步计算的结果，可以获取、取消、检查任务状态</li>
+                        <li>这些工具属于 <code>java.util.concurrent</code> 包（JUC）</li>
+                    </ul>
+                    <p style="margin: 10px 0 0 0;">
+                        <strong>详细内容请参见：</strong>第16章 JUC并发编程 → "Callable与Future：带返回值的异步任务"
+                    </p>
+                </div>
+
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>🎯 为什么需要 Callable？</h3>
+                        <ul>
+                            <li><strong>Runnable 的局限：</strong>无返回值，不能抛 checked 异常</li>
+                            <li><strong>Callable 的优势：</strong>有返回值，支持异常处理</li>
+                            <li><strong>典型场景：</strong>并发计算、批量数据处理、异步IO结果获取</li>
+                        </ul>
+                    </div>
+
+                </div>
+
+                <p class="conclusion">
+                    掌握 Thread 和 Runnable 已经足够应对大部分基础并发场景。
+                    当需要更强大的异步编程能力时，继续学习 JUC 中的 Callable 和 Future。
+                </p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>启动与基本控制</h2>
+                <div class="method-cards">
+                    <div class="method-card">
+                        <div class="method-card__info">
+                            <h3 class="method-card__title">start()</h3>
+                            <p class="method-card__desc">启动新线程，JVM会在新线程中异步调用该线程的run()方法。</p>
+                            <ul class="method-card__points">
+                                <li>创建新线程并分配资源</li>
+                                <li>调用start后线程进入RUNNABLE状态</li>
+                                <li>多次调用start会抛出IllegalThreadStateException</li>
+                            </ul>
+                            <p class="method-card__note">🎭 导演（调度器）喊"开拍"，演员（线程）上台开始表演。直接调用run()就像自己在后台念剧本，根本没上台！</p>
+                        </div>
+                        <div class="method-card__code">
+                            <pre><code class="language-java">Thread t = new Thread(() -> {
+    System.out.println("新线程执行中...");
+});
+t.start(); // 启动新线程
+System.out.println("主线程继续...");</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="method-card">
+                        <div class="method-card__info">
+                            <h3 class="method-card__title">sleep(long millis)</h3>
+                            <p class="method-card__desc">让当前线程暂停执行指定的毫秒数，进入TIMED_WAITING状态。</p>
+                            <ul class="method-card__points">
+                                <li>释放CPU但不会释放锁</li>
+                                <li>休眠结束后重新进入就绪队列等待调度</li>
+                                <li>抛出InterruptedException需处理</li>
+                            </ul>
+                            <p class="method-card__note">🎭 演员说"中场休息5分钟"，先到后台歇会儿，让其他演员接着演。休息完再上台继续表演。</p>
+                        </div>
+                        <div class="method-card__code">
+                            <pre><code class="language-java">Thread t = new Thread(() -> {
+    for (int i = 0; i < 3; i++) {
+        System.out.println("任务" + i);
+        try {
+            Thread.sleep(500); // 休眠500ms
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+});
+t.start();</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="method-card">
+                        <div class="method-card__info">
+                            <h3 class="method-card__title">yield()</h3>
+                            <p class="method-card__desc">建议调度器当前线程愿意让出CPU给其他线程。</p>
+                            <ul class="method-card__points">
+                                <li>只是建议，不保证一定会切换</li>
+                                <li>线程仍处于RUNNABLE状态</li>
+                                <li>优先级相同的线程间更可能有效</li>
+                            </ul>
+                            <p class="method-card__note">🎭 演员礼貌地说"要不先让别的演员演会儿？"但导演可能不理会，继续让这个演员演。</p>
+                        </div>
+                        <div class="method-card__code">
+                            <pre><code class="language-java">Thread t1 = new Thread(() -> {
+    for (int i = 0; i < 5; i++) {
+        Thread.yield(); // 建议让出CPU
+        System.out.println("线程1: " + i);
+    }
+});
+Thread t2 = new Thread(() -> {
+    for (int i = 0; i < 5; i++) {
+        System.out.println("线程2: " + i);
+    }
+});
+t1.start();
+t2.start();</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="method-card">
+                        <div class="method-card__info">
+                            <h3 class="method-card__title">join()</h3>
+                            <p class="method-card__desc">等待目标线程执行完毕后再继续执行当前线程。</p>
+                            <ul class="method-card__points">
+                                <li>调用者线程进入WAITING状态</li>
+                                <li>目标线程执行完毕后调用者恢复</li>
+                                <li>可指定超时时间：join(long millis)</li>
+                            </ul>
+                            <p class="method-card__note">🎭 主角（主线程）在后台等配角（子线程）演完，配角谢幕下台后，主角才继续登台表演。</p>
+                        </div>
+                        <div class="method-card__code">
+                            <pre><code class="language-java">Thread worker = new Thread(() -> {
+    for (int i = 0; i < 3; i++) {
+        System.out.println("工作中..." + i);
+        try { Thread.sleep(300); } catch (Exception e) {}
+    }
+});
+worker.start();
+worker.join(); // 等待worker完成
+System.out.println("工作完成！");</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 演示链接：线程控制方法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>交互式演示：线程控制方法</h2>
+
+                <div class="demo-link-card">
+                    <div class="demo-card-header">
+                        <h3>🎬 sleep() / yield() / join() 演示</h3>
+                    </div>
+                    <div class="demo-card-body">
+                        <p class="demo-description">
+                            深入理解三个关键线程控制方法的实际效果和状态变化。
+                        </p>
+                        <ul class="demo-highlights">
+                            <li>✨ 体验线程休眠（sleep）和时间片轮转</li>
+                            <li>✨ 观察join()的阻塞等待效果</li>
+                            <li>✨ 理解yield()的让出机制（礼让）</li>
+                        </ul>
+                    </div>
+                    <div class="demo-card-footer">
+                        <a href="./15-multithread-basic-control.html" target="_blank" class="btn-demo-link">
+                            <span class="btn-icon">🚀</span>
+                            <span class="btn-text">打开线程控制演示</span>
+                            <span class="btn-hint">（新窗口）</span>
+                        </a>
+                    </div>
+                </div>
+
+                <p class="conclusion">
+                    通过交互式演示观察线程状态变化，加深对控制方法的理解。
+                    掌握这些方法是实现线程协调的基础。
+                </p>
+            </div>
+        </section>
+
+        <!-- Slide 11a: 现实生活中的并发问题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>现实生活中的并发问题</h2>
+
+                <p class="problem-intro">
+                    前面我们学习了如何创建和控制线程。现在让我们思考一个问题：
+                    <strong>当多个线程同时访问和修改共享数据时，会发生什么？</strong>
+                </p>
+
+                <div class="highlight-box"
+                    style="background:#fff3e0; border-left:4px solid #ff9800; margin-bottom:20px;">
+                    <strong>🤔 先思考一下：</strong>
+                    <p style="margin:8px 0;">在卖票示例（Slide 7）中，两个线程共享同一个 <code>TicketTask</code> 对象，并发地修改
+                        <code>tickets</code> 变量。你有没有想过：如果两个线程恰好同时执行 <code>tickets--</code>，会发生什么？</p>
+                    <p style="margin:8px 0; font-size:0.9rem; color:#e65100;">
+                        答案是：<strong>可能会卖出相同的票号，或者数据丢失！</strong>
+                        让我们通过生活中的场景来理解这个问题。
+                    </p>
+                </div>
+
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>🎬 场景1：银行存款</h3>
+                        <div class="highlight-box">
+                            <strong>问题：两人同时存钱</strong>
+                            <ul>
+                                <li>账户余额：1000元</li>
+                                <li>丈夫读取余额：1000元</li>
+                                <li>妻子也读取余额：1000元（还没看到丈夫的修改）</li>
+                                <li>丈夫存入500元 → 1500元</li>
+                                <li>妻子存入300元 → 1300元（覆盖了丈夫的1500）</li>
+                                <li><strong style="color:#c62828;">❌ 结果：1300元，应该是1800元！</strong></li>
+                            </ul>
+                            <div class="demo-card-footer">
+                        <a href="./15-multithread-consistency.html" target="_blank" class="btn-demo-link">
+                            <span class="btn-icon">🚀</span>
+                            <span class="btn-text">打开并发一致性演示</span>
+                            <span class="btn-hint">（新窗口）</span>
+                        </a>
+                        </div>
+                                            
+                    </div>
+
+                        <h3>🎫 场景2：火车票售票</h3>
+                        <div class="highlight-box">
+                            <strong>问题：两个窗口同时卖最后一张票</strong>
+                            <ul>
+                                <li>剩余票数：1张</li>
+                                <li>窗口A查询：有票</li>
+                                <li>窗口B查询：有票（还没看到A的扣减）</li>
+                                <li>窗口A卖出 → 剩余0张</li>
+                                <li>窗口B卖出 → 剩余0张（但已经卖出！）</li>
+                                <li><strong style="color:#c62828;">❌ 结果：超卖1张票！</strong></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="media-block__visual">
+                        <h3>🔍 问题根源</h3>
+                        <div class="highlight-box" style="background:#fff3e0; border-left:4px solid #ff9800;">
+                            <strong>关键发现：</strong>
+                            <ul>
+                                <li><strong>"读-改-写"不是原子操作</strong></li>
+                                <li>在"改"的过程中，其他人可能也在"读"</li>
+                                <li>大家都基于旧值修改，导致数据丢失</li>
+                                <li>这叫做：<strong style="color:#e65100;">竞态条件（Race Condition）</strong></li>
+                            </ul>
+                        </div>
+
+                        <h3>⚡ 为什么会这样？</h3>
+                        <p style="margin-bottom:12px;">在计算机中，一个简单的 <code>i++</code> 操作实际分成三步：</p>
+                        <div style="background:#f5f5f5; padding:12px; border-radius:8px; font-family:monospace;">
+                            1. READ: 读取 i 的值<br>
+                            2. MODIFY: 计算 i+1<br>
+                            3. WRITE: 写回新值
+                        </div>
+                        <p style="margin-top:12px; color:#666;">
+                            如果线程A在步骤2时，线程B执行了步骤1，两个线程都会基于相同的旧值进行修改！
+                        </p>
+
+                        <div class="highlight-box"
+                            style="background:#e3f2fd; border-left:4px solid #2196f3; margin-top:16px;">
+                            <strong>💡 解决思路：</strong>
+                            <p style="margin:8px 0;">生活中需要"排队"和"加锁"来避免冲突，程序中也是一样。</p>
+                            <p style="margin:8px 0; font-size:0.95rem;">在多线程环境下，我们必须使用<strong>同步机制</strong>来保证数据的一致性。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="conclusion">
+                    现实中的并发问题时刻发生：银行存款、火车票、库存扣减...
+                    理解这些问题后，让我们看看如何在代码中复现和解决它们。
+                </p>
+            </div>
+        </section>
+
+        <!-- Slide 11b: 并发编程的三大特性 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>并发编程的三大特性</h2>
+
+                <div class="highlight-box"
+                    style="background:#e8f5e9; border-left:4px solid #4caf50; margin-bottom:20px;">
+                    <strong>📚 知识框架：</strong>
+                    <p style="margin:8px 0;">在并发编程中，我们面临的线程安全问题都可以归结为三个核心特性：原子性、可见性、有序性。</p>
+                    <p style="margin:8px 0; font-size:0.9rem; color:#2e7d32;">理解这三大特性，是掌握并发编程的基础！</p>
+                </div>
+
+                <p class="problem-intro">
+                    刚才我们看到了生活中的并发问题。现在让我们把视角转回代码：
+                    <strong>两个线程各给计数器加100000次，结果应该是200000，但实际往往更少</strong>。
+                </p>
+
+                <div class="highlight-box"
+                    style="background:#f3f5ff; border-left:4px solid #7e57c2; margin-bottom:20px;">
+                    <strong>🎯 学习目标：</strong>
+                    <p style="margin:8px 0;">通过这个例子，我们将学习：</p>
+                    <ul style="margin:8px 0; padding-left:20px; font-size:0.9rem;">
+                        <li>为什么 <code>i++</code> 不是线程安全的？</li>
+                        <li>什么是原子性、可见性、有序性？</li>
+                        <li>如何用 <code>synchronized</code> 解决并发问题？</li>
+                    </ul>
+                </div>
+                                    <div class="media-block__visual">
+                        <pre><code class="language-java">public class RaceCounter {
+    static int counter = 0;
+
+    public static void main(String[] args) throws Exception {
+        Runnable r = () -&gt; {
+            for (int i = 0; i &lt; 100000; i++) {
+                counter++; // 非原子操作！
+            }
+        };
+
+        Thread t1 = new Thread(r);
+        Thread t2 = new Thread(r);
+
+        t1.start();
+        t2.start();
+
+        t1.join();
+        t2.join();
+
+        System.out.println(counter);
+        // 输出可能是 180000、195000、198000...
+        // 几乎永远不是 200000
+    }
+}</code></pre>
+                        <p class="conclusion">给"读-改-写"加锁，三步变一步，200000次更新不再丢失。</p>
+                    </div>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <div class="highlight-box">
+                            <strong>🔍 案发现场：20000次更新去哪了？</strong>
+                            <ul>
+                                <li><code>i++</code> 在字节码里是"取值→+1→写回"三步</li>
+                                <li>线程A写回前，线程B也读到旧值</li>
+                                <li>线程B也+1，然后写回，覆盖了A的结果</li>
+                                <li>一次自增丢失，累加就是"少"</li>
+                            </ul>
+                        </div>
+
+                        <h3>💡 并发编程三大特性</h3>
+                        <p style="margin-bottom:12px; color:#666; font-size:0.95rem;">
+                            Java内存模型（JMM）定义了并发编程需要关注的三个核心问题：
+                        </p>
+
+                        <!-- 原子性 -->
+                        <div class="highlight-box"
+                            style="background:#e3f2fd; border-left:4px solid #2196f3; margin-bottom:12px;">
+                            <strong>1. 原子性 (Atomicity)</strong>
+                            <p style="margin:8px 0; font-size:0.9rem;"><strong>定义：</strong>操作不可分割，要么全部执行成功，要么全部不执行。</p>
+                            <p style="margin:8px 0; font-size:0.85rem; color:#666;">
+                                <strong>类比：</strong>就像转账操作，要么"扣款+入账"同时成功，要么同时失败，不能只扣款不入账。<br>
+                                <strong>本例问题：</strong><code>i++</code> 不是原子操作（分三步），导致数据丢失。<br>
+                                <strong>解决方案：</strong>用 <code>synchronized</code> 或锁保证原子性。
+                            </p>
+                        </div>
+
+                        <!-- 可见性 -->
+                        <div class="highlight-box"
+                            style="background:#e3f2fd; border-left:4px solid #2196f3; margin-bottom:12px;">
+                            <strong>2. 可见性 (Visibility)</strong>
+                            <p style="margin:8px 0; font-size:0.9rem;"><strong>定义：</strong>一个线程对共享变量的修改，其他线程能够立即看到。</p>
+                            <p style="margin:8px 0; font-size:0.85rem; color:#666;">
+                                <strong>类比：</strong>就像公告栏，一个人贴了通知，其他人应该马上能看到。<br>
+                                <strong>问题：</strong>每个线程有自己的缓存，修改不会立即同步到主内存。<br>
+                                <strong>解决方案：</strong>用 <code>volatile</code> 或 <code>synchronized</code> 保证可见性。
+                            </p>
+                        </div>
+
+                        <!-- 有序性 -->
+                        <div class="highlight-box"
+                            style="background:#fff3e0; border-left:4px solid #ff9800; margin-bottom:12px;">
+                            <strong>3. 有序性 (Ordering)</strong>
+                            <p style="margin:8px 0; font-size:0.9rem;"><strong>定义：</strong>程序执行的顺序按照代码的先后顺序执行。</p>
+                            <p style="margin:8px 0; font-size:0.85rem; color:#666;">
+                                <strong>问题：</strong>编译器和处理器为了优化性能，可能会<strong>指令重排序</strong>。<br>
+                                <strong>影响：</strong>单线程不影响结果，但多线程可能导致问题。<br>
+                                <strong>解决方案：</strong>用 <code>volatile</code> 禁止指令重排序（详见后续volatile章节）。
+                            </p>
+                        </div>
+
+                        <p style="margin-top:16px;"><strong>🎯 本节重点：</strong>用锁把三步打包成一步，保证原子性。</p>
+                    </div>
+
+        </section>
+
+        <!-- 演示链接：临界区与互斥锁 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>临界区与互斥锁</h2>
+                
+                <div class="highlight-box" style="margin-bottom: 24px;">
+                    <h3 style="margin: 0 0 12px 0;">🛍️ 试衣间的故事：理解临界区</h3>
+                    <p style="margin: 0 0 12px 0;">想象一家小服装店，只有一间试衣间。两位顾客，小张和小李，同时看中了几件衣服，都想试试。</p>
+                    <p style="margin: 0 0 12px 0;">试衣间门上没有锁，小张刚推门进去一半，小李也伸手要进——两个人在门口尴尬地卡住了，衣服掉了一地，场面一度非常混乱。</p>
+                    <p style="margin: 0 0 12px 0;"><strong>问题出在哪里？</strong>试衣间这个"空间"，同一时间只能容纳一个人，这就是所谓的<strong>临界区</strong>。</p>
+                    <p style="margin: 0 0 12px 0;"><strong>解决方案：</strong>给试衣间装上锁。小张进去后从里面锁上门，小李看到锁了，只能在外面等待。等小张试完出来，小李再进去。</p>
+                    <p style="margin: 0;"><strong>类比到多线程：</strong></p>
+                    <ul style="margin: 8px 0 0 0; padding-left: 20px;">
+                        <li><strong>试衣间 = 临界区</strong>：共享资源（如计数器），同一时间只能一个线程访问</li>
+                        <li><strong>顾客 = 线程</strong>：多个线程同时要访问临界区</li>
+                    </ul>
+                </div>
+                
+                <div class="demo-link-card">
+                    <div class="demo-card-header">
+                        <h3>🎬 临界区冲突演示</h3>
+                    </div>
+                    <div class="demo-card-body">
+                        <p class="demo-description">
+                            通过"试衣间"类比，直观理解临界区概念和互斥锁的作用。
+                        </p>
+
+                    </div>
+                    <div class="demo-card-footer">
+                        <a href="./15-multithread-critical-section.html" target="_blank" class="btn-demo-link">
+                            <span class="btn-icon">🚀</span>
+                            <span class="btn-text">打开临界区演示</span>
+                            <span class="btn-hint">（新窗口）</span>
+                        </a>
+                    </div>
+                </div>
+
+                <p class="conclusion">
+                    通过可视化演示理解临界区冲突和互斥锁的保护机制。
+                    synchronized是Java中最基础也最重要的同步工具。
+                </p>
+            </div>
+        </section>
+        
+        <section class="slide">
+            <div class="slide-content">
+                <h2>synchronized 关键字</h2>
+                <!-- 在刚才的试衣间场景中，门锁 = synchronized：进入临界区前先获取锁，其他线程只能等待 -->
+                <p style="margin-bottom: 20px; line-height: 1.8;">
+                    刚才的试衣间故事中，"门锁"是解决冲突的关键——它保证了同一时间只有一个人在试衣间里。在Java中，<code>synchronized</code>关键字就是这样的"门锁"。当一个线程进入临界区（试衣间）时，它会先获取锁，把门从里面锁上；其他线程看到门锁着，只能在外面等待。等第一个线程完成工作、释放锁后，等待的线程才能进入。
+                </p>
+                <div class="method-cards">
+                    <div class="method-card">
+                        <div class="method-card__info">
+                            <h3 class="method-card__title">问题：没有门锁的试衣间</h3>
+                            <p class="method-card__desc">试衣间没有锁，两个顾客同时进入，冲突发生了！</p>
+                            <ul class="method-card__points">
+                                <li>多个线程同时访问共享资源（试衣间）</li>
+                                <li>没有保护机制，数据可能出错</li>
+                                <li>运行结果不确定</li>
+                            </ul>
+                            <p class="method-card__note">🎭 比喻：小张刚进试衣间，小李也跟着进去了，两个人挤在里面，衣服掉了一地。</p>
+                        </div>
+                        <div class="method-card__code">
+                            <pre><code class="language-java">class Shop {
+    private boolean roomOccupied = false;
+    
+    public void tryOn(String customer) {
+        if (!roomOccupied) {
+            roomOccupied = true;
+            System.out.println(customer + " 进入试衣间");
+            try { Thread.sleep(1000); } catch (Exception e) {}
+            System.out.println(customer + " 离开试衣间");
+            roomOccupied = false;
+        }
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        Shop shop = new Shop();
+        new Thread(() -> shop.tryOn("顾客1")).start();
+        new Thread(() -> shop.tryOn("顾客2")).start();
+    }
+}
+
+// 可能的输出：两个顾客同时进入试衣间！</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="method-card">
+                        <div class="method-card__info">
+                            <h3 class="method-card__title">解决方案：在方法上加锁</h3>
+                            <p class="method-card__desc">🔐 给试衣间装上门锁，一次只能进一个人。</p>
+                            <ul class="method-card__points">
+                                <li>synchronized加在方法声明上</li>
+                                <li>同一对象的线程串行执行</li>
+                            </ul>
+                            <p class="method-card__note">🎭 比喻：给试衣间装上锁，顾客1进去后锁上门，顾客2只能在外面等待。</p>
+                        </div>
+                        <div class="method-card__code">
+                            <pre><code class="language-java">class Shop {
+    private boolean roomOccupied = false;
+    
+    public synchronized void tryOn(String customer) {
+        if (!roomOccupied) {
+            roomOccupied = true;
+            System.out.println(customer + " 进入试衣间");
+            try { Thread.sleep(1000); } catch (Exception e) {}
+            System.out.println(customer + " 离开试衣间");
+            roomOccupied = false;
+        }
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        Shop shop = new Shop();
+        new Thread(() -> shop.tryOn("顾客1")).start();
+        new Thread(() -> shop.tryOn("顾客2")).start();
+    }
+}
+
+// 输出：顾客1进入 → 顾客1离开 → 顾客2进入 → 顾客2离开</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="method-card">
+                        <div class="method-card__info">
+                            <h3 class="method-card__title">等效写法：给this加锁</h3>
+                            <p class="method-card__desc">🔑 synchronized(this) 代码块外的部分不受锁保护，只有代码块内的部分才同步。</p>
+                            <ul class="method-card__points">
+                                <li>synchronized(this) 修饰代码块</li>
+                                <li>只有代码块内的部分是同步的</li>
+                                <li>代码块外的代码不受锁保护</li>
+                            </ul>
+                            <p class="method-card__note">🎭 比喻：synchronized方法是"整个门都锁"，synchronized(this)是"只锁试衣间"，外面的走廊不锁。</p>
+                        </div>
+                        <div class="method-card__code">
+                            <pre><code class="language-java">class Shop {
+    private boolean roomOccupied = false;
+    
+    public void tryOn(String customer) {
+        System.out.println(customer + " 走进商店（不受锁保护）");
+        
+        synchronized (this) {
+            if (!roomOccupied) {
+                roomOccupied = true;
+                System.out.println(customer + " 进入试衣间（受锁保护）");
+                try { Thread.sleep(1000); } catch (Exception e) {}
+                System.out.println(customer + " 离开试衣间");
+                roomOccupied = false;
+            }
+        }
+        
+        System.out.println(customer + " 走出商店（不受锁保护）");
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        Shop shop = new Shop();
+        new Thread(() -> shop.tryOn("顾客1")).start();
+        new Thread(() -> shop.tryOn("顾客2")).start();
+    }
+}
+
+// 输出示例：
+// 顾客1 走进商店
+// 顾客2 走进商店  ← 注意：两个顾客可以同时"走进商店"！
+// 顾客1 进入试衣间
+// 顾客1 离开试衣间
+// 顾客2 进入试衣间
+// 顾客2 离开试衣间
+// 顾客1 走出商店
+// 顾客2 走出商店</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>死锁与线程协作</h2>
+                <p>我们已经学会使用 <code>synchronized</code> 来保证操作的互斥性。</p>
+                <p>但仅有互斥是不够的。如果线程之间不懂得<strong>协作</strong>（例如：条件不满足时主动释放锁并等待），就会导致一方占着锁空转，另一方永远无法进入的“僵局”。</p>
+                <div class="highlight-box" style="margin-bottom: 15px; background: #e3f2fd; border-left-color: #2196f3;">
+                    <strong>🏪 真实场景：汉堡店（生产者消费者问题）</strong>
+                    <p style="margin-top: 8px;">想象一家只能放 <strong>5个汉堡</strong> 的出餐口：</p>
+                    <ul style="margin-top: 5px; margin-bottom: 8px;">
+                        <li>👨‍🍳 <strong>厨师（生产者）</strong>：做太快出餐口满了，若不懂“休息”，就会拿着汉堡死盯出餐口（忙等待）。</li>
+                        <li>💁 <strong>服务员（消费者）</strong>：卖太快出餐口空了，若不懂“休息”，就会每秒问100次“好了没”（忙等待）。</li>
+                    </ul>
+
+                    <div style="background: #ffebee; border: 1px solid #ffcdd2; border-radius: 4px; padding: 8px; margin: 10px 0;">
+                        <strong style="color: #c62828;">❌ 错误尝试</strong>
+                        <pre style="margin: 5px 0; background: #fff;"><code class="language-java" style="font-size: 0.85em;">import java.util.LinkedList;
+
+// 一个必定死锁的队列实现
+class DeadlockQueue&lt;T&gt; {
+    // 共享资源：LinkedList q (非线程安全)
+    private final LinkedList&lt;T&gt; q = new LinkedList&lt;&gt;();
+    private final int cap;
+
+    public DeadlockQueue(int cap) { this.cap = cap; }
+
+    // 厨师线程：生产汉堡
+    public synchronized void put(T x) {
+        // 死锁陷阱：
+        // 厨师发现满了，进入 while 循环死等（或 sleep）。
+        // 但他没有释放锁！服务员想拿菜，但拿不到锁，进不来。
+        // 结果：厨师抱着满盘子不撒手，服务员在门外干着急。
+        while (q.size() == cap) {
+             // Thread.sleep(100); // 即使睡了，锁还在手里！
+        } 
+        q.add(x);
+    }
+
+    // 服务员线程：取走汉堡
+    public synchronized T take() {
+        // 同样的死锁：
+        // 服务员发现空了，死等。
+        // 但他不释放锁！厨师想放菜，但拿不到锁，进不来。
+        while (q.isEmpty()) {
+            // 空转中...
+        }
+        return q.removeFirst();
+    }
+    
+    public static void main(String[] args) {
+        DeadlockQueue&lt;Integer&gt; dq = new DeadlockQueue&lt;&gt;(1); // 容量为1
+        new Thread(() -&gt; dq.put(1)).start(); // 厨师放入1个汉堡
+        new Thread(() -&gt; dq.put(2)).start(); // 厨师想放第2个 -&gt; 拿锁 -&gt; 满 -&gt; 死循环占锁
+        new Thread(() -&gt; dq.take()).start(); // 服务员想取 -&gt; 拿不到锁 -&gt; 饿死
+    }
+}</code></pre>
+                        <p style="margin: 0; font-size: 0.9em; color: #b71c1c;"><strong>后果：</strong> 线程持有锁进入死循环，导致CPU 100% 或程序假死（Deadlock）。</p>
+                    </div>
+
+                    <p style="margin-bottom: 0;"><strong>✅ 理想状态（wait/notify）：</strong> 
+                        出餐口满了，厨师<strong>释放锁并睡觉</strong>（wait）；服务员拿走汉堡后<strong>摇铃</strong>（notify）叫醒厨师。
+                        <br>这就是 <strong>wait/notify</strong> 的核心价值：<strong>原子性地释放锁 + 挂起线程</strong>。</p>
+                </div>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <div class="highlight-box">
+                            <strong>🤔 困境：如何优雅地“等”？</strong>
+                            <p style="font-size: 0.9em; margin-bottom: 8px;">如果只是简单的 <code>while</code> 循环检查：</p>
+                            <ul>
+                                <li>❌ <strong>忙等待 (Busy Wait)</strong><br>
+                                    <code>while(full) {}</code> 导致 CPU 100% 空转。
+                                </li>
+                                <li>❌ <strong>持有锁等待</strong><br>
+                                    如果在 <code>synchronized</code> 块中死循环，锁永远不释放，对方永远进不来（死锁）。
+                                </li>
+                            </ul>
+                            <hr style="margin: 8px 0; border: 0; border-top: 1px dashed #ccc;">
+                            <strong>🔑 破局：wait/notify 机制</strong>
+                            <p>我们需要一套<strong>“配合机制”</strong>：</p>
+                            <ul>
+                                <li><strong>wait()</strong>: 释放锁并睡觉（不占CPU，让出锁给别人）。</li>
+                                <li><strong>notify()</strong>: 叫醒睡着的人（通知条件已满足）。</li>
+                            </ul>
+                        </div>
+                        <p><strong>机制原理：</strong><br>
+                        1. <strong>wait()</strong>: 释放锁，进入等待室 (WaitSet)，不占 CPU。<br>
+                        2. <strong>notify()</strong>: 随机唤醒等待室里的<strong>一个</strong>线程。<br>
+                        3. <strong>notifyAll()</strong>: 唤醒等待室里的<strong>所有</strong>线程（推荐，防永久等待）。</p>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">import java.util.LinkedList;
+
+class BoundedQueue&lt;T&gt; {
+    private final LinkedList&lt;T&gt; q = new LinkedList&lt;&gt;();
+    private final int cap;
+    public BoundedQueue(int cap) { this.cap = cap; }
+    
+    public synchronized void put(T x) throws InterruptedException {
+        while (q.size() == cap) wait(); // 满了就睡，释放锁
+        q.add(x);
+        // 唤醒所有人（包括厨师和顾客）。
+        // 为什么不用 notify()？因为可能错误地唤醒了另一个“厨师”，
+        // 而我们需要唤醒“顾客”。notifyAll() 虽然吵醒所有人，但最安全。
+        notifyAll(); 
+    }
+    
+    public synchronized T take() throws InterruptedException {
+        while (q.isEmpty()) wait(); // 空了就睡，释放锁
+        T x = q.removeFirst();
+        notifyAll(); // 唤醒所有人
+        return x;
+    }
+
+    public static void main(String[] args) {
+        BoundedQueue&lt;Integer&gt; queue = new BoundedQueue&lt;&gt;(1);
+        // 生产者线程
+        new Thread(() -&gt; {
+            try {
+                for (int i = 0; i &lt; 100; i++) {
+                    queue.put(i);
+                    System.out.println("做好了: " + i);
+                }
+            } catch (InterruptedException e) {}
+        }).start();
+
+        // 消费者线程
+        new Thread(() -&gt; {
+            try {
+                for (int i = 0; i &lt; 100; i++) {
+                    Integer x = queue.take();
+                    System.out.println("吃掉了: " + x);
+                }
+            } catch (InterruptedException e) {}
+        }).start();
+    }
+}</code></pre>
+                        <p class="conclusion">配合 synchronized 使用，完美解决“忙等待”和“死锁”风险。</p>
+
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        
+        <!-- 线程生命周期与状态 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>线程生命周期与状态详解</h2>
+                
+                <!-- 上半部分：状态清单 -->
+                <div class="text-block" style="margin-bottom: 20px;">
+                    <h3>🌈 Java 线程的 6 种状态</h3>
+                    <div class="columns-3">
+                        <div class="highlight-box">
+                            <strong>1. 初始与终结</strong>
+                            <ul style="margin-top:5px; font-size:0.9em">
+                                <li>� <strong>NEW</strong><br><span class="sub-text">新建未启动</span></li>
+                                <li>🏁 <strong>TERMINATED</strong><br><span class="sub-text">任务执行结束</span></li>
+                            </ul>
+                        </div>
+                        <div class="highlight-box">
+                            <strong>2. 运行与就绪</strong>
+                            <ul style="margin-top:5px; font-size:0.9em">
+                                <li>� <strong>RUNNABLE</strong><br><span class="sub-text">正在运行 或 等待 CPU 时间片</span></li>
+                            </ul>
+                        </div>
+                        <div class="highlight-box">
+                            <strong>3. 等待与阻塞 (关键!)</strong>
+                            <ul style="margin-top:5px; font-size:0.9em">
+                                <li>💤 <strong>TIMED_WAITING</strong>：<code>sleep(t)</code> (午休)</li>
+                                <li>⏳ <strong>WAITING</strong>：<code>wait()</code> (等通知)</li>
+                                <li>⛔ <strong>BLOCKED</strong>：<code>synchronized</code> (等锁)</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 状态转化详解 -->
+                <div class="text-block" style="margin-bottom: 20px;">
+                    <h3>🔄 状态转化详解</h3>
+                    <p style="line-height:1.6">
+                        <strong>NEW → RUNNABLE</strong>：调用 <code>start()</code> 方法，线程进入就绪队列等待CPU调度。<br><br>
+                        <strong>RUNNABLE → BLOCKED</strong>：尝试获取 <code>synchronized</code> 锁失败，进入阻塞队列等待锁释放。<br><br>
+                        <strong>RUNNABLE → TIMED_WAITING</strong>：调用 <code>sleep(ms)</code>、<code>wait(timeout)</code>、<code>join(timeout)</code> 等带超时的方法，在指定时间内挂起。<br><br>
+                        <strong>RUNNABLE → WAITING</strong>：调用 <code>wait()</code>、<code>join()</code>、<code>LockSupport.park()</code> 等无超时的方法，无限期等待被唤醒。<br><br>
+                        <strong>BLOCKED → RUNNABLE</strong>：成功获取到 <code>synchronized</code> 锁，重新进入就绪队列。<br><br>
+                        <strong>TIMED_WAITING / WAITING → RUNNABLE</strong>：超时到达、被 <code>notify()/notifyAll()</code> 唤醒、或被 <code>interrupt()</code> 中断。<br><br>
+                        <strong>RUNNABLE → TERMINATED</strong>：<code>run()</code> 方法正常执行结束或因未捕获异常退出。
+                    </p>
+                </div>
+
+                <!-- 下半部分：代码实战 -->
+                <div class="code-block">
+                    <h3>💻 实战：捕捉状态变化</h3>
+                    <pre><code class="language-java" style="font-size: 0.85em;">public class ThreadStateDemo {
+    public static void main(String[] args) throws Exception {
+        Object lock = new Object();
+        Thread t = new Thread(() -> {
+            // 2. 运行中 -> 睡 200ms (TIMED_WAITING)
+            try { Thread.sleep(200); } catch (Exception e) {}
+            // 4. 醒来抢锁失败 -> 阻塞 (BLOCKED)
+            synchronized (lock) {} 
+        });
+
+        System.out.println("1. " + t.getState()); // NEW
+        t.start();
+        
+        // 主线程抢先拿锁，困住子线程
+        synchronized (lock) {
+            Thread.sleep(100); // 等 t 进入 sleep
+            System.out.println("2. " + t.getState()); // TIMED_WAITING
+            Thread.sleep(200); // 等 t 醒来抢锁
+            System.out.println("3. " + t.getState()); // BLOCKED
+        }
+        
+        t.join(); // 等 t 结束
+        System.out.println("4. " + t.getState()); // TERMINATED
+    }
+}</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- 演示链接：线程状态机 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>交互式演示：线程状态机</h2>
+
+                <div class="demo-link-card">
+                    <div class="demo-card-header">
+                        <h3>🎬 线程状态转换演示</h3>
+                    </div>
+                    <div class="demo-card-body">
+                        <p class="demo-description">
+                            探索Java线程的6种状态以及它们之间的转换关系。
+                        </p>
+                        <ul class="demo-highlights">
+                            <li>✨ 交互式状态转换图，触发各种状态变化</li>
+                            <li>✨ 观察BLOCKED、WAITING、TIMED_WAITING的区别</li>
+                            <li>✨ 理解锁等待和wait()等待的不同机制</li>
+                        </ul>
+                    </div>
+                    <div class="demo-card-footer">
+                        <a href="./15-multithread-state.html" target="_blank" class="btn-demo-link">
+                            <span class="btn-icon">🚀</span>
+                            <span class="btn-text">打开线程状态机演示</span>
+                            <span class="btn-hint">（新窗口）</span>
+                        </a>
+                    </div>
+                </div>
+
+                <p class="conclusion">
+                    通过交互式状态机深入理解线程生命周期。
+                    掌握线程状态转换是调试并发问题的关键。
+                </p>
+            </div>
+        </section>
+
+
+        <!-- 1. 问题引入：可见性陷阱 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>问题：为什么线程停不下来？</h2>
+                <div class="media-block">
+                                        <div class="media-block__visual">
+                        <pre><code class="language-java">public class VisibilityDemo {
+    // ❌ 缺少 volatile，存在可见性问题
+    static boolean running = true;
+
+    public static void main(String[] args) throws Exception {
+        Thread t = new Thread(() -> {
+            long i = 0;
+            // 子线程可能永远看不到 running 变为 false
+            while (running) { 
+                i++; 
+            }
+            System.out.println("Stopped: " + i);
+        });
+        t.start();
+        
+        Thread.sleep(100);
+        running = false; // 主线程修改状态
+        System.out.println("Set running = false");
+    }
+}</code></pre>
+                        
+                    </div>
+
+                    <div class="media-block__text">
+                        <h3>思考：</h3>
+                        <p>主线程将 <code>running</code> 设为 false 后，子线程 t 会立刻停止吗？</p>
+                        <ul>
+                            <li><strong>现象：</strong> 程序可能永远陷入死循环，无法退出。</li>
+                            <li><strong>原因：可见性（Visibility）问题</strong>
+                                <ul>
+                                    <li><strong>CPU 缓存（硬件层）：</strong> 线程运行在不同的 CPU 核心，子线程将变量缓存在本地的高速缓存（L1/L2）中，未及时从主内存同步最新值。</li>
+                                    <li><strong>JIT 编译器优化（软件层）：</strong> 为了性能，JVM 可能会将循环条件判定“提升”到循环外，导致不再重复读取内存。</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- 1.5 原理深究：JMM 与 JIT -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>幕后黑手：JMM 与 JIT 优化</h2>
+                <div class="columns-2">
+                    <div class="column">
+                        <h3>1. Java 内存模型 (JMM)</h3>
+                        <p>JMM 规定所有变量存在<strong>主内存</strong>，每个线程有自己的<strong>工作内存</strong>。</p>
+                        <div class="step-list">
+                            <ol>
+                                <li><strong>初始状态：</strong> 主内存中 <code>running = true</code>。</li>
+                                <li><strong>线程 A（主线程）：</strong> 修改 <code>running = false</code>，但该修改可能仅存在于 A 的工作内存中，<strong>未立即同步回主内存</strong>。</li>
+                                <li><strong>线程 B（子线程）：</strong> 读取 <code>running</code> 时，直接使用了自己工作内存中的缓存副本（旧值 <code>true</code>）。</li>
+                                <li><strong>结果：</strong> 线程 B 无法感知线程 A 的修改，继续死循环。</li>
+                            </ol>
+                        </div>
+                        <p class="small">线程 B 读取的是自己工作内存中的“旧副本”，不知道线程 A 已经修改了主内存。</p>
+                    </div>
+                    <div class="column">
+                        <h3>2. JIT 编译器激进优化</h3>
+                        <p>为了提升性能，JIT 编译器可能会重组指令（Hoisting）：</p>
+                        <div class="code-compare">
+                            <div>
+                                <h4>源码</h4>
+                                <pre><code class="language-java">while (running) { 
+    i++; 
+}</code></pre>
+                            </div>
+                            <div class="arrow">👉</div>
+                            <div>
+                                <h4>JIT 优化后</h4>
+                                <pre><code class="language-java">if (running) {
+    while (true) {
+        i++; 
+    }
+}</code></pre>
+                            </div>
+                        </div>
+                        <p class="small">既然循环体内没有修改 <code>running</code>，编译器判定不用每次都去读内存，直接变成死循环！</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. 解决方案：volatile -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>volatile：保证可见性与有序性</h2>
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>✅ 解决方案</h3>
+                        <ul>
+                            <li><strong>可见性：</strong> 强制线程从主内存读取变量，修改后立即刷新回主内存。</li>
+                            <li><strong>有序性：</strong> 禁止指令重排序（建立内存屏障）。</li>
+                            <li><strong>⚠️ 局限性：</strong> 仅保证读/写原子性，<strong>不保证复合操作（如 i++）的原子性</strong>。</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <pre><code class="language-java">public class VolatileSolution {
+    // ✅ 加上 volatile，保证可见性
+    static volatile boolean running = true;
+
+    public static void main(String[] args) throws Exception {
+        Thread t = new Thread(() -> {
+            while (running) { 
+                // 此时每次读取都会去主内存获取最新值
+            }
+            System.out.println("Thread stopped.");
+        });
+        t.start();
+        
+        Thread.sleep(100);
+        running = false; // 修改立刻对子线程可见
+    }
+}</code></pre>
+                        <p class="conclusion">适用场景：状态标志（Flag）、单例模式的双重检查锁定（DCL）。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ThreadLocal：问题与方案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>ThreadLocal：线程独享变量</h2>
+                
+                <!-- 上半部分：原理与 API -->
+                <div class="text-block">
+                    <h3>� 场景：SimpleDateFormat 线程不安全</h3>
+                    <p>全局共享会报错，每次 New 太浪费，加锁又太慢。我们需要<strong>既安全又高效</strong>的方案。</p>
+                    
+                    <div class="highlight-box">
+                        <h4>🚀 核心 API：构造与初始化</h4>
+                        <ul>
+                            <li><strong>✅ <code>ThreadLocal.withInitial(Supplier)</code></strong>：(Java 8+) 推荐方式！提供一个 Supplier 也就是“工厂”，<strong>延迟加载</strong>，只有当线程第一次调用 <code>get()</code> 时才会执行该逻辑创建对象。</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- 下半部分：代码示例 -->
+                <div class="code-block">
+                    <pre><code class="language-java">public class ThreadLocalDemo {
+    // ✅ 推荐用法：使用 withInitial 定义初始化工厂（懒加载）
+    // 只有当线程第一次调用 get() 时，才会执行 lambda 创建 SimpleDateFormat
+    static final ThreadLocal&lt;SimpleDateFormat&gt; fmt = 
+        ThreadLocal.withInitial(() -> new SimpleDateFormat("yyyy-MM-dd"));
+
+    public static void main(String[] args) {
+        Runnable task = () -> {
+            try {
+                // get() 内部逻辑：检查当前线程是否有副本 ? 返回副本 : 调用 initialValue() 创建并绑定
+                String date = fmt.get().format(new Date());
+                System.out.println(date);
+            } finally {
+                fmt.remove(); // ⚠️ 务必清理，防止内存泄漏（尤其是线程池场景）
+            }
+        };
+        new Thread(task).start();
+    }
+}</code></pre>
+                </div>
+            </div>
+        </section>
+
+
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* 下一步：进入 JUC 高并发编程</h2>
+                <p>掌握了基础多线程后，我们发现在实际开发中仍然面临许多挑战：</p>
+
+                <div class="media-block">
+                    <div class="media-block__text">
+                        <h3>🤔 基础多线程的局限</h3>
+                        <ul>
+                            <li><strong>线程管理复杂：</strong>手动创建销毁线程，资源管理困难</li>
+                            <li><strong>并发控制有限：</strong>synchronized 性能有限，功能单一</li>
+                            <li><strong>工具缺乏：</strong>缺乏丰富的并发工具和容器</li>
+                            <li><strong>异步编程困难：</strong>Future 使用繁琐，无法链式调用</li>
+                            <li><strong>性能优化难：</strong>缺乏高性能的无锁数据结构</li>
+                        </ul>
+                    </div>
+                    <div class="media-block__visual">
+                        <h3>🚀 JUC 带来的突破</h3>
+                        <ul>
+                            <li><strong>线程池框架：</strong>ThreadPoolExecutor 自动管理线程</li>
+                            <li><strong>高级锁机制：</strong>ReentrantLock、ReadWriteLock 提供更灵活控制</li>
+                            <li><strong>丰富同步工具：</strong>CountDownLatch、CyclicBarrier、Semaphore</li>
+                            <li><strong>高性能并发集合：</strong>ConcurrentHashMap、BlockingQueue</li>
+                            <li><strong>原子操作类：</strong>AtomicInteger、AtomicReference 实现无锁编程</li>
+                            <li><strong>异步编程革命：</strong>CompletableFuture 支持链式调用</li>
+                        </ul>
+                    </div>
+                </div>
+
+
+                <p class="conclusion">从基础多线程到JUC，是从"手工作坊"到"工业化生产"的飞跃。JUC让并发编程变得简单、高效、可靠！</p>
+            </div>
+        </section>
+
+
+
+        <div class="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div class="controls">
+            <button id="prevBtn">上一页</button>
+            <span id="slide-counter">1 / X</span>
+            <button id="nextBtn">下一页</button>
+        </div>
+    </main>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/ppt.js"></script>
+    <script src="./js/nav.js"></script>
+    <script src="./js/multithread.js"></script>
+    
+    <script src="js/chat-with-ai.js"></script>
+</body>
+
+</html>
