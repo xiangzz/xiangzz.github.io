@@ -2,24 +2,50 @@ document.addEventListener('DOMContentLoaded', () => {
     const terminal = document.getElementById('terminal-animation');
     if (!terminal) return;
 
+    /* 模拟真实 CMD 操作序列 */
     const sequences = [
+        { text: 'cd Desktop', type: 'command' },
+        { text: '', type: 'output' },
+
+        { text: 'mkdir myproject', type: 'command' },
+        { text: '', type: 'output' },
+
+        { text: 'cd myproject', type: 'command' },
+        { text: '', type: 'output' },
+
         { text: 'dir', type: 'command' },
-        { text: '2025/08/06  16:57    &lt;DIR&gt;   .cache', type: 'output' },
-        { text: 'echo "Hello World"', type: 'command' },
-        { text: '"Hello World"', type: 'output' },
+        { text: ' 驱动器 C 中的卷是 Windows\n 卷的序列号是 XXXX-XXXX\n\n C:\\Users\\xzz\\Desktop\\myproject 的目录\n\n2025/08/06  16:57    <DIR>          .\n2025/08/06  16:57    <DIR>          ..\n               0 个文件              0 字节\n               2 个目录  120,384,520,192 可用字节', type: 'output' },
+
+        { text: 'echo Hello, CMD! > hello.txt', type: 'command' },
+        { text: '', type: 'output' },
+
+        { text: 'dir', type: 'command' },
+        { text: ' 驱动器 C 中的卷是 Windows\n\n C:\\Users\\xzz\\Desktop\\myproject 的目录\n\n2025/08/06  16:58                14 hello.txt\n               1 个文件             14 字节\n               2 个目录  120,384,520,192 可用字节', type: 'output' },
+
+        { text: 'type hello.txt', type: 'command' },
+        { text: 'Hello, CMD!', type: 'output' },
+
+        { text: 'copy hello.txt backup.txt', type: 'command' },
+        { text: '已复制         1 个文件。', type: 'output' },
+
         { text: 'cls', type: 'command', clear: true },
-        { text: 'echo "命令行也可以很有趣!"', type: 'command' },
-        { text: '"命令行也可以很有趣!"', type: 'output' }
+
+        { text: 'echo Welcome to Java OOP!', type: 'command' },
+        { text: 'Welcome to Java OOP!', type: 'output' },
     ];
 
     let sequenceIndex = 0;
+    let isRunning = false;
 
-    function typewriter(element, text, callback, speed = 50) {
+    /* 打字机效果 */
+    function typewriter(element, text, callback, speed) {
+        speed = speed || 70;
         let i = 0;
-        element.innerHTML = ''; // Clear previous content
+        element.innerHTML = '';
+
         const cursor = document.createElement('span');
         cursor.className = 'cursor';
-        cursor.innerHTML = '&#9646;';
+        cursor.innerHTML = '\u2588';
         element.appendChild(cursor);
 
         function type() {
@@ -34,16 +60,29 @@ document.addEventListener('DOMContentLoaded', () => {
         type();
     }
 
+    /* 清除终端内所有残留光标 */
+    function clearAllCursors() {
+        var cursors = terminal.querySelectorAll('.cursor');
+        for (var i = 0; i < cursors.length; i++) {
+            cursors[i].remove();
+        }
+    }
+
+    /* 自动滚动到底部 */
+    function scrollToBottom() {
+        terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    /* 运行单步序列 */
     function runSequence() {
         if (sequenceIndex >= sequences.length) {
-            // Animation finished, maybe loop or hide cursor
-            const lastElement = terminal.lastChild;
-            if (lastElement && lastElement.querySelector) {
-                const cursor = lastElement.querySelector('.cursor');
-                if (cursor) {
-                    cursor.style.display = 'none'; // Hide cursor at the end
-                }
-            }
+            clearAllCursors();
+
+            setTimeout(function () {
+                terminal.innerHTML = '';
+                sequenceIndex = 0;
+                setTimeout(runSequence, 600);
+            }, 4000);
             return;
         }
 
@@ -53,57 +92,72 @@ document.addEventListener('DOMContentLoaded', () => {
             terminal.innerHTML = '';
         }
 
-        const line = document.createElement('div');
-        line.className = current.type; // 'command' or 'output'
+        var line = document.createElement('div');
+        line.className = current.type;
 
         if (current.type === 'command') {
-            const prompt = document.createElement('span');
+            clearAllCursors();
+
+            var prompt = document.createElement('span');
             prompt.className = 'prompt';
             prompt.textContent = 'C:\\Users\\xzz> ';
             line.appendChild(prompt);
 
-            const commandText = document.createElement('span');
+            var commandText = document.createElement('span');
             line.appendChild(commandText);
             terminal.appendChild(line);
-            
-            typewriter(commandText, current.text, () => {
-                sequenceIndex++;
-                setTimeout(runSequence, 500); // Wait after command
-            }, 100);
+            scrollToBottom();
 
-        } else { // output
-            line.innerHTML = current.text.replace(/\n/g, '<br>');
-            terminal.appendChild(line);
+            typewriter(commandText, current.text, function () {
+                sequenceIndex++;
+                setTimeout(runSequence, 400);
+            }, 55);
+
+        } else {
+            if (current.text) {
+                /* 使用纯文本渲染，避免 <DIR> 这类内容被当作 HTML 标签解析 */
+                line.textContent = current.text;
+                terminal.appendChild(line);
+                scrollToBottom();
+            }
             sequenceIndex++;
-            setTimeout(runSequence, 200); // Wait after output
+            setTimeout(runSequence, 150);
         }
     }
-    
-    // Use a MutationObserver to start the animation only when the slide becomes active.
-    const observer = new MutationObserver((mutationsList, observer) => {
-        for(const mutation of mutationsList) {
+
+    /* 页面翻回时重新触发动画 */
+    function startAnimation() {
+        if (isRunning) return;
+        isRunning = true;
+        terminal.innerHTML = '';
+        sequenceIndex = 0;
+        setTimeout(runSequence, 400);
+    }
+
+    function stopAnimation() {
+        isRunning = false;
+    }
+
+    /* 监听 slide 切换，进入时启动动画，离开时停止 */
+    var observer = new MutationObserver(function (mutationsList) {
+        for (var i = 0; i < mutationsList.length; i++) {
+            var mutation = mutationsList[i];
             if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-                const targetElement = mutation.target;
-                if (targetElement.classList.contains('active') && targetElement.classList.contains('hacker-terminal')) {
-                    // Only start if it's not already running
-                    if (!terminal.hasAttribute('data-animation-started')) {
-                        terminal.setAttribute('data-animation-started', 'true');
-                        setTimeout(runSequence, 500); // Initial delay
-                    }
+                var target = mutation.target;
+                if (target.classList.contains('active') && target.classList.contains('hacker-terminal')) {
+                    startAnimation();
+                } else if (target.classList.contains('hacker-terminal')) {
+                    stopAnimation();
                 }
             }
         }
     });
 
-    const titleSlide = document.querySelector('.slide.title-slide.hacker-terminal');
+    var titleSlide = document.querySelector('.slide.title-slide.hacker-terminal');
     if (titleSlide) {
         observer.observe(titleSlide, { attributes: true });
-        // Also check if it's active on load
         if (titleSlide.classList.contains('active')) {
-            if (!terminal.hasAttribute('data-animation-started')) {
-                terminal.setAttribute('data-animation-started', 'true');
-                setTimeout(runSequence, 500); // Initial delay
-            }
+            startAnimation();
         }
     }
 });

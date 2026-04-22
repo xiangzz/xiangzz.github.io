@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner 换行符陷阱动画演示</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="icon" href="./icons/logo.png" type="image/png">
+    <style>
+        :root {
+            --bg: #f9f9f7;
+            --panel: #ffffff;
+            --panel-soft: #f6f1ea;
+            --text: #333333;
+            --muted: #6b7280;
+            --accent: #8a4a12;
+            --danger: #b91c1c;
+            --ok: #059669;
+            --token: #f7efe5;
+            --token-active: #fde68a;
+            --token-consumed: #ebe4db;
+            --line-border: #e5e7eb;
+            --warm-shadow: 0 10px 24px rgba(74, 52, 37, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Noto Sans SC", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", sans-serif;
+            background: radial-gradient(1200px 700px at 85% -10%, #f3e9dc 0%, transparent 48%),
+                        radial-gradient(1000px 600px at -10% 120%, #f8efe6 0%, transparent 45%),
+                        var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            width: min(1100px, 92vw);
+            margin: 32px auto;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, #fffdf8 0%, #f9f5ee 100%);
+            border: 1px solid var(--line-border);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: var(--warm-shadow);
+        }
+
+        h1 {
+            margin: 0 0 8px 0;
+            font-size: clamp(24px, 3.2vw, 34px);
+        }
+
+        .subtitle {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        .hero .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+            position: static;
+            right: auto;
+            bottom: auto;
+        }
+
+        button {
+            border: 1px solid #d6c5b1;
+            background: #ffffff;
+            color: #4b5563;
+            border-radius: 10px;
+            padding: 10px 14px;
+            cursor: pointer;
+            transition: transform .16s ease, background .2s ease, border-color .2s ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            background: #fff8ee;
+            border-color: #c89d6f;
+        }
+
+        button:disabled {
+            opacity: .55;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #d06519 0%, #e5843a 100%);
+            border-color: #d89a67;
+            color: #fff;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #8a4a12 0%, #a95e1a 100%);
+            border-color: #bf8a5a;
+            color: #fff;
+        }
+
+        .grid {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 16px;
+        }
+
+        .code-panel {
+            margin-top: 20px;
+            background: var(--panel);
+            border: 1px solid var(--line-border);
+            border-radius: 14px;
+            padding: 16px;
+            box-shadow: var(--warm-shadow);
+        }
+
+        .code-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .code-header h2 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .code-status {
+            color: #8a4a12;
+            font-size: 13px;
+        }
+
+        .code-runner {
+            background: #fcfbf8;
+            border: 1px solid var(--line-border);
+            border-radius: 12px;
+            padding: 10px;
+            font-family: Consolas, "Cascadia Code", monospace;
+            font-size: 14px;
+            overflow-x: auto;
+        }
+
+        .code-line {
+            display: flex;
+            gap: 10px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            transition: all .24s ease;
+            white-space: pre;
+        }
+
+        .line-no {
+            width: 24px;
+            color: #9ca3af;
+            text-align: right;
+            user-select: none;
+        }
+
+        .line-text {
+            color: #374151;
+        }
+
+        .code-line.pending {
+            background: transparent;
+        }
+
+        .code-line.current {
+            background: rgba(208, 101, 25, .12);
+            outline: 1px solid rgba(208, 101, 25, .35);
+        }
+
+        .code-line.executed .line-text {
+            color: #9ca3af;
+            text-decoration: line-through;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line-border);
+            border-radius: 14px;
+            padding: 16px;
+            box-shadow: var(--warm-shadow);
+        }
+
+        .panel h2 {
+            font-size: 18px;
+            margin: 0 0 8px 0;
+        }
+
+        .buffer {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+            min-height: 76px;
+            margin-top: 10px;
+        }
+
+        .token {
+            background: var(--token);
+            border: 1px solid #e4d3c1;
+            color: #6b4a2c;
+            border-radius: 10px;
+            padding: 8px 12px;
+            min-width: 60px;
+            text-align: center;
+            position: relative;
+            transition: all .25s ease;
+        }
+
+        .token.active {
+            background: var(--token-active);
+            color: #5a3d1f;
+            border-color: #f0c882;
+            transform: scale(1.04);
+        }
+
+        .token.consumed {
+            background: var(--token-consumed);
+            border-color: #d8cfc5;
+            color: #9ca3af;
+            text-decoration: line-through;
+            opacity: .7;
+        }
+
+        .token.consumed-now {
+            animation: tokenPop .48s ease;
+        }
+
+        .token.newline {
+            font-family: Consolas, monospace;
+        }
+
+        .state-box {
+            margin-top: 12px;
+            background: var(--panel-soft);
+            border: 1px solid #e8ddcf;
+            border-radius: 10px;
+            padding: 10px 12px;
+            color: #4b5563;
+            font-family: Consolas, "Cascadia Code", monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        .step-title {
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .explain {
+            color: #4b5563;
+            margin: 0;
+        }
+
+        .output {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px dashed #d6b89a;
+            background: #fffaf3;
+            font-family: Consolas, "Cascadia Code", monospace;
+            white-space: pre-wrap;
+            min-height: 66px;
+        }
+
+        .badge {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 8px;
+            font-size: 12px;
+            border-radius: 999px;
+            border: 1px solid;
+        }
+
+        .mode-bad .badge {
+            color: #991b1b;
+            border-color: #fca5a5;
+            background: #fef2f2;
+        }
+
+        .mode-good .badge {
+            color: #065f46;
+            border-color: #86efac;
+            background: #f0fdf4;
+        }
+
+        .tip {
+            margin-top: 16px;
+            border-left: 4px solid var(--accent);
+            padding: 10px 12px;
+            background: #f6f1ea;
+            border-radius: 8px;
+            color: #4b5563;
+        }
+
+        .code {
+            margin-top: 12px;
+            background: #101827;
+            border: 1px solid #2a3a5f;
+            border-radius: 10px;
+            padding: 12px;
+            color: #dce9ff;
+            font-family: Consolas, "Cascadia Code", monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+        }
+
+        .footer {
+            margin-top: 14px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .flash {
+            animation: panelFlash .45s ease;
+        }
+
+        @keyframes tokenPop {
+            0% { transform: scale(1); }
+            40% { transform: scale(1.12); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes panelFlash {
+            0% { box-shadow: 0 0 0 rgba(69, 183, 255, 0); }
+            45% { box-shadow: 0 0 0 4px rgba(208, 101, 25, 0.22); }
+            100% { box-shadow: 0 0 0 rgba(69, 183, 255, 0); }
+        }
+
+        @media (max-width: 900px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <section class="hero">
+            <h1>Scanner “换行符被吃掉”动画演示</h1>
+            <p class="subtitle">通过输入缓冲区可视化，理解为什么 <code>nextInt()</code> 后直接 <code>nextLine()</code> 会读到空字符串。</p>
+            <div class="controls">
+                <button id="modeToggle" class="btn-danger">切换到修复流程</button>
+                <button id="stepBtn" class="btn-primary">下一步</button>
+                <button id="autoBtn">自动播放</button>
+                <button id="resetBtn">重置</button>
+            </div>
+        </section>
+
+        <section class="code-panel">
+            <div class="code-header">
+                <h2>待执行代码（点击“下一步”推进）</h2>
+                <span class="code-status" id="codeStatus"></span>
+            </div>
+            <div class="code-runner" id="codeRunner"></div>
+        </section>
+
+        <section class="grid">
+            <article class="panel" id="modePanel">
+                <h2>输入缓冲区 <span class="badge" id="modeBadge">错误流程</span></h2>
+                <p class="subtitle">用户输入：<code>25↵张三↵</code>，即缓冲区大致为 <code>"25\n张三\n"</code>。</p>
+                <div class="buffer" id="bufferView"></div>
+                <div class="state-box" id="stateBox"></div>
+                <div class="tip" id="tipBox"></div>
+            </article>
+
+            <article class="panel">
+                <h2>当前步骤</h2>
+                <div class="step-title" id="stepTitle"></div>
+                <p class="explain" id="stepExplain"></p>
+                <div class="output" id="outputBox"></div>
+                <p class="footer">先演示“错误流程”，再点“切换到修复流程”，对比明显。</p>
+            </article>
+        </section>
+    </div>
+
+    <script>
+        // =========================
+        // 数据模型：分别定义错误流程与修复流程的步骤
+        // =========================
+        const sequences = {
+            bad: {
+                label: "错误流程",
+                modeClass: "mode-bad",
+                toggleText: "切换到修复流程",
+                codeLines: [
+                    "Scanner scanner = new Scanner(System.in);",
+                    "int age = scanner.nextInt();",
+                    "String name = scanner.nextLine();",
+                    "System.out.println(\"年龄: \" + age + \", 姓名: '\" + name + \"'\");"
+                ],
+                steps: [
+                    {
+                        title: "初始化 Scanner",
+                        explain: "Scanner 连接到标准输入流，等待读取。",
+                        consume: [],
+                        active: 0,
+                        executed: [],
+                        currentLine: 0,
+                        output: "尚未读取任何内容",
+                        tip: "此时缓冲区里有 25、换行、张三、换行。"
+                    },
+                    {
+                        title: "执行了：Scanner scanner = new Scanner(System.in);",
+                        explain: "对象创建完成，下一步将读取年龄。",
+                        consume: [],
+                        active: 0,
+                        executed: [0],
+                        currentLine: 1,
+                        output: "Scanner 已就绪",
+                        tip: "观察上方代码：第1行已变灰，第2行是当前待执行。",
+                    },
+                    {
+                        title: "执行了：int age = scanner.nextInt();",
+                        explain: "读取到数字 token“25”，但不会把后面的换行符一并吃掉。",
+                        consume: [0],
+                        active: 1,
+                        executed: [0, 1],
+                        currentLine: 2,
+                        output: "age = 25",
+                        tip: "关键点：nextInt() 读取的是“下一个整数 token”，不是整行。"
+                    },
+                    {
+                        title: "执行了：String name = scanner.nextLine();",
+                        explain: "nextLine() 读取“当前行剩余内容”。当前行只剩一个换行符，所以读到空串。",
+                        consume: [0, 1],
+                        active: 2,
+                        executed: [0, 1, 2],
+                        currentLine: 3,
+                        output: "name = \"\"  (空字符串)",
+                        tip: "这就是“被吃掉的换行符”现象，本质是读取粒度不一致。"
+                    },
+                    {
+                        title: "执行了：System.out.println(...)",
+                        explain: "年龄正确，但姓名为空，看起来像程序没给输入机会。",
+                        consume: [0, 1],
+                        active: 2,
+                        executed: [0, 1, 2, 3],
+                        currentLine: null,
+                        output: "年龄: 25, 姓名: ''",
+                        tip: "缓冲区里其实还剩“张三\\n”，只是你还没读到。"
+                    }
+                ]
+            },
+            good: {
+                label: "修复流程",
+                modeClass: "mode-good",
+                toggleText: "切换到错误流程",
+                codeLines: [
+                    "Scanner scanner = new Scanner(System.in);",
+                    "int age = scanner.nextInt();",
+                    "scanner.nextLine(); // 吃掉残留换行",
+                    "String name = scanner.nextLine();",
+                    "System.out.println(\"年龄: \" + age + \", 姓名: '\" + name + \"'\");"
+                ],
+                steps: [
+                    {
+                        title: "初始化 Scanner",
+                        explain: "仍然是同一份输入：25↵张三↵。",
+                        consume: [],
+                        active: 0,
+                        executed: [],
+                        currentLine: 0,
+                        output: "尚未读取任何内容",
+                        tip: "策略：在 nextInt() 后补一口 nextLine() 吃掉换行。"
+                    },
+                    {
+                        title: "执行了：Scanner scanner = new Scanner(System.in);",
+                        explain: "对象创建完成，下一步读取年龄。",
+                        consume: [],
+                        active: 0,
+                        executed: [0],
+                        currentLine: 1,
+                        output: "Scanner 已就绪",
+                        tip: "观察上方代码：第1行已变灰。",
+                    },
+                    {
+                        title: "执行了：int age = scanner.nextInt();",
+                        explain: "先读出年龄 25，换行符暂留在缓冲区。",
+                        consume: [0],
+                        active: 1,
+                        executed: [0, 1],
+                        currentLine: 2,
+                        output: "age = 25",
+                        tip: "现在缓冲区头部是换行符。"
+                    },
+                    {
+                        title: "执行了：scanner.nextLine();",
+                        explain: "这一句专门把残留换行读掉，不赋给业务变量。",
+                        consume: [0, 1],
+                        active: 2,
+                        executed: [0, 1, 2],
+                        currentLine: 3,
+                        output: "（丢弃空行）",
+                        tip: "这一步是修复关键。"
+                    },
+                    {
+                        title: "执行了：String name = scanner.nextLine();",
+                        explain: "现在 nextLine() 才会读到真正的一行文本“张三”。",
+                        consume: [0, 1, 2, 3],
+                        active: null,
+                        executed: [0, 1, 2, 3],
+                        currentLine: 4,
+                        output: "name = \"张三\"",
+                        tip: "此时缓冲区已消费完毕。"
+                    },
+                    {
+                        title: "执行了：System.out.println(...)",
+                        explain: "姓名与年龄都正确。",
+                        consume: [0, 1, 2, 3],
+                        active: null,
+                        executed: [0, 1, 2, 3, 4],
+                        currentLine: null,
+                        output: "年龄: 25, 姓名: '张三'",
+                        tip: "也可以采用更稳妥方案：全程 nextLine() + parse。"
+                    }
+                ]
+            }
+        };
+
+        // 固定缓冲区 token：为了教学清晰，用 token 粒度而非字符粒度
+        const tokens = [
+            { text: "25", type: "value" },
+            { text: "\\n", type: "newline" },
+            { text: "张三", type: "value" },
+            { text: "\\n", type: "newline" }
+        ];
+
+        const modePanel = document.getElementById("modePanel");
+        const modeBadge = document.getElementById("modeBadge");
+        const modeToggle = document.getElementById("modeToggle");
+        const stepBtn = document.getElementById("stepBtn");
+        const autoBtn = document.getElementById("autoBtn");
+        const resetBtn = document.getElementById("resetBtn");
+        const bufferView = document.getElementById("bufferView");
+        const stateBox = document.getElementById("stateBox");
+        const stepTitle = document.getElementById("stepTitle");
+        const stepExplain = document.getElementById("stepExplain");
+        const outputBox = document.getElementById("outputBox");
+        const codeRunner = document.getElementById("codeRunner");
+        const codeStatus = document.getElementById("codeStatus");
+        const tipBox = document.getElementById("tipBox");
+
+        let mode = "bad";
+        let stepIndex = 0;
+        let timer = null;
+        let previousConsumed = [];
+
+        function currentSequence() {
+            return sequences[mode];
+        }
+
+        // 渲染当前步骤：同步更新 token 状态、提示文案和代码行
+        function render() {
+            const seq = currentSequence();
+            const step = seq.steps[stepIndex];
+
+            modePanel.classList.remove("mode-bad", "mode-good");
+            modePanel.classList.add(seq.modeClass);
+            modeBadge.textContent = seq.label;
+            modeToggle.textContent = seq.toggleText;
+
+            renderCode(seq, step);
+            bufferView.innerHTML = "";
+            tokens.forEach((token, index) => {
+                const el = document.createElement("div");
+                el.className = "token";
+                if (token.type === "newline") {
+                    el.classList.add("newline");
+                }
+                if (step.consume.includes(index)) {
+                    el.classList.add("consumed");
+                    // 新消费的 token 加一个弹出动画，提升“执行感”
+                    if (!previousConsumed.includes(index)) {
+                        el.classList.add("consumed-now");
+                    }
+                } else if (step.active === index) {
+                    el.classList.add("active");
+                }
+                el.textContent = token.text;
+                bufferView.appendChild(el);
+            });
+            modePanel.classList.remove("flash");
+            void modePanel.offsetWidth;
+            modePanel.classList.add("flash");
+
+            const rawView = tokens
+                .map((token, idx) => (step.consume.includes(idx) ? `(${token.text})` : token.text))
+                .join("");
+            stateBox.textContent = `buffer = "${rawView}"   // 括号表示已被消费`;
+
+            stepTitle.textContent = step.title;
+            stepExplain.textContent = step.explain;
+            outputBox.textContent = step.output;
+            tipBox.textContent = step.tip;
+            previousConsumed = [...step.consume];
+
+            stepBtn.disabled = stepIndex >= seq.steps.length - 1;
+        }
+
+        // 渲染“待执行代码”区：已执行语句置灰，当前语句高亮
+        function renderCode(seq, step) {
+            const total = seq.codeLines.length;
+            const done = step.executed.length;
+            codeStatus.textContent = `已执行 ${done}/${total} 行`;
+            codeRunner.innerHTML = "";
+
+            seq.codeLines.forEach((line, index) => {
+                const lineEl = document.createElement("div");
+                lineEl.className = "code-line pending";
+                if (step.executed.includes(index)) {
+                    lineEl.classList.remove("pending");
+                    lineEl.classList.add("executed");
+                } else if (step.currentLine === index) {
+                    lineEl.classList.remove("pending");
+                    lineEl.classList.add("current");
+                }
+                lineEl.innerHTML = `<span class="line-no">${index + 1}</span><span class="line-text">${escapeHtml(line)}</span>`;
+                codeRunner.appendChild(lineEl);
+            });
+        }
+
+        // 转义 HTML，避免代码中的 < > 被当作标签解析
+        function escapeHtml(text) {
+            return text
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll("\"", "&quot;");
+        }
+
+        function nextStep() {
+            const seq = currentSequence();
+            if (stepIndex < seq.steps.length - 1) {
+                stepIndex += 1;
+                render();
+            } else {
+                stopAuto();
+            }
+        }
+
+        function resetStep() {
+            stepIndex = 0;
+            previousConsumed = [];
+            render();
+        }
+
+        function stopAuto() {
+            if (timer) {
+                clearInterval(timer);
+                timer = null;
+            }
+            autoBtn.textContent = "自动播放";
+        }
+
+        function toggleAuto() {
+            if (timer) {
+                stopAuto();
+                return;
+            }
+            autoBtn.textContent = "停止自动播放";
+            timer = setInterval(() => {
+                const seq = currentSequence();
+                if (stepIndex >= seq.steps.length - 1) {
+                    stopAuto();
+                    return;
+                }
+                nextStep();
+            }, 1450);
+        }
+
+        function toggleMode() {
+            mode = mode === "bad" ? "good" : "bad";
+            stopAuto();
+            resetStep();
+        }
+
+        stepBtn.addEventListener("click", nextStep);
+        resetBtn.addEventListener("click", () => {
+            stopAuto();
+            resetStep();
+        });
+        autoBtn.addEventListener("click", toggleAuto);
+        modeToggle.addEventListener("click", toggleMode);
+
+        render();
+    </script>
+</body>
+</html>
