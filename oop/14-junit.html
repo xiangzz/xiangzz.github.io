@@ -955,6 +955,156 @@ validate → compile → test → package → verify → install → deploy
 
 
 
+        <section class="slide">
+            <div class="slide-content">
+                <h2>代码校验体系：不只靠“写测试”</h2>
+                <p>真实项目里，“正确性”不是靠某一种手段兜底，而是靠<strong>多层防线叠加</strong>：</p>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>层次</th>
+                            <th>手段</th>
+                            <th>解决的问题</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>编译期</td>
+                            <td>类型系统、编译器报错、IDE 检查</td>
+                            <td>低成本提前发现问题（类型不匹配、空指针风险、未处理异常等）</td>
+                        </tr>
+                        <tr>
+                            <td>运行期</td>
+                            <td>参数校验、状态校验、断言（assert）</td>
+                            <td>把“坏输入/坏状态”挡在边界处，减少隐蔽 Bug</td>
+                        </tr>
+                        <tr>
+                            <td>测试期</td>
+                            <td>JUnit 单元测试/集成测试</td>
+                            <td>把需求变成可重复验证的规则，支持重构</td>
+                        </tr>
+                        <tr>
+                            <td>线上期</td>
+                            <td>日志、监控、告警</td>
+                            <td>快速定位异常路径，降低 MTTR（修复平均时间）</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="conclusion">
+                    <strong>一句话：</strong>断言/契约让“问题更早爆炸”，JUnit 让“爆炸可重复”，日志让“爆炸可定位”。
+                </p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行期校验 ①：assert（断言）</h2>
+                <p><strong>断言</strong>用于检查<strong>程序员认为“不可能发生”的内部不变式</strong>，默认关闭，适合开发/测试环境。</p>
+                <pre><code class="language-java">public final class Range {
+    private final int start;
+    private final int end;
+
+    public Range(int start, int end) {
+        assert start <= end : "start must be <= end";
+        this.start = start;
+        this.end = end;
+    }
+
+    public int size() {
+        int size = end - start;
+        assert size >= 0;
+        return size;
+    }
+}</code></pre>
+                <h3>如何启用断言？</h3>
+                <pre><code class="language-bash"># 启用所有断言
+java -ea com.example.Main
+
+# 禁用所有断言（默认就是禁用）
+java -da com.example.Main</code></pre>
+                <ul>
+                    <li><strong>不要</strong>用断言做用户输入校验：生产环境可能没开 <code>-ea</code></li>
+                    <li>用户/接口边界校验：用 <code>IllegalArgumentException</code>/<code>NullPointerException</code>（由 API 约定）更可靠</li>
+                </ul>
+                <p style="margin: 0;">提示：你可以用 <code>SomeClass.class.desiredAssertionStatus()</code> 检查某个类的断言是否启用。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行期校验 ②：契约式设计（Design by Contract）</h2>
+                <p>把一个方法当成“合同”，通常包含三类条款：</p>
+                <ul>
+                    <li><strong>前置条件（Precondition）</strong>：调用者必须满足</li>
+                    <li><strong>后置条件（Postcondition）</strong>：方法返回后必须成立</li>
+                    <li><strong>不变式（Invariant）</strong>：对象整个生命周期都必须成立</li>
+                </ul>
+                <pre><code class="language-java">import java.util.Objects;
+
+public final class BankAccount {
+    private long balance;
+
+    public void deposit(Long amount) {
+        Objects.requireNonNull(amount, "amount");
+        if (amount <= 0) {
+            throw new IllegalArgumentException("amount must be positive");
+        }
+        long old = balance;
+        balance += amount;
+        if (balance < old) {
+            throw new IllegalStateException("overflow");
+        }
+    }
+}</code></pre>
+                <p class="conclusion">
+                    <strong>经验法则：</strong>断言更像“开发者自检”，异常更像“对外契约”。对外接口优先用异常表达契约。
+                </p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>测试 + 日志：让可验证与可定位同时成立</h2>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div style="background: rgba(208, 101, 25, 0.06); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px;">
+                        <h3 style="margin-top: 0;">TDD（红-绿-重构）</h3>
+                        <ol>
+                            <li><strong>红</strong>：先写一个失败的测试，明确“我想要什么”</li>
+                            <li><strong>绿</strong>：写最少代码让测试通过</li>
+                            <li><strong>重构</strong>：在测试保护下优化结构</li>
+                        </ol>
+                        <pre><code class="language-java">@Test
+void parse_invalidInput_throwsException() {
+    assertThrows(IllegalArgumentException.class,
+        () -> Parser.parse("x=??"));
+}</code></pre>
+                    </div>
+                    <div style="background: rgba(2, 119, 189, 0.06); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px;">
+                        <h3 style="margin-top: 0;">日志级别（让问题可定位）</h3>
+                        <ul>
+                            <li><strong>ERROR</strong>：必须修的失败路径</li>
+                            <li><strong>WARN</strong>：异常但可继续</li>
+                            <li><strong>INFO</strong>：关键业务里程碑</li>
+                            <li><strong>DEBUG/TRACE</strong>：排查细节（默认不打开）</li>
+                        </ul>
+                        <pre><code class="language-java">import java.util.logging.Level;
+import java.util.logging.Logger;
+
+public class App {
+    private static final Logger LOG = Logger.getLogger(App.class.getName());
+
+    void pay(long amount) {
+        LOG.log(Level.INFO, "pay start amount={0}", amount);
+    }
+}</code></pre>
+                    </div>
+                </div>
+                <p class="conclusion">
+                    <strong>分工</strong>：测试用于“验证行为”，日志用于“定位路径”。不要用日志代替测试，也不要用测试去验证日志内容。
+                </p>
+            </div>
+        </section>
+
         <!-- Slide 19: Testing Best Practices -->
         <section class="slide">
             <div class="slide-content">

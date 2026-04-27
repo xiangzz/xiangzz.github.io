@@ -1164,6 +1164,160 @@ Object obj = list.get(0);  // ✅ 只能读取为Object</code></pre>
 
         <section class="slide">
             <div class="slide-content">
+                <h2>4.5 自限定类型：让 T 能和 T 比较</h2>
+                <p>很多算法（排序、求最大值）都需要“元素可比较”。泛型通过<strong>上界</strong>把这种约束写进类型系统。</p>
+                <div class="code-block">
+                    <pre><code class="language-java">import java.util.List;
+
+public class SelfBoundedDemo {
+    // 自限定：T 必须实现 Comparable&lt;T&gt;，保证 compareTo 的参数就是同类型
+    public static &lt;T extends Comparable&lt;T&gt;&gt; T max(List&lt;T&gt; list) {
+        if (list.isEmpty()) {
+            throw new IllegalArgumentException("空列表");
+        }
+        T max = list.get(0);
+        for (T item : list) {
+            if (item.compareTo(max) &gt; 0) {
+                max = item;
+            }
+        }
+        return max;
+    }
+}</code></pre>
+                </div>
+                <div class="key-insight" style="margin-top: 16px;">
+                    <h4>💡 为什么叫“自限定”？</h4>
+                    <p>类型参数 <code>T</code> 的上界里又出现了 <code>T</code> 本身：<code>T extends Comparable&lt;T&gt;</code>。这能避免“拿苹果去和橘子比”的类型错误。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>4.6 动态类型安全：Collections.checkedXxx()</h2>
+                <p>泛型的类型检查<strong>主要发生在编译期</strong>。但在一些“泛型边界场景”中，你仍然可能在<strong>运行时</strong>把错误类型塞进集合里：</p>
+                <ul>
+                    <li>对接旧代码使用了原始类型（raw type），编译器只能给 warning</li>
+                    <li>反射/框架/跨模块 API 把类型信息绕开了编译器</li>
+                    <li>你拿到的是“别人创建的集合”，无法保证它的元素全都正确</li>
+                </ul>
+                <p><code>Collections.checkedList/checkedSet/checkedMap</code> 会返回一个<strong>带运行时类型检查的视图</strong>：当你通过这个视图进行 <code>add/set/addAll</code> 等写操作时，会做类型校验，从而更早暴露问题。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h3>不使用 checkedList：错误在“很远的地方”爆炸</h3>
+                        <pre><code class="language-java">import java.util.ArrayList;
+import java.util.List;
+
+public class WithoutCheckedList {
+    public static void main(String[] args) {
+        List&lt;Integer&gt; list = new ArrayList&lt;&gt;();
+
+        // 模拟旧代码/反射/原始类型绕过编译器
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        List raw = list;
+        raw.add("not int"); // 这里不会立刻报错（只是悄悄污染了集合）
+
+        // 更“远”的地方才爆炸：读取并当作 Integer 使用
+        int x = list.get(0); // 这里才抛 ClassCastException，定位更痛苦
+        System.out.println(x);
+    }
+}</code></pre>
+                    </div>
+                    <div class="after">
+                        <h3>使用 checkedList：在 add 当场爆炸</h3>
+                        <pre><code class="language-java">import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+public class WithCheckedList {
+    public static void main(String[] args) {
+        List&lt;Integer&gt; list = new ArrayList&lt;&gt;();
+        List&lt;Integer&gt; safeView = Collections.checkedList(list, Integer.class);
+
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        List raw = safeView;
+        raw.add("not int"); // ✅ 当场抛 ClassCastException，更好定位
+    }
+}</code></pre>
+                    </div>
+                </div>
+                <div class="code-block">
+                    <pre><code class="language-java">import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+public class CheckedListDemo {
+    public static void main(String[] args) {
+        List&lt;Integer&gt; list = new ArrayList&lt;&gt;();
+        list.add(1);
+
+        // 创建“带运行时类型检查”的视图（safeView 不是新集合，而是包装视图）
+        List&lt;Integer&gt; safeView = Collections.checkedList(list, Integer.class);
+
+        // 下面这段模拟“旧代码/反射/原始类型”把错误类型塞进来
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        List raw = safeView;
+        raw.add("not int"); // 这里会在运行时抛出 ClassCastException（更早暴露问题）
+    }
+}</code></pre>
+                </div>
+                <div class="important-note">
+                    <h4>它能做什么？它不能做什么？</h4>
+                    <ul>
+                        <li><strong>能做</strong>：拦截“写入集合”的错误类型，让错误发生在 add/set 那一刻</li>
+                        <li><strong>不能做</strong>：把 Java 泛型变成“运行时可见”的真泛型；它只是一个防线，不是魔法</li>
+                        <li><strong>注意</strong>：如果底层集合在包装前就已经混入了错误类型，读取时仍可能出问题</li>
+                    </ul>
+                </div>
+                <p class="conclusion">建议：在“泛型边界”处（对接旧代码、反射、跨模块API）使用 checked 视图，把错误尽早变成可定位的异常。原理会在 <a href="#type-erasure">5.1 类型擦除</a> 里完整解释。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>4.7 混型（Mixin）思想：用组合“拼装能力”</h2>
+                <p>Java 没有多继承，但可以用<strong>接口 + 组合 + 委托</strong>实现“把多个能力混入一个类”。泛型常用在“能力的返回类型/约束”上。</p>
+                <div class="code-block">
+                    <pre><code class="language-java">interface Named {
+    String name();
+}
+
+interface Identified&lt;ID&gt; {
+    ID id();
+}
+
+final class NameImpl implements Named {
+    private final String name;
+    NameImpl(String name) { this.name = name; }
+    @Override public String name() { return name; }
+}
+
+final class IntIdImpl implements Identified&lt;Integer&gt; {
+    private final int id;
+    IntIdImpl(int id) { this.id = id; }
+    @Override public Integer id() { return id; }
+}
+
+// “混入”多个能力：对外实现接口；对内用字段组合实现并委托
+final class User implements Named, Identified&lt;Integer&gt; {
+    private final Named named;
+    private final Identified&lt;Integer&gt; identified;
+
+    User(String name, int id) {
+        this.named = new NameImpl(name);
+        this.identified = new IntIdImpl(id);
+    }
+
+    @Override public String name() { return named.name(); }
+    @Override public Integer id() { return identified.id(); }
+}</code></pre>
+                </div>
+                <p class="conclusion">核心取舍：Mixin 让“能力复用”更灵活，但会带来更多委托代码；工程里常用 IDE 自动生成委托方法。</p>
+            </div>
+        </section>
+
+        <section class="slide" id="type-erasure">
+            <div class="slide-content">
                 <h2>5.1 类型擦除</h2>
                 
                 <div class="concept-intro">

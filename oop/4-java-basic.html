@@ -707,6 +707,69 @@ System.out.println("a = "+a + ", b = "+b);
 
         <section class="slide">
             <div class="slide-content">
+                <h3>按位与移位：让你“看见二进制”</h3>
+                <p>按位运算符直接对二进制位进行操作，常用于：权限位、掩码、性能敏感的低层逻辑、哈希与编码。</p>
+                <table class="table-standard" style="font-size: 0.95em;">
+                    <thead>
+                        <tr>
+                            <th>运算符</th>
+                            <th>含义</th>
+                            <th>例子（十进制）</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>&amp;</code></td>
+                            <td>按位与</td>
+                            <td><code>6 &amp; 3 == 2</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>|</code></td>
+                            <td>按位或</td>
+                            <td><code>6 | 3 == 7</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>^</code></td>
+                            <td>按位异或</td>
+                            <td><code>6 ^ 3 == 5</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>~</code></td>
+                            <td>按位取反</td>
+                            <td><code>~0 == -1</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>&lt;&lt;</code></td>
+                            <td>左移（补 0）</td>
+                            <td><code>1 &lt;&lt; 3 == 8</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>&gt;&gt;</code></td>
+                            <td>算术右移（补符号位）</td>
+                            <td><code>-8 &gt;&gt; 1 == -4</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>&gt;&gt;&gt;</code></td>
+                            <td>逻辑右移（补 0）</td>
+                            <td><code>-1 &gt;&gt;&gt; 1</code> 变成一个很大的正数</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <h4>最常见的坑：<code>&amp;</code> 不是 <code>&amp;&amp;</code></h4>
+                <ul>
+                    <li><code>&amp;&amp;</code>/<code>||</code> 有短路；<code>&amp;</code>/<code>|</code> 即使是 boolean 也会“左右都算”</li>
+                    <li>想检查“奇偶”：<code>(x &amp; 1) == 1</code>（奇数）</li>
+                </ul>
+                <pre><code class="language-java">int x = 6;             // 110
+int y = 3;             // 011
+System.out.println(x &amp; y); // 010 -> 2
+System.out.println(x | y); // 111 -> 7
+System.out.println(x ^ y); // 101 -> 5</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
                 <h3>三元运算符</h3>
                 <p>是<code>if-else</code>语句的简化形式。</p>
                 <pre><code>判断条件 ? 结果1 : 结果2</code></pre>
@@ -789,13 +852,71 @@ switch (level) {
             </div>
         </section>
 
+        <section class="slide">
+            <div class="slide-content">
+                <h3>switch 细节：fall-through 与 switch 表达式</h3>
+                <p><strong>fall-through（穿透）</strong>就是“没写 break，继续执行下一个 case”。有时是技巧，多数时候是坑。</p>
+                <pre><code class="language-java">int x = 1;
+switch (x) {
+    case 1:
+        System.out.println("one");
+    case 2:
+        System.out.println("two"); // 会被打印（因为 case 1 没 break）
+        break;
+    default:
+        System.out.println("other");
+}</code></pre>
+                <p>Java 12+ 引入 <strong>switch 表达式</strong>：可以直接得到一个值（不用手写临时变量）。</p>
+                <pre><code class="language-java">String level = "B";
+int score = switch (level) {
+    case "A" -> 95;
+    case "B" -> 85;
+    case "C" -> 70;
+    default  -> 50;
+};</code></pre>
+                <p class="conclusion">建议：新代码优先使用“箭头”形式，减少 break 穿透带来的维护风险。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>带标签 break/continue：跳出多层循环</h3>
+                <p>普通的 <code>break</code>/<code>continue</code> 只能作用于<strong>最内层</strong>循环。带标签语法可以直接控制“跳到哪一层”。</p>
+                <pre><code class="language-java">public class LabeledLoopDemo {
+    public static void main(String[] args) {
+        int[][] grid = {
+            {1, 2, 3},
+            {4, 5, 6},
+            {7, 8, 9}
+        };
+
+        int target = 5;
+        boolean found = false;
+
+        outer:
+        for (int i = 0; i &lt; grid.length; i++) {
+            for (int j = 0; j &lt; grid[i].length; j++) {
+                if (grid[i][j] == target) {
+                    found = true;
+                    break outer;
+                }
+            }
+        }
+
+        System.out.println(found ? "找到了" : "没找到");
+    }
+}</code></pre>
+                <div class="warning">
+                    <p><strong>建议</strong>：带标签控制流非常强，但也更“跳跃”。多数场景可以用“提取方法 + return”或“设置标志位”来替代，代码更容易维护。</p>
+                </div>
+            </div>
+        </section>
+
 
 
         <section class="slide">
             <div class="slide-content">
                 <h3>循环结构：for 与调试器</h3>
-                <p>用于执行固定次数的循环。</p>
-                <pre><code class="language-java">for (int i = 0; i < 3; i++) {
     System.out.println("准备就绪！");
 }</code></pre>
                 <p><strong>学习使用调试器 (Debugger)</strong>：在行号旁单击设置断点，然后点击像“甲虫”一样的调试按钮运行。程序会在断点处暂停，你可以观察变量的值。</p>

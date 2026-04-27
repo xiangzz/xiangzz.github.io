@@ -1221,17 +1221,149 @@ mvn com.example:hello-maven-plugin:1.0.0:sayhi -Dmsg=Maven</code></pre>
             </div>
         </section>
 
-
-
-
-
-
-
-        <!-- Slide 25: 最佳实践总结 -->
         <section class="slide">
             <div class="slide-content">
-                <h2>最佳实践总结</h2>
-                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/oop-img/7-maven-best-practice-high.png" alt="最佳实践总结" style="width: 100%; margin: 15px auto;">
+                <h2>* 扩展：Gradle 与 Maven 的关系</h2>
+                <p>你可以把 Maven 与 Gradle 看成同一类问题的两种解法：<strong>“把构建流程变成可复现的、自动化的、团队一致的事情”</strong>。</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div style="background: #f7f7fb; border: 1px solid var(--border-color); border-radius: 10px; padding: 14px;">
+                        <h3 style="margin-top: 0;">Maven 的思路</h3>
+                        <ul>
+                            <li>生命周期驱动：<code>clean → compile → test → package</code></li>
+                            <li>POM 声明式：约定优于配置，插件默认绑定</li>
+                            <li>更适合“标准 Java 项目”的稳定流水线</li>
+                        </ul>
+                    </div>
+                    <div style="background: #f7f7fb; border: 1px solid var(--border-color); border-radius: 10px; padding: 14px;">
+                        <h3 style="margin-top: 0;">Gradle 的思路</h3>
+                        <ul>
+                            <li>任务驱动：把构建拆成可组合的 <code>task</code></li>
+                            <li>增量构建：更强调缓存、增量、并行</li>
+                            <li>更适合“构建逻辑更复杂/多模块更多”的工程</li>
+                        </ul>
+                    </div>
+                </div>
+                <p style="margin-top: 12px;"><strong>建议：</strong>先把 Maven 学扎实（POM/依赖/生命周期），再学 Gradle 会非常顺滑。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* Gradle Wrapper：让构建版本可复现</h2>
+                <p><strong>问题：</strong>如果每个人电脑上的 Gradle 版本不同，构建行为就可能不同。</p>
+                <p><strong>解决：</strong>Wrapper 把“使用哪个 Gradle 版本”写进项目里，团队/CI 统一用它来构建。</p>
+                <div style="display: flex; gap: 16px; align-items: flex-start;">
+                    <div style="flex: 1;">
+                        <h3>常见文件</h3>
+                        <ul>
+                            <li><code>gradlew</code> / <code>gradlew.bat</code>：可执行脚本</li>
+                            <li><code>gradle/wrapper/gradle-wrapper.properties</code>：版本与下载地址</li>
+                            <li><code>gradle/wrapper/gradle-wrapper.jar</code>：Wrapper 启动器</li>
+                        </ul>
+                    </div>
+                    <div style="flex: 1;">
+                        <h3>常见命令</h3>
+                        <pre><code class="language-bash"># Windows
+gradlew.bat tasks
+gradlew.bat test
+
+# macOS/Linux
+./gradlew tasks
+./gradlew test</code></pre>
+                        <p style="margin: 0;"><strong>结论：</strong>只要项目带 Wrapper，你几乎不需要“全局安装 Gradle”。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* 常用命令对照：Maven ↔ Gradle</h2>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>目标</th>
+                            <th>Maven</th>
+                            <th>Gradle</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>清理构建产物</td>
+                            <td><code>mvn clean</code></td>
+                            <td><code>gradlew clean</code></td>
+                        </tr>
+                        <tr>
+                            <td>运行测试</td>
+                            <td><code>mvn test</code></td>
+                            <td><code>gradlew test</code></td>
+                        </tr>
+                        <tr>
+                            <td>打包</td>
+                            <td><code>mvn package</code></td>
+                            <td><code>gradlew jar</code> / <code>gradlew assemble</code></td>
+                        </tr>
+                        <tr>
+                            <td>查看任务/生命周期</td>
+                            <td><code>mvn help:describe</code></td>
+                            <td><code>gradlew tasks</code></td>
+                        </tr>
+                        <tr>
+                            <td>查看依赖树</td>
+                            <td><code>mvn dependency:tree</code></td>
+                            <td><code>gradlew dependencies</code></td>
+                        </tr>
+                        <tr>
+                            <td>安装到本地仓库</td>
+                            <td><code>mvn install</code></td>
+                            <td><code>gradlew publishToMavenLocal</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p style="margin-top: 10px;"><strong>关键差异：</strong>Maven 以“阶段/生命周期”为主，Gradle 以“任务/依赖图”为主。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* Gradle 最小可用示例：依赖 + JUnit5</h2>
+                <p>下面是一个典型的 <code>build.gradle</code>（Groovy DSL）写法：声明依赖，并让 <code>test</code> 任务使用 JUnit5。</p>
+                <pre><code class="language-groovy">plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+}
+
+test {
+    useJUnitPlatform()
+}</code></pre>
+                <div style="display: flex; gap: 16px; align-items: flex-start; margin-top: 12px;">
+                    <div style="flex: 1;">
+                        <h3>执行测试</h3>
+                        <pre><code class="language-bash">gradlew.bat test</code></pre>
+                    </div>
+                    <div style="flex: 1;">
+                        <h3>新手最常踩坑</h3>
+                        <ul>
+                            <li>用了 JUnit5 依赖，但没写 <code>useJUnitPlatform()</code> 导致测试“找不到/不执行”</li>
+                            <li>本地没配置镜像时下载慢：优先确认网络与仓库</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+
+
+
+
                 <h3>项目组织：</h3>
                 <ul>
                     <li>遵循标准目录结构，不要随意修改</li>

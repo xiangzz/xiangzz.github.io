@@ -238,7 +238,7 @@ while(true) {
                     <div class="media-block__text">
                         <h3>Path 接口</h3>
                         <p>一个与操作系统无关的路径表示。可以看作是`java.io.File`的升级版。</p>
-                        <pre><code class="language-java">Path p = Paths.get("C:\temp\data.txt");
+                        <pre><code class="language-java">Path p = Paths.get("C:\\temp\\data.txt");
 System.out.println(p.getFileName()); // data.txt
 </code></pre>
                         <h3>Files 工具类</h3>
@@ -271,6 +271,108 @@ buffer.clear();
                     </div>
                 </div>
                 <p class="conclusion">日常文件操作，优先使用`Path`和`Files`类，代码更简洁、功能更强大。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>NIO.2：目录遍历与过滤（Files.walk / Files.find）</h2>
+                <p><code>Files.walk()</code> 返回一个 <code>Stream&lt;Path&gt;</code>，可以像写 Stream 一样做过滤、映射、收集。</p>
+                <pre><code class="language-java">import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+public class WalkDemo {
+    public static void main(String[] args) throws IOException {
+        Path root = Paths.get("src");
+        try (var stream = Files.walk(root)) {
+            stream.filter(Files::isRegularFile)
+                  .filter(p -> p.toString().endsWith(".java"))
+                  .limit(10)
+                  .forEach(System.out::println);
+        }
+    }
+}</code></pre>
+                <p><strong>要点：</strong>这是懒加载的遍历，记得用 try-with-resources 关闭 Stream（底层会占用目录句柄）。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>NIO.2：递归扫描（Files.walkFileTree + FileVisitor）</h2>
+                <p>当你需要<strong>更强控制力</strong>（跳过目录、遇错继续、统计信息、收集结果）时，用 <code>walkFileTree</code>。</p>
+                <pre><code class="language-java">import java.io.IOException;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+
+public class WalkTreeDemo {
+    public static void main(String[] args) throws IOException {
+        Path root = Path.of(".");
+        Files.walkFileTree(root, new SimpleFileVisitor&lt;&gt;() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                if (file.toString().endsWith(".log")) {
+                    System.out.println("log: " + file);
+                }
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+}</code></pre>
+                <p><strong>经验法则：</strong>“只遍历并过滤”选 <code>walk</code>，“需要流程控制/统计/容错”选 <code>walkFileTree</code>。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>NIO.2：目录监听（WatchService）</h2>
+                <p>当你要做“热加载/自动编译/文件同步”时，<code>WatchService</code> 可以监听目录变化事件。</p>
+                <pre><code class="language-java">import java.io.IOException;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
+
+public class WatchDemo {
+    public static void main(String[] args) throws IOException, InterruptedException {
+        Path dir = Path.of("tmp");
+        WatchService ws = FileSystems.getDefault().newWatchService();
+        dir.register(ws,
+                StandardWatchEventKinds.ENTRY_CREATE,
+                StandardWatchEventKinds.ENTRY_MODIFY,
+                StandardWatchEventKinds.ENTRY_DELETE);
+
+        while (true) {
+            WatchKey key = ws.take();
+            key.pollEvents().forEach(e -> System.out.println(e.kind() + " -> " + e.context()));
+            if (!key.reset()) break;
+        }
+    }
+}</code></pre>
+                <p><strong>注意：</strong><code>context()</code> 只给“相对路径”，要和被监听目录拼起来才是完整路径。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>NIO.2：匹配与文件系统（PathMatcher / FileSystem）</h2>
+                <p>NIO.2 把“文件系统”抽象成 <code>FileSystem</code>，并提供 <code>PathMatcher</code> 做 glob/regex 匹配。</p>
+                <pre><code class="language-java">import java.nio.file.FileSystems;
+import java.nio.file.Path;
+
+public class MatchDemo {
+    public static void main(String[] args) {
+        var matcher = FileSystems.getDefault().getPathMatcher("glob:**/*.java");
+        Path p = Path.of("src/main/java/App.java");
+        System.out.println(matcher.matches(p)); // true
+    }
+}</code></pre>
+                <p class="conclusion">把 Path 当成“值对象”来用：拼接用 <code>resolve</code>，不要手写字符串路径。</p>
             </div>
         </section>
 

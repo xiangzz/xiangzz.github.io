@@ -680,6 +680,94 @@ public class Application {
 
 
 
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* 补充：Optional 与“显式缺失”</h2>
+                <p><code>Optional</code> 不是“更高级的 null”，它的目标是：让你在 API 层面<strong>显式表达“可能没有值”</strong>，并引导调用方做处理。</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start;">
+                    <div style="background: #f7f7fb; border: 1px solid var(--border-color); border-radius: 10px; padding: 14px;">
+                        <h3 style="margin-top: 0;">常用链式写法</h3>
+                        <pre><code class="language-java">import java.util.Optional;
+
+public class OptionalDemo {
+    static Optional&lt;String&gt; findNickname(long userId) {
+        return userId == 1 ? Optional.of("Tom") : Optional.empty();
+    }
+
+    public static void main(String[] args) {
+        String name = findNickname(2)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .orElse("Anonymous");
+
+        System.out.println(name);
+    }
+}</code></pre>
+                    </div>
+                    <div style="background: #fef2f2; border: 1px solid var(--border-color); border-radius: 10px; padding: 14px;">
+                        <h3 style="margin-top: 0;">三条误区（很重要）</h3>
+                        <ul>
+                            <li><strong>不要</strong>用 <code>Optional.get()</code> 当“无脑取值”，那等于把异常推迟</li>
+                            <li><strong>不要</strong>在字段里声明 <code>Optional</code>（多数场景更推荐字段允许为 null 或用空对象）</li>
+                            <li><code>orElse(x)</code> 会<strong>先计算</strong> x；懒加载请用 <code>orElseGet(() -&gt; x)</code></li>
+                        </ul>
+                        <pre><code class="language-java">String v = Optional.of("ok")
+        .orElseGet(() -> expensiveCompute());</code></pre>
+                    </div>
+                </div>
+                <p class="conclusion">把 Optional 当成“返回值的协议”，而不是“到处替换 null 的新类型”。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>* 补充：动态代理（Dynamic Proxy）</h2>
+                <p>动态代理让你在运行时“生成一个实现接口的对象”，把方法调用转交给 <code>InvocationHandler</code>，典型用途就是：日志、权限、事务、重试、耗时统计（AOP 的基础之一）。</p>
+                <pre><code class="language-java">import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+
+interface Service {
+    String hello(String name);
+}
+
+final class RealService implements Service {
+    public String hello(String name) {
+        return "Hello, " + name;
+    }
+}
+
+public class ProxyDemo {
+    public static void main(String[] args) {
+        Service target = new RealService();
+
+        InvocationHandler h = (Object proxy, Method method, Object[] a) -> {
+            long t0 = System.nanoTime();
+            try {
+                return method.invoke(target, a);
+            } finally {
+                long cost = System.nanoTime() - t0;
+                System.out.println(method.getName() + " cost(ns)=" + cost);
+            }
+        };
+
+        Service proxy = (Service) Proxy.newProxyInstance(
+                Service.class.getClassLoader(),
+                new Class[]{Service.class},
+                h
+        );
+
+        System.out.println(proxy.hello("Java"));
+    }
+}</code></pre>
+                <ul>
+                    <li><strong>限制：</strong>JDK 动态代理只能代理接口；要代理类通常需要字节码增强（例如 CGLIB 思路）</li>
+                    <li><strong>关键点：</strong><code>proxy</code> 不是 <code>target</code>，它只是把调用“转发+增强”</li>
+                </ul>
+                <p class="conclusion">理解动态代理后，你会更容易理解 Spring 的 AOP、拦截器链、以及很多框架的“自动增强”。</p>
+            </div>
+        </section>
+
         <!-- Slide 11: Pros and Cons -->
         <section class="slide">
             <div class="slide-content">
@@ -733,7 +821,7 @@ public class Application {
         </div>
         <div class="controls">
             <button id="prevBtn">上一页</button>
-            <span id="slide-counter">1 / 13</span>
+            <span id="slide-counter">1 / 15</span>
             <button id="nextBtn">下一页</button>
         </div>
     </main>
