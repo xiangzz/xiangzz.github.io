@@ -37,6 +37,9 @@
         console.error('导航加载失败:', err);
       });
 
+    // 注入“面试真题”卡片资源（按需加载，避免逐页重复维护）
+    loadInterviewCardAssets();
+
     // Build right-side Slide TOC
     try {
       buildSlideTOC();
@@ -208,6 +211,37 @@
             }, 300);
           }
         }
+      }
+    }
+
+    function loadInterviewCardAssets() {
+      // 仅在存在演示主区域时启用，避免影响非课件页面
+      if (!document.querySelector('#presentation')) return;
+
+      var cssHref = './css/interview-card.css';
+      var jsSrc = './js/interview-card.js';
+
+      // 防重复插入样式
+      var cssExists = Array.prototype.some.call(
+        document.querySelectorAll('link[rel="stylesheet"]'),
+        function(link) { return link.getAttribute('href') === cssHref; }
+      );
+      if (!cssExists) {
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = cssHref;
+        document.head.appendChild(link);
+      }
+
+      // 防重复插入脚本
+      var jsExists = Array.prototype.some.call(
+        document.querySelectorAll('script[src]'),
+        function(script) { return script.getAttribute('src') === jsSrc; }
+      );
+      if (!jsExists) {
+        var script = document.createElement('script');
+        script.src = jsSrc;
+        document.body.appendChild(script);
       }
     }
 
