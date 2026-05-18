@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第37章 前端测试 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>前端测试</h1>
+            <p>单元测试、组件测试、E2E 测试——守护代码质量的三道防线</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>改了一个按钮的颜色，购物车结算就挂了——怎么才能提前发现？</h4>
+                <p>当你只有 10 个组件时，手动点一遍就能验证。但当你有 100 个组件、50 个页面时，每次改动手动验证就不现实了。<strong>自动化测试</strong>就是让计算机替你"点一遍"。</p>
+                <p>前端测试分三层：<strong>单元测试</strong>测函数、<strong>组件测试</strong>测交互、<strong>E2E 测试</strong>测完整流程。本章逐一讲清楚。</p>
+            </div>
+        </section>
+
+        <!-- 测试金字塔 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>测试金字塔</h3>
+                <h4>底层多、顶层少——速度快、成本低</h4>
+                <pre><code class="language-text">                   /\
+                  /  \      E2E 测试（少量，慢）
+                 /    \     —— Playwright / Cypress
+                /      \
+               / 集成   \    组件测试（适量，中速）
+              /  测试    \   —— Testing Library
+             /____________\
+             单元测试（大量，快）
+             —— Vitest / Jest</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>测试什么</h4>
+                        <ul>
+                            <li>纯函数 / 工具函数 → 单元测试</li>
+                            <li>组件渲染、交互 → 组件测试</li>
+                            <li>页面流程、关键路径 → E2E 测试</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>测试原则</h4>
+                        <ul>
+                            <li>测试行为，而非实现细节</li>
+                            <li>测试用户看到的内容</li>
+                            <li>改代码不需要改测试</li>
+                            <li>好的测试：快速、独立、可重复</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 测试配置</h2>
+                <p>安装 Vitest + Testing Library，搭好测试环境。</p>
+                <p>测试的第一步不是写测试代码，而是搭好运行环境。配置对了，后面写测试才能丝滑。这里我们选择 Vitest——它和 Vite 共享配置，几乎零成本上手。</p>
+            </div>
+        </section>
+
+        <!-- 安装配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Vitest 配置</h3>
+                <h4>Vite 生态的测试框架，配置几乎零成本</h4>
+                <pre><code class="language-bash">$ npm install -D vitest @testing-library/react @testing-library/jest-dom
+$ npm install -D jsdom
+$ npm install -D @testing-library/user-event</code></pre>
+                <pre><code class="language-typescript">// vitest.config.ts
+import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+    plugins: [react()],
+    test: {
+        environment: "jsdom",          // 模拟浏览器 DOM
+        globals: true,                 // 全局 API（describe, it, expect）
+        setupFiles: "./test/setup.ts", // 测试初始化文件
+        css: true,                     // 处理 CSS
+    },
+});</code></pre>
+                <pre><code class="language-typescript">// test/setup.ts
+import "@testing-library/jest-dom";</code></pre>
+            </div>
+        </section>
+
+        <!-- 测试脚本 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>测试脚本</h3>
+                <h4>四个命令覆盖测试全流程</h4>
+                <pre><code class="language-json">{
+    "scripts": {
+        "test": "vitest",
+        "test:ui": "vitest --ui",
+        "test:coverage": "vitest --coverage"
+    }
+}</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>命令</th><th>作用</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>npm test</code></td><td>运行所有测试（监听模式）</td></tr>
+                        <tr><td><code>npm run test:ui</code></td><td>可视化测试界面</td></tr>
+                        <tr><td><code>npm run test:coverage</code></td><td>生成覆盖率报告</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 单元测试</h2>
+                <p>最底层、最快速——测试纯函数和工具函数。</p>
+                <p>单元测试是测试金字塔的基础。它的对象是"纯函数"——输入确定、输出确定、没有副作用的函数。运行速度极快（毫秒级），所以你可以放心写很多。</p>
+            </div>
+        </section>
+
+        <!-- 单元测试示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>单元测试</h3>
+                <h4>输入已知，输出可验证</h4>
+                <pre><code class="language-typescript">// utils/format.ts
+export function formatPrice(price: number): string {
+    return price &lt; 0
+        ? `-¥${Math.abs(price).toFixed(2)}`
+        : `¥${price.toFixed(2)}`;
+}
+
+export function truncateText(text: string, maxLen: number): string {
+    return text.length &gt; maxLen
+        ? text.slice(0, maxLen) + "..."
+        : text;
+}
+
+// utils/format.test.ts
+import { describe, it, expect } from "vitest";
+import { formatPrice, truncateText } from "./format";
+
+describe("formatPrice", () =&gt; {
+    it("格式化正数", () =&gt; {
+        expect(formatPrice(1999)).toBe("¥1999.00");
+    });
+
+    it("格式化零", () =&gt; {
+        expect(formatPrice(0)).toBe("¥0.00");
+    });
+
+    it("格式化负数", () =&gt; {
+        expect(formatPrice(-100)).toBe("-¥100.00");
+    });
+});
+
+describe("truncateText", () =&gt; {
+    it("短文本不截断", () =&gt; {
+        expect(truncateText("hello", 10)).toBe("hello");
+    });
+
+    it("长文本截断并加省略号", () =&gt; {
+        expect(truncateText("这是一段很长的文本", 5)).toBe("这是一段很...");
+    });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 快照测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>快照测试</h3>
+                <h4>捕获渲染输出，任何变化都会被检测到</h4>
+                <pre><code class="language-tsx">import { render } from "@testing-library/react";
+import UserCard from "./UserCard";
+
+it("匹配快照", () =&gt; {
+    const { container } = render(
+        &lt;UserCard name="张三" age={25} /&gt;
+    );
+    expect(container).toMatchSnapshot();
+});</code></pre>
+                <p>快照测试的工作原理：</p>
+                <ul>
+                    <li><strong>首次运行</strong>：生成 <code>.snap</code> 文件，记录渲染的 HTML 结构</li>
+                    <li><strong>后续运行</strong>：比较当前输出与快照，任何差异都会报错</li>
+                    <li><strong>UI 有意更改</strong>：运行 <code>vitest -u</code> 更新快照</li>
+                </ul>
+                <div class="warning">
+                    <strong>快照测试不是"银弹"。</strong> 如果组件渲染的 HTML 经常变化，快照测试会产生大量误报。建议只对稳定的组件使用快照测试。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 组件测试</h2>
+                <p>测试金字塔的中间层——验证组件渲染与交互。</p>
+                <p>组件测试是连接单元测试和 E2E 测试的桥梁。它比单元测试更接近真实用户体验，又比 E2E 测试更快、更稳定。我们把组件测试放在中间层来学，因为它是前端测试中性价比最高的一层。</p>
+            </div>
+        </section>
+
+        <!-- React 组件渲染测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组件渲染测试</h3>
+                <h4>验证组件"画"出了正确的内容</h4>
+                <pre><code class="language-tsx">// UserCard.tsx
+interface UserCardProps {
+    name: string;
+    role: string;
+}
+
+export function UserCard({ name, role }: UserCardProps) {
+    return (
+        &lt;div className="user-card"&gt;
+            &lt;h2&gt;{name}&lt;/h2&gt;
+            &lt;span data-testid="role"&gt;{role}&lt;/span&gt;
+        &lt;/div&gt;
+    );
+}</code></pre>
+                <pre><code class="language-typescript">// UserCard.test.tsx
+import { render, screen } from "@testing-library/react";
+import { UserCard } from "./UserCard";
+
+describe("UserCard", () =&gt; {
+    it("渲染用户名和角色", () =&gt; {
+        render(&lt;UserCard name="张三" role="管理员" /&gt;);
+
+        // screen 是全局查询入口
+        expect(screen.getByText("张三")).toBeInTheDocument();
+        expect(screen.getByTestId("role")).toHaveTextContent("管理员");
+    });
+
+    it("传入不同 props 显示不同内容", () =&gt; {
+        render(&lt;UserCard name="李四" role="编辑" /&gt;);
+
+        expect(screen.getByText("李四")).toBeInTheDocument();
+        expect(screen.getByTestId("role")).toHaveTextContent("编辑");
+    });
+});</code></pre>
+                <div class="intro-block">
+                    <p><code>render()</code> 把组件挂载到一个虚拟 DOM 中。<code>screen</code> 是查询这个虚拟 DOM 的统一入口，所有查询方法都挂在它上面。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 用户交互测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>用户交互测试</h3>
+                <h4>模拟点击、输入，验证组件响应用户操作</h4>
+                <pre><code class="language-typescript">// Counter.test.tsx
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { Counter } from "./Counter";
+
+describe("Counter", () =&gt; {
+    it("点击按钮递增计数", async () =&gt; {
+        const user = userEvent.setup();
+        render(&lt;Counter /&gt;);
+
+        // 初始值是 0
+        expect(screen.getByText("计数: 0")).toBeInTheDocument();
+
+        // 点击 +1 按钮
+        await user.click(screen.getByRole("button", { name: "+1" }));
+        expect(screen.getByText("计数: 1")).toBeInTheDocument();
+
+        // 再点一次
+        await user.click(screen.getByRole("button", { name: "+1" }));
+        expect(screen.getByText("计数: 2")).toBeInTheDocument();
+    });
+
+    it("点击递减按钮不能小于 0", async () =&gt; {
+        const user = userEvent.setup();
+        render(&lt;Counter /&gt;);
+
+        await user.click(screen.getByRole("button", { name: "-1" }));
+        expect(screen.getByText("计数: 0")).toBeInTheDocument();
+    });
+});</code></pre>
+                <div class="warning">
+                    <strong>常见错误</strong>：忘记 <code>await</code>。<code>userEvent</code> 的操作都是异步的，如果不 <code>await</code>，断言会在状态更新前执行，导致测试失败。
+                </div>
+            </div>
+        </section>
+
+        <!-- Counter 完整组件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Counter 完整示例</h3>
+                <h4>被测试的组件长什么样</h4>
+                <pre><code class="language-tsx">// Counter.tsx
+import { useState } from "react";
+
+export function Counter() {
+    const [count, setCount] = useState(0);
+
+    const increment = () =&gt; setCount((c) =&gt; c + 1);
+    const decrement = () =&gt; setCount((c) =&gt; Math.max(0, c - 1));
+
+    return (
+        &lt;div&gt;
+            &lt;span&gt;计数: {count}&lt;/span&gt;
+            &lt;button onClick={increment}&gt;+1&lt;/button&gt;
+            &lt;button onClick={decrement}&gt;-1&lt;/button&gt;
+        &lt;/div&gt;
+    );
+}</code></pre>
+                <p>测试要点回顾：</p>
+                <ul>
+                    <li><strong>初始状态</strong>：渲染后验证默认值</li>
+                    <li><strong>交互后状态</strong>：点击后验证值变化</li>
+                    <li><strong>边界条件</strong>：计数不能小于 0</li>
+                    <li><strong>连续操作</strong>：多次点击后结果仍正确</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 条件渲染测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>条件渲染测试</h3>
+                <h4>验证组件在不同条件下的显示差异</h4>
+                <pre><code class="language-tsx">// LoginButton.tsx
+export function LoginButton({ isLoggedIn, userName }: Props) {
+    if (isLoggedIn) {
+        return &lt;span&gt;欢迎, {userName}&lt;/span&gt;;
+    }
+    return &lt;button&gt;登录&lt;/button&gt;;
+}</code></pre>
+                <pre><code class="language-typescript">// LoginButton.test.tsx
+import { render, screen } from "@testing-library/react";
+import { LoginButton } from "./LoginButton";
+
+it("未登录时显示登录按钮", () =&gt; {
+    render(&lt;LoginButton isLoggedIn={false} /&gt;);
+    expect(screen.getByRole("button", { name: "登录" }))
+        .toBeInTheDocument();
+    expect(screen.queryByText("欢迎")).not.toBeInTheDocument();
+});
+
+it("已登录时显示用户名", () =&gt; {
+    render(&lt;LoginButton isLoggedIn={true} userName="张三" /&gt;);
+    expect(screen.getByText("欢迎, 张三")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+});</code></pre>
+                <div class="intro-block">
+                    <p><code>getBy</code> 找不到会报错，<code>queryBy</code> 找不到返回 <code>null</code>。验证"不存在"时用 <code>queryBy</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 查询优先级 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>查询优先级</h3>
+                <h4>选对查询方式，测试更健壮</h4>
+                <p>Testing Library 推荐按以下优先级选择查询方式：</p>
+                <table>
+                    <thead>
+                        <tr><th>优先级</th><th>查询方式</th><th>适用场景</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1（最高）</td><td><code>getByRole</code></td><td>按钮、链接、输入框等有角色的元素</td></tr>
+                        <tr><td>2</td><td><code>getByLabelText</code></td><td>表单输入框（通过 label 关联）</td></tr>
+                        <tr><td>3</td><td><code>getByPlaceholder</code></td><td>没有 label 的输入框</td></tr>
+                        <tr><td>4</td><td><code>getByText</code></td><td>按钮文字、标题、段落</td></tr>
+                        <tr><td>5</td><td><code>getByTestId</code></td><td>以上都不适用时的兜底方案</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-typescript">// 推荐写法
+screen.getByRole("button", { name: "提交" });  // 最推荐
+screen.getByLabelText("邮箱地址");
+screen.getByPlaceholder("请输入密码");
+screen.getByText("欢迎回来");
+screen.getByTestId("submit-btn");  // 最后手段</code></pre>
+                <div class="warning">
+                    <strong>为什么优先用 Role？</strong> 因为 <code>getByRole</code> 同时验证了元素的可访问性。如果你的按钮测试通过了，说明屏幕阅读器也能识别这个按钮——一举两得。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4: Vue 组件测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: Vue 测试</h2>
+                <p>Vue 生态的组件测试方案——Test Utils + Testing Library。</p>
+                <p>如果你用的是 Vue 而不是 React，测试思路完全一样，只是工具不同。Vue 官方推荐 <code>@vue/test-utils</code> 作为底层工具，配合 <code>@testing-library/vue</code> 可以获得更好的查询体验。两者可以按项目需要选择。</p>
+            </div>
+        </section>
+
+        <!-- Vue 测试配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Vue 测试配置</h3>
+                <h4>安装依赖，配置 Vitest 支持 Vue</h4>
+                <pre><code class="language-bash">$ npm install -D @vue/test-utils @testing-library/vue
+$ npm install -D @vitejs/plugin-vue jsdom</code></pre>
+                <pre><code class="language-typescript">// vitest.config.ts
+import { defineConfig } from "vitest/config";
+import vue from "@vitejs/plugin-vue";
+
+export default defineConfig({
+    plugins: [vue()],
+    test: {
+        environment: "jsdom",
+        globals: true,
+        setupFiles: "./test/setup.ts",
+    },
+});</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>@vue/test-utils</h4>
+                        <ul>
+                            <li>Vue 官方维护</li>
+                            <li>底层 API，灵活度高</li>
+                            <li><code>mount()</code> 挂载组件</li>
+                            <li><code>wrapper.find()</code> 查找元素</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>@testing-library/vue</h4>
+                        <ul>
+                            <li>Testing Library 家族</li>
+                            <li>面向用户行为的 API</li>
+                            <li><code>render()</code> 渲染组件</li>
+                            <li><code>screen.getBy*</code> 查询元素</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Vue mount vs shallowMount -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>挂载方式</h3>
+                <h4>mount 渲染子组件，shallowMount 不渲染</h4>
+                <pre><code class="language-typescript">import { mount, shallowMount } from "@vue/test-utils";
+import UserPage from "./UserPage.vue";
+
+// mount：完整渲染，包含子组件
+const wrapper1 = mount(UserPage);
+// UserPage 内部的 UserCard 也会被渲染
+
+// shallowMount：浅渲染，子组件被替换为占位符
+const wrapper2 = shallowMount(UserPage);
+// UserCard 不会被渲染，只保留 stub</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>方式</th><th>子组件</th><th>速度</th><th>适用场景</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>mount</code></td><td>完整渲染</td><td>稍慢</td><td>集成测试，验证组件协作</td></tr>
+                        <tr><td><code>shallowMount</code></td><td>替换为 stub</td><td>更快</td><td>单元测试，隔离子组件</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>优先用 <code>mount</code>。</strong> <code>shallowMount</code> 会隐藏子组件的 bug，可能导致测试通过但实际运行出错。只有在子组件特别重或特别复杂时才用 <code>shallowMount</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- Vue 组件测试示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Vue 测试示例</h3>
+                <h4>测试一个搜索输入组件</h4>
+                <pre><code class="language-vue">&lt;!-- SearchInput.vue --&gt;
+&lt;template&gt;
+    &lt;div&gt;
+        &lt;input
+            v-model="query"
+            placeholder="搜索..."
+            @keyup.enter="$emit('search', query)"
+        /&gt;
+        &lt;button @click="$emit('search', query)"&gt;搜索&lt;/button&gt;
+        &lt;p v-if="query"&gt;正在搜索: {{ query }}&lt;/p&gt;
+    &lt;/div&gt;
+&lt;/template&gt;
+
+&lt;script setup lang="ts"&gt;
+import { ref } from "vue";
+const query = ref("");
+&lt;/script&gt;</code></pre>
+                <pre><code class="language-typescript">// SearchInput.test.ts
+import { mount } from "@vue/test-utils";
+import SearchInput from "./SearchInput.vue";
+
+it("输入文字后显示搜索提示", async () =&gt; {
+    const wrapper = mount(SearchInput);
+
+    // 找到 input 并输入文字
+    const input = wrapper.find("input");
+    await input.setValue("Vue测试");
+
+    // 验证提示文字
+    expect(wrapper.text()).toContain("正在搜索: Vue测试");
+});
+
+it("点击搜索按钮触发 search 事件", async () =&gt; {
+    const wrapper = mount(SearchInput);
+
+    await wrapper.find("input").setValue("关键词");
+    await wrapper.find("button").trigger("click");
+
+    // 验证 emit 的事件
+    expect(wrapper.emitted()).toHaveProperty("search");
+    expect(wrapper.emitted("search")[0]).toEqual(["关键词"]);
+});
+
+it("按回车也触发 search 事件", async () =&gt; {
+    const wrapper = mount(SearchInput);
+
+    await wrapper.find("input").setValue("回车搜索");
+    await wrapper.find("input").trigger("keyup.enter");
+
+    expect(wrapper.emitted("search")[0]).toEqual(["回车搜索"]);
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 5: Mock 与 Stub -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: Mock</h2>
+                <p>隔离外部依赖，让测试只关注"自己的代码"。</p>
+                <p>测试组件时，你不想真的发 HTTP 请求、不想真的读数据库、不想等 setTimeout。Mock 就是给这些外部依赖放一个"替身"，让测试跑得快、跑得稳。</p>
+            </div>
+        </section>
+
+        <!-- vi.mock -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>vi.mock 模块替换</h3>
+                <h4>整个模块替换为假实现</h4>
+                <pre><code class="language-typescript">// api.ts —— 真实的 API 模块
+export async function fetchUser(id: string) {
+    const res = await fetch(`/api/users/${id}`);
+    return res.json();
+}
+
+// UserProfile.test.tsx
+import { vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { UserProfile } from "./UserProfile";
+
+// 整个 api 模块被替换为假实现
+vi.mock("./api", () =&gt; ({
+    fetchUser: vi.fn().mockResolvedValue({
+        id: "1",
+        name: "张三",
+        email: "zhangsan@test.com",
+    }),
+}));
+
+it("展示用户信息", async () =&gt; {
+    render(&lt;UserProfile userId="1" /&gt;);
+
+    // 等待异步数据加载
+    await waitFor(() =&gt; {
+        expect(screen.getByText("张三")).toBeInTheDocument();
+    });
+});</code></pre>
+                <div class="intro-block">
+                    <p><code>vi.mock()</code> 会拦截模块导入。写在那里的假函数会在所有测试中生效，除非你在单个测试中用 <code>mockResolvedValueOnce</code> 覆盖。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- vi.fn 与 vi.spyOn -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>vi.fn 与 vi.spyOn</h3>
+                <h4>创建假函数、监听真函数的调用</h4>
+                <pre><code class="language-typescript">// vi.fn() —— 创建一个空的间谍函数
+const onClick = vi.fn();
+render(&lt;Button onClick={onClick} /&gt;);
+
+await user.click(screen.getByRole("button"));
+expect(onClick).toHaveBeenCalled();      // 被调用了
+expect(onClick).toHaveBeenCalledTimes(1); // 调用了一次</code></pre>
+                <pre><code class="language-typescript">// vi.spyOn() —— 监听真实对象上的方法
+import { logger } from "./logger";
+
+it("错误时记录日志", () =&gt; {
+    const logSpy = vi.spyOn(logger, "error");
+
+    doSomethingBad();
+
+    expect(logSpy).toHaveBeenCalledWith("发生了错误");
+    expect(logSpy).toHaveBeenCalledTimes(1);
+
+    logSpy.mockRestore(); // 恢复原始实现
+});</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>vi.fn()</h4>
+                        <ul>
+                            <li>创建全新的假函数</li>
+                            <li>不依赖任何真实代码</li>
+                            <li>适合作为 props 传入</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>vi.spyOn()</h4>
+                        <ul>
+                            <li>监听已有的真实方法</li>
+                            <li>记录调用但不改变行为</li>
+                            <li>可以 mockReturn 修改返回值</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Mock API 与 Fake Timers -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Mock 进阶技巧</h3>
+                <h4>模拟 API 调用与定时器</h4>
+                <pre><code class="language-typescript">// Mock fetch —— 拦截所有网络请求
+beforeEach(() =&gt; {
+    global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =&gt; Promise.resolve({ token: "fake-jwt" }),
+    });
+});
+
+afterEach(() =&gt; {
+    vi.restoreAllMocks(); // 每个测试后恢复
+});</code></pre>
+                <pre><code class="language-typescript">// vi.useFakeTimers —— 控制时间
+import { vi } from "vitest";
+
+it("3 秒后显示提示", () =&gt; {
+    vi.useFakeTimers();
+    render(&lt;Toast message="保存成功" /&gt;);
+
+    // 刚渲染时提示可见
+    expect(screen.getByText("保存成功")).toBeInTheDocument();
+
+    // 快进 3000ms
+    vi.advanceTimersByTime(3000);
+
+    // 提示消失
+    expect(screen.queryByText("保存成功")).not.toBeInTheDocument();
+
+    vi.useRealTimers(); // 恢复真实定时器
+});</code></pre>
+                <div class="warning">
+                    <strong>什么时候该 Mock？</strong> 只 Mock 你无法控制的依赖（API、定时器、第三方库）。自己写的代码尽量用真实实现，否则测试就是在测 Mock 而不是测代码。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 6: 异步测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: 异步测试</h2>
+                <p>前端到处是异步——API 请求、定时器、动画回调。</p>
+                <p>异步代码的测试和同步不一样。你不能在数据还没回来时就断言。Vitest 和 Testing Library 提供了专门的工具来处理异步场景。</p>
+            </div>
+        </section>
+
+        <!-- waitFor 与 findBy -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>waitFor 与 findBy</h3>
+                <h4>等待异步操作完成后再断言</h4>
+                <pre><code class="language-typescript">// waitFor —— 轮询直到断言通过
+import { waitFor } from "@testing-library/react";
+
+it("加载完成后显示数据", async () =&gt; {
+    render(&lt;UserList /&gt;);
+
+    // 初始状态：显示加载中
+    expect(screen.getByText("加载中...")).toBeInTheDocument();
+
+    // 等待数据出现（最多等 1 秒，每 50ms 检查一次）
+    await waitFor(() =&gt; {
+        expect(screen.getByText("张三")).toBeInTheDocument();
+        expect(screen.getByText("李四")).toBeInTheDocument();
+    });
+});</code></pre>
+                <pre><code class="language-typescript">// findBy —— 异步版的 getBy，自带等待
+it("findBy 用法", async () =&gt; {
+    render(&lt;UserList /&gt;);
+
+    // findBy 本身就是 Promise，自动等待元素出现
+    const user = await screen.findByText("张三");
+    expect(user).toBeInTheDocument();
+});</code></pre>
+                <div class="intro-block">
+                    <p><code>findBy</code> = <code>getBy</code> + <code>waitFor</code> 的简写。如果只等一个元素出现，用 <code>findBy</code> 更简洁。如果要等多个条件或做复杂断言，用 <code>waitFor</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 异步组件完整测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>异步测试实战</h3>
+                <h4>测试加载状态、成功、失败三种情况</h4>
+                <pre><code class="language-typescript">// UserList.test.tsx
+import { vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { UserList } from "./UserList";
+
+// Mock API
+vi.mock("./api", () =&gt; ({
+    fetchUsers: vi.fn(),
+}));
+
+import { fetchUsers } from "./api";
+
+it("加载中 → 成功显示用户列表", async () =&gt; {
+    vi.mocked(fetchUsers).mockResolvedValue([
+        { id: 1, name: "张三" },
+        { id: 2, name: "李四" },
+    ]);
+
+    render(&lt;UserList /&gt;);
+
+    // 1. 加载状态
+    expect(screen.getByText("加载中...")).toBeInTheDocument();
+
+    // 2. 数据加载完成
+    await waitFor(() =&gt; {
+        expect(screen.getByText("张三")).toBeInTheDocument();
+        expect(screen.getByText("李四")).toBeInTheDocument();
+    });
+
+    // 3. 加载提示消失
+    expect(screen.queryByText("加载中...")).not.toBeInTheDocument();
+});
+
+it("API 失败时显示错误信息", async () =&gt; {
+    vi.mocked(fetchUsers).mockRejectedValue(new Error("网络错误"));
+
+    render(&lt;UserList /&gt;);
+
+    await waitFor(() =&gt; {
+        expect(screen.getByText("加载失败，请重试"))
+            .toBeInTheDocument();
+    });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 7: 测试覆盖率 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 7: 覆盖率</h2>
+                <p>量化测试质量——知道哪些代码还没被测到。</p>
+                <p>覆盖率是度量指标，不是目标。写覆盖率报告是为了发现遗漏，而不是为了凑数字。</p>
+            </div>
+        </section>
+
+        <!-- 覆盖率详解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>覆盖率指标</h3>
+                <h4>四种指标从不同角度衡量测试充分度</h4>
+                <table>
+                    <thead>
+                        <tr><th>指标</th><th>含义</th><th>示例</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>行覆盖率</strong></td><td>执行到的代码行</td><td>100 行代码跑了 80 行 → 80%</td></tr>
+                        <tr><td><strong>分支覆盖率</strong></td><td>执行到的 if/else 分支</td><td>2 个分支跑了 1 个 → 50%</td></tr>
+                        <tr><td><strong>函数覆盖率</strong></td><td>被调用的函数</td><td>10 个函数调用了 8 个 → 80%</td></tr>
+                        <tr><td><strong>语句覆盖率</strong></td><td>执行到的语句数</td><td>类似行覆盖率，但更精确</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-typescript">// vitest.config.ts 中配置覆盖率
+export default defineConfig({
+    test: {
+        coverage: {
+            provider: "istanbul",  // 或 "v8"
+            reporter: ["text", "html", "lcov"],
+            thresholds: {
+                lines: 80,
+                branches: 75,
+                functions: 80,
+                statements: 80,
+            },
+            // 只统计 src 目录下的业务代码
+            include: ["src/**/*.{ts,tsx}"],
+            exclude: ["src/types/**"],
+        },
+    },
+});</code></pre>
+                <div class="intro-block">
+                    <p><strong>80% 规则</strong>：大多数项目把覆盖率门槛设在 80%。核心模块（支付、权限）可以要求 95%+，工具类可以 100%。但不要为了数字而写无意义的测试。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 8: E2E 测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 8: E2E 测试</h2>
+                <p>模拟真实用户操作，测试完整页面流程。</p>
+                <p>E2E 测试站在用户视角，从打开浏览器到完成操作，全程自动化。它最接近真实使用场景，但也最慢、最脆弱。所以只给关键路径写 E2E 测试。</p>
+            </div>
+        </section>
+
+        <!-- Playwright 安装与配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Playwright 配置</h3>
+                <h4>微软出品的 E2E 测试框架，开箱即用</h4>
+                <pre><code class="language-bash">$ npm init playwright@latest</code></pre>
+                <pre><code class="language-typescript">// playwright.config.ts
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+    testDir: "./e2e",
+    baseURL: "http://localhost:3000",
+    use: { browserName: "chromium" },
+    webServer: {
+        command: "npm run dev",
+        port: 3000,
+        reuseExistingServer: true,
+    },
+});</code></pre>
+                <p>Playwright 会自动启动开发服务器、打开浏览器、运行测试、关闭浏览器。整个过程全自动。</p>
+            </div>
+        </section>
+
+        <!-- E2E 测试示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>E2E 测试示例</h3>
+                <h4>模拟用户登录的完整流程</h4>
+                <pre><code class="language-typescript">// e2e/login.spec.ts
+import { test, expect } from "@playwright/test";
+
+test("用户登录流程", async ({ page }) =&gt; {
+    // 1. 导航到登录页
+    await page.goto("/login");
+
+    // 2. 填写表单
+    await page.fill('[data-testid="email"]', "test@example.com");
+    await page.fill('[data-testid="password"]', "password123");
+
+    // 3. 点击登录按钮
+    await page.click('[data-testid="login-button"]');
+
+    // 4. 验证跳转到首页
+    await expect(page).toHaveURL("/dashboard");
+    await expect(page.locator('[data-testid="welcome"]'))
+        .toContainText("欢迎");
+});
+
+test("登录失败显示错误信息", async ({ page }) =&gt; {
+    await page.goto("/login");
+
+    await page.fill('[data-testid="email"]', "wrong@example.com");
+    await page.fill('[data-testid="password"]', "wrong");
+    await page.click('[data-testid="login-button"]');
+
+    // 验证错误提示
+    await expect(page.locator('[data-testid="error"]'))
+        .toBeVisible();
+    await expect(page.locator('[data-testid="error"]'))
+        .toContainText("邮箱或密码错误");
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- data-testid -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>data-testid</h3>
+                <h4>给元素加上测试用的"身份证号"</h4>
+                <pre><code class="language-tsx">// 组件中添加 data-testid
+&lt;input data-testid="email" type="email" /&gt;
+&lt;button data-testid="login-button"&gt;登录&lt;/button&gt;
+&lt;div data-testid="error" role="alert"&gt;错误信息&lt;/div&gt;</code></pre>
+                <p>为什么用 <code>data-testid</code> 而不是 class 或 id？</p>
+                <table>
+                    <thead>
+                        <tr><th>选择器</th><th>优点</th><th>缺点</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>data-testid</code></td><td>专为测试设计，不会被误改</td><td>需要手动添加</td></tr>
+                        <tr><td>class</td><td>不需要额外属性</td><td>样式重构时会频繁变化</td></tr>
+                        <tr><td>id</td><td>唯一性好</td><td>一个页面只能有一个</td></tr>
+                        <tr><td>文本内容</td><td>最接近用户视角</td><td>多语言项目会变化</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- CI 中的测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CI 中的测试</h3>
+                <h4>每次提交代码自动跑测试，拦截问题于上线前</h4>
+                <pre><code class="language-yaml"># .github/workflows/test.yml
+name: Test
+
+on: [push, pull_request]
+
+jobs:
+    unit-test:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: "npm"
+            - run: npm ci
+            - run: npx vitest --run       # 非监听模式
+            - run: npx vitest --coverage
+              # 可上传 coverage 到 Codecov
+
+    e2e-test:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: "npm"
+            - run: npm ci
+            - run: npx playwright install --with-deps
+            - run: npx playwright test      # CI 模式运行
+            - uses: actions/upload-artifact@v4
+              if: failure()
+              with:
+                  name: playwright-report
+                  path: playwright-report/</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>关键配置</h4>
+                        <ul>
+                            <li><code>vitest --run</code>：CI 用非监听模式</li>
+                            <li><code>npm ci</code>：按 lock 文件安装，结果可复现</li>
+                            <li><code>cache: "npm"</code>：缓存依赖加速构建</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>失败时保存证据</h4>
+                        <ul>
+                            <li>Playwright 自动截图和录屏</li>
+                            <li>测试失败时上传 report artifact</li>
+                            <li>覆盖率报告上传到 Codecov</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 测试策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>测试策略总结</h3>
+                <h4>核心业务必须有测试，非核心按需覆盖</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>必须有测试</h4>
+                        <ul>
+                            <li>核心业务逻辑（支付、计算）</li>
+                            <li>关键用户流程（登录、注册、下单）</li>
+                            <li>复杂的工具函数（格式化、校验）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>按需测试</h4>
+                        <ul>
+                            <li>简单的展示组件</li>
+                            <li>纯静态页面</li>
+                            <li>第三方库的封装层</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>目标：测试金字塔——底层单元测试多而快，顶层 E2E 测试少而全。不要追求 100% 覆盖率，而是让每一行测试都"值回票价"。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见排错</h3>
+
+                <div class="warning">
+                    <strong>测试不通过，先看断言，再看报错。</strong> 多数情况下是断言写错了，不是代码有 bug。
+                </div>
+
+                <h4>问题一：<code>expect(element).toBeInTheDocument()</code> 报"不是函数"</h4>
+                <p><strong>原因</strong>：没有引入 <code>@testing-library/jest-dom</code>。</p>
+                <p><strong>修复</strong>：在 <code>test/setup.ts</code> 中添加 <code>import "@testing-library/jest-dom";</code>。</p>
+
+                <h4>问题二：E2E 测试报"page.goto timeout"</h4>
+                <p><strong>原因</strong>：开发服务器没有启动，或者端口配置不对。</p>
+                <p><strong>修复</strong>：确认 <code>playwright.config.ts</code> 中的 <code>webServer</code> 配置正确，端口和启动命令匹配。</p>
+
+                <h4>问题三：快照测试失败但 UI 没变</h4>
+                <p><strong>原因</strong>：可能是组件的 class 名或属性发生了变化（比如 CSS Modules 的哈希值变了）。</p>
+                <p><strong>修复</strong>：检查差异内容，确认是有意更改后运行 <code>vitest -u</code> 更新快照。</p>
+
+                <h4>问题四：<code>screen.getByText</code> 报"找到多个匹配"</h4>
+                <p><strong>原因</strong>：页面上有多个相同文本的元素。</p>
+                <p><strong>修复</strong>：改用 <code>screen.getAllByText</code> 获取数组，或者用更精确的查询如 <code>getByRole</code>。</p>
+
+                <h4>问题五：<code>userEvent.click</code> 后断言失败</h4>
+                <p><strong>原因</strong>：忘记 <code>await</code>，<code>userEvent</code> 操作是异步的。</p>
+                <p><strong>修复</strong>：所有 <code>userEvent</code> 调用前加 <code>await</code>，确保用 <code>userEvent.setup()</code> 初始化。</p>
+
+                <h4>问题六：<code>waitFor</code> 超时</h4>
+                <p><strong>原因</strong>：异步操作耗时太长，或者 Mock 没有正确设置导致数据永远不来。</p>
+                <p><strong>修复</strong>：检查 Mock 是否正确返回了数据，必要时增加超时时间 <code>waitFor(fn, { timeout: 5000 })</code>。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：为以下 <code>capitalize</code> 函数编写单元测试，覆盖空字符串、单个字符、普通字符串三种情况。</p>
+                        <pre><code class="language-typescript">function capitalize(str: string): string {
+    if (!str) return "";
+    return str[0].toUpperCase() + str.slice(1);
+}</code></pre>
+                        <pre><code class="language-typescript">// 你的测试代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">import { describe, it, expect } from "vitest";
+
+describe("capitalize", () =&gt; {
+    it("空字符串返回空字符串", () =&gt; {
+        expect(capitalize("")).toBe("");
+    });
+
+    it("单个字符转大写", () =&gt; {
+        expect(capitalize("a")).toBe("A");
+    });
+
+    it("普通字符串首字母大写", () =&gt; {
+        expect(capitalize("hello")).toBe("Hello");
+    });
+});</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：用 Playwright 编写一个 E2E 测试，验证首页能正常加载，并且包含标题文字。</p>
+                        <pre><code class="language-typescript">// 提示：使用 page.goto 和 expect(page.locator)
+// 你的测试代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">import { test, expect } from "@playwright/test";
+
+test("首页正常加载", async ({ page }) =&gt; {
+    await page.goto("/");
+    await expect(page.locator("h1")).toBeVisible();
+});</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：为以下 TodoItem 组件编写组件测试，验证：点击复选框调用 onToggle、done 为 true 时文字有删除线、点击删除按钮调用 onDelete。</p>
+                        <pre><code class="language-tsx">interface Props {
+    text: string; done: boolean;
+    onToggle: () =&gt; void; onDelete: () =&gt; void;
+}
+export function TodoItem({ text, done, onToggle, onDelete }: Props) {
+    return (
+        &lt;li&gt;
+            &lt;input type="checkbox" checked={done}
+                onChange={onToggle} /&gt;
+            &lt;span style={{ textDecoration:
+                done ? "line-through" : "none" }}&gt;
+                {text}
+            &lt;/span&gt;
+            &lt;button onClick={onDelete}&gt;删除&lt;/button&gt;
+        &lt;/li&gt;
+    );
+}</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+it("点击复选框调用 onToggle", async () =&gt; {
+    const onToggle = vi.fn();
+    render(&lt;TodoItem text="学测试" done={false}
+        onToggle={onToggle} onDelete={vi.fn()} /&gt;);
+    await userEvent.click(screen.getByRole("checkbox"));
+    expect(onToggle).toHaveBeenCalledOnce();
+});
+
+it("done=true 时文字有删除线", () =&gt; {
+    render(&lt;TodoItem text="完成" done={true}
+        onToggle={vi.fn()} onDelete={vi.fn()} /&gt;);
+    expect(screen.getByText("完成"))
+        .toHaveStyle("text-decoration: line-through");
+});
+
+it("点击删除调用 onDelete", async () =&gt; {
+    const onDelete = vi.fn();
+    render(&lt;TodoItem text="删除" done={false}
+        onToggle={vi.fn()} onDelete={onDelete} /&gt;);
+    await userEvent.click(
+        screen.getByRole("button", { name: "删除" })
+    );
+    expect(onDelete).toHaveBeenCalledOnce();
+});</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>测试搞定了。下一章学习 <strong>UI 框架集成</strong>——Tailwind CSS、Ant Design、Element Plus，把 UI 框架优雅地接入 TS 项目。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

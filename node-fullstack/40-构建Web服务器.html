@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第40章 构建Web服务器 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>构建 Web 服务器</h1>
+            <p>Express + TypeScript——路由、中间件、错误处理</p>
+        </section>
+
+        <!-- 开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>当你在浏览器输入一个网址按下回车，服务器是怎么"听懂"并回复的？</h4>
+                <p>这个过程的核心就是 <strong>Web 服务器</strong>。它接收 HTTP 请求，处理后返回响应。</p>
+                <p>Express 是 Node.js 生态中最成熟的 Web 框架。配合 TypeScript，你可以在写路由时就获得参数类型提示和编译时检查。这一章我们来学习如何用它构建一个完整的 Web 服务器。</p>
+            </div>
+        </section>
+
+        <!-- 请求响应流程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>请求响应流程</h3>
+                <h4>从客户端到服务器再回来的完整路径</h4>
+                <div class="ai-diagram">
+                    <h4>图：Web 请求响应完整流程时序</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术时序图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：客户端（浏览器）向服务器发起 HTTP 请求的完整时序流程，经过中间件链、路由处理器和数据库四个参与者
+                    - 各元素关系：客户端（浏览器）发送 HTTP 请求到中间件链；中间件链内部依次执行日志记录、身份认证、请求体解析（自调用）；中间件链将请求转发给路由处理器；路由处理器向数据库发送查询/写入请求（实线箭头）；数据库返回数据给路由处理器（虚线箭头）；路由处理器构建响应返回给中间件链（虚线箭头）；中间件链将 HTTP 响应返回给客户端（虚线箭头）
+                    - 关键标注：四个参与者分别为"客户端（浏览器）"、"中间件链"、"路由处理器"、"数据库"；中间件自调用标注"日志/认证/解析Body"；区分实线请求箭头和虚线响应箭头
+                    - 配色建议：浅灰背景，客户端用蓝色方框，中间件链用紫色方框，路由处理器用绿色方框，数据库用橙色方框，请求箭头用深色实线，响应箭头用橙色虚线
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 1: Express + TS -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: Express 集成</h2>
+                <h4>从零搭建一个带类型的 Web 服务器</h4>
+                <p>Express 本身是 JavaScript 写的，但配合 <code>@types/express</code> 可以获得完整的 TypeScript 类型支持。这一部分我们会完成基本路由、请求类型定义、跨域配置和静态文件服务——这是任何 Web 服务器的地基。</p>
+            </div>
+        </section>
+
+        <!-- 基本路由 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>基本路由</h3>
+                <h4>安装 Express 和类型定义后，立刻就能写路由</h4>
+                <pre><code class="language-bash">$ npm install express
+$ npm install -D @types/express</code></pre>
+                <pre><code class="language-javascript">import express, { Request, Response, NextFunction } from "express";
+
+const app = express();
+
+// 中间件
+app.use(express.json());                           // 解析 JSON body
+app.use(express.urlencoded({ extended: true }));   // 解析表单
+
+// GET 路由
+app.get("/", (req: Request, res: Response) => {
+    res.json({ message: "Hello, TypeScript!" });
+});
+
+// 路由参数
+app.get("/users/:id", (req: Request&lt;{ id: string }&gt;, res: Response) => {
+    const { id } = req.params;
+    res.json({ id, name: "张三" });
+});
+
+// 查询参数
+app.get("/search", (req: Request, res: Response) => {
+    const { q, page = "1", limit = "10" } = req.query;
+    res.json({ query: q, page: Number(page), limit: Number(limit) });
+});
+
+app.listen(3000);</code></pre>
+            </div>
+        </section>
+
+        <!-- POST 请求与类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>POST 与类型</h3>
+                <h4>用泛型参数给 Request 加上 Body 类型</h4>
+                <pre><code class="language-javascript">interface CreatePostBody {
+    title: string;
+    content: string;
+    tags?: string[];
+}
+
+// 泛型参数顺序：Request&lt;Params, ResBody, ReqBody, Query&gt;
+app.post("/posts", (req: Request&lt;{}, {}, CreatePostBody&gt;, res: Response) => {
+    const { title, content, tags } = req.body;
+    // title 和 content 在这里有完整的类型提示
+    res.status(201).json({ id: "1", title, content, tags });
+});</code></pre>
+                <div class="warning">
+                    <strong>泛型参数顺序容易记错：</strong>Request&lt;Params, ResBody, ReqBody, Query&gt;。建议只记常用的，复杂的场景用自定义 TypedRequest 封装。
+                </div>
+            </div>
+        </section>
+
+        <!-- 请求类型扩展 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类型扩展</h3>
+                <h4>给所有路由的 req 加上自定义字段</h4>
+                <pre><code class="language-javascript">// src/types/express.d.ts
+declare module "express-serve-static-core" {
+    interface Request {
+        userId?: string;
+        user?: {
+            id: string;
+            name: string;
+            role: "admin" | "user";
+        };
+    }
+}
+
+// 现在所有路由中都可以访问 req.userId 和 req.user
+app.get("/me", (req: Request, res: Response) => {
+    res.json({ userId: req.userId, user: req.user });
+});</code></pre>
+                <div class="intro-block">
+                    <p>这种"声明合并"的技巧在 Express 项目中非常常用。通过在 <code>.d.ts</code> 文件中扩展类型，你可以在整个项目中共享自定义的请求字段。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- CORS 是什么 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>跨域问题</h3>
+                <h4>浏览器为什么阻止你的 API 请求？</h4>
+                <p>当你的前端跑在 <code>localhost:5173</code>，后端跑在 <code>localhost:3000</code> 时，浏览器会拦截请求。这就是 <strong>CORS</strong>（Cross-Origin Resource Sharing）策略——浏览器只允许同源（相同协议+域名+端口）的请求直接通过。</p>
+                <div class="ai-diagram">
+                    <h4>图：CORS 跨域请求被浏览器拦截的时序</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术时序图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：前端（localhost:5173）与后端（localhost:3000）之间的跨域请求时序，展示浏览器如何拦截缺少 CORS 响应头的跨域请求
+                    - 各元素关系：前端向后端发送 GET /api/users 请求（实线箭头）；后端返回响应数据给前端（虚线箭头）；在浏览器端有一个关键注释框，说明浏览器会检查响应头中是否包含 Access-Control-Allow-Origin，如果没有则拦截响应，前端拿不到数据
+                    - 关键标注：前端地址 localhost:5173、后端地址 localhost:3000、请求路径 GET /api/users、响应头 Access-Control-Allow-Origin、拦截提示文字"浏览器检查响应头，没有 Access-Control-Allow-Origin？拦截！前端拿不到数据"
+                    - 配色建议：浅灰背景，前端用蓝色方框，后端用绿色方框，浏览器端注释框用红色/橙色警示边框突出显示，请求箭头用深色，响应箭头用橙色，拦截标记用红色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <div class="warning">
+                    <strong>CORS 是浏览器的安全策略</strong>，不是服务器的限制。Postman 和 curl 不受影响，因为它们没有"同源策略"的概念。
+                </div>
+            </div>
+        </section>
+
+        <!-- CORS 配置实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CORS 配置</h3>
+                <h4>用 cors 中间件一行搞定跨域</h4>
+                <pre><code class="language-bash">$ npm install cors
+$ npm install -D @types/cors</code></pre>
+                <pre><code class="language-javascript">import cors from "cors";
+
+// 开发环境：允许所有来源
+app.use(cors());
+
+// 生产环境：精确配置
+const corsOptions: cors.CorsOptions = {
+    origin: ["https://myapp.com", "https://admin.myapp.com"],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,           // 允许携带 Cookie
+    maxAge: 86400,               // preflight 缓存 24 小时
+};
+
+app.use(cors(corsOptions));</code></pre>
+                <div class="intro-block">
+                    <p><code>credentials: true</code> 允许前端携带 Cookie 和 Authorization 头。但注意，开启 credentials 时 origin 不能是 <code>*</code>，必须写明具体域名。浏览器对"预检请求"（OPTIONS）会先发一次探测，cors 中间件会自动处理。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 静态文件服务 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>静态文件</h3>
+                <h4>Express 也能直接服务 HTML、CSS、JS 和图片</h4>
+                <pre><code class="language-javascript">import express from "express";
+
+// 基本用法：把 public 目录映射为静态资源
+app.use(express.static("public", {
+    maxAge: "1d",             // 浏览端缓存 1 天
+    etag: true,               // 启用 ETag
+    dotfiles: "deny",         // 禁止访问 .env 等隐藏文件
+}));
+
+// 访问 public/logo.png → http://localhost:3000/logo.png</code></pre>
+                <pre><code class="language-javascript">// SPA 部署：React/Vue 打包后，所有路径都回退到 index.html
+import path from "path";
+
+app.use(express.static(path.join(__dirname, "../client/dist")));
+
+// 必须放在所有 API 路由之后！
+app.get("*", (_req, res) => {
+    res.sendFile(path.join(__dirname, "../client/dist/index.html"));
+});</code></pre>
+                <div class="warning">
+                    <strong>安全提醒：</strong>默认启用目录列表时可能暴露文件结构。生产环境建议设置 <code>dotfiles: "deny"</code>，并且不要把服务器源码目录作为静态目录。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: 路由模块化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 路由模块化</h2>
+                <h4>把路由拆成独立模块，项目才能长得住</h4>
+                <p>把所有路由塞在一个文件里，很快就会变成"面条代码"。Express Router 让你按功能拆分路由——用户路由、文章路由、认证路由各一个文件，最后在入口统一挂载。这也是中大型项目的基本组织方式。</p>
+            </div>
+        </section>
+
+        <!-- Router 使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Express Router</h3>
+                <h4>每个模块一个路由文件，最后挂载到 app 上</h4>
+                <pre><code class="language-javascript">// src/routes/users.ts
+import { Router } from "express";
+
+const router = Router();
+
+router.get("/", async (req, res, next) => {
+    try {
+        const users = await userService.findAll();
+        res.json(users);
+    } catch (err) {
+        next(err); // 交给错误处理中间件
+    }
+});
+
+router.post("/", async (req, res, next) => {
+    try {
+        const user = await userService.create(req.body);
+        res.status(201).json(user);
+    } catch (err) {
+        next(err);
+    }
+});
+
+export default router;</code></pre>
+                <pre><code class="language-javascript">// src/index.ts —— 挂载路由
+import userRoutes from "./routes/users";
+import postRoutes from "./routes/posts";
+
+app.use("/api/users", userRoutes);
+app.use("/api/posts", postRoutes);</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 3: 中间件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 中间件</h2>
+                <h4>请求处理流水线上每一个工位</h4>
+                <p>中间件是 Express 的灵魂。你可以把它理解为"请求处理流水线上的一个工位"——每个工位可以检查、修改请求，或直接截断响应。这一部分我们会学习中间件的执行顺序、next() 的三种用法、日志记录、Cookie 解析、认证以及限流。</p>
+            </div>
+        </section>
+
+        <!-- 中间件流程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>中间件流水线</h3>
+                <h4>请求穿过一个又一个中间件，直到有人响应</h4>
+                <div class="ai-diagram">
+                    <h4>图：Express 中间件流水线处理流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：Express 中间件流水线，展示 HTTP 请求从进入到返回响应的完整流转过程，采用从左到右的水平布局
+                    - 各元素关系：请求节点 → 日志中间件 → 认证中间件 → 路由处理器 → 响应；其中认证中间件有一条分支箭头，标注"未认证"指向"401 拒绝"节点，表示认证失败时直接返回 401 状态码
+                    - 关键标注：每个节点分别标注"请求"、"日志中间件"、"认证中间件"、"路由处理器"、"响应"；分支路径标注"未认证"和"401 拒绝"
+                    - 配色建议：浅蓝/浅灰背景，请求和响应节点用圆角矩形蓝色，日志中间件用浅绿色，认证中间件用浅紫色，路由处理器用浅黄色，401 拒绝用红色/橙色警示色，主流程箭头用深色，分支箭头用橙色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>每个中间件有三个选择：调用 <code>next()</code> 放行、发送响应截断、抛出错误。</p>
+            </div>
+        </section>
+
+        <!-- next() 深入 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>next() 三种用法</h3>
+                <h4>放行、跳过、报错——理解中间件链的关键</h4>
+                <pre><code class="language-javascript">// ① next() —— 交给下一个中间件
+app.use((req, res, next) => {
+    console.log("第一步");
+    next();  // 继续往下走
+});
+
+// ② next(err) —— 跳过所有普通中间件，直接进入错误处理器
+app.use((req, res, next) => {
+    const err = new Error("出问题了");
+    next(err);  // 跳到 4 参数的 errorHandler
+});
+
+// ③ next('route') —— 跳过当前路由剩下的中间件（只在 app.METHOD 中有效）
+app.get("/admin",
+    (req, res, next) => {
+        if (!req.user?.isAdmin) return next("route"); // 跳到下一个 /admin 路由
+        next();
+    },
+    (req, res) => {
+        res.json({ msg: "欢迎管理员" });
+    }
+);
+app.get("/admin", (req, res) => {
+    res.json({ msg: "你不是管理员" });  // next('route') 跳到这里
+});</code></pre>
+                <div class="intro-block">
+                    <p><code>next()</code> 放行到下一个中间件；<code>next(err)</code> 把错误一路传到四参数错误处理器；<code>next('route')</code> 跳过当前路由组中剩余的处理函数，进入下一个匹配的路由。理解这三种调用方式，你就掌握了 Express 中间件的执行模型。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 日志中间件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>日志中间件</h3>
+                <h4>记录每个请求的方法、路径、耗时</h4>
+                <pre><code class="language-javascript">import { Request, Response, NextFunction } from "express";
+
+function logger(req: Request, res: Response, next: NextFunction): void {
+    const start = Date.now();
+    res.on("finish", () => {
+        const duration = Date.now() - start;
+        console.log(`${req.method} ${req.path} ${res.statusCode} - ${duration}ms`);
+    });
+    next();
+}
+
+app.use(logger);</code></pre>
+            </div>
+        </section>
+
+        <!-- 结构化请求日志 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>结构化日志</h3>
+                <h4>生产环境用 pino 替代 console.log</h4>
+                <pre><code class="language-bash">$ npm install pino pino-http</code></pre>
+                <pre><code class="language-javascript">import pino from "pino";
+import pinoHttp from "pino-http";
+
+const logger = pino({
+    level: process.env.LOG_LEVEL || "info",  // debug / info / warn / error
+    transport: process.env.NODE_ENV !== "production"
+        ? { target: "pino-pretty" }   // 开发环境彩色输出
+        : undefined,                   // 生产环境输出 JSON
+});
+
+// 请求日志中间件——自动记录 method、url、status、耗时
+app.use(pinoHttp({ logger }));
+
+// 业务日志
+logger.info({ userId: "123" }, "用户登录");
+logger.warn({ memory: "90%" }, "内存使用率过高");
+logger.error({ err }, "数据库连接失败");</code></pre>
+                <div class="intro-block">
+                    <p>日志级别从低到高：<code>trace</code> &lt; <code>debug</code> &lt; <code>info</code> &lt; <code>warn</code> &lt; <code>error</code> &lt; <code>fatal</code>。开发用 debug，上线用 info，只把 error 和 warn 写入告警系统。结构化日志（JSON 格式）方便 ELK 等日志平台检索和分析。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 认证中间件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>认证中间件</h3>
+                <h4>检查请求头中的 Token，未认证则直接拒绝</h4>
+                <pre><code class="language-javascript">function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) {
+        res.status(401).json({ error: "未提供认证令牌" });
+        return;
+    }
+    try {
+        const payload = verifyToken(token);
+        req.userId = payload.userId;
+        req.user = payload.user;
+        next();
+    } catch {
+        res.status(401).json({ error: "令牌无效或已过期" });
+    }
+}
+
+// 受保护的路由
+app.use("/api/posts", authMiddleware, postRoutes);</code></pre>
+            </div>
+        </section>
+
+        <!-- Cookie 与解析 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Cookie 与解析</h3>
+                <h4>请求体和 Cookie 的解析中间件</h4>
+                <pre><code class="language-bash">$ npm install cookie-parser
+$ npm install -D @types/cookie-parser</code></pre>
+                <pre><code class="language-javascript">import cookieParser from "cookie-parser";
+
+// 注册中间件（放在路由之前）
+app.use(express.json());             // 解析 JSON body → req.body
+app.use(express.urlencoded({ extended: true }));  // 解析表单 → req.body
+app.use(cookieParser("my-secret"));  // 解析 Cookie → req.cookies
+
+// 读取 Cookie
+app.get("/api/profile", (req, res) => {
+    const theme = req.cookies.theme;           // 普通 Cookie
+    const token = req.signedCookies.token;     // 签名 Cookie（防篡改）
+    res.json({ theme, token });
+});
+
+// 设置签名 Cookie
+app.post("/api/theme", (req, res) => {
+    res.cookie("token", "abc123", {
+        signed: true,       // 用密钥签名，客户端无法伪造
+        httpOnly: true,     // JS 无法读取（防 XSS）
+        maxAge: 86400000,   // 1 天过期
+    });
+    res.json({ ok: true });
+});</code></pre>
+                <div class="warning">
+                    <strong>签名 vs 普通Cookie：</strong>签名 Cookie 用服务端密钥生成校验值，客户端篡改后服务端能检测到。适合存储 session ID、token 等敏感数据。
+                </div>
+            </div>
+        </section>
+
+        <!-- 异步中间件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>异步中间件</h3>
+                <h4>Express 不自动捕获 async 错误，需要包装一层</h4>
+                <pre><code class="language-javascript">// 异步中间件包装器
+function asyncHandler(
+    fn: (req: Request, res: Response, next: NextFunction) => Promise&lt;any&gt;
+) {
+    return (req: Request, res: Response, next: NextFunction) => {
+        Promise.resolve(fn(req, res, next)).catch(next);
+    };
+}
+
+// 使用——无需 try/catch，错误自动传给 errorHandler
+app.get("/api/users", asyncHandler(async (req, res) => {
+    const users = await userService.findAll();
+    res.json(users);
+}));</code></pre>
+                <div class="intro-block">
+                    <p>这是 Express 项目中的经典模式。每个 async 路由都套一层 <code>asyncHandler</code>，就不用在每个路由里手动 try/catch 了。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 请求限流 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>请求限流</h3>
+                <h4>防止恶意用户把你的服务器打爆</h4>
+                <pre><code class="language-bash">$ npm install express-rate-limit</code></pre>
+                <pre><code class="language-javascript">import rateLimit from "express-rate-limit";
+
+// 全局限流：所有接口每 15 分钟最多 100 次请求
+const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: { error: "请求太频繁，请稍后再试" },
+    standardHeaders: true,   // 返回 RateLimit-* 头
+    legacyHeaders: false,
+});
+
+app.use(globalLimiter);
+
+// 单路由限流：登录接口每分钟最多 5 次
+const loginLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    message: { error: "登录尝试过多，请1分钟后再试" },
+});
+
+app.post("/api/login", loginLimiter, asyncHandler(async (req, res) => {
+    // 登录逻辑...
+}));</code></pre>
+                <div class="intro-block">
+                    <p>限流是生产环境的基本防护。全局限流防止整体过载，单路由限流保护敏感操作（登录、注册、发送验证码）。<code>standardHeaders: true</code> 让前端通过响应头知道剩余配额，配合前端做友好提示。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4: 错误处理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 错误处理</h2>
+                <h4>统一兜底，让错误不再是噩梦</h4>
+                <p>程序总会出错。与其让每个路由自己处理错误，不如统一在一个地方兜底。这一部分我们用自定义错误类区分"预期的业务错误"和"未知的系统 bug"，再通过全局错误处理器统一返回格式化的响应。</p>
+            </div>
+        </section>
+
+        <!-- 自定义错误类 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自定义错误类</h3>
+                <h4>用 AppError 区分"预期的错误"和"未知的 bug"</h4>
+                <pre><code class="language-javascript">class AppError extends Error {
+    constructor(
+        public statusCode: number,
+        public message: string,
+        public isOperational = true,
+    ) {
+        super(message);
+    }
+}
+
+// 在路由中使用
+app.get("/api/users/:id", asyncHandler(async (req, res) => {
+    const user = await userService.findById(req.params.id);
+    if (!user) {
+        throw new AppError(404, "用户不存在");
+    }
+    res.json(user);
+}));</code></pre>
+            </div>
+        </section>
+
+        <!-- 全局错误处理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>全局错误处理</h3>
+                <h4>四个参数的中间件就是错误处理器，必须注册在所有路由之后</h4>
+                <pre><code class="language-javascript">// 全局错误处理中间件（4个参数）
+function errorHandler(
+    err: Error, req: Request, res: Response, next: NextFunction
+): void {
+    if (err instanceof AppError) {
+        res.status(err.statusCode).json({
+            status: "error",
+            message: err.message,
+        });
+        return;
+    }
+
+    // 未知错误——不要暴露内部细节
+    console.error("未处理的错误:", err);
+    res.status(500).json({
+        status: "error",
+        message: "服务器内部错误",
+    });
+}
+
+// 注册（必须在所有路由之后！）
+app.use(errorHandler);
+
+// 404 处理
+app.use((_req, res) => {
+    res.status(404).json({ error: "接口不存在" });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <div class="warning">
+                    <strong>中间件的注册顺序很重要！</strong> 日志要放在最前面，错误处理要放在最后面。
+                </div>
+
+                <h4>问题一：中间件不生效</h4>
+                <p><strong>原因</strong>：<code>app.use(middleware)</code> 写在了路由定义之后。</p>
+                <p><strong>修复</strong>：中间件必须在路由之前注册。Express 按注册顺序执行。</p>
+
+                <h4>问题二：async 路由报错但服务器没有响应</h4>
+                <p><strong>原因</strong>：Express 4.x 不会自动捕获 async 函数抛出的错误。</p>
+                <p><strong>修复</strong>：使用 <code>asyncHandler</code> 包装，或在每个路由内手动 try/catch 并调用 <code>next(err)</code>。</p>
+
+                <h4>问题三：404 处理器拦截了所有请求</h4>
+                <p><strong>原因</strong>：<code>app.use((_req, res) => ...)</code> 注册在了业务路由之前。</p>
+                <p><strong>修复</strong>：404 处理器必须放在所有路由和错误处理器的最后。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：创建一个 <code>GET /api/time</code> 接口，返回当前时间和请求的 URL。给它加上日志中间件。</p>
+                        <pre><code class="language-javascript">// 提示：在 res.on("finish", ...) 中记录日志
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">app.use(logger); // 日志中间件
+app.get("/api/time", (req, res) => {
+    res.json({ time: new Date().toISOString(), url: req.url });
+});</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：写一个 <code>POST /api/users</code> 路由，要求 body 中必须有 name 和 email。如果缺少，用 AppError 返回 400。</p>
+                        <pre><code class="language-javascript">// 提示：检查 req.body.name 和 req.body.email
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">app.post("/api/users", asyncHandler(async (req, res) => {
+    const { name, email } = req.body;
+    if (!name || !email) {
+        throw new AppError(400, "name 和 email 必填");
+    }
+    res.status(201).json({ name, email });
+}));</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>Web 服务器的基础你已经掌握了。下一章看看<strong>现代后端框架</strong>——Express 之外的更多选择。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

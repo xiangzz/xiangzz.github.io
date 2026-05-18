@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>08 中断与人机交互</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏸️</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 08 章</div>
+            <h1>中断与人机交互</h1>
+            <p>让人类介入 AI 的决策过程</p>
+            <strong>interrupt() 暂停 → 人类审批 → Command 恢复</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>没有刹车</h2>
+                <h4>智能体在无人监督的情况下自动执行了所有操作——包括那些不该自动执行的操作。</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>发了不该发的邮件</h4>
+                        <p>智能体自动给客户发了一封通知邮件，措辞不当引发了投诉。<strong>如果发之前有人审核一下就好了</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>执行了危险操作</h4>
+                        <p>智能体调用 <code>DELETE FROM users</code> 清空了测试数据库。<strong>删除操作应该有人确认</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>缺少关键信息</h4>
+                        <p>智能体处理退款请求时，需要用户确认退款金额和收款账户。<strong>但图已经跑完了，没机会问</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>interrupt() 就是为这个设计的：</strong>在任意节点暂停执行，等待人类输入后再继续。暂停期间状态完整保存在 checkpointer 中，可以无限期等待。
+                </div>
+            </div>
+        </section>
+
+        <!-- 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>前置知识</h4>
+                        <ul>
+                            <li><a href="./05-persistence.html">持久化</a> — checkpointer 是中断的前提</li>
+                            <li><a href="./04-quickstart.html">快速上手</a> — 完整的智能体代码</li>
+                            <li>理解节点和状态的基本概念</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>学完后你应该能</h4>
+                        <ul>
+                            <li>使用 interrupt() 暂停图执行</li>
+                            <li>使用 Command({ resume }) 恢复执行</li>
+                            <li>实现审批、审查、输入验证等模式</li>
+                            <li>避免 interrupt 的常见陷阱</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 核心机制 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>核心机制</h2>
+                <h4>interrupt() 暂停，Command({ resume }) 恢复</h4>
+                <div class="ai-diagram">
+                    <h4>图：中断与恢复的完整流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个从左到右的流程图，中间有一个暂停环节
+                    - 节点 1："节点 A 执行"（蓝色）
+                    - → 节点 2："interrupt() 暂停"（橙色，大号突出显示）
+                    - → 状态保存到 checkpointer（灰色圆柱体），标注"状态完整保存"
+                    - → 一个人形图标："人类审批"（绿色）
+                    - → 节点 3："Command({ resume }) 恢复"（蓝色）
+                    - → 节点 4："继续执行"（蓝色）
+                    - 底部标注："interrupt() 的返回值 = Command 传入的 resume 值"
+                    - 各元素关系：节点A→interrupt 是线性执行，interrupt 后图暂停并将状态保存到 checkpointer，等待人类审批后通过 Command resume 恢复，从中断点继续执行后续节点
+                    - 关键标注：interrupt 节点标注"暂停并传出问题"，checkpointer 标注"完整保存当前 state"，人形图标标注"人类输入审批结果"，Command 标注"resume 值成为 interrupt 返回值"
+                    - 配色建议：浅灰背景，节点柔和蓝/绿，interrupt 节点橙色高亮
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <pre><code><span style="color: var(--primary-color);">import</span> { interrupt } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+
+<span style="color: var(--primary-color);">async function</span> approvalNode(state) {
+    <span style="color: var(--text-muted);">// 暂停并请求审批</span>
+    <span style="color: var(--primary-color);">const</span> approved = interrupt(<span style="color: var(--success-color);">"Do you approve this action?"</span>);
+    <span style="color: var(--text-muted);">// Command({ resume: true }) 传入的值成为 approved</span>
+    <span style="color: var(--primary-color);">return</span> { approved };
+}</code></pre>
+                <div class="key-point">
+                    <strong>三步走：</strong>① 调用 <code>interrupt()</code> 暂停执行，传入提示信息 → ② 状态保存到 checkpointer → ③ 用 <code>Command({ resume: value })</code> 恢复，value 成为 interrupt() 的返回值。
+                </div>
+            </div>
+        </section>
+
+        <!-- 暂停与恢复 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>暂停与恢复</h2>
+                <h4>完整的中断-恢复代码流程</h4>
+                <pre><code><span style="color: var(--primary-color);">import</span> { Command } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+
+<span style="color: var(--primary-color);">const</span> config = { configurable: { thread_id: <span style="color: var(--success-color);">"thread-1"</span> } };
+
+<span style="color: var(--text-muted);">// 第一次运行 — 遇到中断暂停</span>
+<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> graph.invoke({ input: <span style="color: var(--success-color);">"data"</span> }, config);
+
+<span style="color: var(--text-muted);">// 查看中断内容</span>
+console.log(result.__interrupt__);
+<span style="color: var(--text-muted);">// [{ value: 'Do you approve this action?', ... }]</span>
+
+<span style="color: var(--text-muted);">// 用人类的响应恢复</span>
+<span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--primary-color);">true</span> }), config);</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>三个关键点</h4>
+                        <ul>
+                            <li><strong>同一个 thread_id</strong>：恢复时必须用和暂停时相同的线程</li>
+                            <li><strong>resume 值 = 返回值</strong>：<code>Command({ resume: true })</code> 中的 <code>true</code> 成为 interrupt() 的返回值</li>
+                            <li><strong>节点从头执行</strong>：恢复后节点重新执行，不是从中断行继续</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 审批模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>审批模式</h2>
+                <h4>interrupt 返回布尔值，决定走哪条路</h4>
+                <pre><code><span style="color: var(--primary-color);">const</span> approvalNode: <span style="color: var(--primary-color);">typeof</span> State.Node = (state) => {
+  <span style="color: var(--primary-color);">const</span> isApproved = interrupt({
+    question: <span style="color: var(--success-color);">"Do you want to proceed?"</span>,
+    details: state.actionDetails,
+  });
+
+  <span style="color: var(--primary-color);">if</span> (isApproved) {
+    <span style="color: var(--primary-color);">return new</span> Command({ goto: <span style="color: var(--success-color);">"proceed"</span> });
+  } <span style="color: var(--primary-color);">else</span> {
+    <span style="color: var(--primary-color);">return new</span> Command({ goto: <span style="color: var(--success-color);">"cancel"</span> });
+  }
+};
+
+<span style="color: var(--text-muted);">// 恢复时传入 true 审批或 false 拒绝</span>
+<span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--primary-color);">true</span> }), config);   <span style="color: var(--text-muted);">// 审批</span>
+<span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--primary-color);">false</span> }), config);  <span style="color: var(--text-muted);">// 拒绝</span></code></pre>
+            </div>
+        </section>
+
+        <!-- 审查与编辑 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>审查与编辑</h2>
+                <h4>人类修改智能体生成的内容后再继续</h4>
+                <pre><code><span style="color: var(--primary-color);">const</span> reviewNode: <span style="color: var(--primary-color);">typeof</span> State.Node = (state) => {
+  <span style="color: var(--primary-color);">const</span> editedContent = interrupt({
+    instruction: <span style="color: var(--success-color);">"Review and edit this content"</span>,
+    content: state.generatedText,
+  });
+  <span style="color: var(--primary-color);">return</span> { generatedText: editedContent };
+};
+
+<span style="color: var(--text-muted);">// 恢复时提供编辑后的内容</span>
+<span style="color: var(--primary-color);">await</span> graph.invoke(
+  <span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--success-color);">"The edited and improved text"</span> }),
+  config
+);</code></pre>
+                <div class="info-block">
+                    <strong>模式：</strong>智能体生成内容 → interrupt 暂停并展示给人类 → 人类编辑 → resume 传回编辑后的内容 → 智能体用编辑后的内容继续。
+                </div>
+            </div>
+        </section>
+
+        <!-- 工具中的中断 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工具中的中断</h2>
+                <h4>interrupt 不只能在节点里用——工具函数里也能用</h4>
+                <pre><code><span style="color: var(--primary-color);">import</span> { tool } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/tools"</span>;
+
+<span style="color: var(--primary-color);">const</span> sendEmailTool = tool(
+  <span style="color: var(--primary-color);">async</span> ({ to, subject, body }) => {
+    <span style="color: var(--primary-color);">const</span> response = interrupt({
+      action: <span style="color: var(--success-color);">"send_email"</span>,
+      to, subject, body,
+      message: <span style="color: var(--success-color);">"Approve sending this email?"</span>,
+    });
+
+    <span style="color: var(--primary-color);">if</span> (response?.action === <span style="color: var(--success-color);">"approve"</span>) {
+      <span style="color: var(--primary-color);">return</span> <span style="color: var(--success-color);">`Email sent to ${response.to ?? to}`</span>;
+    }
+    <span style="color: var(--primary-color);">return</span> <span style="color: var(--success-color);">"Email cancelled by user"</span>;
+  },
+  {
+    name: <span style="color: var(--success-color);">"send_email"</span>,
+    description: <span style="color: var(--success-color);">"Send an email"</span>,
+    schema: z.object({ to: z.string(), subject: z.string(), body: z.string() }),
+  }
+);</code></pre>
+                <div class="key-point">
+                    <strong>为什么在工具里中断：</strong>不是所有工具调用都需要人类确认。但发邮件、删除数据、支付等高风险操作，应该在执行前暂停等待人类批准。
+                </div>
+            </div>
+        </section>
+
+        <!-- 输入验证 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>输入验证</h2>
+                <h4>用 while 循环反复询问，直到获得合法输入</h4>
+                <pre><code><span style="color: var(--primary-color);">const</span> getAgeNode: <span style="color: var(--primary-color);">typeof</span> State.Node = (state) => {
+  <span style="color: var(--primary-color);">let</span> prompt = <span style="color: var(--success-color);">"What is your age?"</span>;
+
+  <span style="color: var(--primary-color);">while</span> (<span style="color: var(--primary-color);">true</span>) {
+    <span style="color: var(--primary-color);">const</span> answer = interrupt(prompt);
+    <span style="color: var(--primary-color);">if</span> (<span style="color: var(--primary-color);">typeof</span> answer === <span style="color: var(--success-color);">"number"</span> && answer > <span style="color: var(--primary-color);">0</span>) {
+      <span style="color: var(--primary-color);">return</span> { age: answer };
+    } <span style="color: var(--primary-color);">else</span> {
+      prompt = <span style="color: var(--success-color);">`'${answer}' is not a valid age. Please enter a positive number.`</span>;
+    }
+  }
+};</code></pre>
+                <div class="ai-diagram">
+                    <h4>图：输入验证的循环模式</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个验证循环流程图
+                    - 节点 1："interrupt() 询问年龄"（蓝色圆角矩形）
+                    - → 菱形判断："输入合法？"（橙色菱形）
+                    - "是" → 节点 2："返回年龄，继续执行"（绿色）
+                    - "否" → 回到节点 1，标注"修改提示词，重新询问"（红色虚线回边）
+                    - 底部示例："第1次: 'abc' → 不合法 → 第2次: -5 → 不合法 → 第3次: 25 → 合法 → 继续"
+                    - 各元素关系：interrupt 询问→判断是线性串联，判断"合法"则继续执行后续节点，判断"不合法"则回到 interrupt 形成循环，每次循环修改提示词重新询问
+                    - 关键标注：interrupt 节点标注"暂停等待用户输入"，判断菱形标注"验证逻辑"，回边标注"修改提示词重新询问"
+                    - 配色建议：浅灰背景，合法路径绿色，不合法路径红色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 多个中断 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多个中断</h2>
+                <h4>并行分支各有中断时，用 ID 映射恢复值</h4>
+                <pre><code><span style="color: var(--primary-color);">import</span> { isInterrupted, INTERRUPT } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+
+<span style="color: var(--text-muted);">// 两个并行节点各有一个 interrupt</span>
+<span style="color: var(--primary-color);">const</span> interruptedResult = <span style="color: var(--primary-color);">await</span> graph.invoke({ vals: [] }, config);
+<span style="color: var(--text-muted);">// { __interrupt__: [{ id: '...', value: 'question_a' }, { id: '...', value: 'question_b' }] }</span>
+
+<span style="color: var(--text-muted);">// 一次恢复所有中断</span>
+<span style="color: var(--primary-color);">const</span> resumeMap: Record&lt;string, string&gt; = {};
+<span style="color: var(--primary-color);">if</span> (isInterrupted(interruptedResult)) {
+  <span style="color: var(--primary-color);">for</span> (<span style="color: var(--primary-color);">const</span> i <span style="color: var(--primary-color);">of</span> interruptedResult[INTERRUPT]) {
+    <span style="color: var(--primary-color);">if</span> (i.id != <span style="color: var(--primary-color);">null</span>) {
+      resumeMap[i.id] = <span style="color: var(--success-color);">`answer for ${i.value}`</span>;
+    }
+  }
+}
+<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: resumeMap }), config);</code></pre>
+            </div>
+        </section>
+
+        <!-- 五条铁律 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>五条铁律</h2>
+                <h4>违反任何一条都会导致中断行为异常</h4>
+                <div class="warning" style="margin-bottom: 12px;">
+                    <strong>规则 1：不要用 try/catch 包裹 interrupt</strong><br>
+                    interrupt 通过抛出异常来暂停执行。try/catch 会捕获这个异常，导致图无法正确暂停。
+                </div>
+                <div class="warning" style="margin-bottom: 12px;">
+                    <strong>规则 2：不要在节点内重排 interrupt 调用</strong><br>
+                    interrupt 的匹配是基于索引的。如果节点内有多个 interrupt，恢复时按顺序匹配。调换顺序会导致值错位。
+                </div>
+                <div class="warning" style="margin-bottom: 12px;">
+                    <strong>规则 3：只传可 JSON 序列化的值</strong><br>
+                    不要传函数、Symbol、循环引用等复杂对象。interrupt 的值会被序列化保存。
+                </div>
+                <div class="warning" style="margin-bottom: 12px;">
+                    <strong>规则 4：interrupt 前的副作用必须幂等</strong><br>
+                    恢复时节点会从头重新执行。interrupt 之前的代码会重新运行。如果之前发了 HTTP 请求，恢复时会再发一次。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>interrupt 没暂停</h4>
+                        <p><strong>症状：</strong>调用了 interrupt() 但图继续执行了。</p>
+                        <p><strong>修复：</strong>检查是否被 try/catch 包裹了。另外确认编译时传了 checkpointer——没有 checkpointer 就没有持久化，中断无法工作。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>恢复后拿到错误的值</h4>
+                        <p><strong>症状：</strong>resume 传入 true，但 interrupt() 返回的不是 true。</p>
+                        <p><strong>修复：</strong>确认使用同一个 thread_id。不同线程的中断互不影响。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>中断后无法恢复</h4>
+                        <p><strong>症状：</strong>invoke(new Command({ resume })) 报错。</p>
+                        <p><strong>修复：</strong>必须用相同的 thread_id 和配置。中断信息绑定在特定线程上。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 动手练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>构建一个带审批门的文档发布流程</h4>
+                <div class="key-point">
+                    <strong>任务：</strong>构建一个图，包含"生成文档 → 人工审批 → 发布/拒绝"三步。
+                </div>
+                <ul>
+                    <li>节点 1：生成文档内容</li>
+                    <li>节点 2：interrupt() 暂停，展示文档给人类审批</li>
+                    <li>如果审批通过 → 节点 3：发布文档</li>
+                    <li>如果审批拒绝 → 回到节点 1，附带拒绝理由重新生成</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <pre><code><span style="color: var(--primary-color);">const</span> State = <span style="color: var(--primary-color);">new</span> StateSchema({
+  topic: z.string(),
+  content: z.string(),
+  feedback: z.string().optional(),
+});
+
+<span style="color: var(--text-muted);">// 节点 1：生成文档</span>
+<span style="color: var(--primary-color);">const</span> generateDoc: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> State&gt; = <span style="color: var(--primary-color);">async</span> (state) => {
+  <span style="color: var(--primary-color);">const</span> prompt = state.feedback
+    ? <span style="color: var(--success-color);">`Rewrite doc about ${state.topic}. Feedback: ${state.feedback}`</span>
+    : <span style="color: var(--success-color);">`Write a doc about ${state.topic}`</span>;
+  <span style="color: var(--primary-color);">const</span> msg = <span style="color: var(--primary-color);">await</span> model.invoke(prompt);
+  <span style="color: var(--primary-color);">return</span> { content: msg.content };
+};
+
+<span style="color: var(--text-muted);">// 节点 2：审批</span>
+<span style="color: var(--primary-color);">const</span> review: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> State&gt; = (state) => {
+  <span style="color: var(--primary-color);">const</span> decision = interrupt({ content: state.content, question: <span style="color: var(--success-color);">"Approve?"</span> });
+  <span style="color: var(--primary-color);">if</span> (decision.approved) <span style="color: var(--primary-color);">return new</span> Command({ goto: <span style="color: var(--success-color);">"publish"</span> });
+  <span style="color: var(--primary-color);">return</span> { feedback: decision.feedback };
+};</code></pre>
+                <div class="key-point">
+                    <strong>模式：</strong>interrupt 获取人类决策 → Command(goto) 路由到不同节点。拒绝时附带 feedback，生成节点根据 feedback 重新创作。
+                </div>
+            </div>
+        </section>
+
+        <!-- 本章回顾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>使用 interrupt() 在任意点暂停执行</li>
+                            <li>使用 Command({ resume }) 恢复执行</li>
+                            <li>实现审批、审查、输入验证模式</li>
+                            <li>处理并行分支中的多个中断</li>
+                            <li>避免 interrupt 的五条铁律</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>它和前后章节的关系</h4>
+                        <ul>
+                            <li><a href="./05-persistence.html">持久化</a> — 中断依赖 checkpointer</li>
+                            <li><a href="./06-durable-execution.html">持久化执行</a> — 长时间暂停的基础</li>
+                            <li><strong>中断与人机交互</strong> — pause/resume 机制</li>
+                            <li><a href="./09-time-travel.html">下一章：时间旅行</a> — 中断与回溯的组合</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>interrupt() 让人类成为智能体决策环的一部分。高风险操作必须经过人类确认，缺失信息可以向人类询问。但记住五条铁律——违反任何一条都会导致意外行为。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./09-time-travel.html">下一章：时间旅行</a> — 从中断点回溯和分叉</li>
+                            <li><a href="./10-memory.html">记忆管理</a> — 跨会话的用户偏好</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关章节</h4>
+                        <ul>
+                            <li><a href="./05-persistence.html">持久化</a> — checkpointer 详解</li>
+                            <li><a href="./07-streaming.html">流式处理</a> — 实时反馈</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

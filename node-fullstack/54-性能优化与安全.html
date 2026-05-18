@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第54章 性能优化与安全 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>性能优化与安全</h1>
+            <p>让应用又快又安全——全栈开发者的最后两把刷子</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>为什么接口响应从 50ms 变成了 500ms？为什么 Google 搜索你的网站会出现"此网站已被黑客入侵"的警告？</h4>
+                <p>性能和安全是生产环境的两条生命线。<strong>慢一秒，用户跑一半；漏一个洞，数据全泄露。</strong></p>
+                <p>这一章是全课程的最后一章，也是最不能跳过的一章。我们从后端缓存、前端优化，讲到四大安全漏洞的防御。</p>
+            </div>
+        </section>
+
+        <!-- Part 1: 后端性能 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 后端性能</h2>
+                <p>缓存策略和数据库索引，数量级的性能提升。</p>
+            </div>
+        </section>
+
+        <!-- Redis 缓存 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Redis 缓存</h3>
+                <h4>不重复计算，直接返回结果</h4>
+                <p><strong>缓存</strong>就是把计算结果存起来，下次同样的请求直接返回，不再重复计算。</p>
+                <pre><code class="language-typescript">// 通用缓存包装器
+async function cacheable&lt;T&gt;(
+  key: string,
+  fetcher: () =&gt; Promise&lt;T&gt;,
+  ttl: number = 300  // 默认5分钟
+): Promise&lt;T&gt; {
+  const cached = await redis.get(key);
+  if (cached) return JSON.parse(cached);
+
+  const data = await fetcher();
+  await redis.setex(key, ttl, JSON.stringify(data));
+  return data;
+}
+
+// 使用
+const user = await cacheable(
+  `user:${id}`,
+  () =&gt; prisma.user.findUnique({ where: { id } }),
+  600  // 10分钟
+);</code></pre>
+                <p>这个比喻只是为了帮你建立直观感受：缓存像把常用工具放在桌面，而不是每次都去仓库找。实际上缓存涉及失效策略、穿透防护等复杂机制。</p>
+            </div>
+        </section>
+
+        <!-- 缓存失效 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>缓存失效策略</h3>
+                <h4>数据改了，缓存要跟着变</h4>
+                <pre><code class="language-typescript">// 写操作后使缓存失效
+app.put('/api/users/:id', async (req, res) =&gt; {
+  const user = await prisma.user.update({
+    where: { id: Number(req.params.id) },
+    data: req.body,
+  });
+
+  // 使相关缓存失效
+  await redis.del(`user:${req.params.id}`);
+  await redis.del('users:list');
+
+  res.json(user);
+});</code></pre>
+                <table>
+                    <thead><tr><th>模式</th><th>策略</th><th>适用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td>Cache-Aside</td><td>先查缓存，miss 时查 DB 回填</td><td>通用</td></tr>
+                        <tr><td>Write-Through</td><td>写数据时同时更新缓存</td><td>一致性要求高</td></tr>
+                        <tr><td>Write-Behind</td><td>先写缓存，异步写 DB</td><td>写密集场景</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 数据库索引 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据库索引</h3>
+                <h4>给查询加速的目录</h4>
+                <pre><code class="language-prisma">// prisma/schema.prisma
+model Post {
+  id        Int      @id @default(autoincrement())
+  title     String
+  slug      String   @unique
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  authorId  Int
+  author    User     @relation(fields: [authorId], references: [id])
+
+  @@index([authorId])                // 外键索引
+  @@index([published, createdAt])    // 复合索引
+}</code></pre>
+                <div class="intro-block">
+                    <p>复合索引有<strong>最左前缀原则</strong>：索引 <code>[published, createdAt]</code> 能优化 <code>WHERE published = true</code>，但不能优化 <code>WHERE createdAt > '2024-01-01'</code>（跳过了第一列）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- N+1 问题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>N+1 问题</h3>
+                <h4>最常见的数据库性能杀手</h4>
+                <pre><code class="language-typescript">// 错误：N+1 查询
+const posts = await prisma.post.findMany(); // 1次
+for (const post of posts) {
+  const author = await prisma.user.findUnique({  // N次！
+    where: { id: post.authorId },
+  });
+}
+
+// 正确：使用 include 预加载
+const posts = await prisma.post.findMany({
+  include: { author: true },  // 1次 JOIN 搞定
+});
+
+// 更好：只查需要的字段
+const posts = await prisma.post.findMany({
+  select: {
+    id: true, title: true,
+    author: { select: { id: true, name: true } },
+  },
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 2: 前端性能 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 前端性能</h2>
+                <p>代码分割、懒加载、图片优化。</p>
+            </div>
+        </section>
+
+        <!-- 代码分割 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>代码分割</h3>
+                <h4>不用的代码不加载</h4>
+                <pre><code class="language-typescript">// React.lazy 懒加载重型组件
+import { lazy, Suspense } from 'react';
+
+const HeavyChart = lazy(() =&gt; import('@/components/HeavyChart'));
+
+function DashboardPage() {
+  return (
+    &lt;div&gt;
+      &lt;h1&gt;仪表盘&lt;/h1&gt;
+      &lt;Suspense fallback={&lt;div&gt;加载中...&lt;/div&gt;}&gt;
+        &lt;HeavyChart /&gt;
+      &lt;/Suspense&gt;
+    &lt;/div&gt;
+  );
+}
+
+// Next.js dynamic（支持 SSR 控制）
+import dynamic from 'next/dynamic';
+const Map = dynamic(() =&gt; import('@/components/Map'), {
+  ssr: false,  // 禁用 SSR
+  loading: () =&gt; &lt;div&gt;地图加载中...&lt;/div&gt;,
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 图片优化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>图片优化</h3>
+                <h4>Next.js Image 自动处理格式和尺寸</h4>
+                <pre><code class="language-typescript">import Image from 'next/image';
+
+// 自动转 WebP/AVIF、适配尺寸、懒加载
+&lt;Image
+  src="/hero.jpg"
+  alt="首页大图"
+  width={1200}
+  height={600}
+  sizes="(max-width: 768px) 100vw, 50vw"
+  priority   // 首屏图片优先加载
+/&gt;</code></pre>
+                <table>
+                    <thead><tr><th>指标</th><th>衡量内容</th><th>优秀阈值</th></tr></thead>
+                    <tbody>
+                        <tr><td>LCP</td><td>最大内容渲染时间</td><td>&lt; 2.5s</td></tr>
+                        <tr><td>FID</td><td>首次交互延迟</td><td>&lt; 100ms</td></tr>
+                        <tr><td>CLS</td><td>累积布局偏移</td><td>&lt; 0.1</td></tr>
+                        <tr><td>TTFB</td><td>首字节时间</td><td>&lt; 800ms</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 3: 安全 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 安全防御</h2>
+                <p>XSS、CSRF、SQL 注入、依赖审计——四大安全威胁。</p>
+            </div>
+        </section>
+
+        <!-- XSS -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>XSS 跨站脚本</h3>
+                <h4>恶意脚本注入到你的页面中</h4>
+                <p><strong>XSS</strong> 是攻击者把恶意 JavaScript 注入到网页中，在其他用户浏览时执行。</p>
+                <pre><code class="language-typescript">// React JSX 自动转义（安全）
+const userInput = '&lt;script&gt;alert("xss")&lt;/script&gt;';
+return &lt;div&gt;{userInput}&lt;/div&gt;;  // 自动转义
+
+// 需要渲染 HTML 时使用 DOMPurify
+import DOMPurify from 'dompurify';
+const clean = DOMPurify.sanitize(dirtyHtml, {
+  ALLOWED_TAGS: ['b', 'i', 'a', 'p'],
+});
+
+// 配置 CSP 头（Content Security Policy）
+import helmet from 'helmet';
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+    },
+  },
+}));</code></pre>
+            </div>
+        </section>
+
+        <!-- CSRF -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CSRF 跨站伪造</h3>
+                <h4>诱导用户在不知情下执行操作</h4>
+                <pre><code class="language-typescript">// 防御1：SameSite Cookie（最简单有效）
+app.use(session({
+  cookie: {
+    httpOnly: true,    // JS 无法读取
+    secure: true,      // 仅 HTTPS
+    sameSite: 'strict', // 不允许跨站发送
+  },
+}));
+
+// 防御2：验证 Origin 头
+function csrfCheck(req, res, next) {
+  const origin = req.headers.origin;
+  const allowed = ['https://myapp.com'];
+  if (req.method !== 'GET' && !allowed.some(o =&gt; origin?.startsWith(o))) {
+    return res.status(403).json({ error: 'CSRF check failed' });
+  }
+  next();
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- SQL 注入 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>SQL 注入</h3>
+                <h4>Prisma 默认参数化查询，天然免疫</h4>
+                <pre><code class="language-typescript">// Prisma 自动参数化（安全）
+const user = await prisma.user.findUnique({
+  where: { email: userInput },  // 安全
+});
+
+// 危险：SQL 字符串拼接（绝对不要这样做！）
+// const q = `SELECT * FROM users WHERE email = '${userInput}'`
+// userInput = "admin' OR '1'='1" → 返回所有用户！
+
+// 安全：Prisma tagged template 自动参数化
+const result = await prisma.$queryRaw`
+  SELECT * FROM "User" WHERE email = ${userInput}
+`;</code></pre>
+                <div class="warning">
+                    <strong>永远不要信任用户输入。</strong>无论前端做了什么验证，后端都必须重新验证。前端验证只是提升体验，不能替代后端安全检查。
+                </div>
+            </div>
+        </section>
+
+        <!-- 依赖审计 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>依赖审计</h3>
+                <h4>你的第三方库可能有漏洞</h4>
+                <pre><code class="language-bash"># npm audit 检查已知漏洞
+$ npm audit
+$ npm audit --production    # 只检查生产依赖
+$ npm audit fix             # 自动修复
+
+# 在 CI 中集成安全审计
+# .github/workflows/security.yml
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm audit --audit-level=high</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 4: 密钥管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 密钥管理</h2>
+                <p>密钥泄露是最常见的安全事故原因。</p>
+            </div>
+        </section>
+
+        <!-- 环境变量 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>环境变量管理</h3>
+                <h4>用 Zod 验证，启动时报错好过运行时崩溃</h4>
+                <pre><code class="language-typescript">// src/env.ts
+import { z } from 'zod';
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']),
+  DATABASE_URL: z.string().url(),
+  JWT_SECRET: z.string().min(32),
+  PORT: z.coerce.number().default(3000),
+});
+
+export const env = envSchema.parse(process.env);
+// 缺少必要变量时直接报错退出</code></pre>
+                <pre><code class="language-plaintext"># .gitignore 中必须排除
+.env
+.env.local
+.env.production</code></pre>
+            </div>
+        </section>
+
+        <!-- 密码安全 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>密码与 JWT</h3>
+                <h4>bcrypt 哈希 + 短期 Token</h4>
+                <pre><code class="language-typescript">// 密码哈希
+const hashed = await bcrypt.hash(password, 12);
+const isValid = await bcrypt.compare(input, hashed);
+
+// 短期 Access Token
+const accessToken = sign(
+  { userId: user.id },
+  env.JWT_SECRET,
+  { expiresIn: '15m' }
+);
+
+// Refresh Token 存 HttpOnly Cookie
+res.cookie('refreshToken', refreshToken, {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'strict',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>排错：密钥泄露</h3>
+                <div class="warning">
+                    <strong>症状：</strong>GitHub 收到安全告警，或发现 .env 文件被提交到了仓库。
+                    <br><strong>原因：</strong>忘记把 .env 加入 .gitignore，或代码中硬编码了密钥。
+                    <br><strong>修复：</strong>（1）立即轮换泄露的密钥；（2）用 BFG Repo-Cleaner 从 Git 历史中删除；（3）用 <code>git-secrets</code> 或 <code>gitleaks</code> 防止再次泄露。
+                </div>
+                <pre><code class="language-bash"># 用 gitleaks 扫描代码中的密钥
+$ gitleaks detect --source . --verbose</code></pre>
+            </div>
+        </section>
+
+        <!-- 安全清单 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>安全检查清单</h3>
+                <h4>上线前逐一检查</h4>
+                <table>
+                    <thead><tr><th>类别</th><th>措施</th><th>工具</th></tr></thead>
+                    <tbody>
+                        <tr><td>XSS</td><td>输入转义、CSP 头</td><td>DOMPurify、Helmet</td></tr>
+                        <tr><td>CSRF</td><td>SameSite Cookie</td><td>csurf</td></tr>
+                        <tr><td>SQL 注入</td><td>参数化查询</td><td>Prisma</td></tr>
+                        <tr><td>认证</td><td>密码哈希、短 Token</td><td>bcrypt、JWT</td></tr>
+                        <tr><td>HTTPS</td><td>全站 HTTPS</td><td>Let's Encrypt</td></tr>
+                        <tr><td>依赖</td><td>定期审计</td><td>npm audit</td></tr>
+                        <tr><td>速率限制</td><td>防暴力破解</td><td>express-rate-limit</td></tr>
+                        <tr><td>输入验证</td><td>验证所有输入</td><td>Zod</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：为你的 Express 应用添加速率限制，每个 IP 每分钟最多 100 次请求。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">import rateLimit from 'express-rate-limit';
+
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: '请求太频繁，请稍后再试',
+});
+app.use('/api/', limiter);</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：运行 <code>npm audit</code> 检查你的项目依赖，修复所有高危漏洞。</p>
+                        <pre><code class="language-bash">$ npm audit
+$ npm audit fix</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 课程完结 -->
+        <section class="slide title-slide">
+            <h1>恭喜你完成了全部课程</h1>
+            <p>从 JavaScript 入门到全栈部署，你已经掌握了 Node.js 全栈开发的核心技能。继续实践，持续学习，写出更好的代码。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

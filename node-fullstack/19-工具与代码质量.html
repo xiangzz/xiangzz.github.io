@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第19章 工具与代码质量 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>工具与代码质量</h1>
+            <p>好工具 + 好习惯 = 高质量代码</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>为什么大公司的代码风格统一？为什么改了一处另一处不会偷偷坏掉？为什么有人敢放心重构几千行代码？</h4>
+                <p>答案不是"他们技术好"，而是<strong>他们用了一套工具链</strong>：包管理器管依赖、ESLint 检查代码风格、Prettier 自动格式化、单元测试保证逻辑正确。</p>
+                <p>这些工具不是"锦上添花"，而是专业开发的<strong>基础设施</strong>。这一章你将学会搭建这套工具链。</p>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: npm 包管理</h2>
+                <h4>学会用它，才能用好别人写的轮子</h4>
+                <p>项目里要装一个 Express、一个测试框架、一个代码检查工具——这些从哪来？全靠 npm 下载和管理。npm 是 Node.js 世界的"应用商店"，装包、卸包、锁版本全靠它。接下来你会掌握 npm 的常用命令、package.json 的结构，以及版本号那个奇怪的 <code>^</code> 到底在干什么。</p>
+            </div>
+        </section>
+
+        <!-- npm 常用命令 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>npm 常用命令</h3>
+                <h4>init、install、run——这三个能覆盖 90% 的日常操作</h4>
+                <pre><code class="language-bash">$ npm init -y                # 初始化 package.json
+$ npm install express        # 安装生产依赖
+$ npm install -D vitest      # 安装开发依赖
+$ npm uninstall package      # 卸载
+$ npm update                 # 更新所有依赖
+$ npm outdated               # 检查过时的包
+$ npm audit                  # 安全审计
+$ npm run build              # 运行 scripts 中的命令</code></pre>
+                <p><code>dependencies</code> 是运行时需要的包（如 express），<code>devDependencies</code> 是开发时才需要的包（如测试框架）。生产部署时可以用 <code>npm install --production</code> 跳过开发依赖。</p>
+            </div>
+        </section>
+
+        <!-- package.json -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>package.json</h3>
+                <h4>项目的身份证：名字、版本、依赖、脚本都在这里</h4>
+                <pre><code class="language-json">{
+  "name": "my-app",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 版本号 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>语义化版本</h3>
+                <h4>^ 和 ~ 控制更新范围</h4>
+                <table>
+                    <thead><tr><th>写法</th><th>含义</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>^1.2.3</code></td><td>兼容小版本更新</td><td>允许 1.x.x，不允许 2.0.0</td></tr>
+                        <tr><td><code>~1.2.3</code></td><td>仅补丁更新</td><td>允许 1.2.x，不允许 1.3.0</td></tr>
+                        <tr><td><code>1.2.3</code></td><td>精确锁定</td><td>只用 1.2.3</td></tr>
+                    </tbody>
+                </table>
+                <p>版本号格式：<strong>主版本.次版本.补丁</strong>（major.minor.patch）。主版本变意味着有破坏性改动。</p>
+                <div class="intro-block">
+                    <p>npm vs yarn vs pnpm：pnpm 速度快、磁盘占用少、有严格的依赖隔离。新项目推荐 pnpm。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: ESLint 与 Prettier</h2>
+                <h4>两者配合，代码风格全团队一致</h4>
+                <p>依赖装好了，代码能跑了，但新问题来了：张三用双引号、李四用单引号、王五缩进 2 格、你缩进 4 格。代码评审时光为格式吵半天。ESLint 负责找逻辑问题，Prettier 负责统一排版格式。这一节我们把这两个工具配上，让代码风格再也不是争论的焦点。</p>
+            </div>
+        </section>
+
+        <!-- ESLint -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>ESLint 配置</h3>
+                <h4>定义规则，告诉团队什么写法可以、什么不行</h4>
+                <pre><code class="language-bash">$ npm install -D eslint @eslint/js
+$ npx eslint --init</code></pre>
+                <pre><code class="language-javascript">// eslint.config.js（Flat Config，ESLint 9+）
+import js from '@eslint/js';
+export default [
+    js.configs.recommended,
+    {
+        rules: {
+            'no-unused-vars': 'warn',   // 未使用变量警告
+            'no-console': 'warn',       // console 警告
+            'eqeqeq': 'error',          // 强制 ===
+            'curly': 'error',           // 强制花括号
+            'prefer-const': 'error',    // 优先用 const
+            'no-var': 'error',          // 禁止 var
+        }
+    }
+];</code></pre>
+            </div>
+        </section>
+
+        <!-- ESLint 使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>ESLint 使用</h3>
+                <h4>检查和自动修复，一条命令搞定</h4>
+                <pre><code class="language-bash">$ npx eslint src/            # 检查所有文件
+$ npx eslint src/ --fix      # 自动修复能修的问题</code></pre>
+                <p>规则等级三种：<code>off</code> 关闭、<code>warn</code> 警告、<code>error</code> 报错。CI 中建议全设为 <code>error</code>，有警告就不通过。</p>
+                <div class="warning">
+                    <strong>不要忽略 ESLint 的警告。</strong> 警告现在是"还能跑"，将来升级依赖可能变成"跑不了"。养成零警告的习惯。
+                </div>
+            </div>
+        </section>
+
+        <!-- Prettier -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Prettier 格式化</h3>
+                <h4>不需要争论缩进是 2 还是 4——Prettier 统一决定</h4>
+                <pre><code class="language-bash">$ npm install -D prettier</code></pre>
+                <pre><code class="language-json">// .prettierrc
+{
+  "semi": true,
+  "singleQuote": true,
+  "tabWidth": 4,
+  "trailingComma": "es5",
+  "printWidth": 100
+}</code></pre>
+                <pre><code class="language-bash">$ npx prettier --write "src/**/*.js"   # 格式化
+$ npx prettier --check "src/**/*.js"   # 只检查不修改</code></pre>
+            </div>
+        </section>
+
+        <!-- ESLint + Prettier 配合 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>ESLint + Prettier</h3>
+                <h4>一个管逻辑，一个管格式，互不冲突</h4>
+                <pre><code class="language-bash">$ npm install -D eslint-config-prettier eslint-plugin-prettier</code></pre>
+                <p>ESLint 和 Prettier 有些规则会冲突（比如分号、引号）。<code>eslint-config-prettier</code> 会关闭 ESLint 中所有和 Prettier 冲突的规则。</p>
+                <p>推荐工作流：<strong>保存时 Prettier 自动格式化 + ESLint 实时检查</strong>。在 VS Code 中安装对应扩展即可。</p>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: JSDoc 类型注释</h2>
+                <h4>不用 TypeScript，也能获得类型提示和文档</h4>
+                <p>ESLint 和 Prettier 搞定了代码风格，但还有一个痛点：调用函数时不知道该传什么参数，IDE 也没法提示。暂时不想上 TypeScript？JSDoc 是一个轻量级的替代方案。用注释给函数签名，编辑器就能帮你检查参数类型、生成文档。这一节看看它能做什么，又有哪些局限性。</p>
+            </div>
+        </section>
+
+        <!-- JSDoc 基础 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>JSDoc 注释</h3>
+                <h4>用注释给函数签名，编辑器就能提示类型</h4>
+                <pre><code class="language-javascript">/**
+ * 计算两个数的和
+ * @param {number} a - 第一个数
+ * @param {number} b - 第二个数
+ * @returns {number} 两数之和
+ */
+function add(a, b) { return a + b; }
+
+// 自定义类型
+/**
+ * @typedef {Object} User
+ * @property {string} name - 用户名
+ * @property {number} age - 年龄
+ * @property {string} [email] - 可选邮箱
+ */
+
+/**
+ * @param {User} user
+ * @returns {Promise&lt;boolean&gt;}
+ */
+async function saveUser(user) { /* ... */ }</code></pre>
+                <p>VS Code 原生支持 JSDoc。写了注释后，调用函数时会自动显示参数类型和说明。</p>
+            </div>
+        </section>
+
+        <!-- JSDoc 进阶 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>JSDoc 进阶</h3>
+                <h4>泛型、回调、数组类型</h4>
+                <pre><code class="language-javascript">// 数组类型
+/** @type {string[]} */
+let names = [];
+
+// 泛型
+/**
+ * @template T
+ * @param {T[]} arr
+ * @returns {T|undefined}
+ */
+function first(arr) { return arr[0]; }
+
+// 回调类型
+/**
+ * @callback FilterFn
+ * @param {string} item
+ * @param {number} index
+ * @returns {boolean}
+ */
+
+/** @param {FilterFn} fn */
+function filter(fn) { /* ... */ }</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 单元测试</h2>
+                <h4>代码质量的"安全网"——改了代码跑一下测试，马上知道有没有搞坏什么</h4>
+                <p>工具链的最后一块拼图：怎么确保改了一处代码，不会悄悄搞坏另一处？答案是写测试。单元测试就像给每个函数配了一个"质检员"，输入什么、期望输出什么，全都写清楚。这一节用 Vitest 写几个真实的测试用例，体会"先写测试、再改代码"的安全感。</p>
+            </div>
+        </section>
+
+        <!-- 测试基础 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>测试基础概念</h3>
+                <h4>describe 分组、it 写用例、expect 断言</h4>
+                <pre><code class="language-javascript">import { describe, it, expect, beforeEach } from 'vitest';
+import { add, multiply } from './math.js';
+
+describe('Math utilities', () => {
+    beforeEach(() => {
+        // 每个测试前执行（如重置状态）
+    });
+
+    it('should add two numbers', () => {
+        expect(add(2, 3)).toBe(5);
+        expect(add(-1, 1)).toBe(0);
+    });
+
+    it('should multiply', () => {
+        expect(multiply(2, 3)).toBe(6);
+    });
+
+    it('should handle edge cases', () => {
+        expect(add(0, 0)).toBe(0);
+        expect(multiply(0, 5)).toBe(0);
+    });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 常用断言 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常用断言</h3>
+                <h4>expect 的各种匹配方式</h4>
+                <table>
+                    <thead><tr><th>断言</th><th>用途</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>expect(value).toBe(expected)</code></td><td>严格相等（===）</td></tr>
+                        <tr><td><code>expect(value).toEqual(expected)</code></td><td>深度相等（对象/数组）</td></tr>
+                        <tr><td><code>expect(value).toBeTruthy()</code></td><td>真值判断</td></tr>
+                        <tr><td><code>expect(value).toBeFalsy()</code></td><td>假值判断</td></tr>
+                        <tr><td><code>expect(fn).toThrow()</code></td><td>函数是否抛错</td></tr>
+                        <tr><td><code>expect(array).toContain(item)</code></td><td>数组是否包含</td></tr>
+                        <tr><td><code>expect(fn).toHaveBeenCalled()</code></td><td>mock 函数是否被调用</td></tr>
+                    </tbody>
+                </table>
+                <p>Vitest 和 Jest 的 API 几乎完全一样。Vitest 更快，且原生支持 ESM。</p>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <div class="warning">
+                    <strong>node_modules 不要提交到 Git。</strong> 在 <code>.gitignore</code> 中加上 <code>node_modules/</code>。别人 clone 后 <code>npm install</code> 就能恢复依赖。
+                </div>
+
+                <h4>问题一：<code>npm install</code> 报错 ERESOLVE</h4>
+                <p><strong>原因</strong>：依赖版本冲突，两个包要求同一个依赖的不同版本。</p>
+                <p><strong>修复</strong>：尝试 <code>npm install --legacy-peer-deps</code>，或者检查 package.json 中的版本范围。</p>
+
+                <h4>问题二：ESLint 和 Prettier 规则冲突</h4>
+                <p><strong>原因</strong>：ESLint 的格式规则和 Prettier 的配置不一致。</p>
+                <p><strong>修复</strong>：安装 <code>eslint-config-prettier</code>，它会关闭 ESLint 中所有和 Prettier 冲突的规则。</p>
+
+                <h4>问题三：测试通过了但线上还是出 bug</h4>
+                <p><strong>原因</strong>：测试只覆盖了"正常路径"，没有测试边界情况和错误路径。</p>
+                <p><strong>修复</strong>：测试中专门写错误输入、空值、超大值等边界用例。</p>
+            </div>
+        </section>
+
+        <!-- Git Hooks -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Git Hooks</h3>
+                <h4>提交前自动检查——不合规代码根本进不了仓库</h4>
+                <pre><code class="language-bash">$ npm install -D husky lint-staged
+$ npx husky init
+$ echo "npx lint-staged" > .husky/pre-commit</code></pre>
+                <pre><code class="language-json">// package.json
+{
+  "lint-staged": {
+    "*.js": ["eslint --fix", "prettier --write"],
+    "*.{json,md}": ["prettier --write"]
+  }
+}</code></pre>
+                <p>Husky 在 <code>git commit</code> 前自动触发 lint-staged，只检查暂存区文件，速度快。如果 ESLint 或 Prettier 报错，提交会被拦截。</p>
+                <h4>用 commitlint 规范提交信息</h4>
+                <pre><code class="language-bash">$ npm install -D @commitlint/cli @commitlint/config-conventional
+$ echo "export default { extends: ['@commitlint/config-conventional'] };" > commitlint.config.js
+$ echo "npx --no -- commitlint --edit \$1" > .husky/commit-msg</code></pre>
+                <p>提交信息必须符合 <code>type(scope): message</code> 格式，例如 <code>feat(auth): 添加登录功能</code>。type 只允许 feat / fix / docs / refactor 等约定值。</p>
+                <div class="warning">
+                    <strong>husky init 会在 .husky/ 下创建钩子脚本。</strong> 确保 <code>.husky/</code> 目录被提交到 Git，否则队友 clone 后钩子不生效。
+                </div>
+            </div>
+        </section>
+
+        <!-- 代码覆盖率 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>代码覆盖率</h3>
+                <h4>量化测试的"覆盖面"——哪些代码被测到了，哪些没有</h4>
+                <table>
+                    <thead><tr><th>维度</th><th>含义</th></tr></thead>
+                    <tbody>
+                        <tr><td>行覆盖率</td><td>被执行到的代码行占比</td></tr>
+                        <tr><td>分支覆盖率</td><td>if/else 分支被执行到的占比</td></tr>
+                        <tr><td>函数覆盖率</td><td>被调用到的函数占比</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-bash"># 运行覆盖率报告
+$ npx vitest --coverage</code></pre>
+                <pre><code class="language-javascript">// vitest.config.js
+import { defineConfig } from 'vitest/config';
+export default defineConfig({
+    test: {
+        coverage: {
+            provider: 'v8',          // 或 'istanbul'
+            reporter: ['text', 'html'], // 终端输出 + HTML 报告
+            include: ['src/**/*.js'],
+            thresholds: {
+                lines: 80,           // 行覆盖率 ≥ 80%
+                branches: 70,        // 分支覆盖率 ≥ 70%
+                functions: 80,
+            }
+        }
+    }
+});</code></pre>
+                <p>设置 <code>thresholds</code> 后，覆盖率不达标测试会直接失败，防止覆盖率悄悄下降。</p>
+                <div class="warning">
+                    <strong>100% 覆盖率 ≠ 没有缺陷。</strong> 覆盖率只衡量"代码有没有被执行到"，不衡量"断言是否充分"。一段 if/else 都跑到了，但断言只写了 expect(true).toBe(true)，覆盖率是 100%，但什么都没测。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：初始化一个项目，安装 ESLint，配置规则禁止 <code>var</code> 和要求使用 <code>===</code>。</p>
+                        <pre><code class="language-bash">$ mkdir my-project && cd my-project
+$ npm init -y
+$ npm install -D eslint @eslint/js</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">// eslint.config.js
+import js from '@eslint/js';
+export default [
+    js.configs.recommended,
+    {
+        rules: {
+            'no-var': 'error',
+            'eqeqeq': 'error',
+        }
+    }
+];</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：给下面这个函数写单元测试，覆盖正常情况和边界情况。</p>
+                        <pre><code class="language-javascript">function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+}</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">import { describe, it, expect } from 'vitest';
+
+describe('clamp', () => {
+    it('值在范围内不变', () => {
+        expect(clamp(5, 0, 10)).toBe(5);
+    });
+    it('小于最小值取最小值', () => {
+        expect(clamp(-3, 0, 10)).toBe(0);
+    });
+    it('大于最大值取最大值', () => {
+        expect(clamp(15, 0, 10)).toBe(10);
+    });
+    it('边界值', () => {
+        expect(clamp(0, 0, 10)).toBe(0);
+        expect(clamp(10, 0, 10)).toBe(10);
+    });
+});</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：为下面的 <code>TodoList</code> 类编写完整的单元测试，覆盖 <code>add(item)</code>、<code>remove(id)</code>、<code>toggle(id)</code>、<code>filter(completed)</code> 四个方法。要求覆盖正常路径和边界情况（如添加空字符串、删除不存在的 id）。</p>
+                        <pre><code class="language-javascript">// todo.js
+let nextId = 1;
+export function createTodoList() {
+    const items = [];
+    return {
+        add(item) {
+            if (!item || typeof item !== 'string') throw new Error('无效的待办项');
+            const todo = { id: nextId++, text: item, completed: false };
+            items.push(todo);
+            return todo;
+        },
+        remove(id) {
+            const idx = items.findIndex(t => t.id === id);
+            if (idx === -1) return null;
+            return items.splice(idx, 1)[0];
+        },
+        toggle(id) {
+            const todo = items.find(t => t.id === id);
+            if (!todo) return null;
+            todo.completed = !todo.completed;
+            return todo;
+        },
+        filter(completed) {
+            return items.filter(t => t.completed === completed);
+        }
+    };
+}</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">import { describe, it, expect, beforeEach } from 'vitest';
+import { createTodoList } from './todo.js';
+
+describe('TodoList', () => {
+    let list;
+    beforeEach(() => { list = createTodoList(); });
+
+    describe('add', () => {
+        it('正常添加待办项', () => {
+            const todo = list.add('买牛奶');
+            expect(todo).toEqual({ id: 1, text: '买牛奶', completed: false });
+        });
+
+        it('添加空字符串应抛错', () => {
+            expect(() => list.add('')).toThrow('无效的待办项');
+        });
+
+        it('添加非字符串应抛错', () => {
+            expect(() => list.add(null)).toThrow('无效的待办项');
+            expect(() => list.add(123)).toThrow('无效的待办项');
+        });
+    });
+
+    describe('remove', () => {
+        it('正常删除', () => {
+            list.add('任务A');
+            const removed = list.remove(1);
+            expect(removed.text).toBe('任务A');
+            expect(list.filter(true).length + list.filter(false).length).toBe(0);
+        });
+
+        it('删除不存在的 id 返回 null', () => {
+            expect(list.remove(999)).toBe(null);
+        });
+    });
+
+    describe('toggle', () => {
+        it('切换完成状态', () => {
+            list.add('任务A');
+            const toggled = list.toggle(1);
+            expect(toggled.completed).toBe(true);
+            list.toggle(1);
+            expect(toggled.completed).toBe(false);
+        });
+
+        it('切换不存在的 id 返回 null', () => {
+            expect(list.toggle(999)).toBe(null);
+        });
+    });
+
+    describe('filter', () => {
+        it('按完成状态过滤', () => {
+            list.add('任务A');
+            list.add('任务B');
+            list.toggle(1);
+            expect(list.filter(true)).toHaveLength(1);
+            expect(list.filter(false)).toHaveLength(1);
+        });
+
+        it('空列表过滤返回空数组', () => {
+            expect(list.filter(false)).toEqual([]);
+        });
+    });
+});</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>工具链已经就绪。下一章学习<strong>设计模式初探</strong>——用经典模式解决代码中的常见问题。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

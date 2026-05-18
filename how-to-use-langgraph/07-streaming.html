@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>07 流式处理</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📡</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        pre.mermaid {
+            background: #FFFFFF;
+            border: 1px solid var(--border-color, #E5E7EB);
+            border-radius: 8px;
+            padding: 24px;
+            margin: 20px 0;
+            text-align: center;
+            overflow-x: auto;
+        }
+        .mode-tag {
+            display: inline-block;
+            padding: 3px 12px;
+            border-radius: 14px;
+            font-size: 0.88em;
+            font-weight: 700;
+            font-family: var(--font-mono);
+            margin-right: 6px;
+        }
+        .stream-output {
+            background: #1E293B;
+            color: #E2E8F0;
+            border-radius: 8px;
+            padding: 16px 20px;
+            font-family: var(--font-mono);
+            font-size: 0.9em;
+            line-height: 1.7;
+            margin: 12px 0;
+            overflow-x: auto;
+        }
+        .stream-output .prompt { color: #94A3B8; }
+        .stream-output .token { color: #34D399; }
+        .stream-output .separator { color: #F59E0B; }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 07 章</div>
+            <h1>流式处理</h1>
+            <p>让图的每一步执行，都变成用户能感知到的实时反馈</p>
+            <strong>六种流模式，覆盖从状态更新到逐 Token 输出的全部场景</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>等太久了</h2>
+                <h4>用户向智能体提问后，盯着一个空白的加载圈看了三分钟——什么反馈都没有</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>没有流式处理</h4>
+                        <ul>
+                            <li>用户发送请求后，界面一直转圈</li>
+                            <li>智能体内部跑了 5 个节点，用户完全不知道</li>
+                            <li>LLM 正在逐 token 生成回复，用户看到的还是一片空白</li>
+                            <li>工具调用了 30 秒，没有进度条</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>有流式处理</h4>
+                        <ul>
+                            <li>每个节点执行完，立即推送状态更新</li>
+                            <li>LLM 的每个 token 实时出现在屏幕上</li>
+                            <li>工具执行过程中，持续报告搜索进度</li>
+                            <li>用户随时知道"它在干什么、进行到哪了"</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>流式处理解决的核心问题：</strong>让图的执行过程从"黑盒等待"变成"透明进度"。LangGraph 提供了六种流模式，分别对应不同的实时更新需求。
+                </div>
+            </div>
+        </section>
+
+        <!-- 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>前置要求</h4>
+                        <ul>
+                            <li>已完成第 04 章 Quickstart，能构建和运行基本图</li>
+                            <li>了解 TypeScript 的 <code>async/await</code> 和 <code>for await...of</code> 异步迭代</li>
+                            <li>了解 LLM 的 token 概念</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该能</h4>
+                        <ul>
+                            <li>区分六种流模式并选择正确的模式</li>
+                            <li>用 <code>updates</code> 和 <code>values</code> 流式输出图状态</li>
+                            <li>用 <code>messages</code> 模式实现逐 token 输出</li>
+                            <li>用 <code>custom</code> 模式从节点内部推送自定义数据</li>
+                            <li>用 <code>tools</code> 模式追踪工具执行进度</li>
+                            <li>组合多种流模式同时接收不同类型的事件</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>暂不涉及</h4>
+                        <ul>
+                            <li>前端 UI 框架中集成流式输出</li>
+                            <li>LangGraph Platform 的服务端流式部署</li>
+                            <li>WebSocket / SSE 协议细节</li>
+                            <li>多用户并发流式管理</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 六种流模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>六种流模式</h2>
+                <h4>LangGraph 的 <code>stream()</code> 方法支持六种流模式，每种关注不同维度的执行信息</h4>
+                <table>
+                    <thead>
+                        <tr><th>模式</th><th>说明</th><th>典型用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="mode-tag tag-primary">values</span></td>
+                            <td>每步之后的完整状态快照</td>
+                            <td>调试整体状态变化</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mode-tag tag-success">updates</span></td>
+                            <td>每步之后的状态增量更新</td>
+                            <td>追踪单个节点的输出</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mode-tag tag-info">messages</span></td>
+                            <td>LLM 调用的逐 token 输出</td>
+                            <td>实时显示 AI 回复</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mode-tag tag-warning">custom</span></td>
+                            <td>节点内通过 <code>config.writer()</code> 发送的自定义数据</td>
+                            <td>推送进度条、日志等</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mode-tag tag-danger">tools</span></td>
+                            <td>工具执行的生命周期事件</td>
+                            <td>追踪工具调用开始/结束/错误</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mode-tag" style="background:rgba(107,114,128,0.12);color:#4B5563;">debug</span></td>
+                            <td>执行过程中的全部可用信息</td>
+                            <td>完整调试</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <pre><code><span style="color:#B45309;">// 基本用法——所有流模式的调用方式相同</span>
+for await (const chunk of await graph.stream(inputs, {
+  streamMode: <span style="color:#059669;">"updates"</span>,  <span style="color:#B45309;">// 替换为任意模式名</span>
+})) {
+  console.log(chunk);
+}</code></pre>
+                <div class="key-point">
+                    <strong>选择原则：</strong>需要看状态变化用 <code>values</code>/<code>updates</code>，需要逐字输出用 <code>messages</code>，需要自定义进度用 <code>custom</code>，需要追踪工具用 <code>tools</code>，需要全部信息用 <code>debug</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 状态流 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>状态流</h2>
+                <h4>用 <code>updates</code> 和 <code>values</code> 模式追踪图的每一步状态变化</h4>
+                <p>先定义一个简单的两步图：<code>refineTopic</code> 润色主题，<code>generateJoke</code> 生成笑话。</p>
+                <pre><code><span style="color:#B45309;">// 定义图</span>
+import { StateGraph, StateSchema, START, END } from <span style="color:#059669;">"@langchain/langgraph"</span>;
+import * as z from <span style="color:#059669;">"zod"</span>;
+
+const State = new StateSchema({
+  topic: z.string(),
+  joke: z.string(),
+});
+
+const graph = new StateGraph(State)
+  .addNode(<span style="color:#059669;">"refineTopic"</span>, (state) => {
+    return { topic: state.topic + <span style="color:#059669;">" and cats"</span> };
+  })
+  .addNode(<span style="color:#059669;">"generateJoke"</span>, (state) => {
+    return { joke: <span style="color:#059669;">`This is a joke about </span>${state.topic}<span style="color:#059669;">`</span> };
+  })
+  .addEdge(START, <span style="color:#059669;">"refineTopic"</span>)
+  .addEdge(<span style="color:#059669;">"refineTopic"</span>, <span style="color:#059669;">"generateJoke"</span>)
+  .addEdge(<span style="color:#059669;">"generateJoke"</span>, END)
+  .compile();</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4><span class="mode-tag tag-success">updates</span> 增量更新</h4>
+                        <pre><code>for await (const chunk of await graph.stream(
+  { topic: <span style="color:#059669;">"ice cream"</span> },
+  { streamMode: <span style="color:#059669;">"updates"</span> }
+)) {
+  for (const [name, state] of Object.entries(chunk)) {
+    console.log(<span style="color:#059669;">`Node ${name}:`</span>, state);
+  }
+}
+<span style="color:#B45309;">// Node refineTopic: { topic: "ice cream and cats" }
+// Node generateJoke: { joke: "This is a joke about ice cream and cats" }</span></code></pre>
+                    </div>
+                    <div class="card">
+                        <h4><span class="mode-tag tag-primary">values</span> 完整快照</h4>
+                        <pre><code>for await (const chunk of await graph.stream(
+  { topic: <span style="color:#059669;">"ice cream"</span> },
+  { streamMode: <span style="color:#059669;">"values"</span> }
+)) {
+  console.log(chunk);
+}
+<span style="color:#B45309;">// { topic: "ice cream" }                      ← 初始
+// { topic: "ice cream and cats" }             ← refineTopic 后
+// { topic: "ice cream and cats", joke: "..." } ← 最终</span></code></pre>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>区别：</strong><code>updates</code> 只输出当前节点的改动，体积小，适合增量渲染；<code>values</code> 输出完整状态快照，适合需要全貌的场景。
+                </div>
+            </div>
+        </section>
+
+        <!-- Token 级流 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>逐 Token 流</h2>
+                <h4>用 <code>messages</code> 模式实现 LLM 逐字输出——和 ChatGPT 一样的打字效果</h4>
+                <p>当图中有 LLM 调用时，<code>messages</code> 模式会流式返回每一个 token。每个 chunk 是一个二元组：<code>[messageChunk, metadata]</code>。</p>
+                <pre><code>import { ChatOpenAI } from <span style="color:#059669;">"@langchain/openai"</span>;
+
+const model = new ChatOpenAI({ model: <span style="color:#059669;">"gpt-5.4-mini"</span> });
+
+const callModel: GraphNode&lt;typeof MyState&gt; = async (state) =&gt; {
+  const response = await model.invoke([
+    { role: <span style="color:#059669;">"user"</span>, content: <span style="color:#059669;">`Generate a joke about </span>${state.topic}<span style="color:#059669;">`</span> },
+  ]);
+  return { joke: response.content };
+};
+
+<span style="color:#B45309;">// messages 模式——逐 token 接收</span>
+for await (const [messageChunk, metadata] of await graph.stream(
+  { topic: <span style="color:#059669;">"ice cream"</span> },
+  { streamMode: <span style="color:#059669;">"messages"</span> }
+)) {
+  if (messageChunk.content) {
+    process.stdout.write(messageChunk.content + <span style="color:#059669;">"|"</span>);
+  }
+}</code></pre>
+                <div class="stream-output">
+                    <span class="prompt">输出效果：</span><br>
+                    <span class="token">Why|</span> <span class="token">did|</span> <span class="token">the|</span> <span class="token">ice|</span> <span class="token">cream|</span> <span class="token">go|</span> <span class="token">to|</span> <span class="token">school|</span><span class="separator">?|</span><br>
+                    <span class="token">Because|</span> <span class="token">it|</span> <span class="token">wanted|</span> <span class="token">to|</span> <span class="token">be|</span> <span class="token">a|</span> <span class="token">smart|</span> <span class="token">cookie</span><span class="separator">!|</span>
+                </div>
+                <div class="key-point">
+                    <strong>关键理解：</strong><code>messages</code> 模式的每个 chunk 是 <code>[messageChunk, metadata]</code> 元组。<code>messageChunk.content</code> 包含当前 token 文本；<code>metadata</code> 包含来源节点、标签等元信息。
+                </div>
+            </div>
+        </section>
+
+        <!-- 过滤与排除 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>过滤与排除</h2>
+                <h4>用标签 (tags) 筛选特定 LLM 调用，用 <code>nostream</code> 标签排除不需要流式输出的部分</h4>
+                <p>当一个图中有多个 LLM 调用时，你可能只想流式输出其中一个。LangGraph 提供两种控制手段。</p>
+                <h3>按标签过滤——只流式特定 LLM</h3>
+                <pre><code><span style="color:#B45309;">// 给不同 LLM 实例打标签</span>
+const jokeModel = new ChatOpenAI({ model: <span style="color:#059669;">"gpt-5.4-mini"</span>, tags: [<span style="color:#059669;">'joke'</span>] });
+const poemModel = new ChatOpenAI({ model: <span style="color:#059669;">"gpt-5.4-mini"</span>, tags: [<span style="color:#059669;">'poem'</span>] });
+
+<span style="color:#B45309;">// 只接收带 "joke" 标签的 LLM token</span>
+for await (const [msg, metadata] of await graph.stream(
+  { topic: <span style="color:#059669;">"cats"</span> },
+  { streamMode: <span style="color:#059669;">"messages"</span> }
+)) {
+  if (metadata.tags?.includes(<span style="color:#059669;">"joke"</span>)) {
+    process.stdout.write(msg.content);
+  }
+}</code></pre>
+                <h3>排除特定 LLM 的流式输出</h3>
+                <pre><code><span style="color:#B45309;">// 内部辅助 LLM 不需要流式输出</span>
+const internalModel = new ChatAnthropic({
+  model: <span style="color:#059669;">"claude-haiku-4-5-20251001"</span>,
+}).withConfig({ tags: [<span style="color:#059669;">"nostream"</span>] });
+
+<span style="color:#B45309;">// "nostream" 标签的 LLM 不会出现在 messages 流中</span></code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>标签过滤 <code>tags</code></h4>
+                        <p>在客户端用 <code>metadata.tags</code> 条件判断，只处理关心的 LLM 调用。适合有多个 LLM 节点、只想展示部分输出的场景。</p>
+                    </div>
+                    <div class="card">
+                        <h4>排除 <code>nostream</code></h4>
+                        <p>给 LLM 加上 <code>nostream</code> 标签，它就不会出现在 <code>messages</code> 流中。适合内部辅助调用（如分类、路由）不需要展示给用户的场景。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong><code>nostream</code> 是在 LLM 实例上设置的，不是在 <code>stream()</code> 调用时设置的。一旦标记，所有使用该实例的节点都不会产生流式 token。
+                </div>
+            </div>
+        </section>
+
+        <!-- 自定义数据流 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义数据流</h2>
+                <h4>用 <code>config.writer()</code> 从节点内部推送任意数据，用 <code>streamMode: "custom"</code> 接收</h4>
+                <p>状态更新和 token 流覆盖了大多数场景，但有时你需要推送更灵活的数据——比如中间计算结果、进度百分比、日志信息。<code>custom</code> 模式就是为此设计的。</p>
+                <pre><code>import { StateGraph, StateSchema, GraphNode, START, LangGraphRunnableConfig } from <span style="color:#059669;">"@langchain/langgraph"</span>;
+
+const analyzeNode: GraphNode&lt;typeof State&gt; = async (state, config) =&gt; {
+  <span style="color:#B45309;">// 用 writer 发送自定义数据——不改变状态，只推送信息</span>
+  config.writer({ stage: <span style="color:#059669;">"loading_data"</span>, progress: <span style="color:#059669;">0.2</span> });
+  const data = await loadData();
+
+  config.writer({ stage: <span style="color:#059669;">"analyzing"</span>, progress: <span style="color:#059669;">0.6</span> });
+  const result = await analyze(data);
+
+  config.writer({ stage: <span style="color:#059669;">"done"</span>, progress: <span style="color:#059669;">1.0</span> });
+  return { answer: result };
+};
+
+<span style="color:#B45309;">// 设置 streamMode: "custom" 接收自定义数据</span>
+for await (const chunk of await graph.stream(inputs, {
+  streamMode: <span style="color:#059669;">"custom"</span>
+})) {
+  console.log(chunk);
+}
+<span style="color:#B45309;">// { stage: "loading_data", progress: 0.2 }
+// { stage: "analyzing", progress: 0.6 }
+// { stage: "done", progress: 1.0 }</span></code></pre>
+                <div class="ai-diagram">
+                    <h4>图：自定义数据流的推送机制</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个 LangGraph 节点函数的内部结构，从上到下的流程
+                    - 顶部：节点函数签名 <code>async (state, config) =&gt; { ... }</code>
+                    - 中间部分展示三行代码，每行产生一个 writer 调用：
+                      1. <code>config.writer({ stage: "loading", progress: 0.2 })</code> → 右侧出现一个数据气泡，标注 "custom stream"
+                      2. <code>config.writer({ stage: "analyzing", progress: 0.6 })</code> → 右侧又一个气泡
+                      3. <code>config.writer({ stage: "done", progress: 1.0 })</code> → 右侧又一个气泡
+                    - 底部：<code>return { answer: result }</code> → 左侧标注 "state update"
+                    - 右侧汇聚：三个 custom 气泡和 state update 汇入客户端的 <code>for await</code> 循环
+                    - 各元素关系：节点函数内 writer 调用与 return 是并行的两条输出通道——writer 推送自定义数据流（不影响状态），return 更新状态（影响后续节点）；两者最终都汇入客户端的 for await 循环
+                    - 关键标注：writer 调用旁标注"custom stream"，return 旁标注"state update"，for await 循环标注"按 mode 分发"
+                    - 配色建议：浅灰蓝背景，节点函数用白色圆角矩形，writer 调用用橙色箭头，数据气泡用浅绿色，state update 用蓝色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <div class="key-point">
+                    <strong>核心区别：</strong><code>return</code> 更新图的状态（影响后续节点），<code>config.writer()</code> 推送自定义数据（不影响状态，仅用于通知客户端）。两者互不干扰。
+                </div>
+            </div>
+        </section>
+
+        <!-- 工具进度流 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工具进度流</h2>
+                <h4>用 <code>tools</code> 模式追踪工具执行的完整生命周期</h4>
+                <p>当图中的智能体调用工具时，你可能需要实时知道"哪个工具开始了、执行到哪了、有没有出错"。<code>tools</code> 模式提供了完整的生命周期事件。</p>
+                <table>
+                    <thead>
+                        <tr><th>事件</th><th>触发时机</th><th>包含数据</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>on_tool_start</code></td>
+                            <td>工具调用开始</td>
+                            <td>name, input, toolCallId</td>
+                        </tr>
+                        <tr>
+                            <td><code>on_tool_event</code></td>
+                            <td>工具产生中间数据</td>
+                            <td>name, data, toolCallId</td>
+                        </tr>
+                        <tr>
+                            <td><code>on_tool_end</code></td>
+                            <td>工具返回最终结果</td>
+                            <td>name, output, toolCallId</td>
+                        </tr>
+                        <tr>
+                            <td><code>on_tool_error</code></td>
+                            <td>工具抛出错误</td>
+                            <td>name, error, toolCallId</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <h3>流式进度的工具——用 async generator 定义</h3>
+                <p>普通工具只在结束时返回结果。如果你需要中间进度，可以用 <strong>async generator</strong>（<code>async function*</code>）来定义工具，每 <code>yield</code> 一次就产生一个 <code>on_tool_event</code>。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>普通工具</h4>
+                        <p>一次性返回完整结果。用户在等待期间看不到任何进度。</p>
+                        <pre><code>const search = tool(
+  async ({ query }) =&gt; {
+    <span style="color:#B45309;">// 用户只能干等 30 秒</span>
+    const results = await api.search(query);
+    return JSON.stringify(results);
+  },
+  { name: <span style="color:#059669;">"search"</span>, ... }
+);</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>流式工具</h4>
+                        <p>每完成一部分就 yield 一次，用户能看到实时进度。</p>
+                        <pre><code>const search = tool(
+  <strong>async function*</strong> ({ query }) {
+    for (const batch of batches) {
+      const r = await api.search(batch);
+      <strong>yield</strong> { progress, partial: r };
+    }
+    return finalResults;
+  },
+  { name: <span style="color:#059669;">"search"</span>, ... }
+);</code></pre>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>async generator 工具的工作方式：</strong>每次 <code>yield</code> 会触发 <code>on_tool_event</code>，最终的 <code>return</code> 会触发 <code>on_tool_end</code>。如果中途抛出异常，则触发 <code>on_tool_error</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 工具进度代码 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>完整代码示例</h2>
+                <h4>一个逐航司搜索航班的流式工具，以及消费其事件的客户端代码</h4>
+                <pre><code><span style="color:#B45309;">// 1. 定义流式工具——用 async generator 逐航司搜索</span>
+import { tool } from <span style="color:#059669;">"@langchain/core/tools"</span>;
+import { z } from <span style="color:#059669;">"zod"</span>;
+
+const searchFlights = tool(
+  async function* (input) {
+    const airlines = [<span style="color:#059669;">"United"</span>, <span style="color:#059669;">"Delta"</span>, <span style="color:#059669;">"American"</span>, <span style="color:#059669;">"JetBlue"</span>];
+    const completed: string[] = [];
+
+    for (let i = 0; i &lt; airlines.length; i++) {
+      await new Promise((r) =&gt; setTimeout(r, <span style="color:#059669;">500</span>));  <span style="color:#B45309;">// 模拟网络延迟</span>
+      completed.push(airlines[i]);
+      yield {                        <span style="color:#B45309;">// 每次 yield → on_tool_event</span>
+        message: <span style="color:#059669;">`Searching </span>${airlines[i]}<span style="color:#059669;">...`</span>,
+        progress: (i + <span style="color:#059669;">1</span>) / airlines.length,
+        completed,
+      };
+    }
+
+    return JSON.stringify({            <span style="color:#B45309;">// return → on_tool_end</span>
+      flights: [
+        { airline: <span style="color:#059669;">"United"</span>, price: <span style="color:#059669;">450</span>, duration: <span style="color:#059669;">"5h 30m"</span> },
+        { airline: <span style="color:#059669;">"Delta"</span>, price: <span style="color:#059669;">520</span>, duration: <span style="color:#059669;">"5h 15m"</span> },
+      ],
+    });
+  },
+  {
+    name: <span style="color:#059669;">"search_flights"</span>,
+    description: <span style="color:#059669;">"Search for available flights to a destination."</span>,
+    schema: z.object({
+      destination: z.string(),
+      date: z.string(),
+    }),
+  }
+);</code></pre>
+                <pre><code><span style="color:#B45309;">// 2. 消费工具事件——注意 streamMode 是数组形式</span>
+for await (const [mode, chunk] of await graph.stream(
+  { messages: [{ role: <span style="color:#059669;">"user"</span>, content: <span style="color:#059669;">"Find flights to Tokyo"</span> }] },
+  { streamMode: [<span style="color:#059669;">"updates"</span>, <span style="color:#059669;">"tools"</span>] }    <span style="color:#B45309;">// 同时接收状态更新和工具事件</span>
+)) {
+  if (mode === <span style="color:#059669;">"tools"</span>) {
+    switch (chunk.event) {
+      case <span style="color:#059669;">"on_tool_start"</span>:
+        console.log(<span style="color:#059669;">`Tool started: </span>${chunk.name}<span style="color:#059669;">`</span>); break;
+      case <span style="color:#059669;">"on_tool_event"</span>:
+        console.log(<span style="color:#059669;">`  Progress: </span>${Math.round(chunk.data.progress * <span style="color:#059669;">100</span>)}<span style="color:#059669;">%</span> <span style="color:#059669;">— </span>${chunk.data.message}<span style="color:#059669;">`</span>); break;
+      case <span style="color:#059669;">"on_tool_end"</span>:
+        console.log(<span style="color:#059669;">`Tool finished: </span>${chunk.name}<span style="color:#059669;">`</span>, chunk.output); break;
+      case <span style="color:#059669;">"on_tool_error"</span>:
+        console.error(<span style="color:#059669;">`Tool failed: </span>${chunk.name}<span style="color:#059669;">`</span>, chunk.error); break;
+    }
+  }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 子图与调试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子图与调试</h2>
+                <h4>流式输出子图内部状态，以及用 debug 模式获取完整执行信息</h4>
+                <h3>子图输出流</h3>
+                <p>默认情况下，<code>stream()</code> 只输出父图的节点更新。如果你需要看到子图内部每个节点的变化，加上 <code>subgraphs: true</code>。</p>
+                <pre><code><span style="color:#B45309;">// 开启子图流式输出</span>
+for await (const chunk of await graph.stream(
+  { foo: <span style="color:#059669;">"foo"</span> },
+  { <strong>subgraphs: true</strong>, streamMode: <span style="color:#059669;">"updates"</span> }
+)) {
+  console.log(chunk);
+  <span style="color:#B45309;">// 会额外输出子图内部节点的更新</span>
+}</code></pre>
+                <h3>Debug 模式</h3>
+                <p><code>debug</code> 模式会输出执行过程中的所有可用信息——包括状态变化、节点名称、时间戳等。适合开发调试阶段使用。</p>
+                <pre><code><span style="color:#B45309;">// 获取完整调试信息</span>
+for await (const chunk of await graph.stream(
+  { topic: <span style="color:#059669;">"ice cream"</span> },
+  { streamMode: <span style="color:#059669;">"debug"</span> }
+)) {
+  console.log(chunk);
+  <span style="color:#B45309;">// 输出包含：节点名、时间戳、输入输出状态、执行耗时等全部信息</span>
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>subgraphs: true</h4>
+                        <ul>
+                            <li>输出包含子图内部每个节点的更新</li>
+                            <li>输出格式中会包含子图标识信息</li>
+                            <li>适合需要精细追踪子图执行的场景</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>debug 模式</h4>
+                        <ul>
+                            <li>输出最完整的执行信息</li>
+                            <li>包含时间戳、节点名、输入输出等</li>
+                            <li>适合开发调试，生产环境一般不用</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 多模式组合 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多模式组合</h2>
+                <h4>同时使用多种流模式——用数组语法组合，输出 <code>[mode, chunk]</code> 元组</h4>
+                <p>实际项目中，你可能同时需要状态更新和自定义进度数据。LangGraph 允许你把多个流模式组合在一起。</p>
+                <pre><code><span style="color:#B45309;">// 多模式组合——streamMode 传数组</span>
+for await (const [mode, chunk] of await graph.stream(inputs, {
+  streamMode: [<span style="color:#059669;">"updates"</span>, <span style="color:#059669;">"custom"</span>],  <span style="color:#B45309;">// 同时订阅两种模式</span>
+})) {
+  if (mode === <span style="color:#059669;">"updates"</span>) {
+    console.log(<span style="color:#059669;">"State update:"</span>, chunk);
+  } else if (mode === <span style="color:#059669;">"custom"</span>) {
+    console.log(<span style="color:#059669;">"Custom data:"</span>, chunk);
+  }
+}</code></pre>
+                <div class="ai-diagram">
+                    <h4>图：多模式流的数据汇聚</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个 LangGraph 图的执行过程，展示多模式流如何汇聚
+                    - 左侧：图的执行节点，包含 "节点A"（产生 state update）和 "节点B"（调用 config.writer 产生 custom data）
+                    - 中间：三条并行的数据管道，分别标注 "updates 流"、"custom 流"、"messages 流"
+                    - 右侧汇聚：所有管道汇入一个 <code>for await</code> 循环，循环内部根据 mode 分发处理
+                    - 底部：<code>if (mode === "updates")</code> 处理状态更新，<code>if (mode === "custom")</code> 处理自定义数据
+                    - 每个数据块标注为 <code>[mode, chunk]</code> 元组格式
+                    - 各元素关系：图的执行节点产生不同类型的数据（state update / custom data / message），通过三条并行管道传输，最终汇入 for await 循环按 mode 分发处理
+                    - 关键标注：节点A 标注"产生 state update"，节点B 标注"config.writer 产生 custom data"，每条管道标注对应 mode，汇聚循环内标注 if/else 分发逻辑
+                    - 配色建议：浅灰蓝背景，updates 管道用绿色，custom 管道用橙色，messages 管道用蓝色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>常用组合</h4>
+                        <table>
+                            <thead><tr><th>组合</th><th>用途</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>["updates", "custom"]</code></td><td>状态更新 + 自定义进度</td></tr>
+                                <tr><td><code>["updates", "tools"]</code></td><td>状态更新 + 工具事件</td></tr>
+                                <tr><td><code>["messages", "custom"]</code></td><td>逐 token + 自定义数据</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>输出格式变化</h4>
+                        <ul>
+                            <li><strong>单模式：</strong>chunk 直接就是数据</li>
+                            <li><strong>多模式：</strong>chunk 变成 <code>[mode, data]</code> 元组，需要先判断 mode</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>易错点：</strong>单模式时 <code>chunk</code> 就是数据本身；多模式时 <code>chunk</code> 变成 <code>[mode, data]</code> 元组。忘记解构会导致代码报错。建议始终用 <code>const [mode, chunk]</code> 解构。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <h4>流式处理中的常见问题与修复方案</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>stream 返回空 / 没有输出</h4>
+                        <p><strong>原因：</strong>图没有编译，或 <code>streamMode</code> 拼写错误。</p>
+                        <p><strong>修复：</strong>确认使用了 <code>.compile()</code> 编译后的图；检查 <code>streamMode</code> 是否为六种模式之一。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>messages 模式没有 token 输出</h4>
+                        <p><strong>原因：</strong>图中的 LLM 可能被标记了 <code>nostream</code>，或没有使用 LangChain 的 Chat Model。</p>
+                        <p><strong>修复：</strong>检查 LLM 实例的 tags 配置；确认使用的是 <code>ChatOpenAI</code> 等兼容模型。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>custom 模式收不到数据</h4>
+                        <p><strong>原因：</strong>节点中忘记调用 <code>config.writer()</code>，或没有把 <code>config</code> 参数传入。</p>
+                        <p><strong>修复：</strong>确认节点签名为 <code>async (state, config)</code>，且在节点内调用了 <code>config.writer(...)</code>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>多模式解构报错</h4>
+                        <p><strong>原因：</strong>多模式的输出是 <code>[mode, chunk]</code> 元组，但代码按单模式的方式处理了。</p>
+                        <p><strong>修复：</strong>多模式时必须用 <code>const [mode, chunk]</code> 解构。单模式用 <code>const chunk</code> 直接接收。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>快速自检清单：</strong>图编译了吗？streamMode 拼写对吗？LLM 是 LangChain 兼容的 Chat Model 吗？节点签名包含 config 参数吗？多模式时解构正确吗？
+                </div>
+            </div>
+        </section>
+
+        <!-- 动手练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>给第 04 章的计算器智能体加上流式输出</h4>
+                <p>现在轮到你了。拿出第 04 章的计算器智能体，给它加上流式能力。</p>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习 1：状态流</h3>
+                        <ul>
+                            <li>用 <code>updates</code> 模式运行计算器图</li>
+                            <li>观察每次工具调用后状态如何变化</li>
+                            <li>把每次更新的节点名和输出打印出来</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 2：逐 Token 流</h3>
+                        <ul>
+                            <li>切换到 <code>messages</code> 模式</li>
+                            <li>实现逐 token 打印 LLM 回复</li>
+                            <li>用 <code>process.stdout.write()</code> 而非 <code>console.log()</code> 实现无缝输出</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 3：组合流</h3>
+                        <ul>
+                            <li>同时使用 <code>["updates", "messages"]</code></li>
+                            <li>状态更新时打印 <code>[STATE]</code> 前缀</li>
+                            <li>token 输出时直接打印到控制台</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>从最简单的 <code>updates</code> 模式开始，确认能看到每个节点的输出后再切换模式。不要一上来就组合三种模式。
+                </div>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <h4>给计算器智能体添加流式输出的一种参考写法</h4>
+                <pre><code><span style="color:#B45309;">// 练习 1：updates 模式</span>
+for await (const chunk of await graph.stream(
+  { messages: [{ role: <span style="color:#059669;">"user"</span>, content: <span style="color:#059669;">"3 * 12 + 5 等于多少？"</span> }] },
+  { streamMode: <span style="color:#059669;">"updates"</span>, configurable: { thread_id: <span style="color:#059669;">"calc-1"</span> } }
+)) {
+  for (const [nodeName, update] of Object.entries(chunk)) {
+    console.log(<span style="color:#059669;">`[STATE] </span>${nodeName}<span style="color:#059669;">:`,</span> JSON.stringify(update, null, 2));
+  }
+}
+
+<span style="color:#B45309;">// 练习 2：messages 模式</span>
+for await (const [messageChunk, metadata] of await graph.stream(
+  { messages: [{ role: <span style="color:#059669;">"user"</span>, content: <span style="color:#059669;">"3 * 12 + 5 等于多少？"</span> }] },
+  { streamMode: <span style="color:#059669;">"messages"</span>, configurable: { thread_id: <span style="color:#059669;">"calc-2"</span> } }
+)) {
+  if (messageChunk.content) {
+    process.stdout.write(messageChunk.content);
+  }
+}
+console.log();  <span style="color:#B45309;">// 最后换行</span>
+
+<span style="color:#B45309;">// 练习 3：组合模式</span>
+for await (const [mode, chunk] of await graph.stream(
+  { messages: [{ role: <span style="color:#059669;">"user"</span>, content: <span style="color:#059669;">"3 * 12 + 5 等于多少？"</span> }] },
+  { streamMode: [<span style="color:#059669;">"updates"</span>, <span style="color:#059669;">"messages"</span>], configurable: { thread_id: <span style="color:#059669;">"calc-3"</span> } }
+)) {
+  if (mode === <span style="color:#059669;">"updates"</span>) {
+    for (const [name, update] of Object.entries(chunk)) {
+      console.log(<span style="color:#059669;">`[STATE] </span>${name}<span style="color:#059669;">:`</span>, update);
+    }
+  } else if (mode === <span style="color:#059669;">"messages"</span>) {
+    const [msgChunk] = chunk;
+    if (msgChunk.content) process.stdout.write(msgChunk.content);
+  }
+}</code></pre>
+                <div class="key-point">
+                    <strong>关键理解：</strong>单模式返回 <code>chunk</code>，多模式返回 <code>[mode, chunk]</code>。这个区别在三个练习中体现得很清楚——练习 1 和 2 是单模式，练习 3 是多模式。
+                </div>
+            </div>
+        </section>
+
+        <!-- 本章回顾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>六种流模式，从状态更新到逐 Token 输出</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>核心要点</h4>
+                        <ul>
+                            <li><strong>六种流模式</strong>各有分工：<code>values</code>/<code>updates</code> 看状态，<code>messages</code> 逐 token，<code>custom</code> 推自定义数据，<code>tools</code> 追踪工具，<code>debug</code> 全量信息</li>
+                            <li><strong>所有模式共享同一调用方式</strong>：<code>graph.stream(inputs, { streamMode })</code></li>
+                            <li><strong>多模式组合</strong>时输出变成 <code>[mode, chunk]</code> 元组</li>
+                            <li><strong>async generator 工具</strong>可以在执行过程中 yield 中间进度</li>
+                            <li><strong>config.writer()</strong> 推送自定义数据，不影响图状态</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>模式选择速查</h4>
+                        <table>
+                            <thead><tr><th>你想做什么</th><th>用什么模式</th></tr></thead>
+                            <tbody>
+                                <tr><td>看每个节点的输出</td><td><code>updates</code></td></tr>
+                                <tr><td>看完整状态变化</td><td><code>values</code></td></tr>
+                                <tr><td>逐字显示 AI 回复</td><td><code>messages</code></td></tr>
+                                <tr><td>推送自定义进度</td><td><code>custom</code></td></tr>
+                                <tr><td>追踪工具执行</td><td><code>tools</code></td></tr>
+                                <tr><td>完整调试</td><td><code>debug</code></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>流式处理把"黑盒等待"变成了"透明进度"。选择正确的流模式，让你的智能体在每一步都能给用户有意义的反馈。这不仅是技术选择，更是用户体验设计。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./08-interrupts.html">下一章：中断与人机交互</a> — 在任意节点暂停执行，等待人类审批后恢复</li>
+                            <li><a href="./09-time-travel.html">时间旅行</a> — 重放和分叉过去的检查点</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 官方文档</a> — 流式处理完整 API 参考</li>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/how-tos/streaming/">Streaming How-to</a> — 各模式的详细用法和示例</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关主题</h4>
+                        <ul>
+                            <li><a href="./05-persistence.html">持久化</a> — 流式处理的基础设施</li>
+                            <li><a href="./06-durable-execution.html">持久化执行</a> — 长时间运行的流式工作流</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

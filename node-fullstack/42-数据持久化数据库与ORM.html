@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第42章 数据持久化数据库与ORM - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>数据持久化</h1>
+            <p>数据库与 ORM——让数据真正"存下来"</p>
+        </section>
+
+        <!-- 开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>你注册了一个账号，关掉浏览器再打开，为什么登录状态还在？</h4>
+                <p>因为你的账号信息存在<strong>数据库</strong>里。数据持久化就是把程序运行时的数据，安全地保存到不会丢失的存储介质中。</p>
+                <p>这一章你将学会：选择数据库、用 Prisma ORM 操作数据、处理表之间的关系。</p>
+            </div>
+        </section>
+
+        <!-- Part 1: 数据库选型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 数据库选型</h2>
+                <h4>SQL 还是 NoSQL？这是个问题</h4>
+                <p>数据库不是"哪个好用就用哪个"，而是"你的数据适合哪种结构就用哪种"。关系型数据库像 Excel 表格，每列都有严格的类型；文档数据库像 JSON 文件，每条记录可以长得不一样。这一部分我们对比两大阵营，并完成 PostgreSQL 的安装与连接。</p>
+            </div>
+        </section>
+
+        <!-- SQL vs NoSQL -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>SQL vs NoSQL</h3>
+                <h4>两大阵营，核心区别在于数据怎么组织</h4>
+                <table>
+                    <thead><tr><th>特性</th><th>关系型（SQL）</th><th>非关系型（NoSQL）</th></tr></thead>
+                    <tbody>
+                        <tr><td>代表</td><td>PostgreSQL、MySQL</td><td>MongoDB、Redis</td></tr>
+                        <tr><td>数据结构</td><td>表、行、列</td><td>文档、键值对</td></tr>
+                        <tr><td>Schema</td><td>严格预定义</td><td>灵活动态</td></tr>
+                        <tr><td>事务</td><td>ACID 原生支持</td><td>部分支持</td></tr>
+                        <tr><td>关系</td><td>JOIN 原生支持</td><td>需要手动处理</td></tr>
+                        <tr><td>适用场景</td><td>结构化数据、复杂查询</td><td>灵活文档、高并发</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>本教程选择 <strong>PostgreSQL</strong> 作为主数据库。它是开源免费的关系型数据库，功能强大，社区活跃。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- PostgreSQL 安装 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>PostgreSQL 安装</h3>
+                <h4>三种方式，选最适合你的</h4>
+                <ul>
+                    <li><strong>直接安装</strong>：从 <code>postgresql.org/download</code> 下载</li>
+                    <li><strong>Docker</strong>：<code>docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=123 postgres</code></li>
+                    <li><strong>云服务</strong>：Supabase / Neon / Railway（免费额度够学习用）</li>
+                </ul>
+                <pre><code class="language-bash"># 安装后验证
+$ psql -U postgres
+postgres=# CREATE DATABASE myapp;
+postgres=# \c myapp</code></pre>
+            </div>
+        </section>
+
+        <!-- Node.js 连接数据库 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>原生 SQL 连接</h3>
+                <h4>不推荐裸写 SQL，但了解底层有助于理解 ORM</h4>
+                <pre><code class="language-javascript">import pg from "pg";
+const pool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+});
+
+const result = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
+console.log(result.rows); // User[]</code></pre>
+                <div class="warning">
+                    <strong>永远不要拼接 SQL 字符串！</strong> 用参数化查询（<code>$1, $2, ...</code>）来防止 SQL 注入攻击。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: Prisma ORM -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: Prisma ORM</h2>
+                <h4>用 TypeScript 的方式操作数据库</h4>
+                <p>ORM（对象关系映射）让你用 TypeScript 代码操作数据库，而不是手写 SQL。Prisma 是目前 Node.js 生态中最流行的 ORM，它通过声明式 Schema 定义模型，自动生成类型安全的查询客户端。这一部分我们完成 Prisma 的初始化、模型定义与数据库迁移。</p>
+            </div>
+        </section>
+
+        <!-- Prisma 初始化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Prisma 初始化</h3>
+                <h4>三步开始：安装、初始化、定义模型</h4>
+                <pre><code class="language-bash">$ npm install prisma -D
+$ npx prisma init</code></pre>
+                <pre><code class="language-plaintext"># .env 文件中自动添加：
+DATABASE_URL="postgresql://user:pass@localhost:5432/myapp"</code></pre>
+                <p>初始化后会生成 <code>prisma/schema.prisma</code> 文件——这是你定义数据模型的地方。</p>
+            </div>
+        </section>
+
+        <!-- Prisma 开发工作流全景 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Prisma 工作流</h3>
+                <h4>从改模型到数据库生效的完整循环</h4>
+                <div class="ai-diagram">
+                    <h4>图：Prisma 开发工作流全景图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个环形循环流程图，展示 Prisma 开发的完整工作流
+                    - 循环步骤（顺时针排列，用弧形箭头连接）：
+                      1. 顶部中央：`schema.prisma` 文件图标，标注"① 定义/修改数据模型"，内部显示关键字段：`model User { id, email, name, posts }`，旁边画一个小的代码编辑器窗口
+                      2. 右上：终端命令 `npx prisma migrate dev`，标注"② 生成迁移文件 + 应用到数据库"，命令用等宽字体
+                      3. 右侧：`prisma/migrations/` 文件夹图标，标注"迁移文件（SQL）"，内部展示 `CREATE TABLE "User"...`
+                      4. 右下：数据库图标（PostgreSQL 大象 logo 风格），标注"③ 数据库 Schema 更新"
+                      5. 底部中央：终端命令 `npx prisma generate`，标注"④ 生成 Prisma Client"
+                      6. 左下：`node_modules/.prisma/client` 文件图标，标注"类型安全的查询客户端"
+                      7. 左侧：代码编辑器图标，显示 TypeScript 代码 `const users = await prisma.user.findMany()`，标注"⑤ 在代码中使用 Prisma Client"，代码旁边用绿色勾标注"自动补全 + 类型检查"
+                      8. 左上：回到 schema.prisma，用虚线箭头标注"⑥ 模型变更 → 重复循环"
+                    - 中央区域放一个醒目的标签："Prisma 开发循环"
+                    - 在环形外围左侧画一个独立的方框，标注"生产环境部署流程"，内容：`prisma migrate deploy`（标注"只应用迁移，不生成"），用虚线连接到主循环
+                    - 在环形外围右侧画另一个独立方框，标注"可视化工具"，内容：`npx prisma studio`（标注"浏览器中查看/编辑数据"），用虚线连接到数据库图标
+                    - 配色建议：浅灰背景，主循环用蓝色系，命令/代码用深色等宽字体，数据库用绿色，Prisma Client 用紫色，虚线外围框用浅橙色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、箭头交叉混乱
+                    - 标注文字用中文，命令和代码用等宽字体
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 数据模型定义 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>定义模型</h3>
+                <h4>在 schema.prisma 中用声明式语法定义数据结构</h4>
+                <pre><code class="language-javascript">// prisma/schema.prisma
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+model User {
+    id        String   @id @default(uuid())
+    name      String
+    email     String   @unique
+    password  String
+    role      Role     @default(USER)
+    posts     Post[]
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+    @@map("users")
+}
+
+model Post {
+    id        String   @id @default(uuid())
+    title     String
+    content   String?
+    published Boolean  @default(false)
+    author    User     @relation(fields: [authorId], references: [id])
+    authorId  String   @map("author_id")
+    createdAt DateTime @default(now()) @map("created_at")
+    @@map("posts")
+}
+
+enum Role {
+    USER
+    ADMIN
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- ER 关系图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>ER 关系图</h3>
+                <h4>User 和 Post 是一对多关系——一个用户可以有多篇文章</h4>
+                <div class="ai-diagram">
+                    <h4>图：User-Post-Role 实体关系图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一张 ER（实体关系）图，展示 User、Post、Role 三个实体及其字段与关系
+                    - 三个实体方框：
+                      - User 实体（蓝色方框）：字段包括 id（PK，标注主键）、name、email（UK，标注唯一）、password、role、createdAt、updatedAt
+                      - Post 实体（绿色方框）：字段包括 id（PK）、title、content、published（布尔类型）、authorId（FK，标注外键）、createdAt
+                      - Role 枚举（橙色小方框）：枚举值 USER、ADMIN
+                    - 各元素关系：
+                      - User 到 Post：一对多关系（一个 User 写 多个 Post），连线标注 "writes"，用 "1 对 N" 的鸦脚符号表示
+                      - User 到 Role：多对一关系（多个 User 属于 一个 Role），连线标注 "has"，用 "N 对 1" 表示
+                    - 关键标注：主键用金色钥匙图标标注 PK，外键用蓝色箭头标注 FK，唯一约束用绿色下划线标注 UK
+                    - 配色建议：浅灰背景，User 方框浅蓝底色，Post 方框浅绿底色，Role 方框浅橙底色，关系连线用深灰色，关系标签用深色文字
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p><code>@relation</code> 定义了外键关系，<code>@@map</code> 把模型名映射到数据库表名。</p>
+            </div>
+        </section>
+
+        <!-- 迁移 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据库迁移</h3>
+                <h4>模型改了，用迁移命令同步到数据库</h4>
+                <pre><code class="language-bash"># 创建迁移并应用
+$ npx prisma migrate dev --name init
+
+# 生成 Prisma Client（TypeScript 类型安全的查询 API）
+$ npx prisma generate</code></pre>
+                <div class="intro-block">
+                    <p>迁移就像 Git 的 commit——每次改了模型，执行一次 <code>migrate dev</code>，Prisma 会自动生成 SQL 并记录历史。出了问题可以回滚。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Prisma Seeding -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据填充（Seeding）</h3>
+                <h4>一键生成测试数据，不用每次手动插</h4>
+                <pre><code class="language-javascript">// prisma/seed.ts
+import { PrismaClient } from "@prisma/client";
+const prisma = new PrismaClient();
+
+async function main() {
+    // 清空旧数据
+    await prisma.post.deleteMany();
+    await prisma.user.deleteMany();
+
+    // 创建用户 + 文章（嵌套创建）
+    const alice = await prisma.user.create({
+        data: {
+            name: "Alice",
+            email: "alice@example.com",
+            password: "hashed",
+            posts: {
+                create: [
+                    { title: "第一篇", content: "Hello World", published: true },
+                    { title: "第二篇", content: "学习 Prisma", published: false },
+                ],
+            },
+        },
+    });
+
+    const bob = await prisma.user.create({
+        data: {
+            name: "Bob",
+            email: "bob@example.com",
+            password: "hashed",
+            posts: {
+                create: [{ title: "Bob 的文章", content: "你好", published: true }],
+            },
+        },
+    });
+
+    console.log({ alice, bob });
+}
+
+main()
+    .catch(console.error)
+    .finally(() => prisma.$disconnect());</code></pre>
+                <pre><code class="language-json">// package.json 中注册 seed 脚本
+{
+    "prisma": {
+        "seed": "npx tsx prisma/seed.ts"
+    }
+}</code></pre>
+                <pre><code class="language-bash"># 执行 seed
+$ npx prisma db seed</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 3: CRUD 操作 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: CRUD 与高级查询</h2>
+                <h4>增删改查是基本功，关联查询和事务是进阶能力</h4>
+                <p>有了模型和迁移，接下来用 Prisma Client 执行增删改查。这一部分从基础的 CRUD 开始，逐步扩展到关联查询、多对多关系、数据库索引和 N+1 优化，让你真正掌握 Prisma 的查询能力。</p>
+            </div>
+        </section>
+
+        <!-- Prisma Client 初始化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>初始化 Client</h3>
+                <h4>创建一个共享的 Prisma 实例，整个项目复用</h4>
+                <pre><code class="language-javascript">// src/lib/prisma.ts
+import { PrismaClient } from "@prisma/client";
+export const prisma = new PrismaClient();</code></pre>
+            </div>
+        </section>
+
+        <!-- Create -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Create 创建</h3>
+                <h4>一行代码插入一条数据</h4>
+                <pre><code class="language-javascript">import { prisma } from "./lib/prisma";
+
+const user = await prisma.user.create({
+    data: {
+        name: "张三",
+        email: "zhangsan@example.com",
+        password: "hashed_password",
+    },
+});
+// user 已经是完整的类型化对象
+console.log(user.id);     // string (UUID)
+console.log(user.name);   // "张三"</code></pre>
+            </div>
+        </section>
+
+        <!-- Read -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Read 查询</h3>
+                <h4>findMany、findUnique、条件查询</h4>
+                <pre><code class="language-javascript">// 查所有
+const allUsers = await prisma.user.findMany();
+
+// 按 ID 查
+const userById = await prisma.user.findUnique({ where: { id: "uuid" } });
+
+// 按唯一字段查
+const byEmail = await prisma.user.findUnique({ where: { email: "a@b.c" } });
+
+// 条件查询 + 排序 + 分页
+const admins = await prisma.user.findMany({
+    where: { role: "ADMIN" },
+    select: { id: true, name: true, email: true },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- Update & Delete -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Update 与 Delete</h3>
+                <h4>修改和删除都需要 where 条件</h4>
+                <pre><code class="language-javascript">// 更新
+const updated = await prisma.user.update({
+    where: { id: "uuid" },
+    data: { name: "李四" },
+});
+
+// 删除
+await prisma.user.delete({ where: { id: "uuid" } });</code></pre>
+                <div class="warning">
+                    <strong>忘记写 where 会报错。</strong> Prisma 的 update 和 delete 必须带 where 条件，这是防止误操作的安全机制。
+                </div>
+            </div>
+        </section>
+
+        <!-- 关联查询 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关联查询</h3>
+                <h4>一次查询拿到关联数据——不需要手写 JOIN</h4>
+                <pre><code class="language-javascript">// 查询文章时带上作者信息
+const postsWithAuthor = await prisma.post.findMany({
+    include: { author: true },
+});
+// postsWithAuthor[0].author.name —— 完整类型推断
+
+// 创建带关联的数据
+const post = await prisma.post.create({
+    data: {
+        title: "第一篇文章",
+        content: "内容...",
+        author: { connect: { id: userId } },
+    },
+});
+
+// 嵌套创建——同时创建用户和文章
+const newUser = await prisma.user.create({
+    data: {
+        name: "王五",
+        email: "wangwu@example.com",
+        password: "hashed",
+        posts: {
+            create: [
+                { title: "文章一", content: "内容一" },
+                { title: "文章二", content: "内容二" },
+            ],
+        },
+    },
+    include: { posts: true },
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 多对多关系 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>多对多关系</h3>
+                <h4>一篇文章可以有多个标签，一个标签也可以属于多篇文章</h4>
+                <pre><code class="language-javascript">// prisma/schema.prisma — 隐式多对多（Prisma 自动建中间表）
+model Post {
+    id        String   @id @default(uuid())
+    title     String
+    content   String?
+    published Boolean  @default(false)
+    tags      Tag[]    // 多对多关系
+    author    User     @relation(fields: [authorId], references: [id])
+    authorId  String   @map("author_id")
+    @@map("posts")
+}
+
+model Tag {
+    id    String @id @default(uuid())
+    name  String @unique
+    posts Post[] // 多对多关系
+    @@map("tags")
+}</code></pre>
+                <pre><code class="language-javascript">// 查询：文章带标签
+const posts = await prisma.post.findMany({
+    include: { tags: true, author: true },
+});
+
+// 创建：给文章打标签
+await prisma.post.update({
+    where: { id: postId },
+    data: {
+        tags: { connect: [{ id: tagId1 }, { id: tagId2 }] },
+    },
+});</code></pre>
+                <div class="intro-block">
+                    <p>Prisma 的<strong>隐式多对多</strong>会自动创建中间表 <code>_PostToTag</code>，你不需要手动定义。如果中间表需要额外字段（如打标签的时间），则需要用<strong>显式多对多</strong>，自己定义中间模型。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 数据库索引 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据库索引</h3>
+                <h4>索引让数据库不用全表扫描，查询速度从秒级降到毫秒级</h4>
+                <pre><code class="language-javascript">// schema.prisma 中添加索引
+model Post {
+    id        String   @id @default(uuid())
+    title     String
+    content   String?
+    published Boolean  @default(false)
+    authorId  String   @map("author_id")
+    createdAt DateTime @default(now()) @map("created_at")
+
+    author User @relation(fields: [authorId], references: [id])
+
+    @@index([authorId])               // 单字段索引：按作者查文章
+    @@index([published, createdAt])   // 复合索引：查已发布+按时间排序
+    @@map("posts")
+}</code></pre>
+                <div class="intro-block">
+                    <p><strong>什么时候加索引？</strong> 看你的 <code>where</code> 和 <code>orderBy</code> 用了哪些字段。<code>@unique</code> 自动带索引，主键也是。复合索引遵循<strong>最左前缀原则</strong>：<code>@@index([a, b])</code> 能加速 <code>where: { a, b }</code> 和 <code>where: { a }</code>，但不能加速 <code>where: { b }</code>。</p>
+                </div>
+                <pre><code class="language-bash"># 索引随迁移一起生效
+$ npx prisma migrate dev --name add-post-indexes</code></pre>
+            </div>
+        </section>
+
+        <!-- N+1 问题与优化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>N+1 查询问题</h3>
+                <h4>最常见的性能杀手：查 1 次列表 + N 次详情 = 数据库被炸</h4>
+                <pre><code class="language-javascript">// ❌ N+1 问题：查 100 篇文章，就要再查 100 次作者
+const posts = await prisma.post.findMany();
+for (const post of posts) {
+    const author = await prisma.user.findUnique({
+        where: { id: post.authorId },
+    });
+    // 101 条 SQL！
+}
+
+// ✅ 修复：用 include 一次搞定
+const posts = await prisma.post.findMany({
+    include: { author: true },
+}); // 只需 1 条 SQL（Prisma 会优化为 JOIN 或批量查询）</code></pre>
+                <pre><code class="language-javascript">// ✅ 用 select 只取需要的字段，减少数据传输
+const posts = await prisma.post.findMany({
+    select: {
+        id: true,
+        title: true,
+        author: { select: { name: true } }, // 只取作者名字
+    },
+});
+
+// ✅ 复杂查询用 $queryRaw 直接写 SQL
+const stats = await prisma.$queryRaw`
+    SELECT author_id, COUNT(*) as post_count
+    FROM posts
+    WHERE published = true
+    GROUP BY author_id
+    ORDER BY post_count DESC
+    LIMIT 10
+`;</code></pre>
+                <div class="warning">
+                    <strong>识别 N+1 的方法：</strong> 在开发环境打开 Prisma 的查询日志（<code>new PrismaClient({ log: ['query'] })</code>），如果一个页面加载产生了大量 SQL，很可能就是 N+1 问题。
+                </div>
+            </div>
+        </section>
+
+        <!-- 事务 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>事务</h3>
+                <h4>多个操作要么全部成功，要么全部回滚</h4>
+                <pre><code class="language-javascript">const result = await prisma.$transaction(async (tx) => {
+    // 操作1：创建用户
+    const user = await tx.user.create({
+        data: { name: "赵六", email: "zhaoliu@example.com", password: "hashed" },
+    });
+    // 操作2：创建文章
+    await tx.post.create({
+        data: { title: "欢迎", content: "你好世界", authorId: user.id },
+    });
+    return user;
+});
+// 如果操作2失败，操作1也会自动回滚</code></pre>
+                <p>事务就像"打包寄快递"——要么整包送达，要么整包退回。不会出现"用户创建了但文章没创建"的半成品状态。</p>
+            </div>
+        </section>
+
+        <!-- Prisma 中间件与扩展 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>中间件与扩展</h3>
+                <h4>用 Prisma Extensions 拦截和增强数据库操作</h4>
+                <pre><code class="language-javascript">// 查询日志中间件
+const prisma = new PrismaClient().$extends({
+    name: "query-logger",
+    query: {
+        async $allOperations({ operation, model, args, query }) {
+            const start = Date.now();
+            const result = await query(args);
+            const duration = Date.now() - start;
+            console.log(`[${model}.${operation}] ${duration}ms`);
+            return result;
+        },
+    },
+});
+
+// 软删除扩展：把 delete 变成更新 deletedAt 字段
+const softDelete = prisma.$extends({
+    name: "soft-delete",
+    model: {
+        user: {
+            async delete(args) {
+                return prisma.user.update({
+                    where: args.where,
+                    data: { deletedAt: new Date() },
+                });
+            },
+        },
+    },
+});</code></pre>
+                <div class="intro-block">
+                    <p>Prisma Extensions 是 Prisma 4.16+ 引入的强大功能，可以实现查询日志、软删除、字段加密等横切关注点，而无需修改业务代码。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 连接池与生产配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>连接池与生产配置</h3>
+                <h4>从开发到上线，配置要做哪些调整？</h4>
+                <pre><code class="language-plaintext"># .env — 在 DATABASE_URL 中配置连接池
+DATABASE_URL="postgresql://user:pass@host:5432/db?connection_limit=10&pool_timeout=10"</code></pre>
+                <pre><code class="language-bash"># 开发环境：创建迁移 + 应用到数据库
+$ npx prisma migrate dev --name add-idx
+
+# 生产环境：只应用迁移，不创建新迁移
+$ npx prisma migrate deploy</code></pre>
+                <table>
+                    <thead><tr><th>场景</th><th>connection_limit 建议</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td>开发</td><td>5</td><td>单人使用，够用就好</td></tr>
+                        <tr><td>小型应用</td><td>10-20</td><td>Serverless 按需调高</td></tr>
+                        <tr><td>大型应用</td><td>20-50</td><td>配合外置连接池（PgBouncer）</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>生产环境禁止用 <code>migrate dev</code>！</strong> 它会提示你输入迁移名称，可能在自动化部署中卡住。始终使用 <code>migrate deploy</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4: MongoDB 选讲 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: MongoDB 深入</h2>
+                <h4>文档数据库的核心操作与进阶技巧</h4>
+                <p>MongoDB 是最流行的 NoSQL 文档数据库，用 Mongoose 作为 ODM 可以获得与 Prisma 类似的开发体验。这一部分从 Mongoose 基础 CRUD 开始，扩展到虚拟字段、索引优化和聚合管道，帮你全面掌握 MongoDB 的核心能力。</p>
+            </div>
+        </section>
+
+        <!-- Mongoose -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Mongoose 入门</h3>
+                <h4>用 Schema 定义文档结构，用 Model 执行操作</h4>
+                <pre><code class="language-bash">$ npm install mongoose</code></pre>
+                <pre><code class="language-javascript">import mongoose from "mongoose";
+
+// 定义 Schema
+const userSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    role: { type: String, enum: ["user", "admin"], default: "user" },
+}, { timestamps: true });
+
+const User = mongoose.model("User", userSchema);
+
+// CRUD
+const user = new User({ name: "张三", email: "a@b.c", password: "hashed" });
+await user.save();
+
+const found = await User.findById("id");
+const updated = await User.findByIdAndUpdate("id", { name: "李四" }, { new: true });
+await User.findByIdAndDelete("id");</code></pre>
+            </div>
+        </section>
+
+        <!-- MongoDB 虚拟字段与方法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>虚拟字段与实例方法</h3>
+                <h4>不存入数据库，但可以像真字段一样使用</h4>
+                <pre><code class="language-javascript">// 虚拟字段：不存入 DB，由其他字段计算而来
+userSchema.virtual("displayName").get(function () {
+    return `${this.name} <${this.email}>`;
+});
+
+// 实例方法：每个文档都可以调用的方法
+userSchema.methods.toJSON = function () {
+    const obj = this.toObject();
+    delete obj.password; // 返回时自动隐藏密码
+    return obj;
+};
+
+// 静态方法：在 Model 上调用
+userSchema.statics.findByRole = function (role) {
+    return this.find({ role });
+};
+
+// 使用
+const user = await User.findById("id");
+console.log(user.displayName); // "张三 <zhangsan@example.com>"
+console.log(user.toJSON());    // { name, email, role } 无 password
+const admins = await User.findByRole("admin");</code></pre>
+                <div class="intro-block">
+                    <p>虚拟字段适合用于<strong>派生数据</strong>（如全名、格式化日期），不需要额外存储空间。实例方法适合封装<strong>业务逻辑</strong>（如密码隐藏、格式转换）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- MongoDB 索引 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>MongoDB 索引基础</h3>
+                <h4>索引让查询从"翻整本书"变成"查目录"</h4>
+                <pre><code class="language-javascript">// 在 Schema 中定义索引
+const postSchema = new mongoose.Schema({
+    title: { type: String, required: true },
+    content: String,
+    author: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    tags: [String],
+}, { timestamps: true });
+
+// 单字段索引
+postSchema.index({ title: 1 });
+
+// 复合索引（先按作者，再按创建时间倒序）
+postSchema.index({ author: 1, createdAt: -1 });
+
+// 文本索引（支持全文搜索）
+postSchema.index({ title: "text", content: "text" });
+
+// 唯一索引
+userSchema.index({ email: 1 }, { unique: true });</code></pre>
+                <div class="warning">
+                    <strong>索引不是越多越好。</strong> 每个索引都会占用存储空间，并在写入时增加维护成本。只为高频查询字段添加索引。
+                </div>
+            </div>
+        </section>
+
+        <!-- MongoDB 聚合管道 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>聚合管道</h3>
+                <h4>像流水线一样，把数据一步步加工成你要的形状</h4>
+                <pre><code class="language-javascript">// 需求：统计每个用户发了多少篇文章，只看已发布的
+const result = await Post.aggregate([
+    // 第1步：筛选已发布的文章
+    { $match: { published: true } },
+    // 第2步：按作者分组，计算每组的文章数
+    { $group: {
+        _id: "$author",
+        postCount: { $sum: 1 },
+        latestPost: { $max: "$createdAt" },
+    }},
+    // 第3步：按文章数倒序排列
+    { $sort: { postCount: -1 } },
+    // 第4步：只取前 10 名
+    { $limit: 10 },
+    // 第5步：关联用户信息
+    { $lookup: {
+        from: "users",
+        localField: "_id",
+        foreignField: "_id",
+        as: "author",
+    }},
+    { $unwind: "$author" },
+]);</code></pre>
+                <p>聚合管道是 MongoDB 最强大的查询工具——<code>$match</code> 过滤、<code>$group</code> 分组统计、<code>$lookup</code> 关联、<code>$sort</code>/<code>$limit</code> 排序分页，串联起来就能完成复杂的分析任务。</p>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <div class="warning">
+                    <strong>数据库操作出错时，先看错误信息的最后一行。</strong> 大部分 Prisma 错误都有清晰的原因描述。
+                </div>
+
+                <h4>问题一：<code>prisma migrate dev</code> 报连接失败</h4>
+                <p><strong>原因</strong>：PostgreSQL 没启动，或 <code>DATABASE_URL</code> 配置错误。</p>
+                <p><strong>修复</strong>：确认 PostgreSQL 在运行，检查 <code>.env</code> 中的连接字符串是否正确。</p>
+
+                <h4>问题二：查询返回 null 但数据明明在</h4>
+                <p><strong>原因</strong>：where 条件写错了，或字段名的大小写不对。</p>
+                <p><strong>修复</strong>：Prisma 的字段名用模型定义的名字（驼峰），不是数据库列名（下划线）。</p>
+
+                <h4>问题三：<code>prisma.user</code> 没有类型提示</h4>
+                <p><strong>原因</strong>：忘记执行 <code>npx prisma generate</code>。</p>
+                <p><strong>修复</strong>：每次改完 schema 后都要运行 <code>npx prisma generate</code> 来更新 Client 类型。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：在 Prisma schema 中定义一个 <code>Comment</code> 模型，包含 content、postId、authorId 字段，并运行迁移。</p>
+                        <pre><code class="language-javascript">// 提示：Comment 和 Post 是多对一关系
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">model Comment {
+    id        String   @id @default(uuid())
+    content   String
+    post      Post     @relation(fields: [postId], references: [id])
+    postId    String   @map("post_id")
+    author    User     @relation(fields: [authorId], references: [id])
+    authorId  String   @map("author_id")
+    createdAt DateTime @default(now()) @map("created_at")
+    @@map("comments")
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：写一个查询，获取所有已发布的文章（<code>published: true</code>），按创建时间倒序排列，并包含作者信息。</p>
+                        <pre><code class="language-javascript">// 提示：where + orderBy + include
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">const posts = await prisma.post.findMany({
+    where: { published: true },
+    orderBy: { createdAt: "desc" },
+    include: { author: { select: { name: true, email: true } } },
+});</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>数据能存能查了。下一章学习<strong>API 设计与验证</strong>——让接口既好用又安全。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

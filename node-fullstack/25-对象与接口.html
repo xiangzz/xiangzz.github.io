@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第25章 对象与接口 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>对象与接口</h1>
+            <p>用 interface 描述对象的形状，让数据结构不再靠猜</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>对象的问题</h3>
+                <h4>JS 里的对象就像一个黑箱，你不知道它有哪些属性</h4>
+                <pre><code class="language-javascript">// JS：user 有哪些属性？不知道，全靠猜
+function printUser(user) {
+    console.log(user.name); // name 存在吗？
+    console.log(user.age);  // age 是数字还是字符串？
+    console.log(user.email); // email 必填吗？
+}</code></pre>
+                <pre><code class="language-typescript">// TS：用 interface 明确定义对象的形状
+interface User {
+    name: string;
+    age: number;
+    email: string;
+}
+
+function printUser(user: User): void {
+    console.log(user.name);   // TS 保证一定存在
+    console.log(user.age);    // TS 保证是 number
+}</code></pre>
+                <p>interface 就是对象的"蓝图"，定义了它应该有哪些属性、属性是什么类型。</p>
+            </div>
+        </section>
+
+        <!-- Part 1: interface 基础语法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: interface 语法</h2>
+                <h4>interface 只存在于编译时，不会产生任何运行时代码</h4>
+                <p>前面我们用 interface 描述了一个 User 对象。但你有没有想过，编译之后这些 interface 去哪了？答案是——消失了。interface 纯粹是编译时的约束，帮你在写代码时挡住错误。接下来我们看看它最基本的用法：定义必填属性、可选属性、只读属性。</p>
+            </div>
+        </section>
+
+        <!-- 基本接口 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>定义对象形状</h3>
+                <h4>属性数量必须完全匹配</h4>
+                <pre><code class="language-typescript">// 基本接口
+interface User {
+    name: string;
+    age: number;
+    email: string;
+}
+
+const user: User = {
+    name: "张三",
+    age: 25,
+    email: "zhangsan@example.com",
+};
+
+// 属性少了——报错
+// const bad: User = { name: "张三" };
+// 报错：缺少 age、email 属性
+
+// 属性多了——也报错
+// const extra: User = { name: "张三", age: 25, email: "a@b.c", phone: "123" };
+// 报错："phone" 不存在</code></pre>
+            </div>
+        </section>
+
+        <!-- 可选属性 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>可选属性</h3>
+                <h4>用 ? 标记，可以不提供</h4>
+                <pre><code class="language-typescript">interface Config {
+    host: string;
+    port: number;
+    timeout?: number;       // 可选，可以不提供
+    retry?: number;         // 可选
+}
+
+const c1: Config = { host: "localhost", port: 3000 };        // OK
+const c2: Config = { host: "localhost", port: 3000, timeout: 5000 }; // OK</code></pre>
+                <div class="intro-block">
+                    <p>用人话说：可选属性就像表格里的"选填项"——你不填也能提交，但填了就要符合格式。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 只读属性 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>只读属性</h3>
+                <h4>用 readonly 标记，创建后不可修改</h4>
+                <pre><code class="language-typescript">interface Point {
+    readonly x: number;
+    readonly y: number;
+}
+
+const p: Point = { x: 10, y: 20 };
+// p.x = 30; // 报错：无法分配到 "x"，因为它是只读属性</code></pre>
+                <div class="warning">
+                    <strong>注意</strong>：readonly 只是编译时检查，运行时并不阻止修改。深层只读需要用 <code>Readonly&lt;T&gt;</code> 泛型工具类型。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: 属性修饰符 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 属性修饰符</h2>
+                <h4>索引签名、多种方法写法——让接口更灵活</h4>
+                <p>必填、可选、只读——这三个修饰符能解决大部分场景。但现实开发中还有一种情况：属性名事先不确定。比如配置对象的键可能是任意字符串，怎么描述？索引签名就是为此而生。另外接口里定义方法也有好几种写法，我们一并搞清楚。</p>
+            </div>
+        </section>
+
+        <!-- 索引签名 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>索引签名</h3>
+                <h4>当属性名不固定时使用</h4>
+                <pre><code class="language-typescript">// 任意字符串键的值都是 string
+interface Dictionary {
+    [key: string]: string;
+}
+
+const dict: Dictionary = {
+    hello: "你好",
+    world: "世界",
+    goodbye: "再见",
+};
+
+// 常见用法：配置对象
+interface EnvConfig {
+    [envName: string]: string | number | boolean;
+}
+
+const env: EnvConfig = {
+    NODE_ENV: "production",
+    PORT: 3000,
+    DEBUG: false,
+};</code></pre>
+            </div>
+        </section>
+
+        <!-- 属性与方法写法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>方法多种写法</h3>
+                <h4>接口中定义函数的几种方式</h4>
+                <pre><code class="language-typescript">interface User {
+    readonly id: number;      // 只读属性
+    nickname?: string;        // 可选属性
+    name: string;             // 普通属性
+
+    // 方法写法1：方法签名
+    greet(): string;
+
+    // 方法写法2：属性 + 函数类型
+    greet2: () => string;
+
+    // 方法写法3：简写
+    say(msg: string): void;
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 3: 继承与合并 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 继承与合并</h2>
+                <h4>接口可以继承其他接口，同名的接口会自动合并</h4>
+                <p>接口不会凭空出现——它们通常是层层组合出来的。一个 Animal 接口提供基础字段，Dog 在它之上加 breed。这和 class 的 extends 很像，但接口还多了一招：声明合并。两个同名的 interface 会自动合体，这正是给第三方库扩展类型的秘密武器。</p>
+            </div>
+        </section>
+
+        <!-- extends 继承 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>extends 继承</h3>
+                <h4>单继承和多继承都支持</h4>
+                <pre><code class="language-typescript">// 单继承
+interface Animal {
+    name: string;
+    age: number;
+}
+
+interface Dog extends Animal {
+    breed: string;
+    bark(): void;
+}
+
+const dog: Dog = {
+    name: "旺财",
+    age: 3,
+    breed: "柴犬",
+    bark() { console.log("汪汪！"); },
+};
+
+// 多继承
+interface Serializable {
+    serialize(): string;
+}
+
+interface Loggable {
+    log(): void;
+}
+
+interface Entity extends Serializable, Loggable {
+    id: number;
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 声明合并 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>声明合并</h3>
+                <h4>同名 interface 自动合并属性</h4>
+                <pre><code class="language-typescript">// 同名 interface 自动合并属性
+interface Window {
+    title: string;
+}
+
+interface Window {
+    width: number;
+    height: number;
+}
+
+// 等同于
+// interface Window {
+//     title: string;
+//     width: number;
+//     height: number;
+// }</code></pre>
+                <pre><code class="language-typescript">// 实际应用：扩展第三方库的类型
+declare module "express" {
+    interface Request {
+        userId?: string;       // 添加自定义属性
+        sessionId?: string;
+    }
+}</code></pre>
+                <div class="warning">
+                    <strong>合并时同名属性类型必须一致</strong>，否则会报错。<code>interface Box { size: number; }</code> 和 <code>interface Box { size: string; }</code> 会冲突。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4: interface vs type -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: interface vs type</h2>
+                <h4>两者都能描述对象形状，但有细微区别</h4>
+                <p>学到这里你可能会问：interface 能做的事，type 是不是也能做？确实，大多数情况下它们可以互换。但仔细对比会发现，interface 支持声明合并，type 支持联合类型和元组。选哪个？我们用一张对比表把差异一次说清，给你一个明确的选择指南。</p>
+            </div>
+        </section>
+
+        <!-- 对比表 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>全面对比</h3>
+                <h4>大多数场景可以互换，少数场景各有所长</h4>
+                <table>
+                    <thead>
+                        <tr><th>特性</th><th>interface</th><th>type</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>描述对象</td><td>OK</td><td>OK</td></tr>
+                        <tr><td>继承/扩展</td><td><code>extends</code></td><td>交叉类型 <code>&amp;</code></td></tr>
+                        <tr><td>声明合并</td><td>支持</td><td>不支持</td></tr>
+                        <tr><td>描述联合类型</td><td>不行</td><td>OK <code>type A = B | C</code></td></tr>
+                        <tr><td>描述基本类型</td><td>不行</td><td>OK <code>type ID = string</code></td></tr>
+                        <tr><td>描述元组</td><td>不行</td><td>OK <code>type Pair = [A, B]</code></td></tr>
+                        <tr><td>implements</td><td>OK</td><td>OK</td></tr>
+                        <tr><td>错误信息</td><td>更友好</td><td>一般</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>建议</strong>：描述对象形状时优先用 <code>interface</code>（可扩展、错误信息友好）；描述联合类型、元组、工具类型时用 <code>type</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4.5: implements 与类实现 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 类实现接口</h2>
+                <h4>interface 不仅能约束对象字面量，还能约束 class 的行为</h4>
+                <p>前面四节都在用 interface 约束对象字面量。但 interface 的能力不止于此——它还能跟 class 签合同。用 implements 关键字，让类承诺"我会实现这些方法"。这在依赖注入和策略模式中几乎是标配。接下来看具体怎么用。</p>
+            </div>
+        </section>
+
+        <!-- implements 基本语法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>implements 基础</h3>
+                <h4>让类承诺"我会实现这些方法"</h4>
+                <pre><code class="language-typescript">interface Logger {
+    log(message: string): void;
+    error(message: string): void;
+}
+
+class ConsoleLogger implements Logger {
+    log(message: string) {
+        console.log(`[LOG] ${message}`);
+    }
+    error(message: string) {
+        console.error(`[ERR] ${message}`);
+    }
+}
+
+const logger: Logger = new ConsoleLogger();
+logger.log("启动完成");  // [LOG] 启动完成</code></pre>
+                <div class="intro-block">
+                    <p><code>implements</code> 就像签合同：类声明它实现了某个接口，TS 会逐项检查——漏了一个方法就报错。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 多接口实现与依赖注入 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>多接口与依赖注入</h3>
+                <h4>一个类可以实现多个接口，实现灵活的依赖注入</h4>
+                <pre><code class="language-typescript">interface Logger {
+    log(message: string): void;
+    error(message: string): void;
+}
+
+interface FileLogger extends Logger {
+    getFilePath(): string;
+}
+
+class FileLogger implements FileLogger {
+    constructor(private filename: string) {}
+    log(message: string)   { /* 写入文件 */ }
+    error(message: string) { /* 写入文件 */ }
+    getFilePath() { return this.filename; }
+}
+
+// 依赖注入：函数不关心具体实现，只关心接口
+function processOrder(logger: Logger) {
+    logger.log("订单处理开始");
+    // ... 业务逻辑
+    logger.log("订单处理完成");
+}
+
+processOrder(new ConsoleLogger());  // OK
+processOrder(new FileLogger("app.log"));  // OK</code></pre>
+                <div class="warning">
+                    <strong>编译错误示例</strong>：如果 class 少实现了一个方法，TS 会立刻报错：
+                    <code>class Bad implements Logger {}</code> → 报错：缺少 <code>log</code> 和 <code>error</code> 方法。
+                </div>
+            </div>
+        </section>
+
+        <!-- implements 进阶：策略模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>implements 进阶</h3>
+                <h4>用接口实现策略模式，运行时灵活切换实现</h4>
+                <pre><code class="language-typescript">// 策略模式：定义统一接口，多种实现可互换
+interface StorageService {
+    get(key: string): string | null;
+    set(key: string, value: string): void;
+    remove(key: string): void;
+}
+
+class LocalStorageService implements StorageService {
+    get(key: string)    { return localStorage.getItem(key); }
+    set(key: string, v: string) { localStorage.setItem(key, v); }
+    remove(key: string) { localStorage.removeItem(key); }
+}
+
+class MemoryStorageService implements StorageService {
+    private store = new Map&lt;string, string&gt;();
+    get(key: string)    { return this.store.get(key) ?? null; }
+    set(key: string, v: string) { this.store.set(key, v); }
+    remove(key: string) { this.store.delete(key); }
+}
+
+// 工厂函数：根据环境选择实现
+function createStorage(): StorageService {
+    return typeof localStorage !== "undefined"
+        ? new LocalStorageService()
+        : new MemoryStorageService();
+}</code></pre>
+                <div class="warning">
+                    <strong>陷阱</strong>：多个接口有同名方法但返回类型不同时，类无法同时实现它们——TS 会报错。设计接口时避免这种冲突。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 5: 结构化类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: 结构化检查</h2>
+                <h4>只要形状匹配就能赋值，不关心名称</h4>
+                <p>你有没有遇到过这种困惑：明明没有写 extends，两个接口的变量却能互相赋值？这就是 TypeScript 的结构化类型系统在起作用。它只看"形状"是否兼容，不管"名字"叫什么。但有一个陷阱——字面量直接赋值和通过变量中转，检查的严格程度不一样。</p>
+            </div>
+        </section>
+
+        <!-- 鸭式类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>鸭式类型检查</h3>
+                <h4>只要长得像，就是那个类型</h4>
+                <pre><code class="language-typescript">// 结构化类型——鸭式类型检查
+interface Point { x: number; y: number; }
+
+const p: Point = { x: 10, y: 20 };           // OK
+// const p2: Point = { x: 10, y: 20, z: 30 };  // 报错：多余属性
+
+// 但通过变量中转就允许
+const p3 = { x: 10, y: 20, z: 30 };
+const p4: Point = p3;  // OK！通过变量赋值时允许多余属性</code></pre>
+                <pre><code class="language-typescript">// 函数参数的类似行为
+function printPoint(p: Point) { console.log(p); }
+
+printPoint({ x: 1, y: 2 });                          // OK
+// printPoint({ x: 1, y: 2, z: 3 });                 // 报错
+const obj = { x: 1, y: 2, z: 3 };
+printPoint(obj);                                      // OK</code></pre>
+                <div class="intro-block">
+                    <p>对象字面量会触发<strong>严格字面量检查</strong>，不允许多余属性。但通过变量中转就不会。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 类型兼容性 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类型兼容性</h3>
+                <h4>源类型必须包含目标类型的所有属性</h4>
+                <pre><code class="language-typescript">interface Animal { name: string; }
+interface Dog extends Animal { breed: string; }
+
+let animal: Animal = { name: "动物" };
+let dog: Dog = { name: "旺财", breed: "柴犬" };
+
+animal = dog;  // OK：Dog 有 name
+// dog = animal; // 报错：Animal 缺少 breed
+
+// 函数参数兼容性
+function feed(animal: Animal) { /* ... */ }
+
+feed(dog);     // OK：传入属性更多的对象
+feed(animal);  // OK</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 7: 映射类型预览 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 7: 映射类型预览</h2>
+                <h4>用 keyof 和 in 操作符批量转换接口的属性</h4>
+                <p>假设你有一个 User 接口，现在需要一个"所有属性都可选"的版本——手写一遍？太累了。keyof 能提取属性名，映射类型能批量变换。这两个工具组合起来，就能让 TypeScript 自动帮你生成新接口。后续章节会深入讲解，这里先混个脸熟。</p>
+            </div>
+        </section>
+
+        <!-- keyof -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>keyof 操作符</h3>
+                <h4>获取接口的所有属性名</h4>
+                <pre><code class="language-typescript">interface User {
+    name: string;
+    age: number;
+    email: string;
+}
+
+type UserKeys = keyof User; // "name" | "age" | "email"
+
+// 安全访问属性
+function getProperty&lt;T, K extends keyof T&gt;(obj: T, key: K): T[K] {
+    return obj[key];
+}
+
+const user: User = { name: "张三", age: 25, email: "a@b.c" };
+const name = getProperty(user, "name");   // string
+const age = getProperty(user, "age");     // number
+// getProperty(user, "phone");            // 报错！"phone" 不是 User 的属性</code></pre>
+            </div>
+        </section>
+
+        <!-- 映射类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>映射类型</h3>
+                <h4>批量转换属性的可选性和只读性</h4>
+                <pre><code class="language-typescript">interface User {
+    name: string;
+    age: number;
+    email: string;
+}
+
+// Partial —— 所有属性变可选
+type PartialUser = {
+    [K in keyof User]?: User[K];
+};
+// 等同于 { name?: string; age?: number; email?: string }
+
+// Required —— 所有属性变必选
+type RequiredUser = {
+    [K in keyof User]-?: User[K];
+};
+
+// Readonly —— 所有属性变只读
+type ReadonlyUser = {
+    readonly [K in keyof User]: User[K];
+};</code></pre>
+            </div>
+        </section>
+
+        <!-- 内置工具类型预览 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>内置工具类型</h3>
+                <h4>TS 内置了一批常用映射类型，不用自己手写</h4>
+                <pre><code class="language-typescript">interface User {
+    id: number;
+    name: string;
+    email: string;
+    role: "admin" | "user";
+}
+
+// Partial&lt;T&gt; —— 所有属性变可选
+type PartialUser = Partial&lt;User&gt;;
+// { id?: number; name?: string; email?: string; role?: "admin" | "user" }
+
+// Required&lt;T&gt; —— 所有属性变必选
+type RequiredUser = Required&lt;PartialUser&gt;;
+// 回到原始 User 的样子
+
+// Readonly&lt;T&gt; —— 所有属性变只读
+type FrozenUser = Readonly&lt;User&gt;;
+// { readonly id: number; readonly name: string; ... }</code></pre>
+                <div class="intro-block">
+                    <p>这些工具类型本质上就是上一节学的映射类型的语法糖。TS 把最常用的几个内置了，第30章会深入讲解更多。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 工具类型实战：CRUD 场景 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>工具类型实战</h3>
+                <h4>CRUD 场景中 Partial / Required / Readonly 的真实用法</h4>
+                <pre><code class="language-typescript">interface UserProfile {
+    id: number;
+    name: string;
+    email: string;
+    avatar: string;
+}
+
+// Partial —— PATCH 请求：只传要改的字段
+function patchUser(id: number, data: Partial&lt;UserProfile&gt;) {
+    return fetch(`/users/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+    });
+}
+patchUser(1, { name: "新名字" });          // OK，其他字段不改
+patchUser(2, { email: "new@x.com" });      // OK
+
+// Required —— 表单验证：确保用户填完所有必填项
+function validateProfile(data: Partial&lt;UserProfile&gt;): Required&lt;UserProfile&gt; {
+    if (!data.name || !data.email) throw new Error("缺少必填字段");
+    return { id: data.id!, name: data.name, email: data.email, avatar: data.avatar! };
+}
+
+// Readonly —— 配置对象：启动后不允许修改
+const config: Readonly&lt;UserProfile&gt; = { id: 0, name: "app", email: "a@b.c", avatar: "" };
+// config.name = "changed"; // 报错：只读</code></pre>
+                <div class="warning">
+                    <strong>注意</strong>：<code>Readonly&lt;T&gt;</code> 只做浅层只读，嵌套对象仍可修改。深层只读需要自定义 <code>DeepReadonly</code>（后面会讲）。
+                </div>
+            </div>
+        </section>
+
+        <!-- 内置工具类型预览 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Pick/Omit/Record</h3>
+                <h4>提取、排除、构造——最实用的三个工具类型</h4>
+                <pre><code class="language-typescript">interface User {
+    id: number;
+    name: string;
+    email: string;
+    role: "admin" | "user";
+}
+
+// Pick&lt;T, K&gt; —— 只保留指定属性
+type PublicUser = Pick&lt;User, "id" | "name"&gt;;
+// { id: number; name: string }
+
+// Omit&lt;T, K&gt; —— 排除指定属性
+type CreateUserDTO = Omit&lt;User, "id"&gt;;
+// { name: string; email: string; role: "admin" | "user" }
+
+// Record&lt;K, V&gt; —— 构造键值对类型
+type UserMap = Record&lt;number, User&gt;;
+// 等同于 { [key: number]: User }
+
+const users: UserMap = {
+    1: { id: 1, name: "张三", email: "a@b.c", role: "admin" },
+    2: { id: 2, name: "李四", email: "d@e.f", role: "user" },
+};</code></pre>
+                <div class="warning">
+                    <strong>实战建议</strong>：用 <code>Omit</code> 定义创建 DTO（去掉 id），用 <code>Pick</code> 定义公开视图（只暴露安全字段），用 <code>Record</code> 定义字典映射。别手写重复的接口！
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：工具类型对接口形状的变换</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 左侧：User接口卡片(id,name,email,role) → 右侧四种变换
+                  - Partial→所有属性虚线边框"可选" | Pick<"id"|"name">→只保留这两个 | Omit<"email">→email划掉 | Record→键值对集合
+                  - 中间箭头标注操作名
+                  - 配色：浅灰背景，原始深蓝边框，变换后不同暖色，箭头橙色，16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pick/Omit/Record 实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Pick/Omit 实战</h3>
+                <h4>从一个 User 接口派生整套 CRUD DTO</h4>
+                <pre><code class="language-typescript">interface User {
+    id: number;
+    name: string;
+    email: string;
+    password: string;
+    role: "admin" | "user";
+    createdAt: string;
+}
+
+// 创建：不需要 id 和 createdAt（由后端生成）
+type CreateUserDTO = Omit&lt;User, "id" | "createdAt"&gt;;
+// { name, email, password, role }
+
+// 更新：所有业务字段可选，但 id 必传
+type UpdateUserDTO = Partial&lt;Omit&lt;User, "id" | "createdAt"&gt;&gt; & { id: number };
+// { id: number; name?: string; email?: string; ... }
+
+// 公开视图：只暴露安全字段，去掉密码
+type UserVO = Pick&lt;User, "id" | "name" | "email" | "role"&gt;;
+
+// Record —— 状态码映射
+type HttpStatusText = Record&lt;200 | 404 | 500, string&gt;;
+const statusMap: HttpStatusText = {
+    200: "OK",
+    404: "Not Found",
+    500: "Internal Server Error",
+};</code></pre>
+                <div class="intro-block">
+                    <p><strong>DRY 原则</strong>：所有 DTO 从同一个 User 派生，改 User 时所有 DTO 自动同步。再也不怕忘了改 DTO。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 递归类型简介 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>递归类型简介</h3>
+                <h4>接口可以引用自身——描述树形结构</h4>
+                <pre><code class="language-typescript">// 树节点：children 又是 TreeNode 数组
+interface TreeNode {
+    name: string;
+    children?: TreeNode[];
+}
+
+const tree: TreeNode = {
+    name: "根目录",
+    children: [
+        { name: "src", children: [
+            { name: "index.ts" },
+            { name: "utils.ts" },
+        ]},
+        { name: "package.json" },
+    ],
+};
+
+// JSON 类型也是递归的
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };</code></pre>
+                <div class="warning">
+                    <strong>注意</strong>：递归类型必须至少有一个分支不是递归的（即"终止条件"），否则 TS 会报 <code>Type produces a tuple type that is too large to represent</code> 错误。另外，类型递归深度有限制，过深的嵌套会报错。
+                </div>
+            </div>
+        </section>
+
+        <!-- 递归类型进阶 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>递归类型进阶</h3>
+                <h4>DeepPartial 与 DeepReadonly——递归工具类型</h4>
+                <pre><code class="language-typescript">// DeepPartial：嵌套对象的所有层级都变可选
+type DeepPartial&lt;T&gt; = {
+    [K in keyof T]?: T[K] extends object ? DeepPartial&lt;T[K]&gt; : T[K];
+};
+
+interface Company {
+    name: string;
+    address: { city: string; district: string };
+}
+type PartialCompany = DeepPartial&lt;Company&gt;;
+// { name?: string; address?: { city?: string; district?: string } }
+
+// DeepReadonly：嵌套对象的所有层级都变只读
+type DeepReadonly&lt;T&gt; = {
+    readonly [K in keyof T]: T[K] extends object ? DeepReadonly&lt;T[K]&gt; : T[K];
+};
+
+const config: DeepReadonly&lt;Company&gt; = {
+    name: "Acme",
+    address: { city: "北京", district: "海淀" },
+};
+// config.address.city = "上海"; // 报错！深层也只读</code></pre>
+                <div class="warning">
+                    <strong>性能提示</strong>：递归类型会增加编译时间。在大型项目中，优先用内置的 <code>Partial&lt;T&gt;</code> / <code>Readonly&lt;T&gt;</code>，只在确实需要深层操作时才用递归版本。
+                </div>
+            </div>
+        </section>
+
+        <!-- 接口设计原则 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>接口设计原则</h3>
+                <h4>写接口的几条实用建议</h4>
+                <pre><code class="language-typescript">// 原则1：小而专注（接口隔离原则 ISP）
+// 好的做法——按职责拆分
+interface Printable { print(): void; }
+interface Savable   { save(): void; }
+interface Loadable  { load(): void; }
+
+// 原则2：只读保护不该变的数据
+interface Config {
+    readonly appName: string;
+    readonly version: string;
+    maxRetries: number;  // 只有这个允许运行时修改
+}
+
+// 原则3：用 Pick/Omit 替代手写重复接口
+interface User {
+    id: number; name: string; email: string; password: string;
+}
+type PublicUser = Pick&lt;User, "id" | "name"&gt;;           // 而不是重新定义
+type CreateUserDTO = Omit&lt;User, "id"&gt;;                // 而不是重新定义</code></pre>
+                <div class="intro-block">
+                    <p><strong>命名约定</strong>：社区有两种流派——<code>IUser</code>（加 I 前缀，C# 风格）和 <code>User</code>（不加前缀，TS 官方推荐）。推荐后者，因为 TS 的接口不只是类的契约，用 I 前缀反而显得冗余。关键是名字要<strong>描述清楚用途</strong>，如 <code>CreateUserDTO</code>、<code>ApiResponse</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 接口命名约定与文件组织 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>接口命名约定</h3>
+                <h4>DTO / VO / Entity 后缀与文件组织</h4>
+                <pre><code class="language-typescript">// 按用途加后缀——一看名字就知道角色
+interface User { ... }                // 领域实体
+interface CreateUserDTO { ... }       // 创建请求 body
+interface UpdateUserDTO { ... }       // 更新请求 body
+interface UserVO { ... }              // 返回给前端的视图
+interface UserRepository { ... }      // 数据访问层接口</code></pre>
+                <pre><code class="language-typescript">// 推荐：types/ 目录按领域组织
+// types/user.ts       —— 导出所有 User 相关类型
+// types/api.ts        —— 通用 ApiResponse、PaginatedResponse
+// types/env.ts        —— 环境变量类型声明
+
+// user.ts 中统一导出，避免到处 import
+export interface User { ... }
+export type CreateUserDTO = Omit&lt;User, "id"&gt;;
+export type UserVO = Pick&lt;User, "id" | "name"&gt;;</code></pre>
+                <div class="intro-block">
+                    <p><strong>团队约定 &gt; 个人偏好</strong>：不管选哪种风格，团队统一比"选对"更重要。用 ESLint 的 <code>naming-convention</code> 规则自动检查。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- API 设计实战模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>API 类型实战</h3>
+                <h4>用接口定义 Request/Response，前后端共享类型契约</h4>
+                <pre><code class="language-typescript">// DTO 模式：Data Transfer Object
+interface CreateUserRequest {
+    name: string;
+    email: string;
+    password: string;
+}
+
+interface CreateUserResponse {
+    id: string;
+    name: string;
+    email: string;
+    createdAt: string;
+}
+
+// 后端路由
+app.post("/users", (req: Request&lt;{}, CreateUserResponse, CreateUserRequest&gt;, res) => {
+    const { name, email, password } = req.body; // 类型安全
+    // ...
+});</code></pre>
+                <pre><code class="language-typescript">// 前端调用——共享同一个接口
+async function createUser(data: CreateUserRequest): Promise&lt;CreateUserResponse&gt; {
+    const res = await fetch("/users", {
+        method: "POST",
+        body: JSON.stringify(data),
+    });
+    return res.json();
+}</code></pre>
+                <div class="intro-block">
+                    <p>好处：后端改了字段名，前端立即报错。接口就是前后端的"合同"，谁改谁负责。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- REST 泛型类型系统 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>REST 泛型系统</h3>
+                <h4>ApiResponse&lt;T&gt; 与 PaginatedResponse&lt;T&gt; 通用封装</h4>
+                <pre><code class="language-typescript">// 通用响应封装
+interface ApiResponse&lt;T&gt; {
+    code: number;
+    message: string;
+    data: T;
+    timestamp: number;
+}
+
+// 分页响应——data 里带列表和分页信息
+interface PaginatedResponse&lt;T&gt; {
+    code: number;
+    message: string;
+    data: {
+        list: T[];
+        total: number;
+        page: number;
+        pageSize: number;
+        hasNext: boolean;
+    };
+    timestamp: number;
+}
+
+// 实际使用：一个接口贯穿前后端
+type UserResponse = ApiResponse&lt;User&gt;;
+type UserListResponse = PaginatedResponse&lt;User&gt;;
+
+// 前端请求函数
+async function fetchUsers(page: number): Promise&lt;UserListResponse&gt; {
+    const res = await fetch(`/api/users?page=${page}`);
+    return res.json();
+    // res.data.list    → User[]
+    // res.data.total   → 总条数
+    // res.data.hasNext → 是否有下一页
+}</code></pre>
+                <div class="warning">
+                    <strong>避免过度泛型化</strong>：不是所有接口都需要 <code>&lt;T&gt;</code>。如果只有一个地方用到，直接写具体类型更清晰。泛型是为了<strong>复用</strong>，不是为了炫技。
+                </div>
+            </div>
+        </section>
+
+        <!-- 结构化类型检查流程图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>结构化检查过程</h3>
+                <h4>为什么字面量赋值报错，变量赋值不报错？</h4>
+                <div class="ai-diagram">
+                    <h4>图：结构化类型检查流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：两条并行路径的对比
+                    - 上方路径（报错）：对象字面量 {x:1, y:2, z:3} → 直接赋值给接口变量 Point → 触发严格多余属性检查 → 红色叉号"报错：z 是多余属性"
+                    - 下方路径（通过）：对象字面量 {x:1, y:2, z:3} → 先赋值给普通变量 obj → 再赋值给接口变量 → 绿色勾号"通过，z 被忽略"
+                    - 右侧标注："字面量直接赋值 → 严格检查 | 变量间接赋值 → 宽松检查"
+                    - 配色建议：浅灰背景，报错路径红色系，通过路径绿色系
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <pre><code class="language-typescript">interface Point { x: number; y: number; }
+
+// 路径1：字面量直接赋值 → 严格检查
+// const p1: Point = { x: 1, y: 2, z: 3 }; // 报错！z 是多余的
+
+// 路径2：通过变量中转 → 允许多余属性
+const temp = { x: 1, y: 2, z: 3 };
+const p2: Point = temp; // OK，z 被静默忽略</code></pre>
+                <div class="warning">
+                    <strong>设计意图</strong>：字面量直接赋值时，TS 认为你是"精确描述"，多余属性很可能是拼写错误。通过变量赋值时，TS 认为你只是"取子集"，多余属性是合理的。
+                </div>
+            </div>
+        </section>
+
+        <!-- satisfies 操作符 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>satisfies 操作符</h3>
+                <h4>TS 4.9+：既验证类型，又保留精确推断</h4>
+                <pre><code class="language-typescript">// 问题：用类型注解会丢失精确类型
+const colors: Record&lt;string, string | string[]&gt; = {
+    primary: "#007bff",     // TS 认为是 string | string[]
+    danger: "#dc3545",
+    gradients: ["#ff6b6b", "#ee5a24"],
+};
+// colors.primary.toUpperCase() → 报错！TS 不确定是 string 还是 string[]
+
+// 解决：用 satisfies 验证类型，但保留精确推断
+const colors = {
+    primary: "#007bff",
+    danger: "#dc3545",
+    gradients: ["#ff6b6b", "#ee5a24"],
+} satisfies Record&lt;string, string | string[]&gt;;
+
+colors.primary.toUpperCase();     // OK！TS 知道是 string
+colors.gradients.map(c => c);     // OK！TS 知道是 string[]</code></pre>
+                <div class="intro-block">
+                    <p><code>satisfies</code> = "我要检查这个值满足某个类型，但别把类型信息拓宽"。类型注解 <code>: T</code> 会拓宽类型，<code>satisfies T</code> 不会。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习：REST API 类型系统 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：API 类型系统</h3>
+                <h4>设计一套完整的 REST API 类型</h4>
+                <p><strong>需求</strong>：定义 User、CreateUserDTO、UpdateUserDTO、ApiResponse 四个接口。CreateUserDTO 缺少 id，UpdateUserDTO 所有字段可选，ApiResponse 用泛型包裹数据。</p>
+                <pre><code class="language-typescript">// 你的代码：
+// interface User { ... }
+// interface CreateUserDTO { ... }
+// interface UpdateUserDTO { ... }
+// interface ApiResponse&lt;T&gt; { ... }</code></pre>
+                <div class="answer-section">
+                    <h4>参考答案</h4>
+                    <pre><code class="language-typescript">interface User {
+    id: string;
+    name: string;
+    email: string;
+    avatar?: string;
+    createdAt: string;
+}
+
+interface CreateUserDTO {
+    name: string;
+    email: string;
+    password: string;
+    avatar?: string;
+}
+
+interface UpdateUserDTO {
+    name?: string;
+    email?: string;
+    avatar?: string;
+}
+
+interface ApiResponse&lt;T&gt; {
+    code: number;
+    message: string;
+    data: T;
+}
+
+// 使用
+type UserResponse = ApiResponse&lt;User&gt;;
+type UserListResponse = ApiResponse&lt;User[]&gt;;</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见接口错误</h3>
+
+                <div class="warning">
+                    <strong>接口报错大多是因为属性不匹配。</strong> 多了少了都不行，类型不对也不行。
+                </div>
+
+                <h4>问题一：对象文字可以只指定已知属性</h4>
+                <p><strong>原因</strong>：对象字面量包含接口中没有的属性。</p>
+                <p><strong>修复</strong>：删除多余属性，或者在接口中添加该属性。</p>
+
+                <h4>问题二：缺少属性</h4>
+                <p><strong>原因</strong>：接口要求的必填属性没有提供。</p>
+                <p><strong>修复</strong>：补上缺少的属性，或者把它改成可选属性（加 <code>?</code>）。</p>
+
+                <h4>问题三：不能将类型"X"分配给类型"Y"</h4>
+                <p><strong>原因</strong>：属性值的类型和接口定义的类型不一致。</p>
+                <p><strong>修复</strong>：检查赋的值的类型是否和接口一致。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：定义一个 <code>Product</code> 接口，包含 name（必填）、price（必填）、description（可选）、readonly id（只读）。</p>
+                        <pre><code class="language-typescript">// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">interface Product {
+    readonly id: number;
+    name: string;
+    price: number;
+    description?: string;
+}
+
+const p: Product = {
+    id: 1,
+    name: "键盘",
+    price: 299,
+};
+// p.id = 2; // 报错：只读</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：定义一个 <code>ApiResponse</code> 接口，用索引签名支持任意数量的数据字段。</p>
+                        <pre><code class="language-typescript">// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">interface ApiResponse {
+    code: number;
+    message: string;
+    [key: string]: string | number | boolean;
+}
+
+const res: ApiResponse = {
+    code: 200,
+    message: "OK",
+    total: 100,
+    hasMore: true,
+};</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>接口掌握了，下一章学习<strong>联合类型、交叉类型与收窄</strong>——让类型系统更灵活、更安全。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

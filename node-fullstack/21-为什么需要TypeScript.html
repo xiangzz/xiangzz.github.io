@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第21章 为什么需要TypeScript - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>为什么需要 TypeScript</h1>
+            <p>JavaScript 的"安全帽"，让错误在编写时就被发现</p>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有遇到过</h3>
+                <h4>代码跑起来才报错，而且报错位置离真正的问题十万八千里？</h4>
+                <p>比如调用 <code>user.nmae</code>（拼错了），JS 不会在写代码时提醒你，直到用户看到页面上显示 <code>undefined</code>。</p>
+                <p>或者 <code>"1" + "2"</code> 得到 <code>"12"</code> 而不是 <code>3</code>，这种隐式转换的 bug 找起来特别费劲。</p>
+                <p>TypeScript 就是为了解决这些问题而生的——它在<strong>编写代码时</strong>就能发现错误，而不是等到运行时。</p>
+            </div>
+        </section>
+
+        <!-- Part 1: JS的痛点 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: JS 工程痛点</h2>
+                <h4>看看 JavaScript 在大型项目中会遇到哪些让人头疼的问题</h4>
+                <p>写个 <code>user.nmae</code>（拼错了），JS 不会提醒你，直到用户看到页面上显示 <code>undefined</code>。<code>"1" + "2"</code> 得到 <code>"12"</code> 而不是 3，这种 bug 找起来特别费劲。这一节我们先用 JS 写几个"会出事"的真实案例，看看没有类型系统保护时代码有多脆弱。</p>
+            </div>
+        </section>
+
+        <!-- 痛点一：拼写错误 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>痛点一：拼写错误</h3>
+                <h4>运行时才发现，为时已晚</h4>
+                <p>这段 JS 代码不会报错，但结果永远是 <code>undefined</code>：</p>
+                <pre><code class="language-javascript">// JS：拼写错误，不会报错
+function greet(user) {
+    return "Hello, " + user.nmae; // nmae 拼错了！
+}
+greet({ name: "张三" }); // "Hello, undefined"</code></pre>
+                <div class="warning">
+                    <strong>问题</strong>：JS 在运行时才访问 <code>nmae</code> 属性，发现对象上没有这个属性就返回 <code>undefined</code>。如果这段代码在支付流程里呢？
+                </div>
+            </div>
+        </section>
+
+        <!-- 痛点二：类型隐式转换 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>痛点二：类型陷阱</h3>
+                <h4>"1" + "2" 等于 "12"，不是 3</h4>
+                <pre><code class="language-javascript">// JS：参数类型不确定，结果不可预测
+function add(a, b) {
+    return a + b;
+}
+
+add(1, 2);       // 3 —— 正常
+add("1", "2");   // "12" —— 字符串拼接
+add(1, "2");     // "12" —— 混合更乱
+add([], {});     // "[object Object]" —— 完全失控</code></pre>
+                <p>JS 不会告诉你参数应该传什么类型。你传字符串、数字、甚至数组，它都不吭声，只是默默给你一个意料之外的结果。</p>
+            </div>
+        </section>
+
+        <!-- 痛点三：API 响应不确定 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>痛点三：对象不确定</h3>
+                <h4>接口返回的数据，你确定有 email 字段吗？</h4>
+                <pre><code class="language-javascript">// JS：API 返回什么字段，完全靠猜
+fetch("/api/user")
+    .then(res => res.json())
+    .then(user => {
+        console.log(user.email); // 如果 API 返回 mail 而非 email？
+        // 不会报错，只是默默 undefined
+    });</code></pre>
+                <p>后端改了字段名，前端不知道，代码静默失败。这种 bug 在多人协作的项目中特别常见。</p>
+            </div>
+        </section>
+
+        <!-- 痛点总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>痛点总结</h3>
+                <h4>五大问题，每一个都在等你上线后才发现</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>拼写错误</h4>
+                        <p>属性名拼错，运行时才发现。</p>
+                    </div>
+                    <div class="card">
+                        <h4>类型转换</h4>
+                        <p>隐式转换导致逻辑错误。</p>
+                    </div>
+                    <div class="card">
+                        <h4>重构困难</h4>
+                        <p>改一个字段名，不知道影响哪些文件。</p>
+                    </div>
+                    <div class="card">
+                        <h4>缺乏提示</h4>
+                        <p>IDE 不知道对象有哪些属性。</p>
+                    </div>
+                    <div class="card">
+                        <h4>接口模糊</h4>
+                        <p>团队协作时，数据结构全靠口头约定。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- JSDoc 尝试与局限 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>JSDoc 的困境</h3>
+                <h4>既然 JS 有痛点，能不能用注释加上类型？</h4>
+                <p>很多团队的第一反应是：用 JSDoc 注释来标注类型。这看起来是个轻量方案，不用改工具链。但实际用起来呢？</p>
+                <pre><code class="language-javascript">/**
+ * 计算订单总价
+ * @param {Array&lt;{price: number, quantity: number}&gt;} items - 商品列表
+ * @param {{code: string, discount: number}} coupon - 优惠券
+ * @returns {number} 总价
+ */
+function calcTotal(items, coupon) {
+    const sub = items.reduce((s, i) => s + i.price * i.qty, 0);
+    // qty 写错了，JSDoc 不会报错！
+    const off = coupon.dicsount * 0.1;
+    // dicsount 拼错了，JSDoc 也不会报错！
+    return sub - off;
+}</code></pre>
+                <p>同样的功能，用 TypeScript 写：</p>
+                <pre><code class="language-typescript">interface CartItem { price: number; quantity: number; }
+interface Coupon { code: string; discount: number; }
+
+function calcTotal(items: CartItem[], coupon: Coupon): number {
+    const sub = items.reduce((s, i) => s + i.price * i.quantity, 0);
+    // 拼写错误？编辑器立即标红
+    const off = coupon.discount * 0.1;
+    return sub - off;
+}</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>对比维度</th><th>JSDoc</th><th>TypeScript</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>编译时校验</td><td>可选（需 <code>@ts-check</code>），校验有限</td><td>强制校验，覆盖全面</td></tr>
+                        <tr><td>复杂类型</td><td>写法冗长，嵌套难读</td><td><code>interface</code>、泛型，清晰直观</td></tr>
+                        <tr><td>重构支持</td><td>无自动重构</td><td>重命名、提取接口一步到位</td></tr>
+                        <tr><td>泛型能力</td><td>几乎不支持</td><td>完整泛型系统</td></tr>
+                        <tr><td>注释与代码同步</td><td>注释可能过时，无人维护</td><td>类型即文档，始终与代码同步</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>核心问题</strong>：JSDoc 是注释，不是代码。注释可以错、可以过时、可以忘记更新。TypeScript 的类型是<strong>编译时强制检查</strong>的，错了就过不了编译。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: TS的解决方案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: TypeScript 来了</h2>
+                <h4>TypeScript 是 JavaScript 的超集，加了静态类型检查。写代码时就能发现错误</h4>
+                <p>JS 的痛点看够了，该看解决方案了。TypeScript 不是一门新语言，它只是在 JS 上面加了一层类型标注。编译的时候类型信息被擦掉，浏览器和 Node.js 看到的还是纯 JS。这一节你会看到同样的代码用 TS 写是什么样，体验一下"还没运行就知道哪里有错"的快感。</p>
+            </div>
+        </section>
+
+        <!-- 类型擦除 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>编译哲学</h3>
+                <h4>类型注解写完就被擦除，输出纯 JavaScript</h4>
+                <p>TypeScript 是<strong>编译时工具</strong>，不改变运行时行为。编译 = 类型检查 + 类型擦除，输出纯 JS。</p>
+                <pre><code class="language-typescript">// TS 代码
+function greet(name: string): string {
+    return `Hello, ${name}`;
+}</code></pre>
+                <pre><code class="language-javascript">// 编译后的 JS（类型注解被完全擦除）
+function greet(name) {
+    return `Hello, ${name}`;
+}</code></pre>
+                <div class="intro-block">
+                    <p>用人话说：TypeScript 就像一位严格的编辑，在你写稿时标注错误。交稿时，所有标注都被擦掉，只留下干净的正文。读者（浏览器/Node.js）看到的还是纯 JavaScript。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- JS vs TS 对比案例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>对比：计算面积</h3>
+                <h4>同样的功能，JS 和 TS 的写法对比</h4>
+                <p><strong>JS 写法</strong>——运行时才能发现错误：</p>
+                <pre><code class="language-javascript">// JS 版本：拼写错误、遗漏分支都不会提示
+function calculateArea(shape) {
+    if (shape.type === "circle") {
+        return Math.PI * shape.radius * shape.radius;
+    }
+    return shape.width * shape.height;
+    // 如果传入 { type: "unknown" }？返回 NaN
+}</code></pre>
+                <p><strong>TS 写法</strong>——编写时就能发现所有问题：</p>
+                <pre><code class="language-typescript">// TS 版本：编译时就能发现错误
+interface Circle { type: "circle"; radius: number; }
+interface Rectangle { type: "rectangle"; width: number; height: number; }
+type Shape = Circle | Rectangle;
+
+function calculateArea(shape: Shape): number {
+    switch (shape.type) {
+        case "circle":
+            return Math.PI * shape.radius ** 2;
+        case "rectangle":
+            return shape.width * shape.height;
+    }
+}
+// 拼写错误立即标红、自动补全属性、遗漏分支报警告</code></pre>
+            </div>
+        </section>
+
+        <!-- TS 的三大优势 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>TS 的三大优势</h3>
+                <h4>为什么越来越多项目选择 TypeScript</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>编译时检查</h4>
+                        <p>拼写错误、类型错误在编写时就被发现，不用等到运行时。</p>
+                    </div>
+                    <div class="card">
+                        <h4>智能补全</h4>
+                        <p>IDE 知道对象有哪些属性和方法，输入 <code>.</code> 就自动列出。</p>
+                    </div>
+                    <div class="card">
+                        <h4>安全重构</h4>
+                        <p>改一个字段名，所有引用处都标红，不会漏改。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 静态 vs 动态对比表 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>静态 vs 动态</h3>
+                <h4>一张表看清 JS 和 TS 的核心差异</h4>
+                <table>
+                    <thead>
+                        <tr><th>特性</th><th>动态类型（JS）</th><th>静态类型（TS）</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>类型检查时机</td><td>运行时</td><td>编译时</td></tr>
+                        <tr><td>类型标注</td><td>不需要</td><td>需要</td></tr>
+                        <tr><td>重构安全</td><td>低</td><td>高</td></tr>
+                        <tr><td>IDE 支持</td><td>有限</td><td>智能补全、重构</td></tr>
+                        <tr><td>灵活性</td><td>高</td><td>中等</td></tr>
+                        <tr><td>学习成本</td><td>低</td><td>中等</td></tr>
+                        <tr><td>大型项目</td><td>维护困难</td><td>可维护性强</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- TS 工业界采用情况 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>工业界采用</h3>
+                <h4>谁在用 TypeScript？几乎所有主流框架和公司</h4>
+                <p>2024 年，TypeScript 在 npm 的周下载量已经超过 <strong>5000 万</strong>，是 JavaScript 生态中最受欢迎的静态类型方案。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>前端框架</h4>
+                        <p>Angular 默认 TS；Vue 3 源码用 TS 重写；React 社区普遍使用 TS。</p>
+                    </div>
+                    <div class="card">
+                        <h4>后端与全栈</h4>
+                        <p>NestJS、tRPC、Prisma 等 Node.js 框架全面拥抱 TS。</p>
+                    </div>
+                    <div class="card">
+                        <h4>大厂实践</h4>
+                        <p>Microsoft、Google、Airbnb、Slack 等公司核心项目均采用 TS。</p>
+                    </div>
+                    <div class="card">
+                        <h4>开源趋势</h4>
+                        <p>GitHub 上 TS 已成为第 4 大语言，npm 上超过 30% 的包提供类型定义。</p>
+                    </div>
+                </div>
+                <div class="ai-diagram">
+                    <h4>图：TypeScript 生态全景</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：TypeScript 在中央，周围环绕 Angular、React、Vue、Node.js、Deno、Bun 等技术栈
+                    - 各技术栈与 TypeScript 之间用连线表示构建关系
+                    - 配色建议：浅蓝/浅灰背景，TypeScript 蓝色核心，各技术栈用不同暖色卡片
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 行业迁移案例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>迁移案例</h3>
+                <h4>这些知名项目都从 JavaScript 迁移到了 TypeScript</h4>
+                <p>TypeScript 不是纸上谈兵——看看这些你天天在用的项目是怎么迁移的：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>VS Code —— Microsoft</h4>
+                        <p>VS Code 从第一天就用 TS 编写。150 万行 TS 代码，证明了 TS 在大型桌面应用中的可行性。微软内部统计：TS 帮他们减少了 <strong>15%</strong> 的 bug 修复时间。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Jest —— Facebook(Meta)</h4>
+                        <p>2019 年 Jest 团队启动 TS 迁移，采用<strong>渐进式策略</strong>：先用 JSDoc + @ts-check，再逐文件改为 .ts。整个迁移耗时约 6 个月，没有中断任何版本发布。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Deno —— Ryan Dahl</h4>
+                        <p>Node.js 作者 Ryan Dahl 在创造 Deno 时，直接把 TS 作为一等公民语言。Deno 原生支持运行 .ts 文件，无需手动编译配置。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Next.js —— Vercel</h4>
+                        <p>Next.js 从 v9 开始支持 TS，v10 起内部核心代码全面使用 TS。创建新项目时 <code>npx create-next-app@latest</code> 默认启用 TypeScript。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>npm 下载趋势</strong>：2018 年 TypeScript 的 npm 周下载量约 400 万；2022 年突破 3000 万；2025 年已超过 <strong>5000 万/周</strong>。7 年增长超过 12 倍，增速远超同期任何其他 JS 工具。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 渐进迁移策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>渐进式迁移</h3>
+                <h4>JS 项目不用重写，一步步"渗透"就行</h4>
+                <p>你不需要一天就把整个项目改成 TS。推荐分四步走：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>第一步：改后缀</h4>
+                        <p>把 <code>.js</code> 改成 <code>.ts</code>，不需要加任何类型注解。TS 兼容所有合法 JS。</p>
+                    </div>
+                    <div class="card">
+                        <h4>第二步：开 strict</h4>
+                        <p>在 <code>tsconfig.json</code> 中开启 <code>strict: true</code>，让编译器帮你找出问题。</p>
+                    </div>
+                    <div class="card">
+                        <h4>第三步：加注解</h4>
+                        <p>从公共接口（API 响应、函数签名）开始，逐步添加类型注解。</p>
+                    </div>
+                    <div class="card">
+                        <h4>第四步：消 any</h4>
+                        <p>把临时用的 <code>any</code> 逐步替换为具体类型或 <code>unknown</code>。</p>
+                    </div>
+                </div>
+                <div class="ai-diagram">
+                    <h4>图：JS 到 TS 渐进迁移流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从左到右的 4 步流程，用箭头依次连接
+                    - 步骤一：改后缀（.js → .ts）
+                    - 步骤二：开 strict（tsconfig.json 中启用 strict 模式）
+                    - 步骤三：加注解（为参数和返回值添加类型注解）
+                    - 步骤四：消 any（逐步替换 any 为具体类型）
+                    - 每步下方附带简短代码示例
+                    - 配色建议：浅蓝/浅灰背景，步骤用白色圆角矩形配深色边框，箭头用橙色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 迁移阶段一：混合模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>迁移阶段一</h3>
+                <h4>允许 JS 和 TS 混合共存，零风险起步</h4>
+                <p>第一阶段的目标很简单：<strong>让项目能编译通过</strong>，不需要改任何类型。关键是配置 <code>tsconfig.json</code> 允许 JS 和 TS 文件共存。</p>
+                <pre><code class="language-json">// tsconfig.json —— 阶段一：混合模式
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "allowJs": true,
+    "noImplicitAny": false,
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>allowJs: true</h4>
+                        <p>允许编译器处理 <code>.js</code> 文件。你的 JS 代码不用改任何东西就能和 TS 文件一起参与编译。</p>
+                    </div>
+                    <div class="card">
+                        <h4>noImplicitAny: false</h4>
+                        <p>允许隐式 <code>any</code> 类型。没有类型注解的参数默认是 <code>any</code>，不会报错。这样你才能逐步加类型。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>这一阶段你可以做：新文件用 <code>.ts</code>，旧文件保持 <code>.js</code> 不动。项目照样编译、照样运行。先让脚迈进门槛，再慢慢来。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 迁移阶段二三 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>迁移二三阶段</h3>
+                <h4>从宽松检查到严格模式，逐步收紧</h4>
+                <p><strong>阶段二</strong>：开启基本检查，开始给公共接口加类型注解。</p>
+                <pre><code class="language-json">// tsconfig.json —— 阶段二：基本检查
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "allowJs": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*"]
+}</code></pre>
+                <p><strong>阶段三</strong>：全面开启严格模式。这是大多数团队的目标状态。</p>
+                <pre><code class="language-json">// tsconfig.json —— 阶段三：严格模式
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "allowJs": false,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "noImplicitThis": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*"]
+}</code></pre>
+                <div class="warning">
+                    <strong>常见陷阱</strong>：不要直接从阶段一跳到阶段三！<code>strict: true</code> 会一次性开启所有严格检查，可能产生几百个报错。按阶段走，每阶段修完所有错误再进入下一阶段。
+                </div>
+            </div>
+        </section>
+
+        <!-- 迁移阶段四 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>迁移阶段四</h3>
+                <h4>极致严格：让编译器帮你挡住更多边界情况</h4>
+                <p>当团队对 TS 已经很熟悉后，可以开启更严格的选项，让类型系统发挥最大威力：</p>
+                <pre><code class="language-json">// tsconfig.json —— 阶段四：极致严格
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*"]
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>noUncheckedIndexedAccess</h4>
+                        <p>数组索引和对象键访问返回 <code>T | undefined</code>，防止越界访问。<code>arr[0]</code> 不再假定一定存在。</p>
+                    </div>
+                    <div class="card">
+                        <h4>exactOptionalPropertyTypes</h4>
+                        <p>可选属性只能赋 <code>undefined</code> 或省略，不能赋 <code>null</code>。语义更精确。</p>
+                    </div>
+                    <div class="card">
+                        <h4>noImplicitOverride</h4>
+                        <p>子类重写父类方法必须加 <code>override</code> 关键字，防止意外覆盖。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>阶段四不是必需的。大多数项目停在阶段三就够了。只有金融、医疗等对安全性要求极高的项目才建议上到阶段四。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- @ts-check 渐进方案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>ts-check 方案</h3>
+                <h4>不改后缀、不配编译器，也能享受类型检查</h4>
+                <p>如果你的项目非常大（几十万行 JS），连阶段一都不想碰，还有一个更轻量的选择：<code>// @ts-check</code>。</p>
+                <pre><code class="language-javascript">// @ts-check
+// 在 JS 文件顶部加这一行，VS Code 就会启动类型检查
+
+/** @type {number} */
+let count = 0;
+
+/**
+ * 计算折扣价
+ * @param {number} price - 原价
+ * @param {number} discount - 折扣率（0-1）
+ * @returns {number}
+ */
+function getSalePrice(price, discount) {
+    return price * (1 - discount);
+}
+
+// 如果这样调用，编辑器会标红：
+getSalePrice("99", 0.2); // 错误："99" 不是 number
+count = "hello";          // 错误：不能把 string 赋给 number</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>优点</h4>
+                        <p>零配置、零迁移成本。在现有 <code>.js</code> 文件中加一行注释就能用。适合超大型遗留项目。</p>
+                    </div>
+                    <div class="card">
+                        <h4>局限</h4>
+                        <p>类型写在注释里，不如 TS 直观；不支持复杂泛型；IDE 提示有限。这只是过渡方案，最终还是要迁移到 <code>.ts</code>。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意</strong>：<code>@ts-check</code> 只在编辑器里检查，不会阻止代码运行。它是一个"提醒"，不是"门槛"。适合做迁移的跳板，不适合做终点。
+                </div>
+            </div>
+        </section>
+
+        <!-- TypeScript 版本策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>版本选择</h3>
+                <h4>TypeScript 版本那么多，该用哪个？</h4>
+                <div class="intro-block">
+                    <p>TypeScript 采用<strong>定期发布</strong>模式，大约每 2 个月发布一个次要版本（如 5.4、5.5、5.6）。没有传统意义上的 LTS 版本，但每个发布版都经过充分测试，可以放心使用。</p>
+                </div>
+                <pre><code class="language-bash"># 查看当前安装的版本
+$ npx tsc --version
+# TypeScript 5.7
+
+# 安装指定版本
+$ npm install typescript@5.6 --save-dev
+
+# 安装最新版
+$ npm install typescript@latest --save-dev</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>新项目：用最新版</h4>
+                        <p>直接用 <code>npm install typescript@latest</code>。最新版有最好的类型推断、最快的编译速度和最新的语言特性。</p>
+                    </div>
+                    <div class="card">
+                        <h4>老项目：保守升级</h4>
+                        <p>跟随项目现有版本，小版本升级（5.4 → 5.5）。每个版本的 <strong>Breaking Changes</strong> 都很少，官方会详细列出。</p>
+                    </div>
+                    <div class="card">
+                        <h4>库作者：用 typesVersions</h4>
+                        <p>如果你的包发布到 npm，在 <code>package.json</code> 中用 <code>typesVersions</code> 为不同 TS 版本提供对应的类型定义。</p>
+                    </div>
+                </div>
+                <pre><code class="language-json">// package.json —— 库的 typesVersions 配置
+{
+  "name": "my-lib",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "typesVersions": {
+    ">=5.0": { "*": ["dist/ts5.0/*"] },
+    "*":     { "*": ["dist/legacy/*"] }
+  }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- TS 编译流程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>编译流程</h3>
+                <h4>.ts 文件是怎么变成 .js 的？三步走</h4>
+                <p>TypeScript 编译器（<code>tsc</code>）的工作可以拆成三步：</p>
+                <pre><code class="language-plaintext">  .ts 源码
+     ↓
+  ① 解析 → 生成 AST（抽象语法树）
+     ↓
+  ② 类型检查 → 检查所有类型是否匹配
+     ↓
+  ③ 类型擦除 → 移除注解，输出纯 .js</code></pre>
+                <pre><code class="language-typescript">// 输入：src/hello.ts
+const name: string = "张三";
+function greet(n: string): string {
+    return `Hello, ${n}`;
+}</code></pre>
+                <pre><code class="language-javascript">// 输出：dist/hello.js
+const name = "张三";
+function greet(n) {
+    return `Hello, ${n}`;
+}</code></pre>
+                <div class="ai-diagram">
+                    <h4>图：TypeScript 编译管线</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从左到右的横向流水线，共 5 个节点，用箭头依次连接
+                    - 节点 1：.ts 源码（输入）
+                    - 节点 2：tsc 解析 AST（将源码解析为抽象语法树）
+                    - 节点 3：类型检查（基于 AST 进行类型校验）
+                    - 节点 4：类型擦除（移除所有类型注解）
+                    - 节点 5：.js 输出（最终产物）
+                    - 每个节点下方标注该步骤的作用
+                    - 配色建议：浅蓝/浅灰背景，节点用白色圆角矩形，箭头用橙色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习：找类型隐患 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>综合练习</h3>
+                <h4>找出下面 JS 代码中的所有类型隐患</h4>
+                <pre><code class="language-javascript">// 一个"订单处理"函数，藏着多少类型隐患？
+function processOrder(order) {
+    const total = order.items.reduce((sum, item) => {
+        return sum + item.price * item.quantity;
+    }, 0);
+
+    const discount = order.coupon * 0.1;
+    const finalPrice = total - discount;
+
+    order.customer.balance -= finalPrice;
+    sendEmail(order.customer.emial, "订单确认");
+
+    return { sucess: true, price: finalPrice };
+}
+
+processOrder({
+    items: [{ price: "99", quantity: 2 }],
+    coupon: null,
+    customer: { balance: 500, email: "test@test.com" }
+});</code></pre>
+                <div class="answer-section">
+                    <h4>参考答案</h4>
+                    <pre><code class="language-javascript">// 类型隐患清单：
+// 1. item.price 是字符串 "99"，乘法结果变成 NaN
+// 2. order.coupon 是 null，null * 0.1 得到 0（碰巧没报错）
+// 3. order.customer.emial 拼写错误（应该是 email）
+// 4. balance 可能为负数，没有校验
+// 5. 返回值 sucess 拼写错误（应该是 success）
+// 6. reduce 初始值 0 没问题，但 item.price 如果是 undefined 就炸了
+// 这些问题 TS 都能在编译时发现！</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见疑问</h3>
+
+                <div class="warning">
+                    <strong>TS 会拖慢开发速度吗？</strong> 短期会——你需要写类型注解。但长期来看，它帮你省下的调试时间远超写类型的成本。
+                </div>
+
+                <h4>疑问一：TS 是不是要重写所有代码？</h4>
+                <p><strong>不是</strong>。所有合法的 JS 都是合法的 TS。你可以把 <code>.js</code> 改成 <code>.ts</code>，就能开始用。类型注解可以逐步添加。</p>
+
+                <h4>疑问二：TS 在浏览器里能直接运行吗？</h4>
+                <p><strong>不能</strong>。TS 需要编译成 JS 才能运行。但这个过程通常由构建工具（如 Vite）自动完成。</p>
+
+                <h4>疑问三：学习 TS 之前需要精通 JS 吗？</h4>
+                <p><strong>不需要</strong>。边学 JS 边学 TS 反而更好，TS 能帮你更早发现 JS 代码里的错误。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：找出下面 JS 代码中的所有"类型相关"隐患。</p>
+                        <pre><code class="language-javascript">function getUserInfo(id) {
+    const user = database.find(id);
+    return user.age + "岁";
+}
+getUserInfo("abc");</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">// 隐患：
+// 1. id 可能是字符串，但数据库可能期望数字
+// 2. user 可能是 null（找不到），访问 .age 会报错
+// 3. user.age 如果是 undefined，结果变成 "undefined岁"</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：把下面 JS 函数改写成 TS，添加类型注解。</p>
+                        <pre><code class="language-javascript">// JS 版本
+function formatPrice(price) {
+    return "¥" + price.toFixed(2);
+}</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">// TS 版本
+function formatPrice(price: number): string {
+    return "¥" + price.toFixed(2);
+}
+// 现在传入字符串会编译报错</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>现在你知道了为什么需要 TypeScript。下一章我们来搭建开发环境，写出第一个 <code>.ts</code> 文件。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

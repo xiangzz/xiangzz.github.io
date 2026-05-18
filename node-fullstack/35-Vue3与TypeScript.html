@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第35章 Vue3与TypeScript - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>Vue 3 与 TypeScript</h1>
+            <p>Composition API + TS，类型推断几乎全自动</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>Vue 的 ref 和 reactive 到底怎么写类型？defineProps 怎么声明？</h4>
+                <p>Vue 3 的 <strong>Composition API</strong> 天生对 TypeScript 友好。大部分情况下你不用手写类型——编辑器会自动推断。但有些场景（比如空数组、复杂泛型）还是需要手动指定。</p>
+                <p>本章从项目创建到 Props、Emits、ref、reactive、组件暴露、路由类型，全面覆盖 Vue 3 + TS 的核心写法。</p>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 项目与推断</h2>
+                <h4>创建项目，体验 Vue 3 强大的自动类型推断</h4>
+                <p>先搭好脚手架，再看看 Vue 3 的类型推断有多智能。你会发现大部分类型根本不用手写。</p>
+            </div>
+        </section>
+
+        <!-- 创建项目 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>创建 Vite + Vue 3 项目</h3>
+                <h4>一行命令，TypeScript 开箱即用</h4>
+                <pre><code class="language-bash">$ npm create vite@latest my-vue-app -- --template vue-ts
+$ cd my-vue-app && npm install && npm run dev</code></pre>
+                <p>核心依赖：</p>
+                <table>
+                    <thead>
+                        <tr><th>依赖</th><th>作用</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>vue</code></td><td>Vue 3 核心</td></tr>
+                        <tr><td><code>@vitejs/plugin-vue</code></td><td>Vite Vue 插件</td></tr>
+                        <tr><td><code>vue-tsc</code></td><td>Vue 类型检查工具</td></tr>
+                        <tr><td><code>typescript</code></td><td>TS 编译器</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-text">src/
+├── main.ts          # 入口
+├── App.vue          # 根组件
+├── components/      # 组件
+├── composables/     # 组合式函数
+├── types/           # 类型定义
+└── vite-env.d.ts    # Vite 类型声明</code></pre>
+            </div>
+        </section>
+
+        <!-- Composition API 类型推断 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自动类型推断</h3>
+                <h4>大部分类型，Vue 替你推断好了</h4>
+                <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { ref, computed, reactive, watch, onMounted } from "vue";
+
+// ref —— 自动推断
+const count = ref(0);                // Ref&lt;number&gt;
+const name = ref("张三");            // Ref&lt;string&gt;
+const user = ref&lt;User | null&gt;(null); // 复杂类型需手动指定
+
+// computed —— 自动推断返回类型
+const double = computed(() =&gt; count.value * 2); // ComputedRef&lt;number&gt;
+
+// reactive —— 自动推断
+const state = reactive({
+    items: [] as string[],           // 空数组需要类型断言
+    loading: false,
+    error: null as string | null,
+});
+
+// watch —— 自动推断被监听值的类型
+watch(count, (newVal, oldVal) =&gt; {
+    // newVal 和 oldVal 都是 number
+    console.log(newVal);
+});
+
+onMounted(() =&gt; {
+    console.log("组件已挂载");
+});
+&lt;/script&gt;</code></pre>
+                <div class="intro-block">
+                    <p>规律：<strong>有初始值的基本类型不需要手动写类型，空数组和复杂联合类型需要手动指定</strong>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: Props 与 Emits</h2>
+                <h4>组件的输入和输出都需要类型</h4>
+                <p>组件之间通信靠 Props 和 Emits。用 TypeScript 的接口来声明它们，编辑器会在你传错 props 或 emit 错误事件时立刻标红。</p>
+            </div>
+        </section>
+
+        <!-- defineProps -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>defineProps 类型</h3>
+                <h4>用泛型参数声明 Props，比运行时声明更优雅</h4>
+                <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+// 方式1：泛型参数（推荐）
+interface Props {
+    title: string;
+    count?: number;
+    items: string[];
+    disabled?: boolean;
+}
+
+const props = defineProps&lt;Props&gt;();
+
+// 带默认值：使用 withDefaults
+const props = withDefaults(defineProps&lt;Props&gt;(), {
+    count: 0,
+    disabled: false,
+});
+&lt;/script&gt;</code></pre>
+                <p>对比运行时声明方式：</p>
+                <pre><code class="language-vue">// 方式2：运行时声明（支持 validator，但不推荐）
+const props = defineProps({
+    title: { type: String, required: true },
+    count: { type: Number, default: 0 },
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- defineEmits -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>defineEmits 类型</h3>
+                <h4>用接口声明事件名和参数类型</h4>
+                <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+// 定义事件接口
+interface Emits {
+    (e: "update", value: string): void;
+    (e: "delete", id: number): void;
+    (e: "change", field: string, value: unknown): void;
+}
+
+const emit = defineEmits&lt;Emits&gt;();
+
+// 使用
+emit("update", "新值");     // OK
+emit("delete", 42);         // OK
+// emit("update", 42);      // 报错！value 应该是 string
+// emit("unknown", "");      // 报错！未声明的事件
+&lt;/script&gt;</code></pre>
+                <div class="warning">
+                    <strong>defineEmits 的类型签名看起来像函数重载。</strong> 每一行声明一个事件：第一个参数是事件名，后面的参数是事件携带的数据。写错了编辑器会立刻标红。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: ref 与 reactive</h2>
+                <h4>深入理解两种响应式变量的类型操作</h4>
+                <p>ref 适合基本类型，reactive 适合对象。解构 reactive 丢失响应性时用 toRefs 补救。这节讲清楚每种情况下的类型写法。</p>
+            </div>
+        </section>
+
+        <!-- ref 类型操作 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>ref 的类型</h3>
+                <h4>.value 是 ref 的灵魂，模板中自动解包</h4>
+                <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { ref } from "vue";
+
+// ref 的类型操作
+const count = ref(0);              // Ref&lt;number&gt;
+count.value = 42;                  // OK
+// count.value = "hello";          // 报错！
+
+// 模板中自动解包：count 直接使用（不需要 .value）
+// &lt;template&gt;{{ count }}&lt;/template&gt;
+
+// ref 获取 DOM 元素
+const inputRef = ref&lt;HTMLInputElement | null&gt;(null);
+onMounted(() =&gt; {
+    inputRef.value?.focus();
+});
+&lt;/script&gt;
+
+// &lt;template&gt;
+//   &lt;input ref="inputRef" /&gt;
+// &lt;/template&gt;</code></pre>
+            </div>
+        </section>
+
+        <!-- reactive 与 toRefs -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>reactive 与 toRefs</h3>
+                <h4>对象类型的响应式，解构时不丢响应性</h4>
+                <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { reactive, toRefs } from "vue";
+
+interface FormState {
+    username: string;
+    password: string;
+    remember: boolean;
+}
+
+const form = reactive&lt;FormState&gt;({
+    username: "",
+    password: "",
+    remember: false,
+});
+
+// toRefs 保持响应性——解构后仍然是 ref
+const { username, password } = toRefs(form);
+// username: Ref&lt;string&gt;
+&lt;/script&gt;</code></pre>
+                <div class="intro-block">
+                    <p><strong>ref vs reactive 怎么选？</strong> 简单值用 ref，对象用 reactive。如果需要解构，用 <code>toRefs</code> 保持响应性。实际项目中 ref 用得更多，因为它更灵活。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: watch 与 computed</h2>
+                <h4>响应式数据的"监控"与"派生"</h4>
+                <p>上一节学会了 ref 和 reactive 的类型写法。但数据变了怎么自动响应？派生数据怎么类型安全？这节讲 <code>watch</code>、<code>watchEffect</code> 和 <code>computed</code> 的类型用法。</p>
+            </div>
+        </section>
+
+        <!-- watch 与 watchEffect 类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>watch 与 watchEffect</h3>
+                <h4>监听变化，自动推断新旧值类型</h4>
+                <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { ref, reactive, watch, watchEffect } from "vue";
+
+const count = ref(0);
+const name = ref("张三");
+const state = reactive({ items: [] as string[] });
+
+// 1. 监听 ref —— 自动推断 newVal 为 number
+watch(count, (newVal, oldVal) =&gt; {
+    console.log(newVal.toFixed(2)); // OK: number 方法
+});
+
+// 2. 监听 reactive 的某个属性 —— 用 getter 函数
+watch(
+    () =&gt; state.items.length,
+    (newLen) =&gt; {
+        // newLen: number
+        console.log(`列表长度变为 ${newLen}`);
+    }
+);
+
+// 3. 监听多个源
+watch([count, name], ([newCount, newName]) =&gt; {
+    // newCount: number, newName: string
+});
+
+// 4. deep 选项 —— 深层监听 reactive 对象
+watch(
+    () =&gt; state,
+    (newState) =&gt; {
+        // newState 的类型与 state 一致
+        console.log(newState.items);
+    },
+    { deep: true }
+);
+&lt;/script&gt;</code></pre>
+            </div>
+        </section>
+
+        <!-- watchEffect 与清理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>watchEffect 进阶</h3>
+                <h4>自动追踪依赖 + 清理副作用</h4>
+                <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { ref, watchEffect } from "vue";
+
+const userId = ref(1);
+
+// watchEffect 自动追踪内部用到的响应式数据
+// 不需要手动指定监听源
+watchEffect(() =&gt; {
+    console.log(`当前用户: ${userId.value}`);
+});
+
+// 清理副作用：onCleanup 参数
+// 比如取消上一次 fetch 请求
+const searchQuery = ref("");
+let controller: AbortController | null = null;
+
+watchEffect((onCleanup) =&gt; {
+    controller?.abort();
+    controller = new AbortController();
+
+    onCleanup(() =&gt; {
+        controller?.abort();
+    });
+
+    fetch(`/api/search?q=${searchQuery.value}`, {
+        signal: controller.signal,
+    });
+});
+&lt;/script&gt;</code></pre>
+                <div class="intro-block">
+                    <p><strong>watch vs watchEffect 怎么选？</strong> 需要精确控制监听哪个值 → <code>watch</code>。只想"执行副作用并自动追踪依赖" → <code>watchEffect</code>。实际项目中 <code>watch</code> 用得更多，类型推断也更直观。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- computed getter/setter -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>computed 类型</h3>
+                <h4>getter 自动推断，setter 需要了解签名</h4>
+                <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { ref, computed } from "vue";
+
+const firstName = ref("张");
+const lastName = ref("三");
+
+// 1. 只读 computed —— 自动推断 ComputedRef&lt;string&gt;
+const fullName = computed(() =&gt; `${firstName.value}${lastName.value}`);
+
+// 2. 可写 computed —— 手动指定 get/set
+const fullNameWritable = computed({
+    get: () =&gt; `${firstName.value}${lastName.value}`,
+    set: (val: string) =&gt; {
+        // val 的类型需要显式标注
+        firstName.value = val.charAt(0);
+        lastName.value = val.slice(1);
+    },
+});
+
+// 使用
+fullNameWritable.value = "李四";
+console.log(firstName.value); // "李"
+console.log(lastName.value);  // "四"
+&lt;/script&gt;</code></pre>
+                <div class="warning">
+                    <strong>可写 computed 的 set 参数类型需要手动标注。</strong> 因为 TypeScript 无法从 get 返回值反推 set 的参数类型，所以 <code>set(val: string)</code> 中的 <code>string</code> 要自己写上。漏掉的话，val 会是 <code>unknown</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 5 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 模板与暴露</h2>
+                <h4>模板中的类型检查和子组件方法暴露</h4>
+                <p>前面讲的都是 <code>&lt;script&gt;</code> 里的类型。但 <code>&lt;template&gt;</code> 里也有类型检查。另外，怎么让父组件安全地调用子组件的方法？这节给出答案。</p>
+            </div>
+        </section>
+
+        <!-- Volar 模板检查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Volar 模板检查</h3>
+                <h4>安装 Volar 扩展，模板里也有类型提示</h4>
+                <p>在 <code>tsconfig.json</code> 中启用严格模板检查：</p>
+                <pre><code class="language-json">{
+    "vueCompilerOptions": {
+        "strictTemplates": true
+    }
+}</code></pre>
+                <p>启用后，模板中的 Props、事件、变量都会有类型检查：</p>
+                <pre><code class="language-vue">&lt;!-- 模板中的类型检查 --&gt;
+&lt;template&gt;
+    &lt;UserCard
+        :name="userName"          &lt;!-- 检查 name 是否是 string --&gt;
+        :age="userAge"            &lt;!-- 检查 age 是否是 number --&gt;
+        @update="handleUpdate"    &lt;!-- 检查事件回调类型 --&gt;
+    /&gt;
+&lt;/template&gt;</code></pre>
+                <div class="warning">
+                    <strong>确保安装了 Volar（Vue Language Features）扩展。</strong> 没有它，<code>&lt;script setup lang="ts"&gt;</code> 的类型推断不会生效。如果你之前装过 Vetur，请先禁用它——两个插件会冲突。
+                </div>
+            </div>
+        </section>
+
+        <!-- defineExpose -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>defineExpose</h3>
+                <h4>显式暴露子组件的方法和属性</h4>
+                <pre><code class="language-vue">&lt;!-- ChildComponent.vue --&gt;
+&lt;script setup lang="ts"&gt;
+const count = ref(0);
+const reset = () =&gt; { count.value = 0; };
+const increment = (n: number) =&gt; { count.value += n; };
+
+// 暴露给父组件
+defineExpose({ count, reset, increment });
+&lt;/script&gt;</code></pre>
+                <pre><code class="language-vue">&lt;!-- ParentComponent.vue --&gt;
+&lt;script setup lang="ts"&gt;
+import ChildComponent from "./ChildComponent.vue";
+
+// 用 InstanceType 获取子组件的暴露类型
+const childRef = ref&lt;InstanceType&lt;typeof ChildComponent&gt; | null&gt;(null);
+
+const handleClick = () =&gt; {
+    childRef.value?.reset();
+    childRef.value?.increment(5);
+    console.log(childRef.value?.count); // number | undefined
+};
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;ChildComponent ref="childRef" /&gt;
+    &lt;button @click="handleClick"&gt;操作子组件&lt;/button&gt;
+&lt;/template&gt;</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 6 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: 依赖注入</h2>
+                <h4>跨层级传数据，不用 props 一层层传</h4>
+                <p>Props 只能父子传递。如果祖孙之间要传数据怎么办？<code>provide / inject</code> 就是解决方案。配合 TypeScript，注入的值也能有完整类型保护。</p>
+            </div>
+        </section>
+
+        <!-- provide / inject 类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>InjectionKey 模式</h3>
+                <h4>用 Symbol + InjectionKey 创建类型安全的注入键</h4>
+                <pre><code class="language-typescript">// types/injection-keys.ts
+import type { InjectionKey } from "vue";
+
+// 定义注入键 —— 同时绑定类型
+export const ThemeKey: InjectionKey&lt;{
+    theme: string;
+    toggle: () =&gt; void;
+}&gt; = Symbol("theme");
+
+export const UserKey: InjectionKey&lt;{
+    name: string;
+    role: "admin" | "user";
+}&gt; = Symbol("user");</code></pre>
+                <div class="intro-block">
+                    <p><strong>为什么用 InjectionKey？</strong> <code>provide</code> 和 <code>inject</code> 用字符串 key 的话没有类型。用 <code>Symbol</code> + <code>InjectionKey&lt;T&gt;</code>，inject 拿到的值自动带类型，编辑器也会提示。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- provide/inject 实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>provide 与 inject</h3>
+                <h4>祖先提供数据，后代注入数据</h4>
+                <pre><code class="language-vue">&lt;!-- Provider.vue（祖先组件） --&gt;
+&lt;script setup lang="ts"&gt;
+import { provide, ref } from "vue";
+import { ThemeKey } from "../types/injection-keys";
+
+const theme = ref("light");
+const toggle = () =&gt; {
+    theme.value = theme.value === "light" ? "dark" : "light";
+};
+
+// provide：键 + 值
+provide(ThemeKey, { theme, toggle });
+&lt;/script&gt;</code></pre>
+                <pre><code class="language-vue">&lt;!-- Consumer.vue（后代组件，任意深度） --&gt;
+&lt;script setup lang="ts"&gt;
+import { inject } from "vue";
+import { ThemeKey } from "../types/injection-keys";
+
+// inject 自动推断类型，但可能为 undefined
+const themeCtx = inject(ThemeKey);
+
+// 提供默认值，消除 undefined
+const themeCtx2 = inject(ThemeKey, {
+    theme: "light",
+    toggle: () =&gt; {},
+});
+
+// 工厂函数默认值（避免每次创建新对象）
+const themeCtx3 = inject(ThemeKey, undefined, true);
+&lt;/script&gt;</code></pre>
+                <div class="warning">
+                    <strong>inject 的返回值可能是 undefined。</strong> 如果祖先没有 provide 对应的 key，inject 返回 <code>undefined</code>。要么提供默认值，要么在使用时做空值检查：<code>themeCtx?.toggle()</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 7 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 7: 泛型组件</h2>
+                <h4>写一个组件，适配多种数据类型</h4>
+                <p>列表组件不应该绑定死 <code>string[]</code>。下拉菜单的选项可以是任意类型。Vue 3.3+ 支持 <code>generic</code> 属性，让组件像泛型函数一样灵活。</p>
+            </div>
+        </section>
+
+        <!-- 泛型组件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型组件语法</h3>
+                <h4>&lt;script setup generic="T"&gt; 声明类型参数</h4>
+                <pre><code class="language-vue">&lt;!-- GenericList.vue --&gt;
+&lt;script setup lang="ts" generic="T"&gt;
+import { ref } from "vue";
+
+interface Props {
+    items: T[];
+    selected?: T;
+}
+
+const props = defineProps&lt;Props&gt;();
+const emit = defineEmits&lt;{
+    (e: "select", item: T): void;
+}&gt;();
+
+const selectedIndex = ref&lt;number | null&gt;(null);
+
+function handleClick(item: T, index: number) {
+    selectedIndex.value = index;
+    emit("select", item);
+}
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;ul&gt;
+        &lt;li
+            v-for="(item, index) in items"
+            :key="index"
+            :class="{ active: index === selectedIndex }"
+            @click="handleClick(item, index)"
+        &gt;
+            {{ item }}
+        &lt;/li&gt;
+    &lt;/ul&gt;
+&lt;/template&gt;</code></pre>
+            </div>
+        </section>
+
+        <!-- 泛型组件：带约束 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型约束与实战</h3>
+                <h4>限制 T 必须满足某些条件</h4>
+                <pre><code class="language-vue">&lt;!-- 泛型下拉选择器 --&gt;
+&lt;script setup lang="ts" generic="T extends { id: number | string }"&gt;
+interface Props {
+    options: T[];
+    modelValue?: T;
+    labelKey?: keyof T;
+}
+
+const props = withDefaults(defineProps&lt;Props&gt;(), {
+    labelKey: "name" as keyof T,
+});
+
+const emit = defineEmits&lt;{
+    (e: "update:modelValue", value: T): void;
+}&gt;();
+
+function select(option: T) {
+    emit("update:modelValue", option);
+}
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;select @change="select" ...&gt;
+        &lt;option v-for="opt in options" :key="opt.id"&gt;
+            {{ opt[labelKey] }}
+        &lt;/option&gt;
+    &lt;/select&gt;
+&lt;/template&gt;</code></pre>
+                <div class="intro-block">
+                    <p><strong>约束语法</strong>：<code>generic="T extends { id: number | string }"</code> 表示 T 必须有 id 属性。这样组件内部可以安全地访问 <code>opt.id</code>，编辑器不会报错。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- defineSlots -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>defineSlots 类型</h3>
+                <h4>给插槽的 props 加上类型保护</h4>
+                <pre><code class="language-vue">&lt;!-- DataTable.vue --&gt;
+&lt;script setup lang="ts" generic="T"&gt;
+interface Props {
+    items: T[];
+    columns: { key: keyof T; label: string }[];
+}
+
+defineProps&lt;Props&gt;();
+
+// 定义插槽类型
+const slots = defineSlots&lt;{
+    default?(): void;
+    header?(props: { column: string }): void;
+    cell?(props: { item: T; key: keyof T }): void;
+}&gt;();
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;table&gt;
+        &lt;thead&gt;
+            &lt;tr&gt;
+                &lt;th v-for="col in columns"&gt;
+                    &lt;slot name="header" :column="col.label"&gt;
+                        {{ col.label }}
+                    &lt;/slot&gt;
+                &lt;/th&gt;
+            &lt;/tr&gt;
+        &lt;/thead&gt;
+        &lt;tbody&gt;
+            &lt;tr v-for="item in items"&gt;
+                &lt;td v-for="col in columns"&gt;
+                    &lt;slot name="cell" :item="item" :key="col.key"&gt;
+                        {{ item[col.key] }}
+                    &lt;/slot&gt;
+                &lt;/td&gt;
+            &lt;/tr&gt;
+        &lt;/tbody&gt;
+    &lt;/table&gt;
+&lt;/template&gt;</code></pre>
+                <div class="warning">
+                    <strong>插槽类型在父组件中使用时也能获得提示。</strong> 启用 <code>strictTemplates</code> 后，父组件写 <code>&lt;template #cell="{ item, key }"&gt;</code> 时，item 和 key 的类型会自动推断。这是 Volar 提供的能力。
+                </div>
+            </div>
+        </section>
+
+        <!-- defineModel -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>defineModel 类型</h3>
+                <h4>Vue 3.3+ 新方式，一行搞定双向绑定</h4>
+                <pre><code class="language-vue">&lt;!-- TypedInput.vue --&gt;
+&lt;script setup lang="ts"&gt;
+// 基本用法：自动推断为 Ref&lt;string&gt;
+const modelValue = defineModel&lt;string&gt;();
+
+// 带默认值
+const modelValue2 = defineModel&lt;string&gt;({ required: true });
+
+// 命名 model（v-model:title="xxx"）
+const title = defineModel&lt;string&gt;("title");
+
+// 带选项
+const count = defineModel&lt;number&gt;("count", {
+    required: true,
+    default: 0,
+});
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;input v-model="modelValue" /&gt;
+    &lt;input v-model="title" /&gt;
+&lt;/template&gt;</code></pre>
+                <pre><code class="language-vue">&lt;!-- 父组件中使用 --&gt;
+&lt;script setup lang="ts"&gt;
+import { ref } from "vue";
+import TypedInput from "./TypedInput.vue";
+
+const name = ref("");
+const title = ref("");
+const count = ref(0);
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;TypedInput v-model="name" /&gt;
+    &lt;TypedInput v-model:title="title" /&gt;
+    &lt;TypedInput v-model:count="count" /&gt;
+&lt;/template&gt;</code></pre>
+                <div class="intro-block">
+                    <p><strong>defineModel 替代了以前的 props + emit("update:modelValue") 模式。</strong> 一行代码同时声明 props 和 emit，返回值是一个 ref，可以直接用 <code>v-model</code> 绑定。类型自动从泛型参数推断。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 8 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 8: 路由与指令</h2>
+                <h4>Vue Router 类型安全 + 自定义指令类型</h4>
+                <p>路由是每个项目都会用到的。自定义指令虽然用得少，但写的时候类型也不能错。这节把路由和指令的类型一起讲完。</p>
+            </div>
+        </section>
+
+        <!-- Vue Router 类型安全 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>路由类型安全</h3>
+                <h4>useRoute 和 useRouter 的类型用法</h4>
+                <pre><code class="language-typescript">// router/index.ts
+import { createRouter, createWebHistory } from "vue-router";
+
+const router = createRouter({
+    history: createWebHistory(),
+    routes: [
+        { path: "/", component: () =&gt; import("../views/Home.vue") },
+        { path: "/users/:id", component: () =&gt; import("../views/UserDetail.vue"),
+          props: true },
+    ],
+});
+
+export default router;</code></pre>
+                <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { useRoute, useRouter } from "vue-router";
+
+const route = useRoute();
+const router = useRouter();
+
+// route.params 类型是 Record&lt;string, string | string[]&gt;
+const userId = route.params.id as string;
+
+// 类型安全的导航
+router.push("/users/123");
+router.push({ name: "UserDetail", params: { id: "123" } });
+&lt;/script&gt;</code></pre>
+            </div>
+        </section>
+
+        <!-- 自定义指令类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自定义指令类型</h3>
+                <h4>指令也能写类型，Directive&lt;T&gt; 了解即可</h4>
+                <pre><code class="language-typescript">// directives/focus.ts
+import type { Directive, DirectiveBinding } from "vue";
+
+// Directive&lt;HTMLElement, T&gt; 中：
+//   第一个泛型 = 指令绑定的元素类型
+//   第二个泛型 = 绑定值的类型
+export const vFocus: Directive&lt;HTMLInputElement, boolean&gt; = {
+    mounted(el, binding: DirectiveBinding&lt;boolean&gt;) {
+        // el 是 HTMLInputElement，可以访问 .focus()
+        // binding.value 是 boolean
+        if (binding.value !== false) {
+            el.focus();
+        }
+    },
+};
+
+// 更实用的例子：权限控制指令
+export const vPermission: Directive&lt;HTMLElement, string[]&gt; = {
+    mounted(el, binding: DirectiveBinding&lt;string[]&gt;) {
+        const userPermissions = ["read", "write"]; // 从 store 获取
+        const required = binding.value;
+
+        if (!required.some((p) =&gt; userPermissions.includes(p))) {
+            el.style.display = "none";
+        }
+    },
+};</code></pre>
+                <pre><code class="language-vue">&lt;!-- 使用 --&gt;
+&lt;script setup lang="ts"&gt;
+// 局部注册
+const vFocus = (await import("./directives/focus")).vFocus;
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;input v-focus /&gt;
+    &lt;!-- 传入 boolean 值 --&gt;
+    &lt;input v-focus="true" /&gt;
+    &lt;!-- 传入 string[] 值 --&gt;
+    &lt;div v-permission="['admin']"&gt;管理员内容&lt;/div&gt;
+&lt;/template&gt;</code></pre>
+                <div class="intro-block">
+                    <p><strong>什么时候写自定义指令？</strong> 优先用组件。只有"直接操作 DOM"的场景才用指令，比如自动聚焦、权限隐藏、拖拽、长按。大部分业务逻辑用组件 + composable 就够了。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见排错</h3>
+
+                <div class="warning">
+                    <strong>始终使用 <code>&lt;script setup lang="ts"&gt;</code> 语法。</strong> 配合 Volar 扩展，这是 Vue 3 + TS 项目的最佳实践。
+                </div>
+
+                <h4>问题一：<code>ref([])</code> 的类型推断为 <code>Ref&lt;never[]&gt;</code></h4>
+                <p><strong>原因</strong>：空数组无法推断元素类型，默认为 <code>never[]</code>。</p>
+                <p><strong>修复</strong>：手动指定泛型 <code>ref&lt;string[]&gt;([])</code>，或用类型断言 <code>ref([] as string[])</code>。</p>
+
+                <h4>问题二：Volar 报"组件上的属性不存在"</h4>
+                <p><strong>原因</strong>：<code>strictTemplates</code> 开启后，模板会严格检查 Props 类型。</p>
+                <p><strong>修复</strong>：确认 Props 声明中包含该属性，或检查属性名是否拼写正确。</p>
+
+                <h4>问题三：解构 reactive 对象后丢失响应性</h4>
+                <p><strong>原因</strong>：直接解构 reactive 对象，得到的是普通值，不是响应式的。</p>
+                <p><strong>修复</strong>：用 <code>toRefs</code> 解构：<code>const { a, b } = toRefs(state)</code>。</p>
+
+                <h4>问题四：watch 监听 reactive 对象不触发</h4>
+                <p><strong>原因</strong>：<code>watch(state, callback)</code> 默认是浅层比较，修改深层属性不会触发。</p>
+                <p><strong>修复</strong>：加 <code>{ deep: true }</code> 选项，或监听 getter 函数 <code>watch(() =&gt; state.items, cb, { deep: true })</code>。</p>
+
+                <h4>问题五：inject 拿到的值类型是 undefined</h4>
+                <p><strong>原因</strong>：没有使用 <code>InjectionKey&lt;T&gt;</code>，或者用了字符串 key。</p>
+                <p><strong>修复</strong>：用 <code>Symbol</code> + <code>InjectionKey&lt;T&gt;</code> 创建 key，配合 <code>inject(key, defaultValue)</code> 提供默认值。</p>
+
+                <h4>问题六：泛型组件编译报错"generic 属性不支持"</h4>
+                <p><strong>原因</strong>：<code>generic</code> 是 Vue 3.3+ 特性，旧版本不支持。</p>
+                <p><strong>修复</strong>：升级 <code>vue</code> 和 <code>volar</code> 到最新版本，确保 <code>vue &gt;= 3.3</code>。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：创建一个 <code>Counter.vue</code> 组件，Props 包含 <code>initialValue</code>（number，默认 0），Emits 包含 <code>change</code> 事件（携带当前值）。用按钮实现加减操作。</p>
+                        <pre><code class="language-vue">&lt;!-- 提示：使用 defineProps + defineEmits --&gt;
+&lt;!-- 你的代码： --&gt;</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { ref, watch } from "vue";
+
+interface Props {
+    initialValue?: number;
+}
+
+const props = withDefaults(defineProps&lt;Props&gt;(), {
+    initialValue: 0,
+});
+
+interface Emits {
+    (e: "change", value: number): void;
+}
+
+const emit = defineEmits&lt;Emits&gt;();
+const count = ref(props.initialValue);
+
+function increment() {
+    count.value++;
+    emit("change", count.value);
+}
+function decrement() {
+    count.value--;
+    emit("change", count.value);
+}
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;p&gt;{{ count }}&lt;/p&gt;
+    &lt;button @click="decrement"&gt;-1&lt;/button&gt;
+    &lt;button @click="increment"&gt;+1&lt;/button&gt;
+&lt;/template&gt;</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：创建一个 <code>SearchInput.vue</code> 组件，用 <code>ref</code> 获取 input DOM 元素，组件挂载后自动聚焦。同时通过 <code>defineExpose</code> 暴露 <code>clear</code> 方法。</p>
+                        <pre><code class="language-vue">&lt;!-- 提示：ref&lt;HTMLInputElement | null&gt;(null) --&gt;
+&lt;!-- 你的代码： --&gt;</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { ref, onMounted } from "vue";
+
+const inputRef = ref&lt;HTMLInputElement | null&gt;(null);
+const value = ref("");
+
+onMounted(() =&gt; {
+    inputRef.value?.focus();
+});
+
+function clear() {
+    value.value = "";
+    inputRef.value?.focus();
+}
+
+defineExpose({ clear });
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;input ref="inputRef" v-model="value" /&gt;
+&lt;/template&gt;</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：创建一个 <code>ThemeProvider.vue</code> 和 <code>ThemeToggle.vue</code>。Provider 用 <code>provide</code> 提供 <code>{ theme: Ref&lt;string&gt;, toggle: () =&gt; void }</code>，Toggle 用 <code>inject</code> 注入并切换主题。使用 <code>InjectionKey</code> 保证类型安全。</p>
+                        <pre><code class="language-typescript">// 提示：先定义 InjectionKey
+// export const ThemeKey: InjectionKey&lt;...&gt; = Symbol("theme")</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">// types/keys.ts
+import type { InjectionKey, Ref } from "vue";
+export const ThemeKey: InjectionKey&lt;{
+    theme: Ref&lt;string&gt;;
+    toggle: () =&gt; void;
+}&gt; = Symbol("theme");</code></pre>
+                            <pre><code class="language-vue">&lt;!-- ThemeProvider.vue --&gt;
+&lt;script setup lang="ts"&gt;
+import { provide, ref } from "vue";
+import { ThemeKey } from "../types/keys";
+
+const theme = ref("light");
+const toggle = () =&gt; {
+    theme.value = theme.value === "light" ? "dark" : "light";
+};
+provide(ThemeKey, { theme, toggle });
+&lt;/script&gt;
+&lt;template&gt;&lt;slot /&gt;&lt;/template&gt;</code></pre>
+                            <pre><code class="language-vue">&lt;!-- ThemeToggle.vue --&gt;
+&lt;script setup lang="ts"&gt;
+import { inject } from "vue";
+import { ThemeKey } from "../types/keys";
+
+const ctx = inject(ThemeKey, {
+    theme: { value: "light" } as any,
+    toggle: () =&gt; {},
+});
+&lt;/script&gt;
+&lt;template&gt;
+    &lt;button @click="ctx.toggle"&gt;
+        当前: {{ ctx.theme }}
+    &lt;/button&gt;
+&lt;/template&gt;</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习四</h3>
+                        <p><strong>任务</strong>：创建一个泛型组件 <code>GenericSelect.vue</code>，接受 <code>options: T[]</code> 和 <code>labelKey: keyof T</code>，用 <code>defineModel&lt;T&gt;()</code> 实现选中值的双向绑定。约束 T 必须有 <code>id</code> 属性。</p>
+                        <pre><code class="language-vue">&lt;!-- 提示：generic="T extends { id: number | string }" --&gt;</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-vue">&lt;script setup lang="ts" generic="T extends { id: number | string }"&gt;
+interface Props {
+    options: T[];
+    labelKey: keyof T;
+}
+
+defineProps&lt;Props&gt;();
+const selected = defineModel&lt;T | undefined&gt;();
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;select v-model="selected"&gt;
+        &lt;option :value="undefined"&gt;请选择&lt;/option&gt;
+        &lt;option v-for="opt in options" :key="opt.id" :value="opt"&gt;
+            {{ opt[labelKey] }}
+        &lt;/option&gt;
+    &lt;/select&gt;
+&lt;/template&gt;</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>Vue 3 + TS 搞定了。下一章学习 <strong>状态管理</strong>——当组件之间需要共享数据时，如何优雅地管理全局状态。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

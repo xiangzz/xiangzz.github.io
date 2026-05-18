@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第4章 控制流 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔀</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>控制流</h1>
+            <p>让程序学会选择和重复</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>你在银行取钱时，如果余额不足，ATM 会拒绝并提示"余额不足"。如果密码错误三次，它会锁定卡片。这些"根据不同情况做不同事"的逻辑，是怎么实现的？</h4>
+                <p>答案是<strong>控制流</strong>。程序默认从上到下逐行执行，但现实世界需要"如果……就……"和"重复做……直到……"。</p>
+                <p>控制流就是<strong>改变程序执行顺序</strong>的机制。有了它，程序才能做判断、做选择、做重复。没有控制流的程序，就像只会直走的汽车，遇到墙就撞上去。</p>
+                <p>这个比喻只是为了帮你建立直观感受。在计算机内部，控制流是通过 CPU 的条件跳转指令实现的，并不存在什么"汽车"和"墙"。</p>
+            </div>
+        </section>
+
+        <!-- ATM 控制流预览 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>控制流预览</h3>
+                <h4>一张流程图看懂 ATM 取款逻辑</h4>
+                <p>回看开头的 ATM 问题。它的完整逻辑其实就是一个复杂的控制流组合：</p>
+                <div class="ai-diagram">
+                    <h4>图：ATM 取款机的控制流流程图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个完整的 ATM 取款流程图，展示条件判断和分支逻辑
+                    - 流程结构（从上到下）：
+                      1. 起始节点"插入银行卡"
+                      2. 菱形判断"验证密码"，三条分支：正确、错误≥3次、错误＜3次
+                      3. 错误≥3次 → "锁定卡片"（红色警告色）
+                      4. 错误＜3次 → 回到"验证密码"（循环箭头）
+                      5. 正确 → 菱形判断"选择操作"：取款 或 查询
+                      6. 查询 → "显示余额"
+                      7. 取款 → 菱形判断"余额充足？"
+                      8. 否 → "提示余额不足"
+                      9. 是 → "出钞" → "打印凭条"
+                    - 配色建议：浅灰背景，正常流程框用浅蓝色，判断框用浅黄色，错误/警告用浅红色，成功操作用浅绿色
+                    - 画面比例：4:3（流程较长，需要纵向空间）
+                    - 避免：过度装饰、3D 效果、文字过小
+                    - 标注文字用中文，分支条件用等宽字体
+                    </p>
+                </div>
+                <p>这一章我们学完条件判断、循环和错误处理，你就能实现这样的逻辑了。</p>
+            </div>
+        </section>
+
+        <!-- Part 分割 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 条件判断</h2>
+                <h4>程序最基本的能力：根据条件选择不同的执行路径</h4>
+                <p>回顾开头的 ATM 例子：密码对不对、余额够不够，走的完全是不同的路。这就是条件判断——让程序学会"看情况办事"。先从最基础的 <code>if...else</code> 开始，再到多分支的 <code>switch</code>，每个语法都配有真实场景。学完这一节，你就能写出"如果……否则……"的逻辑了。</p>
+            </div>
+        </section>
+
+        <!-- if 语句 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>if 语句</h3>
+                <h4>如果满足条件，就执行这段代码</h4>
+                <p><strong>if 语句</strong>是最基本的条件判断结构。条件为 <code>true</code> 时执行花括号里的代码，为 <code>false</code> 时跳过。</p>
+                <p>说白了，就是<strong>"如果下雨就带伞"</strong>的逻辑。条件满足就做，不满足就跳过。</p>
+                <pre><code class="language-javascript">let age = 18;
+if (age >= 18) {
+    console.log("成年人");
+}
+
+// if...else——二选一
+if (age >= 18) {
+    console.log("成年人");
+} else {
+    console.log("未成年人");
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- else if -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>else if 多条件</h3>
+                <h4>不只二选一，可以多选一</h4>
+                <pre><code class="language-javascript">let score = 85;
+if (score >= 90) {
+    console.log("优秀");
+} else if (score >= 80) {
+    console.log("良好");     // 匹配这个
+} else if (score >= 60) {
+    console.log("及格");
+} else {
+    console.log("不及格");
+}
+
+// 嵌套 if——条件里还有条件
+let isAdmin = true;
+if (age >= 18) {
+    if (isAdmin) {
+        console.log("管理员用户");
+    } else {
+        console.log("普通用户");
+    }
+}</code></pre>
+                <p>注意：<code>else if</code> 从上到下逐个判断，<strong>第一个匹配的条件执行后就不再往下看了</strong>。</p>
+            </div>
+        </section>
+
+        <!-- 条件中的陷阱 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>条件判断陷阱</h3>
+                <h4>falsy 值可能让你的条件"失灵"</h4>
+                <pre><code class="language-javascript">// 危险！0 是 falsy，条件为 false
+let count = 0;
+if (count) {
+    console.log("有数据"); // 不会执行！
+}
+
+// 正确写法：明确判断
+if (count !== 0) {
+    console.log("有数据");
+}
+
+// 省略花括号——只对单行有效，但容易出 bug
+if (score >= 60) console.log("及格");
+// 不推荐！加个 else 就容易写错缩进</code></pre>
+                <div class="warning">
+                    <strong>症状</strong>：<code>if (count)</code> 中 <code>count</code> 为 0 时条件不成立。<br>
+                    <strong>原因</strong>：<code>0</code>、<code>""</code>、<code>null</code>、<code>undefined</code>、<code>NaN</code>、<code>false</code> 都是 falsy，在条件中被视为 <code>false</code>。<br>
+                    <strong>修复</strong>：用 <code>!== 0</code>、<code>!== ""</code> 等明确判断，不要依赖隐式布尔转换。
+                </div>
+            </div>
+        </section>
+
+        <!-- switch 语句 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>switch 语句</h3>
+                <h4>一个值有很多种可能时，用 switch 更清晰</h4>
+                <pre><code class="language-javascript">let day = "星期一";
+switch (day) {
+    case "星期一":
+        console.log("工作日开始");
+        break;
+    case "星期五":
+        console.log("快到周末了");
+        break;
+    case "星期六":
+    case "星期日":           // case 穿透——两天都输出"周末"
+        console.log("周末！");
+        break;
+    default:
+        console.log("普通工作日");
+        break;
+}</code></pre>
+                <p>三个注意点：</p>
+                <ul>
+                    <li>别忘了 <code>break</code>，否则会<strong>穿透</strong>到下一个 case</li>
+                    <li>switch 用 <code>===</code> 严格比较：<code>"1"</code> 不会匹配 <code>1</code></li>
+                    <li><code>default</code> 放最后，处理所有未匹配的情况</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- switch 技巧 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>switch 技巧</h3>
+                <h4>switch(true)——另一种多条件写法</h4>
+                <pre><code class="language-javascript">// switch(true) 可以替代复杂的 else if
+let score = 85;
+switch (true) {
+    case score >= 90:
+        console.log("优秀");
+        break;
+    case score >= 80:
+        console.log("良好");
+        break;
+    case score >= 60:
+        console.log("及格");
+        break;
+    default:
+        console.log("不及格");
+}
+
+// switch 用 === 严格匹配
+let num = "1";
+switch (num) {
+    case 1:
+        console.log("数字1"); // 不匹配！"1" !== 1
+        break;
+    case "1":
+        console.log("字符串1"); // 匹配这个
+        break;
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 练习：条件判断 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：写一个程序，判断一个年份是否是闰年。规则：能被 4 整除但不能被 100 整除，或者能被 400 整除。</p>
+                        <pre><code class="language-javascript">let year = 2024;
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">let year = 2024;
+if ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0) {
+    console.log(`${year} 是闰年`);
+} else {
+    console.log(`${year} 不是闰年`);
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 分割 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 循环</h2>
+                <h4>重复执行一段代码，是程序最强大的能力之一</h4>
+                <p>条件判断让程序能"选择"，但还有一种更厉害的能力——"重复"。比如要处理 100 条数据，你不会写 100 遍同样的代码吧？<code>for</code>、<code>while</code>、<code>for...of</code> 就是用来搞定重复工作的。这一节把 JS 里常用的循环方式全部过一遍，告诉你什么时候该用哪一个。</p>
+            </div>
+        </section>
+
+        <!-- for 循环 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>for 循环</h3>
+                <h4>知道重复几次就用 for</h4>
+                <p><strong>for 循环</strong>由三部分组成：初始化、条件判断、更新。它是最常用的循环结构。</p>
+                <pre><code class="language-javascript">// 经典 for 循环
+for (let i = 0; i < 5; i++) {
+    console.log(i); // 0, 1, 2, 3, 4
+}
+
+// 倒序循环
+for (let i = 5; i > 0; i--) {
+    console.log(i); // 5, 4, 3, 2, 1
+}</code></pre>
+                <p>for 循环就像跑步：<code>let i = 0</code> 是起点，<code>i &lt; 5</code> 是终点线，<code>i++</code> 是每跑一步。</p>
+                <p>这个比喻只是为了帮你建立直观感受。在计算机内部，for 循环是通过条件寄存器反复比较和跳转来实现的。</p>
+            </div>
+        </section>
+
+        <!-- for...in 和 for...of -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>for...in 与 for...of</h3>
+                <h4>遍历对象和遍历数组的两把利器</h4>
+                <pre><code class="language-javascript">// for...in——遍历对象的键
+let obj = { name: "张三", age: 25 };
+for (let key in obj) {
+    console.log(key, obj[key]);
+}
+// name 张三
+// age 25
+
+// for...of——遍历可迭代对象的值
+let arr = [10, 20, 30];
+for (let item of arr) {
+    console.log(item); // 10, 20, 30
+}
+
+// for...of 还能遍历字符串
+for (let char of "Hello") {
+    console.log(char); // H, e, l, l, o
+}
+
+// 获取索引：entries()
+for (let [index, value] of arr.entries()) {
+    console.log(index, value);
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- while 循环 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>while 循环</h3>
+                <h4>不知道重复几次就用 while</h4>
+                <p><strong>while 循环</strong>先判断条件，条件为 <code>true</code> 就执行循环体。适合不知道循环次数的场景。</p>
+                <pre><code class="language-javascript">// while —— 先判断后执行
+let i = 0;
+while (i < 5) {
+    console.log(i);
+    i++;
+}
+
+// 实际应用：读取用户输入直到满足条件
+// let input;
+// while (input !== "exit") {
+//     input = getUserInput();
+// }</code></pre>
+                <div class="warning">
+                    <strong>症状</strong>：程序卡住不动，CPU 占用飙升。<br>
+                    <strong>原因</strong>：while 的条件永远为 <code>true</code>，形成了<strong>无限循环</strong>。通常是忘了更新循环变量。<br>
+                    <strong>修复</strong>：确保循环体中有让条件变为 <code>false</code> 的代码。
+                </div>
+            </div>
+        </section>
+
+        <!-- do...while -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>do...while</h3>
+                <h4>至少执行一次的循环</h4>
+                <p><strong>do...while</strong> 先执行一次循环体，再判断条件。适合"至少要做一次"的场景。</p>
+                <pre><code class="language-javascript">// 生成随机数，直到出现 7
+let num;
+do {
+    num = Math.floor(Math.random() * 10);
+    console.log("生成:", num);
+} while (num !== 7);
+console.log("终于生成了 7！");</code></pre>
+                <p>while 和 do...while 的区别：while 可能一次都不执行，do...while 至少执行一次。就像"先看天气再决定出门"和"先出门再看天气"。</p>
+                <p>这个比喻只是为了帮你建立直观感受。在计算机内部，do...while 是先执行循环体代码，然后再通过条件跳转指令决定是否重复执行。</p>
+            </div>
+        </section>
+
+        <!-- 循环方式对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>循环方式对比</h3>
+                <h4>一张表选对循环</h4>
+                <table>
+                    <thead><tr><th>循环</th><th>适用场景</th><th>特点</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>for</code></td><td>已知次数的循环</td><td>初始化、条件、更新一体</td></tr>
+                        <tr><td><code>for...in</code></td><td>遍历对象属性键</td><td>包含原型链属性</td></tr>
+                        <tr><td><code>for...of</code></td><td>遍历可迭代对象的值</td><td>数组、字符串、Map、Set</td></tr>
+                        <tr><td><code>while</code></td><td>不确定次数的循环</td><td>先判断后执行</td></tr>
+                        <tr><td><code>do...while</code></td><td>至少执行一次</td><td>先执行后判断</td></tr>
+                        <tr><td><code>forEach</code></td><td>遍历数组</td><td>不能 break/continue</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 分割 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 循环控制</h2>
+                <h4>循环不一定要跑到底，你可以在中途退出或跳过某一次</h4>
+                <p>循环会写了，但有时你不需要跑完每一轮。比如找到目标就停，或者跳过不需要处理的数据。<code>break</code> 和 <code>continue</code> 就是干这个的——一个说"我不干了"，一个说"这轮跳过"。还有嵌套循环怎么从里层直接跳出外层？这一节都给你讲清楚。</p>
+            </div>
+        </section>
+
+        <!-- break 和 continue -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>break 与 continue</h3>
+                <h4>中途退出和跳过本轮</h4>
+                <pre><code class="language-javascript">// break——跳出整个循环
+for (let i = 0; i < 10; i++) {
+    if (i === 5) break;
+    console.log(i); // 0, 1, 2, 3, 4
+}
+
+// continue——跳过当前这一轮，进入下一轮
+for (let i = 0; i < 10; i++) {
+    if (i % 2 === 0) continue;
+    console.log(i); // 1, 3, 5, 7, 9（只输出奇数）
+}</code></pre>
+                <p>简单记忆：<code>break</code> 是"我不干了，走人"，<code>continue</code> 是"这轮跳过，下一轮继续"。</p>
+                <p>这个比喻只是为了帮你建立直观感受。在计算机内部，<code>break</code> 是跳转到循环体结束之后的指令，<code>continue</code> 是跳转到循环体的条件判断处。</p>
+            </div>
+        </section>
+
+        <!-- 标签语句 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>跳出多层循环</h3>
+                <h4>标签语句——给循环起个名字</h4>
+                <pre><code class="language-javascript">// 标签语句——跳出外层循环
+outer: for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+        if (i === 1 && j === 1) {
+            break outer; // 直接跳出外层循环
+        }
+        console.log(i, j);
+    }
+}
+// 输出: (0,0) (0,1) (0,2) (1,0)</code></pre>
+                <div class="intro-block">
+                    <p>标签语句虽然合法，但会让代码难以阅读。实际开发中，推荐用<strong>函数封装 + return</strong> 替代。</p>
+                </div>
+                <pre><code class="language-javascript">// 推荐写法：用函数替代标签
+function findTarget() {
+    for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) {
+            if (i === 1 && j === 1) return;
+            console.log(i, j);
+        }
+    }
+}
+findTarget();</code></pre>
+            </div>
+        </section>
+
+        <!-- 练习：循环 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：用 for 循环计算 1 到 100 的总和。</p>
+                        <pre><code class="language-javascript">// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">let sum = 0;
+for (let i = 1; i <= 100; i++) {
+    sum += i;
+}
+console.log(sum); // 5050</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：用 for...of 遍历数组 <code>[3, 7, 2, 9, 1]</code>，只输出其中的偶数。</p>
+                        <pre><code class="language-javascript">// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">let nums = [3, 7, 2, 9, 1];
+for (let n of nums) {
+    if (n % 2 !== 0) continue;
+    console.log(n); // 2
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 分割 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 错误处理</h2>
+                <h4>程序不可能永远不出错，学会优雅地处理错误比"不出错"更重要</h4>
+                <p>条件判断和循环都搞定了，但还有一件事：代码跑着跑着出错了怎么办？用户传了个非法参数、文件读取失败、网络请求超时——这些都不是"如果"而是"何时"会发生的事。<code>try...catch</code> 让你的程序遇到错误时不崩溃，而是优雅地处理并继续运行。这是从"玩具代码"走向"生产代码"的关键一步。</p>
+            </div>
+        </section>
+
+        <!-- try...catch -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>try...catch</h3>
+                <h4>出了错也不崩溃，优雅地处理</h4>
+                <p><strong>try...catch</strong> 用于捕获代码运行时的错误。<code>try</code> 里放可能出错的代码，<code>catch</code> 里放出错后的处理逻辑。</p>
+                <pre><code class="language-javascript">try {
+    let result = riskyOperation();
+    console.log(result);
+} catch (error) {
+    console.error("出错了:", error.message);
+}
+
+// try...catch...finally
+function readFile(path) {
+    try {
+        console.log("打开文件:", path);
+        throw new Error("文件不存在"); // 模拟错误
+    } catch (error) {
+        console.error("错误:", error.message);
+    } finally {
+        console.log("无论如何都执行（清理资源）");
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- try...catch 注意事项 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>错误处理陷阱</h3>
+                <h4>异步错误 catch 不到？这是个经典坑</h4>
+                <pre><code class="language-javascript">// try...catch 只能捕获同步错误
+try {
+    setTimeout(() => {
+        throw new Error("异步错误"); // 不会被捕获！
+    }, 1000);
+} catch (e) {
+    console.log("捕获不到"); // 不会执行
+}
+
+// 正确方式：把 try...catch 放进异步回调里
+setTimeout(() => {
+    try {
+        throw new Error("异步错误");
+    } catch (e) {
+        console.log("捕获到了:", e.message); // OK
+    }
+}, 1000);</code></pre>
+                <div class="warning">
+                    <strong>症状</strong>：明明有 try...catch，但异步代码里的错误还是导致程序崩溃。<br>
+                    <strong>原因</strong>：try...catch 只能捕获同步代码中的错误。<code>setTimeout</code> 的回调在 try...catch 执行完毕后才运行。<br>
+                    <strong>修复</strong>：把 try...catch 放在异步回调内部，或使用 Promise 的 <code>.catch()</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 捕获特定错误 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>捕获特定错误</h3>
+                <h4>不同类型的错误，不同对待</h4>
+                <pre><code class="language-javascript">// 用 instanceof 区分错误类型
+try {
+    JSON.parse("invalid json");
+} catch (error) {
+    if (error instanceof SyntaxError) {
+        console.log("JSON 解析错误:", error.message);
+    } else {
+        throw error; // 不认识的错误，重新抛出
+    }
+}
+
+// 常见错误类型
+// SyntaxError  —— 语法错误（代码写错了）
+// ReferenceError —— 引用了不存在的变量
+// TypeError    —— 类型操作错误（对 null 调方法等）
+// RangeError   —— 值超出范围</code></pre>
+            </div>
+        </section>
+
+        <!-- Error 对象 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Error 对象</h3>
+                <h4>错误信息里藏着什么？</h4>
+                <p>当 <code>catch</code> 捕获到错误时，参数是一个 Error 对象。它有三个核心属性：</p>
+                <pre><code class="language-javascript">try {
+    let obj = null;
+    obj.name; // TypeError!
+} catch (error) {
+    console.log(error.name);    // "TypeError"
+    console.log(error.message); // "Cannot read properties of null"
+    console.log(error.stack);   // 完整的调用栈（文件名+行号）
+}
+
+// 手动抛出错误——创建自定义错误信息
+function divide(a, b) {
+    if (b === 0) {
+        throw new Error("除数不能为零");
+    }
+    return a / b;
+}
+
+try {
+    divide(10, 0);
+} catch (e) {
+    console.error(e.message); // "除数不能为零"
+}</code></pre>
+                <div class="intro-block">
+                    <p><code>error.stack</code> 是调试最有价值的属性——它告诉你错误从哪一行开始、经过了哪些函数调用。在 VS Code 终端中，点击 stack 中的文件路径可以直接跳转到对应代码。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见错误诊断</h3>
+
+                <div class="warning">
+                    <strong>调试循环的第一步</strong>：在循环体内加 <code>console.log</code>，看每次迭代变量的值是否符合预期。
+                </div>
+
+                <h4>问题一：for 循环多执行或少执行了一次</h4>
+                <p><strong>症状</strong>：循环结果比预期多一个或少一个。</p>
+                <p><strong>原因</strong>：条件写成了 <code>&lt;=</code> 而不是 <code>&lt;</code>，或者初始值不对。</p>
+                <p><strong>修复</strong>：用小数字（比如 3）手动模拟一遍循环过程，确认边界。</p>
+
+                <h4>问题二：switch 没有 break 导致穿透</h4>
+                <p><strong>症状</strong>：明明只匹配了一个 case，但输出了多个 case 的结果。</p>
+                <p><strong>原因</strong>：忘记写 <code>break</code>，代码"穿透"到了下一个 case。</p>
+                <p><strong>修复</strong>：每个 case 末尾加上 <code>break</code>。除非你有意利用穿透（比如多个 case 共享同一段逻辑）。</p>
+
+                <h4>问题三：while 循环死循环</h4>
+                <p><strong>症状</strong>：程序卡住不动，浏览器标签页变灰或 Node.js 进程不退出。</p>
+                <p><strong>原因</strong>：循环条件永远为 <code>true</code>，通常是忘了更新循环变量。</p>
+                <p><strong>修复</strong>：确保循环体中有让条件变为 <code>false</code> 的代码。</p>
+            </div>
+        </section>
+
+        <!-- 综合练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>综合练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习四：FizzBuzz</h3>
+                        <p><strong>任务</strong>：经典编程面试题。遍历 1~30，遇到 3 的倍数输出 "Fizz"，5 的倍数输出 "Buzz"，同时是 3 和 5 的倍数输出 "FizzBuzz"，其他数字原样输出。</p>
+                        <pre><code class="language-bash">1
+2
+Fizz
+4
+Buzz
+Fizz
+7
+...
+14
+FizzBuzz
+16</code></pre>
+                        <p><strong>提示</strong>：先判断 15 的倍数（同时是 3 和 5 的倍数），再单独判断。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">for (let i = 1; i <= 30; i++) {
+    if (i % 15 === 0) {
+        console.log("FizzBuzz");
+    } else if (i % 3 === 0) {
+        console.log("Fizz");
+    } else if (i % 5 === 0) {
+        console.log("Buzz");
+    } else {
+        console.log(i);
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习五：密码验证</h3>
+                        <p><strong>任务</strong>：写一个密码验证程序，从命令行参数读取密码。规则：至少 8 位、包含大写字母、包含数字。不满足条件时用 <code>throw</code> 抛出错误。</p>
+                        <pre><code class="language-bash">$ node password.js "Abc123"
+错误: 密码至少需要8位
+
+$ node password.js "Abcdefg1"
+密码强度：合格</code></pre>
+                        <p><strong>提示</strong>：用 <code>try...catch</code> 包裹验证逻辑，用正则或循环检查字符类型。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">let password = process.argv[2];
+
+try {
+    if (password.length < 8) {
+        throw new Error("密码至少需要8位");
+    }
+    if (!/[A-Z]/.test(password)) {
+        throw new Error("密码需要包含大写字母");
+    }
+    if (!/[0-9]/.test(password)) {
+        throw new Error("密码需要包含数字");
+    }
+    console.log("密码强度：合格");
+} catch (e) {
+    console.log("错误:", e.message);
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>现在你已经能让程序做判断、做重复了。下一章我们学习<strong>函数基础</strong>——把一段逻辑封装起来，随时调用、反复复用。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

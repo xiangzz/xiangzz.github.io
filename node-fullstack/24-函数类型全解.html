@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第24章 函数类型全解 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>函数类型全解</h1>
+            <p>参数、返回值、重载、类型谓词——函数是 TS 类型的核心战场</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>函数的类型</h3>
+                <h4>JS 函数不告诉你参数该传什么、返回什么，TS 来解决</h4>
+                <pre><code class="language-javascript">// JS：参数类型、返回类型都靠猜
+function add(a, b) {
+    return a + b;
+}
+add(1, 2);       // 3
+add("1", "2");   // "12" —— 静默出错</code></pre>
+                <pre><code class="language-typescript">// TS：参数和返回值都有明确类型
+function add(a: number, b: number): number {
+    return a + b;
+}
+add(1, 2);       // 3
+// add("1", "2"); // 编译报错！</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 1: 参数与返回类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 参数与返回类型</h2>
+                <h4>函数类型标注最核心的场景：每个参数和返回值都可以标注类型</h4>
+                <p>上一章学了变量和数组的类型注解，这一章进入函数——TS 类型系统的"主战场"。一个函数的参数该传什么类型？返回什么类型？void、undefined、never 这些返回类型各自什么场景用？这一节从最基本的参数和返回值标注开始，打好函数类型的基础。</p>
+            </div>
+        </section>
+
+        <!-- 基本标注 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>基本标注方式</h3>
+                <h4>参数类型 + 返回值类型</h4>
+                <pre><code class="language-typescript">// 每个参数都标注类型，返回值也标注
+function add(a: number, b: number): number {
+    return a + b;
+}
+
+// 返回值类型通常可以省略（TS 自动推断）
+function add(a: number, b: number) {
+    return a + b; // 推断返回 number
+}
+
+// 无返回值的函数使用 void
+function log(message: string): void {
+    console.log(message);
+}
+
+// 永远不会返回的函数使用 never
+function throwError(msg: string): never {
+    throw new Error(msg);
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- void vs undefined vs never -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三种返回类型</h3>
+                <h4>void、undefined、never 各有用途</h4>
+                <table>
+                    <thead>
+                        <tr><th>返回类型</th><th>含义</th><th>适用场景</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>void</code></td><td>不返回有意义的值</td><td><code>console.log</code>、事件处理</td></tr>
+                        <tr><td><code>undefined</code></td><td>返回 undefined 这个值</td><td>需要显式 <code>return undefined</code></td></tr>
+                        <tr><td><code>never</code></td><td>永远不会正常结束</td><td>抛异常、无限循环</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 对象参数与解构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>对象参数标注</h3>
+                <h4>内联类型 vs 解构标注</h4>
+                <pre><code class="language-typescript">// 写法1：内联类型
+function printUser(user: { name: string; age: number }): void {
+    console.log(`${user.name}, ${user.age}岁`);
+}
+
+// 写法2：解构 + 类型（推荐）
+function printUser({ name, age }: { name: string; age: number }): void {
+    console.log(`${name}, ${age}岁`);
+}
+
+// 调用
+printUser({ name: "张三", age: 25 });</code></pre>
+                <div class="intro-block">
+                    <p>解构标注的好处：函数体里直接用 <code>name</code> 而不是 <code>user.name</code>，代码更简洁。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: 可选与默认参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 可选与默认参数</h2>
+                <h4>让函数调用更灵活，但类型行为有微妙区别</h4>
+                <p>不是每次调用函数都需要传所有参数。有时问候语用默认值就行，有时某些参数可以省略。TS 提供了两种方式：<code>?</code> 标记可选参数，<code>=</code> 设默认值。两者看起来很像，但函数体内的类型行为完全不同。这一节搞清楚它们的区别，以及为什么推荐优先用默认参数。</p>
+            </div>
+        </section>
+
+        <!-- 可选参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>可选参数</h3>
+                <h4>用 ? 标记，调用时可以省略</h4>
+                <pre><code class="language-typescript">// 可选参数用 ? 标记
+function greet(name: string, greeting?: string): string {
+    return `${greeting ?? "你好"}, ${name}!`;
+}
+
+greet("张三");            // "你好, 张三!"
+greet("张三", "早上好");   // "早上好, 张三!"</code></pre>
+                <div class="warning">
+                    <strong>规则</strong>：可选参数必须排在必选参数后面。<code>function bad(greeting?: string, name: string)</code> 会报错。
+                </div>
+            </div>
+        </section>
+
+        <!-- 默认参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>默认参数</h3>
+                <h4>用 = 指定默认值，推荐优先使用</h4>
+                <pre><code class="language-typescript">// 默认参数用 = 指定默认值
+function greet(name: string, greeting: string = "你好"): string {
+    return `${greeting}, ${name}!`;
+}
+
+greet("张三");            // "你好, 张三!"
+greet("张三", "早上好");   // "早上好, 张三!"
+greet("张三", undefined);  // "你好, 张三!" —— 显式传 undefined 触发默认值</code></pre>
+            </div>
+        </section>
+
+        <!-- 可选 vs 默认对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>可选 vs 默认</h3>
+                <h4>优先用默认参数，函数体内类型更确定</h4>
+                <p><strong>可选参数 <code>?</code></strong></p>
+                <pre><code class="language-typescript">function f(x?: number) {
+    // x: number | undefined
+    // 必须检查才能用
+    if (x !== undefined) {
+        return x * 2;
+    }
+    return 0;
+}</code></pre>
+                <p><strong>默认参数 <code>=</code></strong></p>
+                <pre><code class="language-typescript">function f(x: number = 0) {
+    // x: number（类型确定）
+    // 直接使用，无需检查
+    return x * 2;
+}</code></pre>
+                <div class="intro-block">
+                    <p><strong>建议</strong>：优先使用默认参数。函数体内部类型更确定，减少空值检查。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 回调函数的可选参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>回调参数规则</h3>
+                <h4>回调函数可以忽略后面的参数</h4>
+                <pre><code class="language-typescript">// 回调参数的特殊规则：可以传参数更少的回调
+function fetchUser(callback: (user: string, age: number) => void) {
+    callback("张三", 25);
+}
+
+// 以下都是合法的
+fetchUser((user, age) => console.log(user, age));  // 使用全部
+fetchUser((user) => console.log(user));              // 忽略后面
+fetchUser(() => console.log("完成"));                  // 忽略所有
+
+// 这就是为什么 Array.forEach 的回调
+// 可以只写 (item) 而 (item, index, array) 也合法</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 3: 剩余参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 剩余参数</h2>
+                <h4>用 ... 收集剩余实参，类型必须是数组</h4>
+                <p>有些函数的参数数量不固定，比如 <code>sum(1, 2, 3)</code>、<code>sum(10, 20)</code>。JS 用 <code>...</code> 收集剩余参数，TS 则要求你给这些参数标注数组类型。这一节还会学一个高级技巧：用元组类型精确约束每个位置的类型，让 <code>...args</code> 不再只是"一堆相同类型"。</p>
+            </div>
+        </section>
+
+        <!-- 剩余参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>剩余参数类型</h3>
+                <h4>用数组类型约束剩余参数</h4>
+                <pre><code class="language-typescript">// 剩余参数类型是数组
+function sum(...nums: number[]): number {
+    return nums.reduce((total, n) => total + n, 0);
+}
+
+sum(1, 2, 3);        // 6
+sum(10, 20);          // 30
+sum();                // 0（空数组）</code></pre>
+                <pre><code class="language-typescript">// 与固定参数搭配
+function log(level: string, ...messages: string[]): void {
+    console.log(`[${level}]`, messages.join(" "));
+}
+
+log("INFO", "服务器启动", "端口 3000");
+// [INFO] 服务器启动 端口 3000</code></pre>
+            </div>
+        </section>
+
+        <!-- 剩余参数与元组 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>元组约束参数</h3>
+                <h4>用元组类型精确约束每个位置</h4>
+                <pre><code class="language-typescript">// 用元组类型约束每个位置的参数
+function createTuple(...pair: [string, number]): void {
+    console.log(pair[0], pair[1]);
+    // pair[0] 类型为 string
+    // pair[1] 类型为 number
+}
+
+createTuple("张三", 25);   // OK
+// createTuple("张三");      // 报错：缺少参数
+// createTuple(25, "张三");   // 报错：类型不匹配</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 4: 泛型函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 泛型函数</h2>
+                <h4>让函数在不同类型下都能保持类型安全——泛型是 TS 最强大的工具之一</h4>
+                <p>写一个函数，既能处理字符串数组，又能处理数字数组，还要保留类型信息——怎么做？用 <code>any</code> 类型全丢了，用联合类型又不够精确。泛型函数就是答案：把类型当作参数传进去，调用时自动推断。这一节从最简单的 identity 函数开始，逐步掌握泛型的推断、约束和多类型参数。</p>
+            </div>
+        </section>
+
+        <!-- 为什么需要泛型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么需要泛型</h3>
+                <h4>用 any 会丢失类型信息，泛型帮你保留它</h4>
+                <pre><code class="language-typescript">// 问题：identity 函数该怎样标注？
+function identityAny(value: any): any {
+    return value;
+}
+
+const result = identityAny("hello");
+// result 类型是 any —— 类型信息全丢了！
+// 后续 result.toUpperCase() 不报错但可能运行时出错
+
+// 解决：用泛型保留类型
+function identity<T>(value: T): T {
+    return value;
+}
+
+const r1 = identity("hello");   // r1 类型: string
+const r2 = identity(42);        // r2 类型: number
+// 传入什么类型，返回什么类型，完整保留</code></pre>
+                <div class="intro-block">
+                    <p>泛型的核心思想：<strong>类型当作参数传入</strong>。调用时确定具体类型，编译时完整检查。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 泛型推断机制 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型推断机制</h3>
+                <h4>调用时 TS 如何自动推断类型参数？</h4>
+                <pre><code class="language-typescript">// 推断规则：根据传入参数的类型，自动确定 T
+function identity&lt;T&gt;(value: T): T {
+    return value;
+}
+
+// 从实参推断 T
+identity("hello");        // T = string
+identity(42);             // T = number
+identity([1, 2, 3]);      // T = number[]
+
+// 显式指定（推断不准或需要覆盖时）
+identity&lt;string[]&gt;(["a"]); // T = string[]</code></pre>
+                <pre><code class="language-typescript">// 推断失败的场景
+function merge&lt;T, U&gt;(a: T, b: U): T & U {
+    return { ...a, ...b };
+}
+
+// OK：两个参数都有，自动推断
+merge({ name: "张三" }, { age: 25 });
+
+// 需要显式：只传一个参数时
+function createPair&lt;T, U = number&gt;(first: T, second: U): [T, U] {
+    return [first, second];
+}
+createPair("id", 1);         // T=string, U=number
+createPair&lt;string&gt;("id", 1); // 同上，U 使用默认值</code></pre>
+                <div class="warning">
+                    <strong>推断不是万能的</strong>：当返回类型依赖多个泛型参数，而调用时缺少足够信息时，TS 可能推断为联合类型。此时应显式指定类型参数。
+                </div>
+                <div class="ai-diagram">
+                    <h4>图：泛型类型的推断与传播过程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：展示泛型函数调用时类型参数 T 如何被推断和传播
+                    - 左侧：函数定义 identity&lt;T&gt;(arg: T): T，T 用空心圆圈表示"未知类型"
+                    - 中间：调用处 identity("hello")，"hello" 的类型 string 用橙色箭头射入 T 的位置
+                    - 右侧：T 被替换为 string 后的函数签名 identity(arg: string): string，全部用实心橙色填充
+                    - 底部标注："定义时 T 是占位符 → 调用时 T 被推断 → T 传播到所有使用处"
+                    - 配色建议：浅灰背景，未知类型用虚线蓝色框，推断后用实心橙色，箭头用深灰
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 泛型基本语法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型基本语法</h3>
+                <h4>类型参数 &lt;T&gt; 写在函数名后面</h4>
+                <pre><code class="language-typescript">// 基本语法：<T> 是类型参数，调用时自动推断
+function identity<T>(value: T): T {
+    return value;
+}
+
+// 方式1：让 TS 自动推断（推荐）
+identity("hello");    // T 推断为 string
+identity(42);         // T 推断为 number
+
+// 方式2：显式指定类型参数
+identity<string>("hello");   // 显式指定 T = string
+identity<number[]>([1, 2]);  // 显式指定 T = number[]</code></pre>
+                <pre><code class="language-typescript">// 泛型也用于工具函数
+function first<T>(arr: T[]): T | undefined {
+    return arr[0];
+}
+
+first(["a", "b"]);       // 返回类型: string | undefined
+first([1, 2, 3]);        // 返回类型: number | undefined
+first([]);               // 返回类型: undefined</code></pre>
+            </div>
+        </section>
+
+        <!-- 泛型约束与多类型参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型约束</h3>
+                <h4>用 extends 限定类型参数的范围</h4>
+                <pre><code class="language-typescript">// 约束：T 必须有 length 属性
+function logLength<T extends { length: number }>(value: T): void {
+    console.log(value.length);
+}
+
+logLength("hello");      // OK，string 有 length
+logLength([1, 2, 3]);    // OK，数组有 length
+logLength({ length: 10 }); // OK，对象有 length
+// logLength(123);        // 报错！number 没有 length</code></pre>
+                <pre><code class="language-typescript">// 多类型参数：常见于 map、merge 等函数
+function map<T, U>(arr: T[], fn: (item: T) => U): U[] {
+    return arr.map(fn);
+}
+
+const nums = [1, 2, 3];
+const strs = map(nums, n => n.toString());
+// T = number, U = string → 返回 string[]
+
+function merge<A, B>(a: A, b: B): A & B {
+    return { ...a, ...b };
+}
+
+const merged = merge({ name: "张三" }, { age: 25 });
+// 类型: { name: string } & { age: number }</code></pre>
+            </div>
+        </section>
+
+        <!-- 多类型参数实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>多类型参数实战</h3>
+                <h4>泛型约束 + 多类型参数的常见组合</h4>
+                <pre><code class="language-typescript">// keyof 约束：安全地访问对象属性
+function getProperty&lt;T, K extends keyof T&gt;(obj: T, key: K): T[K] {
+    return obj[key];
+}
+
+const user = { name: "张三", age: 25, active: true };
+getProperty(user, "name");   // 返回 string
+getProperty(user, "age");    // 返回 number
+// getProperty(user, "email"); // 报错！"email" 不是 keyof user</code></pre>
+                <pre><code class="language-typescript">// 条件约束：T 必须是 U 的子类型
+function assign&lt;T extends U, U&gt;(target: T, source: U): T {
+    return Object.assign(target, source);
+}
+
+// 泛型默认值
+function createArray&lt;T = string&gt;(length: number, value: T): T[] {
+    return Array(length).fill(value);
+}
+
+createArray(3, "x");        // string[]
+createArray(3, 0);          // number[]
+createArray&lt;number&gt;(3, 0);  // number[]（显式覆盖默认值）</code></pre>
+                <div class="intro-block">
+                    <p><strong>约束链</strong>：<code>extends keyof</code> 是泛型约束中最强大的组合之一，确保类型安全的属性访问，是很多工具类型（如 <code>Pick</code>、<code>Omit</code>）的底层原理。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 泛型箭头函数与实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型箭头函数</h3>
+                <h4>注意 TSX 文件中的写法陷阱</h4>
+                <pre><code class="language-typescript">// 泛型箭头函数
+const identity = <T,>(value: T): T => value;
+//              ^^^ 注意这个逗号！
+
+// 为什么加逗号？在 .tsx 文件中 <T> 会被当作 JSX 标签
+// 加逗号 <T,> 告诉 TS 这是泛型，不是 JSX
+const first = <T,>(arr: T[]): T | undefined => arr[0];
+
+// 常用泛型工具函数
+const last = <T,>(arr: T[]): T | undefined => arr[arr.length - 1];
+
+const pluck = <T, K extends keyof T>(obj: T, key: K): T[K] => obj[key];
+
+const person = { name: "张三", age: 25 };
+pluck(person, "name");  // 返回类型: string
+pluck(person, "age");   // 返回类型: number</code></pre>
+                <div class="warning">
+                    <strong>不要过度泛化</strong>：如果函数只用到一种类型，不需要泛型。只为实际使用的类型变化添加类型参数——过多的泛型参数会让代码难以阅读和维护。
+                </div>
+            </div>
+        </section>
+
+        <!-- 泛型工具模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型工具模式</h3>
+                <h4>first、last、pluck——泛型工具函数三剑客</h4>
+                <pre><code class="language-typescript">// first：安全取数组首元素
+const first = &lt;T,&gt;(arr: T[]): T | undefined => arr[0];
+first([1, 2, 3]);    // number | undefined → 1
+first([]);           // undefined
+
+// last：安全取数组末元素
+const last = &lt;T,&gt;(arr: T[]): T | undefined => arr[arr.length - 1];
+last(["a", "b"]);    // string | undefined → "b"
+
+// pluck：从对象数组中提取指定字段
+const pluck = &lt;T, K extends keyof T&gt;(arr: T[], key: K): T[K][] =>
+    arr.map(item => item[key]);
+
+const users = [
+    { name: "张三", age: 25 },
+    { name: "李四", age: 30 },
+];
+pluck(users, "name"); // string[] → ["张三", "李四"]
+pluck(users, "age");  // number[] → [25, 30]</code></pre>
+                <pre><code class="language-typescript">// notEmpty：过滤空值，收窄类型
+function notEmpty&lt;T&gt;(value: T | null | undefined): value is T {
+    return value != null;
+}
+
+const items: (string | null)[] = ["a", null, "b", null, "c"];
+const result = items.filter(notEmpty);
+// result 类型: string[]（不是 (string | null)[]）</code></pre>
+                <div class="intro-block">
+                    <p>这些工具函数的共同特征：<strong>输入类型决定输出类型</strong>，泛型让它们对任何类型都安全。掌握这几个模式，日常开发中 80% 的泛型场景都能应对。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 5: 函数类型表达式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 函数类型表达式</h2>
+                <h4>函数不仅是值，也是一种类型。可以用类型别名来描述函数签名</h4>
+                <p>前面一直在给函数的参数和返回值标注类型，但函数本身也是一种类型。能不能把"接收两个 number、返回 number 的函数"抽象成一个类型别名？可以。这一节学习用 <code>type</code> 和 <code>interface</code> 描述函数签名，以及高阶函数、柯里化这些函数式编程场景中的类型写法。</p>
+            </div>
+        </section>
+
+        <!-- 函数类型别名 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类型别名</h3>
+                <h4>用 type 描述函数的签名</h4>
+                <pre><code class="language-typescript">// 使用 type 定义函数类型
+type MathFn = (a: number, b: number) => number;
+
+// 赋值符合签名的函数
+const add: MathFn = (a, b) => a + b;
+const multiply: MathFn = (a, b) => a * b;
+
+add(3, 4);       // 7
+multiply(3, 4);  // 12
+
+// TS 会根据 MathFn 自动推断 a、b 的类型，无需重复标注</code></pre>
+            </div>
+        </section>
+
+        <!-- interface 中的函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>接口中的函数</h3>
+                <h4>三种写法，推荐按场景选择</h4>
+                <pre><code class="language-typescript">interface Calculator {
+    // 写法1：方法语法
+    add(a: number, b: number): number;
+
+    // 写法2：属性语法
+    subtract: (a: number, b: number) => number;
+
+    // 写法3：简写
+    multiply(a: number, b: number): number;
+}
+
+const calc: Calculator = {
+    add: (a, b) => a + b,
+    subtract: (a, b) => a - b,
+    multiply: (a, b) => a * b,
+};</code></pre>
+                <div class="intro-block">
+                    <p><strong>建议</strong>：函数会被重新赋值或作为回调时，用属性语法 <code>fn: () => void</code>；函数是对象固有方法时，用方法语法 <code>fn(): void</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 构造签名 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>构造签名</h3>
+                <h4>描述可以被 new 调用的函数</h4>
+                <pre><code class="language-typescript">// 描述可以被 new 调用的函数（类/构造函数）
+type Constructor = new (name: string) => { name: string };
+
+class Person {
+    constructor(public name: string) {}
+}
+
+function factory(Ctor: Constructor, name: string) {
+    return new Ctor(name);
+}
+
+const p = factory(Person, "张三");
+console.log(p.name); // "张三"</code></pre>
+            </div>
+        </section>
+
+        <!-- 高阶函数类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>高阶函数类型</h3>
+                <h4>接收函数作为参数、或返回函数的函数</h4>
+                <pre><code class="language-typescript">// 高阶函数：接收函数，返回函数
+function memoize&lt;T extends (...args: any[]) => any&gt;(fn: T): T {
+    const cache = new Map();
+    return ((...args: any[]) => {
+        const key = JSON.stringify(args);
+        if (cache.has(key)) return cache.get(key);
+        const result = fn(...args);
+        cache.set(key, result);
+        return result;
+    }) as T;
+}
+
+const expensiveCalc = memoize((n: number): number => {
+    console.log("计算中...");
+    return n * n;
+});
+expensiveCalc(5);  // 计算中... → 25
+expensiveCalc(5);  // 直接返回 25（缓存命中）</code></pre>
+                <pre><code class="language-typescript">// 柯里化函数类型
+function curry&lt;T, U, V&gt;(fn: (a: T, b: U) => V): (a: T) => (b: U) => V {
+    return (a) => (b) => fn(a, b);
+}
+
+const add = (a: number, b: number): number => a + b;
+const add5 = curry(add)(5); // (b: number) => number
+add5(3);  // 8
+add5(10); // 15</code></pre>
+                <div class="intro-block">
+                    <p><strong>类型推导链</strong>：高阶函数的威力在于——泛型参数从最内层的函数一路传递到最外层，每一步都有完整的类型推断。这就是函数式编程在 TS 中如此流畅的原因。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 柯里化与函数组合 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>函数组合类型</h3>
+                <h4>pipe / compose 的类型安全实现</h4>
+                <pre><code class="language-typescript">// pipe：从左到右依次执行函数
+function pipe&lt;A, B&gt;(f1: (a: A) => B): (a: A) => B;
+function pipe&lt;A, B, C&gt;(f1: (a: A) => B, f2: (b: B) => C): (a: A) => C;
+function pipe&lt;A, B, C, D&gt;(
+    f1: (a: A) => B,
+    f2: (b: B) => C,
+    f3: (c: C) => D
+): (a: A) => D;
+function pipe(...fns: Function[]): Function {
+    return (input: any) => fns.reduce((acc, fn) => fn(acc), input);
+}
+
+// 类型安全：每一步的输出类型是下一步的输入类型
+const transform = pipe(
+    (s: string) => s.trim(),
+    (s: string) => s.toUpperCase(),
+    (s: string) => s.split(""),
+    (arr: string[]) => arr.length
+);
+transform("  hello  "); // 5</code></pre>
+                <div class="warning">
+                    <strong>实现签名的局限</strong>：pipe/compose 的完整类型定义在超过 10 个函数时需要手写大量重载。实际项目中推荐使用 <code>ts-toolbelt</code> 或 <code>remeda</code> 等库提供的已类型化版本。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 6: 函数重载 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: 函数重载</h2>
+                <h4>同一个函数名对应多种参数组合，每种有不同的返回类型</h4>
+                <p>有些函数根据传入参数的类型不同，返回类型也不同。比如传字符串返回数组，传数组返回字符串。联合类型搞不定这种"输入决定输出"的场景——这时候就需要函数重载。这一节学习重载的写法、排序规则，以及什么时候该用重载、什么时候该用联合类型替代。</p>
+            </div>
+        </section>
+
+        <!-- 基本重载 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>基本重载</h3>
+                <h4>不同参数类型，不同返回类型</h4>
+                <pre><code class="language-typescript">// 重载签名：定义函数的不同调用方式
+function format(value: string): string;
+function format(value: number): string;
+function format(value: boolean): string;
+// 实现签名：必须兼容所有重载签名
+function format(value: string | number | boolean): string {
+    if (typeof value === "string") return value.trim();
+    if (typeof value === "number") return value.toFixed(2);
+    return value ? "是" : "否";
+}
+
+format("  hello  ");  // "hello" —— TS 知道返回 string
+format(3.14159);      // "3.14"
+format(true);          // "是"</code></pre>
+            </div>
+        </section>
+
+        <!-- 重载注意事项 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>重载注意事项</h3>
+                <h4>能用联合类型解决的，不要用重载</h4>
+                <pre><code class="language-typescript">// 重载版本（不推荐）:
+function padLeft(value: string, padding: string): string;
+function padLeft(value: string, padding: number): string;
+function padLeft(value: string, padding: string | number): string {
+    if (typeof padding === "number") {
+        return " ".repeat(padding) + value;
+    }
+    return padding + value;
+}
+
+// 联合类型版本（推荐）:
+function padLeft(value: string, padding: string | number): string {
+    if (typeof padding === "number") {
+        return " ".repeat(padding) + value;
+    }
+    return padding + value;
+}</code></pre>
+                <div class="warning">
+                    <strong>原则</strong>：只有当不同参数组合需要<strong>不同返回类型</strong>时，才真正需要函数重载。
+                </div>
+            </div>
+        </section>
+
+        <!-- 重载排序与实现签名 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>重载排序规则</h3>
+                <h4>最具体的签名放最前面，实现签名不可直接调用</h4>
+                <pre><code class="language-typescript">// 重载排序：从最具体到最宽泛
+function getItems(count: 1): string;         // 最具体
+function getItems(count: number): string[];  // 较宽泛
+function getItems(count: number): string | string[] {
+    if (count === 1) return "only one";
+    return Array(count).fill("item");
+}
+
+getItems(1);    // 返回 string（匹配第一个签名）
+getItems(3);    // 返回 string[]（匹配第二个签名）</code></pre>
+                <div class="warning">
+                    <strong>实现签名不可直接调用</strong>：外部只能看到重载签名。实现签名只用于函数体内部，TS 在调用时只匹配重载列表。
+                </div>
+                <div class="ai-diagram">
+                    <h4>图：函数重载的匹配流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个从上到下的决策流程图，展示 TypeScript 如何选择重载签名
+                    - 顶部：调用表达式 parseJSON("42")，箭头向下
+                    - 中间：三个重载签名从上到下排列，第一个匹配成功（参数为 string）用绿色勾号标注
+                    - 下方：实现签名用虚线框标注"对调用者不可见"
+                    - 右侧注释框："重载签名从上到下匹配 → 第一个匹配的胜出 → 实现签名不参与匹配"
+                    - 配色建议：浅蓝背景，匹配成功用绿色，未匹配用灰色，实现签名用虚线边框
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果
+                    </p>
+                </div>
+                <pre><code class="language-typescript">// 常见错误：重载签名参数数量相同，TS 无法区分
+function fn(x: string): void;
+function fn(x: number): void;
+// 以上两个参数数量相同，TS 按顺序匹配，可能不符合预期
+// 建议：加额外参数区分，或改用联合类型</code></pre>
+            </div>
+        </section>
+
+        <!-- 重载决策指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>重载 vs 联合类型</h3>
+                <h4>什么时候用重载，什么时候用联合类型？</h4>
+                <table>
+                    <thead>
+                        <tr><th>场景</th><th>推荐方案</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>参数不同类型 → 返回<strong>相同</strong>类型</td><td>联合类型参数</td></tr>
+                        <tr><td>参数不同类型 → 返回<strong>不同</strong>类型</td><td>函数重载</td></tr>
+                        <tr><td>参数<strong>数量</strong>不同</td><td>可选参数 / 默认参数</td></tr>
+                        <tr><td>需要根据参数字面量精确返回类型</td><td>函数重载</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-typescript">// 适合重载：返回类型随参数变化
+function createElement(tag: "input"): HTMLInputElement;
+function createElement(tag: "div"): HTMLDivElement;
+function createElement(tag: string): HTMLElement;
+
+// 适合联合类型：返回类型不变
+function format(value: string | number): string {
+    return typeof value === "number" ? value.toFixed(2) : value;
+}</code></pre>
+                <div class="intro-block">
+                    <p><strong>经验法则</strong>：先试联合类型。如果联合类型能表达你的意图，就不要用重载。重载是联合类型搞不定时的升级武器。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 重载在对象类型中 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>接口中的重载</h3>
+                <h4>对象类型和类方法也可以重载</h4>
+                <pre><code class="language-typescript">// 接口中的重载
+interface StringStore {
+    get(key: string): string | undefined;
+    get(key: string, defaultValue: string): string;
+    set(key: string, value: string): void;
+}
+
+const store: StringStore = {
+    get(key: string, defaultValue?: string): string | undefined {
+        // 实现
+        return defaultValue ?? undefined;
+    },
+    set(key: string, value: string): void {
+        // 实现
+    }
+};</code></pre>
+                <pre><code class="language-typescript">// 类方法重载
+class Formatter {
+    format(value: string): string;
+    format(value: number): string;
+    format(value: string | number): string {
+        return typeof value === "number"
+            ? value.toFixed(2)
+            : value.trim();
+    }
+}
+
+const fmt = new Formatter();
+fmt.format("  hello  ");  // "hello"
+fmt.format(3.14);         // "3.14"</code></pre>
+            </div>
+        </section>
+
+        <!-- 重载何时胜出 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>重载胜出场景</h3>
+                <h4>联合类型搞不定、只有重载能解决的 3 个场景</h4>
+                <pre><code class="language-typescript">// 场景1：字面量类型 → 精确返回类型
+function createElement(tag: "input"): HTMLInputElement;
+function createElement(tag: "canvas"): HTMLCanvasElement;
+function createElement(tag: string): HTMLElement;
+function createElement(tag: string): HTMLElement {
+    return document.createElement(tag);
+}
+const input = createElement("input"); // HTMLInputElement
+// 联合类型只能返回 HTMLInputElement | HTMLCanvasElement | HTMLElement</code></pre>
+                <pre><code class="language-typescript">// 场景2：参数数量不同 → 不同返回类型
+function query(selector: string): Element | null;
+function query&lt;T extends HTMLElement&gt;(sel: string, all: true): T[];
+function query(sel: string, all?: boolean): Element | null | Element[] {
+    return all
+        ? [...document.querySelectorAll(sel)]
+        : document.querySelector(sel);
+}
+query(".box");                          // Element | null
+query&lt;HTMLDivElement&gt;(".box", true);    // HTMLDivElement[]</code></pre>
+                <pre><code class="language-typescript">// 场景3：互斥参数组合（有 A 就不能有 B）
+function configure(options: { url: string; method?: string }): void;
+function configure(options: { file: File }): void;
+function configure(options: any): void { /* ... */ }
+
+configure({ url: "/api" });                    // OK
+configure({ file: new File([], "a.txt") });    // OK</code></pre>
+                <div class="intro-block">
+                    <p><strong>记忆口诀</strong>：字面量精确返回、参数数量/结构不同、互斥参数——这三类场景用重载，其余用联合类型。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 7: this 与类型谓词 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 7: this 与类型谓词</h2>
+                <h4>this 参数标注和自定义类型守卫，是进阶函数类型技巧</h4>
+                <p>函数类型的基础和进阶都学了，最后两个"大招"留给这一节。<code>this</code> 参数标注让你在方法中安全地使用 this，不再担心回调丢失绑定。类型谓词（<code>val is T</code>）让你自定义类型守卫，在条件分支中精确收窄类型。这两个技巧在 React、Express 等框架开发中会反复用到。</p>
+            </div>
+        </section>
+
+        <!-- this 参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>this 参数标注</h3>
+                <h4>告诉 TS 函数里的 this 是什么类型</h4>
+                <pre><code class="language-typescript">// 函数的第一个参数可以声明 this 的类型
+interface DB {
+    filter(query: string): DB;
+    limit(n: number): DB[];
+}
+
+function query(this: DB, sql: string): DB[] {
+    // this 的类型被标注为 DB
+    return this.filter(sql).limit(10);
+}
+// this 参数是编译时假的参数，运行时不存在</code></pre>
+                <pre><code class="language-typescript">// 箭头函数没有自己的 this
+class Timer {
+    private seconds = 0;
+
+    start() {
+        // 箭头函数自动绑定外层 this
+        setInterval(() => {
+            this.seconds++;
+            console.log(this.seconds);
+        }, 1000);
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 事件回调中的 this -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>事件回调与this</h3>
+                <h4>DOM 事件监听器中 this 的指向问题</h4>
+                <pre><code class="language-typescript">// 问题：回调函数中的 this 丢失
+class Button {
+    constructor(private label: string) {}
+
+    // 方法作为回调时 this 丢失
+    handleClick() {
+        console.log(this.label); // this 可能是 undefined！
+    }
+}
+
+const btn = new Button("提交");
+// document.addEventListener("click", btn.handleClick); // 运行时出错！
+// handleClick 里的 this 不再指向 btn 实例</code></pre>
+                <pre><code class="language-typescript">// 解决方案1：箭头函数包装
+document.addEventListener("click", () => btn.handleClick());
+
+// 解决方案2：bind 绑定 this
+document.addEventListener("click", btn.handleClick.bind(btn));
+
+// 解决方案3：在构造函数中绑定
+class Button2 {
+    constructor(private label: string) {
+        this.handleClick = this.handleClick.bind(this);
+    }
+    handleClick() {
+        console.log(this.label); // this 现在安全
+    }
+}</code></pre>
+                <div class="warning">
+                    <strong>核心原理</strong>：函数作为值传递时（赋值给变量、作为回调参数），<code>this</code> 会在调用时重新确定。箭头函数没有自己的 <code>this</code>，始终使用定义时的 <code>this</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 箭头函数属性绑定 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>箭头函数属性</h3>
+                <h4>类属性箭头函数 = 自动绑定 this 的方法</h4>
+                <pre><code class="language-typescript">// 类属性箭头函数：自动绑定 this
+class Counter {
+    count = 0;
+
+    // 箭头函数作为类属性 → 自动绑定实例
+    increment = () => {
+        this.count++;
+        console.log(this.count);
+    };
+
+    // 普通方法 → 不自动绑定
+    decrement() {
+        this.count--;
+    }
+}
+
+const counter = new Counter();
+const inc = counter.increment;
+inc(); // 1 — 箭头函数，this 正确
+
+const dec = counter.decrement;
+// dec(); // 运行时报错！this 不指向 counter 实例</code></pre>
+                <pre><code class="language-typescript">// this 参数 + strictBindCallApply
+class Logger {
+    constructor(private prefix: string) {}
+
+    // 用 this 参数声明 this 的期望类型
+    log(this: Logger, message: string): void {
+        console.log(`[${this.prefix}] ${message}`);
+    }
+}
+
+const logger = new Logger("APP");
+const logFn = logger.log;
+
+// logFn("hello"); // TS 报错：this 不匹配 Logger 类型
+// 解决：bind 明确绑定
+const boundLog = logger.log.bind(logger);
+boundLog("hello"); // [APP] hello</code></pre>
+                <div class="intro-block">
+                    <p><strong>权衡</strong>：箭头函数属性每次实例化都创建新函数，占用稍多内存。<code>bind</code> 在构造函数中只绑定一次。对于大多数场景，选择可读性更高的方案即可。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- bind/call/apply -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>bind/call/apply</h3>
+                <h4>TypeScript 中这三个方法的类型签名</h4>
+                <pre><code class="language-typescript">// bind：创建新函数，永久绑定 this 和部分参数
+function greet(this: { name: string }, greeting: string): string {
+    return `${greeting}, ${this.name}!`;
+}
+
+const boundGreet = greet.bind({ name: "张三" });
+boundGreet("你好");   // "你好, 张三!"
+
+// 预设参数（柯里化）
+function add(a: number, b: number): number {
+    return a + b;
+}
+const add5 = add.bind(null, 5);
+add5(3);  // 8</code></pre>
+                <pre><code class="language-typescript">// call 和 apply：立即调用，临时改变 this
+function greet2(this: { name: string }, greeting: string): string {
+    return `${greeting}, ${this.name}!`;
+}
+
+greet2.call({ name: "李四" }, "早上好");  // "早上好, 李四!"
+greet2.apply({ name: "王五" }, ["晚安"]); // "晚安, 王五!"
+
+// call vs apply 的区别：
+// call(thisArg, arg1, arg2, ...)  —— 逐个传参
+// apply(thisArg, [arg1, arg2])    —— 数组传参</code></pre>
+                <pre><code class="language-typescript">// strictBindCallApply 开启后的类型安全
+// TS 会根据函数签名自动推断 bind/call/apply 的参数类型
+function format(template: string, ...args: string[]): string {
+    return template.replace(/\{(\d+)\}/g, (_, i) => args[i]);
+}
+
+format.bind(null, "Hello {0}");     // 预设模板
+// format.call(null, 123);          // 报错！第一个参数必须是 string
+// format.apply(null, ["hi", 123]); // 报错！args 必须是 string[]</code></pre>
+                <div class="warning">
+                    <strong>strictBindCallApply</strong>：确保 <code>tsconfig.json</code> 中开启 <code>"strict": true</code>（包含 <code>strictBindCallApply</code>），否则 <code>bind/call/apply</code> 的参数类型不会被检查。
+                </div>
+            </div>
+        </section>
+
+        <!-- 类型谓词 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类型谓词</h3>
+                <h4>自定义守卫，让 TS 在条件分支中收窄类型</h4>
+                <pre><code class="language-typescript">// 类型谓词让 TS 在条件分支中收窄类型
+function isString(val: unknown): val is string {
+    return typeof val === "string";
+}
+
+function process(value: string | number) {
+    if (isString(value)) {
+        // 这里 value 被 TS 收窄为 string
+        console.log(value.toUpperCase());
+    } else {
+        // 这里 value 被 TS 收窄为 number
+        console.log(value.toFixed(2));
+    }
+}</code></pre>
+                <pre><code class="language-typescript">// 实际应用：判断 API 返回数据
+interface SuccessResponse { status: "ok"; data: string[]; }
+interface ErrorResponse { status: "error"; message: string; }
+type ApiResponse = SuccessResponse | ErrorResponse;
+
+function isSuccess(res: ApiResponse): res is SuccessResponse {
+    return res.status === "ok";
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 断言函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>断言函数</h3>
+                <h4>调用后直接收窄类型，不返回的异常由 TS 跟踪</h4>
+                <pre><code class="language-typescript">// 断言函数（asserts）——如果函数正常返回，则条件一定成立
+function assertDefined&lt;T&gt;(
+    val: T | null | undefined,
+    msg?: string
+): asserts val is T {
+    if (val == null) {
+        throw new Error(msg ?? "值不能为 null 或 undefined");
+    }
+}
+
+const input: string | null = getInputValue();
+assertDefined(input, "输入不能为空");
+console.log(input.length); // OK，TS 知道 input 是 string</code></pre>
+                <div class="intro-block">
+                    <p>类型谓词用在 <code>if</code> 中收窄，断言函数调用后直接收窄。两者互补，按场景选择。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 异步函数类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>异步函数类型</h3>
+                <h4>async 函数的返回类型怎么标？</h4>
+                <pre><code class="language-typescript">// async 函数总是返回 Promise
+// 写法1：显式标注 Promise&lt;T&gt;
+async function fetchUser(id: number): Promise&lt;User&gt; {
+    const res = await fetch(`/api/users/${id}`);
+    return res.json();
+}
+
+// 写法2：让 TS 自动推断（推荐）
+async function fetchUser(id: number) {
+    const res = await fetch(`/api/users/${id}`);
+    return res.json(); // 自动推断为 Promise&lt;User&gt;
+}</code></pre>
+                <pre><code class="language-typescript">// 注意：不要重复包装 Promise
+async function bad(): Promise&lt;Promise&lt;string&gt;&gt; {
+    return Promise.resolve("hello"); // 多包了一层！
+}
+
+// 普通函数返回 Promise，不加 async 也可以
+function delay(ms: number): Promise&lt;void&gt; {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}</code></pre>
+                <div class="intro-block">
+                    <p>记住：标注 async 函数返回类型时，用 <code>Promise&lt;T&gt;</code> 而不是 <code>T</code>。不加 async 但返回 Promise 的函数，返回类型也得标 <code>Promise&lt;T&gt;</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 函数重载实际应用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>重载实战场景</h3>
+                <h4>DOM API 和工具函数里的重载长什么样？</h4>
+                <pre><code class="language-typescript">// DOM: createElement 的重载签名（简化版）
+declare function createElement(tag: "div"): HTMLDivElement;
+declare function createElement(tag: "span"): HTMLSpanElement;
+declare function createElement(tag: "canvas"): HTMLCanvasElement;
+declare function createElement(tag: string): HTMLElement;
+
+// 调用时返回类型自动精确
+const div = createElement("div");   // HTMLDivElement
+const span = createElement("span"); // HTMLSpanElement</code></pre>
+                <pre><code class="language-typescript">// 工具函数：根据输入类型决定返回类型
+function parseInput(input: string): string[];
+function parseInput(input: string[]): string;
+function parseInput(input: string | string[]): string | string[] {
+    if (typeof input === "string") {
+        return input.split(",");
+    }
+    return input.join(",");
+}
+
+parseInput("a,b,c");     // string[] → ["a","b","c"]
+parseInput(["a","b"]);   // string → "a,b"</code></pre>
+            </div>
+        </section>
+
+        <!-- 函数类型收窄流程图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类型收窄流程</h3>
+                <h4>联合类型参数如何一步步缩小到精确类型？</h4>
+                <div class="ai-diagram">
+                    <h4>图：函数参数类型收窄流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从左到右的收窄流程
+                    - 起始节点：接收联合类型参数 string | number | string[]
+                    - 中间：typeof/instanceof/in 类型判断，用菱形决策节点表示
+                    - 三条收窄路径：
+                      - typeof === "string" → 收窄为 string → 调用 toUpperCase()
+                      - typeof === "number" → 收窄为 number → 调用 toFixed()
+                      - Array.isArray() → 收窄为 string[] → 调用 .join()
+                    - 每条路径用不同颜色标注
+                    - 配色建议：浅蓝背景，判断菱形橙色，收窄结果绿色卡片，箭头深灰
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <pre><code class="language-typescript">function process(value: string | number | string[]) {
+    if (typeof value === "string") {
+        // 收窄为 string → 可用 toUpperCase
+        return value.toUpperCase();
+    }
+    if (typeof value === "number") {
+        // 收窄为 number → 可用 toFixed
+        return value.toFixed(2);
+    }
+    // 收窄为 string[] → 可用 join
+    return value.join(", ");
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 练习：带重载的 parseJSON -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：重载 parseJSON</h3>
+                <h4>用函数重载实现一个类型安全的 JSON 解析器</h4>
+                <p><strong>需求</strong>：输入 <code>string</code> 返回解析后的对象；输入 <code>Buffer</code> 也返回解析后的对象。</p>
+                <pre><code class="language-typescript">// 先定义重载签名
+function parseJSON(input: string): Record&lt;string, unknown&gt;;
+function parseJSON(input: Buffer): Record&lt;string, unknown&gt;;
+// 再实现
+function parseJSON(input: string | Buffer): Record&lt;string, unknown&gt; {
+    // 你的实现
+}</code></pre>
+                <div class="answer-section">
+                    <h4>参考答案</h4>
+                    <pre><code class="language-typescript">function parseJSON(input: string): Record&lt;string, unknown&gt;;
+function parseJSON(input: Buffer): Record&lt;string, unknown&gt;;
+function parseJSON(input: string | Buffer): Record&lt;string, unknown&gt; {
+    const str = typeof input === "string"
+        ? input
+        : input.toString("utf-8");
+    return JSON.parse(str);
+}
+
+// 使用
+const obj1 = parseJSON('{"name":"张三"}'); // string → 对象
+const buf = Buffer.from('{"age":25}');
+const obj2 = parseJSON(buf);              // Buffer → 对象</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见函数类型错误</h3>
+
+                <div class="warning">
+                    <strong>函数参数不会自动推断类型。</strong> 如果不标注，TS 会报"隐式 any"错误。
+                </div>
+
+                <h4>问题一：不能将类型"void"分配给类型"number"</h4>
+                <p><strong>原因</strong>：函数没有 return 语句，但标注了返回 number。</p>
+                <p><strong>修复</strong>：检查函数体是否有 <code>return</code>，或者把返回类型改成 <code>void</code>。</p>
+
+                <h4>问题二：应有 2 个参数，但获得 1 个</h4>
+                <p><strong>原因</strong>：调用时漏传了必选参数。</p>
+                <p><strong>修复</strong>：补上参数，或者把参数改为可选（加 <code>?</code>）或设默认值。</p>
+
+                <h4>问题三：重载签名不兼容实现签名</h4>
+                <p><strong>原因</strong>：实现签名的参数类型范围太窄。</p>
+                <p><strong>修复</strong>：实现签名的参数类型必须包含所有重载签名的类型。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：给下面的函数添加完整的类型注解。</p>
+                        <pre><code class="language-typescript">function createUser(name, age, role) {
+    return { name, age, role };
+}</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">interface User {
+    name: string;
+    age: number;
+    role: string;
+}
+
+function createUser(
+    name: string,
+    age: number,
+    role: string = "user"
+): User {
+    return { name, age, role };
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：写一个类型谓词函数 <code>isNonNull</code>，过滤掉数组中的 null。</p>
+                        <pre><code class="language-typescript">const items: (string | null)[] = ["a", null, "b", null, "c"];
+// 用 filter + isNonNull 得到 string[]</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">function isNonNull&lt;T&gt;(val: T | null): val is T {
+    return val !== null;
+}
+
+const items: (string | null)[] = ["a", null, "b", null, "c"];
+const filtered = items.filter(isNonNull);
+// filtered 类型: string[]</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>函数类型掌握了，下一章学习<strong>对象与接口</strong>——用 interface 描述对象的形状。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

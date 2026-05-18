@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第27章 枚举 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>枚举</h1>
+            <p>用一组命名常量，让代码自己说话</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>先看一个问题</h3>
+                <h4>用户状态有三种：活跃、冻结、待审核。你打算怎么表示？</h4>
+                <pre><code class="language-javascript">// 方案1：魔法数字——谁能记住 0、1、2 分别代表什么？
+if (user.status === 0) { /* 活跃？冻结？ */ }
+
+// 方案2：魔法字符串——拼写错误不会报错
+if (user.status === "actvie") { /* 拼错了，但不报错 */ }
+
+// 方案3：枚举——有名字、有提示、写错会报错
+enum Status { Active, Frozen, Pending }
+if (user.status === Status.Active) { /* 清晰明了 */ }</code></pre>
+                <p>枚举（Enum）就是用来解决这个问题的：把一组相关的常量放在一个名字下面，让代码既安全又好读。</p>
+            </div>
+        </section>
+
+        <!-- 什么是枚举 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>什么是枚举</h3>
+                <h4>给一组常量起名字的容器</h4>
+                <p><strong>枚举</strong>（Enum）是 TypeScript 中一种特殊的类型，用于定义一组命名的常量集合。它可以让你用有意义的名字代替魔法数字或字符串。</p>
+                <p>打个比方：枚举就像一个<strong>下拉菜单</strong>——选项是固定的，你只能从里面选，不能随便填。</p>
+                <p>TypeScript 支持三种枚举：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>数字枚举</h4>
+                        <p>值自动递增，支持反向映射。最基础的形式。</p>
+                    </div>
+                    <div class="card">
+                        <h4>字符串枚举</h4>
+                        <p>每个成员必须显式赋值，可读性更好。</p>
+                    </div>
+                    <div class="card">
+                        <h4>const 枚举</h4>
+                        <p>编译时内联，零运行时开销。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 1: 数字枚举 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 数字枚举</h2>
+                <h4>最基础的枚举形式，值从 0 开始自动递增</h4>
+                <p>开篇那个 Status 枚举就是数字枚举——不赋值就自动从 0 递增。写起来简单，但它有一个独特的"副作用"：反向映射。你可以用数字查到枚举名，比如 Direction[0] 得到 "Up"。我们先从基础语法开始，再揭开反向映射的原理。</p>
+            </div>
+        </section>
+
+        <!-- 数字枚举基础 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数字枚举基础</h3>
+                <h4>自动从 0 递增，也可以自定义起始值</h4>
+                <pre><code class="language-typescript">// 最简单的数字枚举
+enum Direction {
+    Up,      // 0（自动从 0 开始）
+    Down,    // 1
+    Left,    // 2
+    Right,   // 3
+}
+
+let dir: Direction = Direction.Up;
+dir = Direction.Down;     // OK
+// dir = 42;               // 报错！</code></pre>
+                <pre><code class="language-typescript">// 自定义起始值
+enum Status {
+    Active = 1,    // 1
+    Inactive,      // 2（自动递增）
+    Pending,       // 3
+}
+
+// 自定义所有值
+enum HttpStatus {
+    OK = 200,
+    NotFound = 404,
+    InternalError = 500,
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 反向映射 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>反向映射</h3>
+                <h4>数字枚举的独有能力：值到名的查找</h4>
+                <pre><code class="language-typescript">enum Color {
+    Red,    // 0
+    Green,  // 1
+    Blue,   // 2
+}
+
+let c: Color = Color.Red;            // 0
+let name: string = Color[0];         // "Red" —— 反向映射
+let name2: string = Color[Color.Red]; // "Red"</code></pre>
+                <p>编译后的 JavaScript 长这样——这就是反向映射能工作的原因：</p>
+                <pre><code class="language-javascript">var Color;
+(function (Color) {
+    Color[Color["Red"] = 0] = "Red";     // 正向 + 反向
+    Color[Color["Green"] = 1] = "Green";
+    Color[Color["Blue"] = 2] = "Blue";
+})(Color || (Color = {}));</code></pre>
+                <div class="intro-block">
+                    <p>反向映射是数字枚举的"副作用"：编译器生成了一个双向的对象。字符串枚举和 const 枚举都没有反向映射。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: 字符串枚举 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 字符串枚举</h2>
+                <h4>每个成员必须显式赋值，可读性和调试体验更好</h4>
+                <p>数字枚举调试时看到的是 0、1、2——不查代码根本不知道什么意思。字符串枚举就没有这个问题，值本身就是可读的文本。代价是每个成员都得手动赋值。我们来看看它的语法，以及一个"混合枚举"的坑。</p>
+            </div>
+        </section>
+
+        <!-- 字符串枚举 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>字符串枚举</h3>
+                <h4>值是字符串，没有反向映射</h4>
+                <pre><code class="language-typescript">// 每个成员必须显式赋值
+enum Direction {
+    Up = "UP",
+    Down = "DOWN",
+    Left = "LEFT",
+    Right = "RIGHT",
+}
+
+// 字符串枚举没有反向映射
+// Direction["UP"] 不存在
+
+// 混合枚举（不推荐）
+enum Mixed {
+    No = 0,          // 数字
+    Yes = "YES",     // 字符串
+}</code></pre>
+                <pre><code class="language-typescript">// 实际应用：API 路由方法
+enum Method {
+    GET = "GET",
+    POST = "POST",
+    PUT = "PUT",
+    DELETE = "DELETE",
+}
+
+function request(url: string, method: Method) {
+    // method 只能是 GET/POST/PUT/DELETE
+}
+
+request("/api/users", Method.GET);</code></pre>
+                <p>字符串枚举的编译结果更简洁——没有双向映射的代码。</p>
+            </div>
+        </section>
+
+        <!-- 异构枚举详解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>异构枚举详解</h3>
+                <h4>数字和字符串混在一个枚举里——看似灵活，实则危险</h4>
+                <p><strong>异构枚举</strong>（Heterogeneous Enum）指的是同一个枚举里既有数字成员又有字符串成员。TypeScript 允许你这么写，但社区普遍认为这是一个<strong>设计缺陷</strong>。</p>
+                <pre><code class="language-typescript">// 异构枚举：数字和字符串混用
+enum MixedResult {
+    Success = 0,          // 数字
+    Failure = "FAIL",     // 字符串
+    Pending = 1,          // 又回到数字
+}
+
+// 编译后的 JS：混乱的双向映射
+// MixedResult[0] === "Success"
+// MixedResult["Failure"] === "FAIL"（没有反向映射）</code></pre>
+                <div class="warning">
+                    <strong>永远不要使用异构枚举。</strong>它破坏了枚举的一致性——数字成员有反向映射，字符串成员没有；序列化时数字和字符串混在一起让人困惑；代码审查时很难判断某个值到底代表什么。如果你的确需要混合类型，请拆成两个独立的枚举。
+                </div>
+                <pre><code class="language-typescript">// 错误做法：异构枚举
+enum BadStatus {
+    OK = 200,
+    Error = "ERROR",
+}
+
+// 正确做法：拆成两个枚举，或者统一用字符串
+enum HttpStatusCode {
+    OK = 200,
+    NotFound = 404,
+}
+
+enum ErrorKind {
+    Network = "NETWORK",
+    Timeout = "TIMEOUT",
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 3: const 枚举 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: const 枚举</h2>
+                <h4>编译时直接内联，不生成 JavaScript 对象</h4>
+                <p>普通枚举编译后会变成一个 JS 对象，运行时占内存。如果你只在意类型安全，不在乎运行时遍历，const 枚举是更好的选择——它会在编译时直接替换为字面量，零运行时开销。但跨模块使用时有坑，需要注意。</p>
+            </div>
+        </section>
+
+        <!-- const enum -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>const 枚举</h3>
+                <h4>编译时替换为零开销的字面量</h4>
+                <pre><code class="language-typescript">const enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+let dir = Direction.Up;
+// 编译结果：let dir = 0; —— 直接替换为数字
+
+// 字符串 const enum
+const enum Status {
+    Active = "ACTIVE",
+    Inactive = "INACTIVE",
+}
+
+let s = Status.Active;
+// 编译结果：let s = "ACTIVE";</code></pre>
+                <div class="warning">
+                    <strong>const enum 的坑：</strong>在跨模块使用时可能有问题（<code>isolatedModules</code> 模式下）。如果项目使用 Babel、esbuild 等非 TS 编译器，建议避免使用 <code>const enum</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 对比表 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三种枚举对比</h3>
+                <h4>一张表看清差异</h4>
+                <table>
+                    <thead>
+                        <tr><th>特性</th><th>数字枚举</th><th>字符串枚举</th><th>const 枚举</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>自动赋值</td><td>支持（从0递增）</td><td>必须手动赋值</td><td>支持</td></tr>
+                        <tr><td>反向映射</td><td>支持</td><td>不支持</td><td>不支持</td></tr>
+                        <tr><td>编译输出</td><td>生成 JS 对象</td><td>生成 JS 对象</td><td>内联字面量</td></tr>
+                        <tr><td>运行时开销</td><td>有</td><td>有</td><td>无</td></tr>
+                        <tr><td>跨模块安全</td><td>安全</td><td>安全</td><td>可能有坑</td></tr>
+                    </tbody>
+                </table>
+                <div class="ai-diagram">
+                    <h4>图：三种枚举的编译结果对比</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 三列并排：数字枚举→双向映射对象 | 字符串枚举→单向映射对象 | const枚举→内联替换
+                    - 每列底部标注：正向+反向映射 | 仅正向映射 | 零运行时开销
+                    - 配色建议：浅蓝背景，三列不同色系，代码等宽字体，箭头橙色，16:9
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4: 枚举 vs 联合类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 枚举 vs 联合</h2>
+                <h4>哪种方式更好？取决于场景</h4>
+                <p>学完三种枚举，你可能已经在想了：直接用 <code>"ADMIN" | "EDITOR"</code> 这种联合类型不也能约束取值范围吗？确实如此。枚举在运行时存在、可以遍历，联合类型零开销、更简洁。到底选哪个？我们用一张对比表加上替代方案帮你做决策。</p>
+            </div>
+        </section>
+
+        <!-- 枚举 vs 联合类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>枚举 vs 字面量联合</h3>
+                <h4>两种方式都能约束值的范围</h4>
+                <pre><code class="language-typescript">// 方式1：使用枚举
+enum Role {
+    Admin = "ADMIN",
+    Editor = "EDITOR",
+    Viewer = "VIEWER",
+}
+function checkPermission(role: Role) { /* ... */ }
+checkPermission(Role.Admin);
+
+// 方式2：使用字面量联合类型
+type RoleType = "ADMIN" | "EDITOR" | "VIEWER";
+function checkPermission2(role: RoleType) { /* ... */ }
+checkPermission2("ADMIN");</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>枚举的优点</h4>
+                        <ul>
+                            <li>运行时存在，可以遍历</li>
+                            <li>值集中管理，修改只改一处</li>
+                            <li>数字枚举支持反向映射</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>联合类型的优点</h4>
+                        <ul>
+                            <li>零运行时开销</li>
+                            <li>Tree-shaking 友好</li>
+                            <li>不依赖编译器特殊处理</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="ai-diagram">
+                    <h4>图：枚举方案选择决策树</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个从左到右的决策流程图
+                    - 第一个判断："需要运行时遍历？" 否→字面量联合 | 是→第二个判断
+                    - 第二个判断："需要反向映射？" 否→as const 对象 | 是→第三个判断
+                    - 第三个判断："性能敏感？" 是→const enum | 否→普通 enum
+                    - 配色建议：浅灰背景，判断节点用橙色菱形，推荐方案用绿色卡片，箭头用深灰
+                    - 画面比例：16:9，避免：过度装饰、3D 效果
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 最佳实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>推荐替代方案</h3>
+                <h4>as const 对象 + typeof 模拟枚举</h4>
+                <pre><code class="language-typescript">// 推荐：用 as const 对象 + typeof 模拟枚举
+const Role = {
+    Admin: "ADMIN",
+    Editor: "EDITOR",
+    Viewer: "VIEWER",
+} as const;
+
+type Role = typeof Role[keyof typeof Role];
+// type Role = "ADMIN" | "EDITOR" | "VIEWER"
+
+function checkPermission(role: Role) { /* ... */ }
+
+checkPermission(Role.Admin);  // OK
+checkPermission("ADMIN");     // OK
+
+// 还能遍历——枚举的优点它也有
+Object.values(Role).forEach(role => {
+    console.log(role);
+});</code></pre>
+                <div class="intro-block">
+                    <p>新项目优先使用 <code>as const</code> 对象 + 字面量联合类型代替 <code>enum</code>。只有在需要反向映射或与旧代码兼容时才用 <code>enum</code>。</p>
+                </div>
+                <div class="ai-diagram">
+                    <h4>图：枚举方案选择决策树</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个从左到右的决策流程图
+                    - 第一个判断："需要运行时遍历？"
+                      - 否 → 推荐字面量联合类型 "A" | "B" | "C"
+                      - 是 → 第二个判断
+                    - 第二个判断："需要反向映射？"
+                      - 否 → 推荐 as const 对象 { A: "A", B: "B" } as const
+                      - 是 → 第三个判断
+                    - 第三个判断："性能敏感（const enum）？"
+                      - 是 → 推荐 const enum
+                      - 否 → 推荐普通 enum
+                    - 每种方案用不同颜色卡片呈现，卡片内含一行代码示例
+                    - 配色建议：浅灰背景，判断节点用橙色菱形，推荐方案用绿色卡片，箭头用深灰
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 枚举的运行时行为 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>编译后的真相</h3>
+                <h4>数字枚举在 JS 里长什么样？</h4>
+                <p>数字枚举编译后会生成一个<strong>双向映射对象</strong>。这是它最独特的地方——也是最容易让人困惑的地方。</p>
+                <pre><code class="language-typescript">// TypeScript 源码
+enum Direction {
+    Up,      // 0
+    Down,    // 1
+    Left,    // 2
+    Right,   // 3
+}</code></pre>
+                <pre><code class="language-javascript">// 编译后的 JavaScript
+var Direction;
+(function (Direction) {
+    Direction[Direction["Up"] = 0] = "Up";       // 0 → "Up"
+    Direction[Direction["Down"] = 1] = "Down";   // 1 → "Down"
+    Direction[Direction["Left"] = 2] = "Left";   // 2 → "Left"
+    Direction[Direction["Right"] = 3] = "Right"; // 3 → "Right"
+})(Direction || (Direction = {}));</code></pre>
+                <div class="ai-diagram">
+                    <h4>图：数字枚举的双向映射结构</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：中央展示编译后的 Direction 对象，左右两侧展示映射关系
+                    - 正向映射（左→右）：Direction.Up = 0、Direction.Down = 1、Direction.Left = 2、Direction.Right = 3（蓝色箭头）
+                    - 反向映射（右→左）：Direction[0] = "Up"、Direction[1] = "Down"、Direction[2] = "Left"、Direction[3] = "Right"（橙色箭头）
+                    - 标注："数字枚举编译后生成双向映射对象，字符串枚举只有正向映射"
+                    - 配色建议：浅灰背景，正向蓝色系，反向橙色系，对象用白色圆角矩形
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>每一行做了两件事：把数字赋给名称（正向），再把名称赋给数字索引（反向）。所以 <code>Direction[0]</code> 能拿到 <code>"Up"</code>。</p>
+            </div>
+        </section>
+
+        <!-- 穷尽检查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>穷尽检查</h3>
+                <h4>用 switch + never 确保所有枚举值都被处理</h4>
+                <p>当你用 <code>switch</code> 处理枚举时，可以通过 <code>never</code> 类型来确保所有分支都被覆盖。如果将来新增了一个枚举值，TypeScript 会立刻报错提醒你。</p>
+                <pre><code class="language-typescript">enum Status { Pending, Active, Completed, Cancelled }
+
+function getStatusLabel(status: Status): string {
+  switch (status) {
+    case Status.Pending:   return "待处理";
+    case Status.Active:    return "进行中";
+    case Status.Completed: return "已完成";
+    case Status.Cancelled: return "已取消";
+    default:
+      // 如果 Status 新增了成员但这里没处理，会报错！
+      const exhaustive: never = status;
+      throw new Error(`未知状态: ${exhaustive}`);
+  }
+}</code></pre>
+                <div class="intro-block">
+                    <p>关键在 <code>default</code> 分支里把 <code>status</code> 赋值给 <code>never</code> 类型。如果所有枚举值都已处理，这行代码不可达，不会触发；如果有遗漏，TypeScript 就会报类型错误。这个技巧叫<strong>穷尽检查</strong>（Exhaustive Check）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 命名空间嵌套 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>命名空间嵌套</h3>
+                <h4>用枚举的命名空间合并能力组织相关代码</h4>
+                <p>枚举在 TypeScript 中既是类型，也是命名空间。你可以利用<strong>声明合并</strong>，给枚举附加相关的工具函数或嵌套枚举。</p>
+                <pre><code class="language-typescript">// 基础枚举
+enum Color {
+    Red = "#FF0000",
+    Green = "#00FF00",
+    Blue = "#0000FF",
+}
+
+// 利用命名空间合并，给枚举添加工具方法
+namespace Color {
+    export function fromHex(hex: string): Color | undefined {
+        const entries = Object.entries(Color) as [string, string][];
+        for (const [name, value] of entries) {
+            if (value === hex) return Color[name as keyof typeof Color] as Color;
+        }
+        return undefined;
+    }
+
+    export function getRandom(): Color {
+        const values = [Color.Red, Color.Green, Color.Blue];
+        return values[Math.floor(Math.random() * values.length)];
+    }
+}
+
+Color.fromHex("#FF0000");  // Color.Red
+Color.getRandom();          // 随机颜色</code></pre>
+                <pre><code class="language-typescript">// 嵌套枚举：把相关的枚举组织在一起
+namespace App {
+    export enum Status { Active, Inactive, Pending }
+    export enum Role { Admin, Editor, Viewer }
+}
+
+function handleUser(status: App.Status, role: App.Role) {
+    // 清晰的层级关系
+}
+
+handleUser(App.Status.Active, App.Role.Admin);</code></pre>
+                <div class="intro-block">
+                    <p>命名空间嵌套适合<strong>大型项目</strong>中组织相关常量。但对于中小项目，拆分成独立文件然后用模块导入通常更清晰。不要为了"好看"强行嵌套。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 序列化与反序列化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>序列化处理</h3>
+                <h4>数字枚举和字符串枚举在网络传输中的差异</h4>
+                <p>枚举值在网络请求中会变成什么？这是前后端对接时最容易踩坑的地方。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>数字枚举</h4>
+                        <p>序列化为数字。可读性差，但体积小。反向映射在反序列化时有帮助。</p>
+                    </div>
+                    <div class="card">
+                        <h4>字符串枚举</h4>
+                        <p>序列化为字符串。可读性好，调试方便，是 API 交互的首选。</p>
+                    </div>
+                </div>
+                <pre><code class="language-typescript">// 安全解析 API 返回的枚举值
+enum UserStatus {
+    Active = "ACTIVE",
+    Inactive = "INACTIVE",
+    Banned = "BANNED",
+}
+
+// 从 API 响应中安全解析
+function parseUserStatus(raw: unknown): UserStatus {
+    if (typeof raw !== "string") {
+        throw new Error(`状态应为字符串，收到: ${typeof raw}`);
+    }
+    const validValues = Object.values(UserStatus) as string[];
+    if (!validValues.includes(raw)) {
+        throw new Error(`无效的用户状态: ${raw}`);
+    }
+    return raw as UserStatus;
+}
+
+// 使用示例
+const response = JSON.parse('{"status": "ACTIVE"}');
+const status = parseUserStatus(response.status);
+// status: UserStatus.Active</code></pre>
+                <div class="warning">
+                    <strong>永远不要信任 API 返回的枚举值。</strong>后端可能新增了枚举成员、返回了意外值、甚至传了 null。一定要校验后再使用，否则运行时会收到意想不到的值。
+                </div>
+            </div>
+        </section>
+
+        <!-- 枚举最佳实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>何时用枚举</h3>
+                <h4>枚举 vs 联合类型 vs as const——怎么选？</h4>
+                <table>
+                    <thead>
+                        <tr><th>场景</th><th>推荐方案</th><th>原因</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>需要运行时遍历</td><td>枚举 / as const 对象</td><td>只有它们在 JS 中存在</td></tr>
+                        <tr><td>需要反向映射</td><td>数字枚举</td><td>唯一的内置方案</td></tr>
+                        <tr><td>纯类型约束</td><td>字面量联合类型</td><td>零开销，最简洁</td></tr>
+                        <tr><td>需要遍历 + 类型安全</td><td>as const 对象</td><td>两全其美</td></tr>
+                        <tr><td>与外部 API 对接</td><td>字符串枚举</td><td>序列化友好</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>一句话总结：<strong>新项目优先用 <code>as const</code> 对象</strong>，老项目保持一致就行。别为了"优雅"在一个项目里混用多种方案。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- satisfies + as const -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>satisfies 加持</h3>
+                <h4>satisfies + as const：比 enum 更安全的选择</h4>
+                <p><code>satisfies</code> 是 TypeScript 4.9 引入的操作符。它检查值是否符合类型，但<strong>不拓宽类型</strong>。配合 <code>as const</code>，能同时获得类型收窄和类型校验。</p>
+                <pre><code class="language-typescript">// 问题：as const 虽然好，但没有校验
+const Role = {
+    Admin: "ADMIN",
+    Editor: "EDITOR",
+    // Viewer: "VIEWER" —— 忘了加，不会报错！
+} as const;
+
+// 解决：用 satisfies 先校验，再 as const 收窄
+type RoleMap = Record&lt;"Admin" | "Editor" | "Viewer", string&gt;;
+
+const Role = {
+    Admin: "ADMIN",
+    Editor: "EDITOR",
+    Viewer: "VIEWER",
+} as const satisfies RoleMap;
+// 少一个属性 → 报错！值不是 string → 报错！
+
+// 类型仍然保留字面量
+type R = typeof Role.Admin; // "ADMIN"（不是 string）</code></pre>
+                <p>这就是"既有类型校验，又保留字面量类型"的黄金组合。</p>
+            </div>
+        </section>
+
+        <!-- 大型代码库迁移 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>迁移实战</h3>
+                <h4>从 enum 迁移到 as const 对象的分步指南</h4>
+                <p>当你决定在新代码中统一使用 <code>as const</code> 对象时，老代码中的 <code>enum</code> 需要逐步替换。以下是安全的迁移步骤。</p>
+                <pre><code class="language-typescript">// ===== 第一步：识别目标枚举 =====
+// 找出所有数字枚举，这些优先迁移（类型安全最弱）
+enum OldStatus {
+    Active,     // 0 —— 任何数字都能赋进来
+    Inactive,   // 1
+    Pending,    // 2
+}
+
+// ===== 第二步：创建等效的 as const 对象 =====
+const NewStatus = {
+    Active: "ACTIVE",
+    Inactive: "INACTIVE",
+    Pending: "PENDING",
+} as const;
+type NewStatus = typeof NewStatus[keyof typeof NewStatus];
+
+// ===== 第三步：添加兼容层（过渡期使用）=====
+function toNewStatus(old: OldStatus): NewStatus {
+    const map: Record&lt;OldStatus, NewStatus&gt; = {
+        [OldStatus.Active]: NewStatus.Active,
+        [OldStatus.Inactive]: NewStatus.Inactive,
+        [OldStatus.Pending]: NewStatus.Pending,
+    };
+    return map[old];
+}
+
+// ===== 第四步：逐文件替换，每次改一个文件 =====
+// 旧代码 → 新代码，配合穷尽检查确保不遗漏</code></pre>
+                <pre><code class="language-typescript">// ===== 第五步：删除旧枚举，清理兼容层 =====
+// 所有引用都迁移完毕后，删除 OldStatus 和 toNewStatus
+
+// 第六步：添加 satisfies 校验（可选但推荐）
+type StatusMap = Record&lt;"Active" | "Inactive" | "Pending", string&gt;;
+const NewStatus = {
+    Active: "ACTIVE",
+    Inactive: "INACTIVE",
+    Pending: "PENDING",
+} as const satisfies StatusMap;
+
+// 迁移前后对比：
+// Before: let s: OldStatus = 999;  // 不报错！
+// After:  let s: NewStatus = "ABC"; // 报错！类型安全</code></pre>
+                <div class="warning">
+                    <strong>迁移铁律：一次只改一个文件，每改一次跑一次测试。</strong>不要在整个项目里全局替换 enum —— 那样会导致编译错误雪崩，难以定位问题。优先迁移数字枚举（类型安全最弱），字符串枚举可以最后处理。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习：权限系统 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>权限实战</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习</h3>
+                        <p><strong>任务</strong>：定义一个权限系统的枚举或联合类型（Read / Write / Delete / Admin），然后实现 <code>checkPermission</code> 函数，判断用户是否拥有某权限。</p>
+                        <pre><code class="language-typescript">// 提示：Admin 应该包含所有权限
+// 1. 定义 Permission 类型（枚举或 as const）
+// 2. 实现 checkPermission(userPerms, requiredPerm)
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">const Permission = {
+    Read: "READ",
+    Write: "WRITE",
+    Delete: "DELETE",
+    Admin: "ADMIN",
+} as const;
+
+type Permission = typeof Permission[keyof typeof Permission];
+// "READ" | "WRITE" | "DELETE" | "ADMIN"
+
+function checkPermission(
+    userPerms: Permission[],
+    required: Permission,
+): boolean {
+    if (userPerms.includes(Permission.Admin)) return true;
+    return userPerms.includes(required);
+}
+
+// 测试
+checkPermission(["READ", "WRITE"], "READ");   // true
+checkPermission(["READ"], "DELETE");           // false
+checkPermission(["ADMIN"], "DELETE");          // true</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+                <div class="warning">
+                    <strong>枚举最常见的坑：数字枚举的类型安全较弱。</strong>
+                </div>
+
+                <h4>问题一：数字枚举接受任意数字</h4>
+                <pre><code class="language-typescript">enum Direction { Up, Down, Left, Right }
+// 这个竟然不报错！
+let d: Direction = 42;  // 数字枚举的已知问题</code></pre>
+                <p><strong>解决</strong>：使用字符串枚举或 <code>as const</code> 对象替代。</p>
+
+                <h4>问题二：const enum 跨模块报错</h4>
+                <pre><code class="language-typescript">// 在 isolatedModules 模式下
+const enum Foo { A = 1 }
+// 跨文件导入 Foo.A 可能报错</code></pre>
+                <p><strong>解决</strong>：避免跨模块使用 const enum，或关闭 <code>isolatedModules</code>。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：定义一个 HTTP 方法枚举（GET, POST, PUT, DELETE），然后写一个接受该枚举参数的函数。</p>
+                        <pre><code class="language-typescript">// 定义枚举 HttpMethod
+// 写一个函数 sendRequest(url: string, method: HttpMethod)
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">enum HttpMethod {
+    GET = "GET",
+    POST = "POST",
+    PUT = "PUT",
+    DELETE = "DELETE",
+}
+
+function sendRequest(url: string, method: HttpMethod): void {
+    console.log(`${method} ${url}`);
+}
+
+sendRequest("/api/users", HttpMethod.GET);</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：用 <code>as const</code> 对象模拟一个用户角色枚举（Admin, Editor, Viewer），并提取出联合类型。</p>
+                        <pre><code class="language-typescript">// 用 as const 定义角色常量对象
+// 提取 Role 联合类型
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">const Role = {
+    Admin: "ADMIN",
+    Editor: "EDITOR",
+    Viewer: "VIEWER",
+} as const;
+
+type Role = typeof Role[keyof typeof Role];
+// "ADMIN" | "EDITOR" | "VIEWER"</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>枚举让你用命名常量替代魔法值。下一章我们学习<strong>泛型</strong>——让类型也能"传参数"。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

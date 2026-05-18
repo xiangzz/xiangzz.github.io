@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>03 Skills</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛠️</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 03 章</div>
+            <h1>Skills</h1>
+            <p>把"方法论 + 模板"固化为可复用的能力包</p>
+            <strong>一次写好审查标准，以后每次审查都一样稳</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>输出不稳定</h2>
+                <h4>你有没有发现，让 Claude 做同一件事，每次结果都不一样？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>代码审查</h4>
+                        <p>昨天让它审查代码，它列了 12 条发现，按严重程度排好，结构清晰。今天同一个仓库再审查一次，<strong>它换了 5 条完全不同的发现，格式也不一样了</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>重构规划</h4>
+                        <p>你花了半小时跟 Claude 描述"先分析代码味道，再列重构优先级，最后给实施方案"。结果不错——但下次换个项目，<strong>又得重新描述一遍</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>团队协作</h4>
+                        <p>你总结了一套审查清单，A 同事也总结了一套。两边标准不同，输出格式各异，<strong>下游流程根本没法统一消费</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>Skill 就是为这个设计的：</strong>把一个任务的"怎么做"和"输出长什么样"打包成一个目录。Claude 每次调用都遵循同样的步骤和模板，输出质量稳定可预测。
+                </div>
+            </div>
+        </section>
+
+        <!-- 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>经常做代码审查、重构规划、文档生成，希望批量复用高质量输出的人</li>
+                            <li>想把团队经验从"个人脑子里"搬到"可安装的技能包"里的人</li>
+                            <li>已经会写 Slash Command，想让命令更强大的开发者</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该已经能</h4>
+                        <ul>
+                            <li>说清 Skill 由哪些文件构成、各自职责是什么</li>
+                            <li>创建一个带模板和参考资料的最小 Skill</li>
+                            <li>理解渐进式披露：什么时候该拆分文件</li>
+                            <li>判断"这个需求该做 Skill 还是做 Command"</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>这些内容暂时先不碰</h4>
+                        <ul>
+                            <li>复杂插件的打包与发布流程</li>
+                            <li>多 agent 编排中的 Skill 分配策略</li>
+                            <li>生产级 Skill 的 scripts 和 assets 设计</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Skill 是什么 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Skill 是什么</h2>
+                <h4>一句话定义 + 白话 + 一个能跑的例子</h4>
+                <p><strong>Skill</strong>是一个目录化的能力单元，包含 SKILL.md（核心说明）、templates（模板）、references（参考资料），可以被 <code>/</code> 触发或由 Claude 自动调用。</p>
+                <p>说白了，Skill 就是一份<strong>"标准操作手册"</strong>——你把"按什么步骤做、输出长什么样、要注意什么"全写进去。以后每次触发，Claude 都照着这本手册来，不凭感觉发挥。</p>
+                <p>它和你上一章学的 Slash Command 有什么区别？Command 是<strong>一个入口</strong>——你敲 <code>/commit</code>，它就去执行。Skill 是<strong>一个能力包</strong>——除了入口（SKILL.md），还可以带上模板、参考资料、脚本等配套文件。所有自定义 Slash Command 现在都推荐用 Skill 来做。</p>
+                <div class="key-point">
+                    <strong>判断标准：</strong>如果你只需要一段提示词，用 Command 就够了。如果还需要模板、参考资料、或希望 Claude 自动判断何时使用——做 Skill。
+                </div>
+            </div>
+        </section>
+
+        <!-- 渐进式披露 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>渐进式加载</h2>
+                <h4>Skill 不是一次性全塞进上下文的——它分三层加载</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/03-skills-1.png" alt="图：Skill 渐进式加载的三层过程" class="ai-diagram-img">
+                <div class="info-block">
+                    <strong>为什么这样设计：</strong>把所有内容一次性塞进上下文，既浪费 token 又降低响应质量。渐进式加载确保 Claude 只带"真正需要的信息"进对话。
+                </div>
+            </div>
+        </section>
+
+        <!-- 加载流程四步 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>加载流程</h2>
+                <h4>Claude 从发现到执行，经历四个步骤</h4>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <strong>1. 扫描目录</strong>
+                        <p style="font-size: 0.85em;">遍历 <code>.claude/skills/</code> 和 <code>~/.claude/skills/</code>，发现所有 Skill 目录</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>2. 匹配描述</strong>
+                        <p style="font-size: 0.85em;">根据 <code>description</code> 判断与当前任务是否相关，不相关则跳过</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>3. 读取 SKILL.md</strong>
+                        <p style="font-size: 0.85em;">加载核心说明：触发条件、执行步骤、输出格式</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>4. 按需加载</strong>
+                        <p style="font-size: 0.85em;">脚本、模板、参考资料——用到时才读取</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>为什么分四步而不是一步：</strong>如果一次性把所有 Skill 全部加载，上下文会立刻爆炸。四步流程确保 Claude 只带"真正相关的、真正需要的信息"进入对话，既省 token 又提高响应质量。
+                </div>
+            </div>
+        </section>
+
+        <!-- 目录结构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>目录结构</h2>
+                <h4>一个 Skill 目录里该放什么</h4>
+                <pre class="tree-structure">.claude/skills/
+└── code-review/               <span style="color: var(--primary-light);">[技能目录]</span>
+    ├── SKILL.md               <span style="color: var(--success-color);">[核心说明 — 必需]</span>
+    ├── templates/             <span style="color: var(--info-color);">[模板 — 可选]</span>
+    │   └── finding-template.md
+    └── references/            <span style="color: var(--info-color);">[参考资料 — 可选]</span>
+        └── review-checklist.md</pre>
+                <table>
+                    <thead><tr><th>文件</th><th>职责</th><th>什么时候需要</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>SKILL.md</code></td><td>触发条件、执行步骤、输出格式</td><td>总是需要</td></tr>
+                        <tr><td><code>templates/</code></td><td>输出骨架、占位符</td><td>输出格式复杂时</td></tr>
+                        <tr><td><code>references/</code></td><td>知识库、规范、清单</td><td>有行业标准和团队规范时</td></tr>
+                        <tr><td><code>scripts/</code></td><td>辅助脚本</td><td>需要自动化预处理时</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- SKILL.md 写什么 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>写好 SKILL.md</h2>
+                <h4>一个能跑起来的 SKILL.md 至少包含三块</h4>
+                <pre><code>---
+name: code-review
+description: 全面审查代码质量、安全性和可维护性
+argument-hint: "[focus-area]"
+allowed-tools: Read, Grep, Glob
+---
+
+# Code Review
+
+## 触发条件
+当用户请求代码审查、PR 审查时自动激活。
+
+## 执行步骤
+1. 读取变更文件列表
+2. 按审查清单逐项检查
+3. 按严重程度分类发现
+4. 使用 finding-template.md 格式化输出
+
+## 审查维度
+- **代码质量**：命名、结构、可读性
+- **安全性**：输入验证、权限、敏感数据
+- **可维护性**：耦合度、扩展性、测试覆盖
+
+## 输出格式
+参考 templates/finding-template.md，每条发现包含：
+严重程度、文件路径、行号、问题描述、修复建议</code></pre>
+                <div class="key-point">
+                    <strong>三块不可省略：</strong><strong>触发条件</strong>（Claude 什么时候该用它）、<strong>执行步骤</strong>（具体做什么）、<strong>输出格式</strong>（结果长什么样）。缺了任何一块，输出就会不稳定。
+                </div>
+                <table>
+                    <thead><tr><th>字段</th><th>作用</th><th>什么时候用</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>model</code></td><td>指定运行 Skill 时使用的模型</td><td>需要特定模型能力时（如 Opus 做深度分析）</td></tr>
+                        <tr><td><code>user-invocable</code></td><td>控制用户是否能手动调用此 Skill</td><td>内部辅助 Skill 不希望用户直接触发时设为 <code>false</code></td></tr>
+                        <tr><td><code>context</code></td><td>注入额外上下文信息</td><td>Skill 执行时需要环境变量或配置信息</td></tr>
+                        <tr><td><code>agent</code></td><td>配置 Skill 在哪个 agent 上下文中运行</td><td>需要指定运行环境或角色时</td></tr>
+                        <tr><td><code>hooks</code></td><td>Skill 生命周期钩子（加载前/后等）</td><td>需要在 Skill 执行前后自动运行脚本</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>触发控制三件套：</strong><code>disable-model-invocation: true</code> 阻止 Claude 自动触发，只允许用户手动调用——适合有副作用的操作（如部署、删除）。<code>user-invocable: false</code> 则反过来——允许 Claude 自动用，但不让用户手动触发。<code>allowed-tools</code> 限制 Skill 只能使用指定工具，缩小权限范围，降低风险。
+                </div>
+            </div>
+        </section>
+
+        <!-- 模板与参考资料 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模板与参考</h2>
+                <h4>什么时候该拆成独立文件，而不是全写在 SKILL.md 里</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>templates/ — 输出骨架</h4>
+                        <p>当输出格式复杂、有占位符需要填充时，拆到模板文件中。SKILL.md 只需要说"参考 templates/xxx"。</p>
+                        <pre><code><span style="color: var(--text-muted);"># templates/finding-template.md</span>
+
+### {severity_emoji} [{severity}] {title}
+- **文件**: {file_path}
+- **行号**: {line_number}
+- **问题**: {description}
+- **建议**: {recommendation}
+
+---
+**统计**: 🔴 {high} | 🟡 {medium} | 🟢 {low}</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>references/ — 知识库</h4>
+                        <p>团队规范、行业标准、审查清单等<strong>不会每次都变</strong>的参考资料。避免在 SKILL.md 里重复写长篇规范。</p>
+                        <pre><code><span style="color: var(--text-muted);"># references/review-checklist.md</span>
+
+## 代码审查清单
+- [ ] 输入验证是否完整
+- [ ] 错误处理是否覆盖所有异常路径
+- [ ] 是否有硬编码的密钥或配置
+- [ ] 日志是否包含敏感信息
+- [ ] 方法长度是否超过 30 行</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>什么时候该拆：</strong>SKILL.md 超过 500 行时，说明你需要拆分了。把模板和参考资料移到对应目录，SKILL.md 只保留核心流程。
+                </div>
+            </div>
+        </section>
+
+        <!-- 安装位置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安装位置</h2>
+                <h4>Skill 放在哪，决定谁能用</h4>
+                <pre class="tree-structure"><span style="color: var(--success-color);">项目级（团队共享，随 Git 同步）</span>
+your-project/
+└── .claude/skills/
+    └── code-review/
+        └── SKILL.md
+
+<span style="color: var(--info-color);">个人级（跨项目通用，不进 Git）</span>
+~/.claude/skills/
+└── blog-draft/
+    └── SKILL.md
+
+<span style="color: var(--text-muted);">内置（随 Claude Code 自带）</span>
+/simplify、/loop、/debug、/claude-api、/batch</pre>
+                <table>
+                    <thead><tr><th>位置</th><th>作用域</th><th>共享方式</th><th>适合放什么</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>.claude/skills/</code></td><td>当前项目</td><td>Git 同步</td><td>团队标准流程、项目专属 Skill</td></tr>
+                        <tr><td><code>~/.claude/skills/</code></td><td>所有项目</td><td>不共享</td><td>个人习惯、跨项目通用 Skill</td></tr>
+                        <tr><td>内置</td><td>全局</td><td>自动</td><td>简化、调试、循环等基础能力</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>查看已安装 Skill：</strong>在 Claude Code 中输入 <code>/skills</code>，可以看到当前可用的所有 Skill 列表及其触发条件。
+                </div>
+            </div>
+        </section>
+
+        <!-- 管理 Skills -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>日常管理</h2>
+                <h4>Skill 不是写完就完了——测试、更新、权限控制</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>测试 Skill</h4>
+                        <p>把 Skill 放到一个<strong>测试目录或临时项目</strong>里，通过命令触发验证。不要直接在生产项目中调试。</p>
+                        <pre><code><span style="color: var(--text-muted);"># 方法 1：在测试项目中触发</span>
+mkdir /tmp/test-skill && cd /tmp/test-skill
+mkdir -p .claude/skills/my-skill
+<span style="color: var(--text-muted);"># 复制 SKILL.md 到目录中，然后在 Claude Code 中触发</span>
+
+<span style="color: var(--text-muted);"># 方法 2：用 /skills 查看是否被发现</span>
+/skills</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>更新 Skill</h4>
+                        <p>修改 <code>SKILL.md</code> 或支持文件后，<strong>重新打开会话</strong>或<strong>重新加载</strong>即可生效。</p>
+                        <ul>
+                            <li>改了 <code>description</code> → 重新加载后触发行为会变</li>
+                            <li>改了模板或参考资料 → 下次调用自动用新版</li>
+                            <li>加了新文件 → 确保在 SKILL.md 中有引用</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>限制访问</h4>
+                        <p>通过<strong>权限配置</strong>控制 Claude 能访问哪些 Skill：</p>
+                        <ul>
+                            <li><code>disable-model-invocation: true</code> → 禁止自动触发</li>
+                            <li><code>allowed-tools</code> → 限制可用工具范围</li>
+                            <li>删除或移走 Skill 目录 → 彻底不可见</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 上下文注入 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>上下文注入</h2>
+                <h4>让 Skill 在执行时自动获取当前项目的动态信息</h4>
+                <p>Skill 不是静态的提示词。它可以在加载时<strong>自动获取项目的实时信息</strong>，不需要用户手动粘贴。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>$ARGUMENTS — 接收参数</h4>
+                        <p>用户输入 <code>/pr-review auth-module</code> 时，<code>$ARGUMENTS</code> 的值就是 <code>auth-module</code>。用 <code>$0</code>、<code>$1</code> 可以按位置取参数。</p>
+                    </div>
+                    <div class="card">
+                        <h4>!`command` — 执行 Shell</h4>
+                        <p>在 SKILL.md 中用反引号包裹 Shell 命令，前面加 <code>!</code>。加载时会自动执行并插入结果：</p>
+                        <pre><code>- 当前分支：!`git branch --show-current`
+- 变更统计：!`git diff --stat main...HEAD`
+- 文件数量：!`find src -name "*.ts" | wc -l`</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>为什么重要：</strong>没有上下文注入，Skill 就是一段死模板。有了它，Skill 能感知当前项目状态——在哪个分支、改了什么文件、有多少测试——输出才会精准。
+                </div>
+            </div>
+        </section>
+
+        <!-- 本仓示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本仓示例</h2>
+                <h4>看看不同复杂度的 Skill 长什么样</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>code-review</h4>
+                        <p>全面代码审查，含模板和审查清单。中等复杂度的代表——有 SKILL.md + templates + references。</p>
+                        <span class="tag tag-primary">中等</span>
+                    </div>
+                    <div class="card">
+                        <h4>refactor</h4>
+                        <p>重构规划与执行，含代码味道库。高复杂度——多步骤、多模板、参考资料很厚。</p>
+                        <span class="tag tag-warning">复杂</span>
+                    </div>
+                    <div class="card">
+                        <h4>blog-draft</h4>
+                        <p>博客文章撰写，含大纲和草稿模板。低复杂度——只有 SKILL.md + 一个模板。</p>
+                        <span class="tag tag-success">简单</span>
+                    </div>
+                    <div class="card">
+                        <h4>brand-voice</h4>
+                        <p>品牌语气检查，含语调示例。同样简单，但展示了"纯参考资料"型 Skill。</p>
+                        <span class="tag tag-success">简单</span>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>建议学习顺序：</strong>先看 blog-draft（最简单），再看 code-review（模板 + 参考），最后看 refactor（多步骤编排）。
+                </div>
+            </div>
+        </section>
+
+        <!-- 更多实战示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战示例</h2>
+                <h4>三种典型场景的 Skill 设计思路</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>代码库可视化</h4>
+                        <p>把代码库结构、依赖关系和模块边界总结给 Claude，便于快速理解项目。</p>
+                        <pre><code><span style="color: var(--text-muted);"># SKILL.md 片段</span>
+---
+name: codebase-viz
+description: 可视化代码库结构、依赖和模块边界
+allowed-tools: Bash(tree *), Read, Glob
+---
+## 执行步骤
+1. 用 tree 命令获取目录结构
+2. 分析 package.json / Cargo.toml 等依赖
+3. 识别模块边界和层级关系
+4. 输出结构图和依赖摘要</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>CLAUDE.md 生成</h4>
+                        <p>从项目文档中自动生成或补充 <code>CLAUDE.md</code>，确保 Claude 对项目的理解始终最新。</p>
+                        <pre><code><span style="color: var(--text-muted);"># SKILL.md 片段</span>
+---
+name: claude-md-gen
+description: 从项目文档生成或补充 CLAUDE.md
+allowed-tools: Read, Glob, Write
+---
+## 执行步骤
+1. 扫描 README、docs/、CHANGELOG 等
+2. 提取架构约定、API 格式、测试要求
+3. 生成或合并到 CLAUDE.md</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>部署（仅用户触发）</h4>
+                        <p>带副作用的操作必须禁止自动触发，只允许用户手动调用。</p>
+                        <pre><code><span style="color: var(--text-muted);"># SKILL.md 片段</span>
+---
+name: deploy
+description: 部署到生产环境
+disable-model-invocation: true
+allowed-tools: Bash(deploy *), Bash(docker *)
+---
+## ⚠️ 安全约束
+此 Skill 有副作用，<strong>禁止自动触发</strong>。
+只有用户明确输入 /deploy 时才执行。</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Skill 的定位全景图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Skill 的位置</h2>
+                <h4>Skill 在 Memory 和 Subagent 之间——约束、方法、执行三层协作</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/03-skills-2.png" alt="图：Memory → Skill → Subagent 三层协作架构" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- Skill + Memory + Subagent -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>作为方法层</h2>
+                <h4>Skill 在 Memory 和 Subagent 之间扮演什么角色</h4>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <strong>Memory</strong>
+                        <p style="font-size: 0.9em;">底座约束<br>定义"应该怎样"</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>Skill</strong>
+                        <p style="font-size: 0.9em;">方法 + 模板<br>定义"怎么做"</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>Subagent</strong>
+                        <p style="font-size: 0.9em;">执行角色<br>定义"谁来做"</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>稳定输出</strong>
+                        <p style="font-size: 0.9em;">可复用结果<br>可汇总消费</p>
+                    </div>
+                </div>
+                <p>举个例子：你在 <code>CLAUDE.md</code>（Memory）里写了"使用 TypeScript 严格模式"。你在 code-review Skill 里定义了"按安全性、质量、可维护性三个维度审查，输出参考 finding-template.md"。然后你让一个 subagent（只读权限的审查专家）去执行这个 Skill。</p>
+                <table>
+                    <thead><tr><th>角色</th><th>做什么</th><th>例子</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Memory</strong></td><td>定义"应该怎样"（约束）</td><td>"使用 TypeScript 严格模式"</td></tr>
+                        <tr><td><strong>Skill</strong></td><td>定义"怎么做"（方法 + 模板）</td><td>审查步骤 + 审查模板</td></tr>
+                        <tr><td><strong>Subagent</strong></td><td>定义"谁来做"（角色）</td><td>安全审查专家</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>一句话记住：</strong>Memory 是约束底座，Skill 是方法手册，Subagent 是执行角色。三者配合 = 稳定的、高质量的、可复用的输出。
+                </div>
+            </div>
+        </section>
+
+        <!-- Skills vs 其他功能 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>功能对比</h2>
+                <h4>Skills、Slash Commands、Subagents、Hooks 各有分工</h4>
+                <table>
+                    <thead><tr><th>功能</th><th>触发方式</th><th>核心定位</th><th>适合场景</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Skills</strong></td><td>自动 / 半自动 / <code>/</code> 手动</td><td>可复用的能力包</td><td>流程标准化、输出模板化</td></tr>
+                        <tr><td><strong>Slash Commands</strong></td><td>手动 <code>/command</code></td><td>快捷入口</td><td>一键执行固定操作</td></tr>
+                        <tr><td><strong>Subagents</strong></td><td>Claude 自动委派</td><td>隔离执行角色</td><td>并行任务、独立上下文</td></tr>
+                        <tr><td><strong>Hooks</strong></td><td>事件触发（提交前、工具调用前等）</td><td>自动化钩子</td><td>校验、拦截、自动化流程</td></tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>选择逻辑</h4>
+                        <ul>
+                            <li>需要<strong>复用 + 模板</strong> → Skill</li>
+                            <li>只需要<strong>一个入口</strong> → Slash Command（现在推荐用 Skill 做）</li>
+                            <li>需要<strong>隔离上下文</strong> → Subagent</li>
+                            <li>需要在<strong>特定事件自动执行</strong> → Hook</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>组合使用</h4>
+                        <p>最强大的做法是<strong>组合</strong>：Skill 定义方法，Subagent 执行，Hook 在提交前自动触发 Skill 做检查。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 在 Subagent 中运行 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>隔离运行</h2>
+                <h4>某些 Skill 适合在 Subagent 的隔离上下文中运行</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么需要隔离</h4>
+                        <ul>
+                            <li><strong>降低主会话干扰</strong>：审查、分析等只读 Skill 不需要污染主对话历史</li>
+                            <li><strong>独立权限控制</strong>：Subagent 可以有更窄的工具白名单</li>
+                            <li><strong>并行执行</strong>：多个 Skill 同时跑，互不影响</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>典型场景</h4>
+                        <ul>
+                            <li>代码审查 → 让审查 Subagent 运行 code-review Skill</li>
+                            <li>安全扫描 → 隔离环境运行，结果汇总回主会话</li>
+                            <li>文档生成 → 独立上下文避免和代码实现混淆</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>做法：</strong>在 SKILL.md 的 <code>agent</code> 字段或 <code>context</code> 字段中指定运行环境。详细配置见<a href="./04-subagents.html">下一章 Subagents</a>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 安全注意事项 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全守则</h2>
+                <h4>Skill 涉及自动执行，安全意识必须到位</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>不要硬编码密钥</h4>
+                        <p>Skill 文件会进入 Git 仓库，<strong>绝对不能</strong>把 API Key、数据库密码等写死在 SKILL.md 或脚本里。用环境变量或 <code>!`echo $API_KEY`</code> 动态注入。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>副作用操作保持用户触发</h4>
+                        <p>部署、删除、发邮件等有副作用的操作，必须设置 <code>disable-model-invocation: true</code>，确保只有用户明确要求时才执行。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>给自动触发设清晰边界</h4>
+                        <p>自动触发的 Skill 要有<strong>明确的触发范围</strong>——通过精确的 <code>description</code> 和 <code>allowed-tools</code> 白名单，防止 Claude 在不相关的场景滥用。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>安全检查清单：</strong>每次新建或修改 Skill 时，问自己三个问题——有没有密钥泄露风险？有没有未限制的副作用操作？自动触发的范围是否足够精确？
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>SKILL.md 太长</h4>
+                        <p><strong>症状：</strong>SKILL.md 超过 500 行，Claude 执行时容易丢重点。</p>
+                        <p><strong>修复：</strong>把模板拆到 <code>templates/</code>，参考资料拆到 <code>references/</code>。SKILL.md 只保留触发条件、执行步骤和输出格式说明。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>占位符不明确</h4>
+                        <p><strong>症状：</strong>模板里写了 <code>{data}</code>，Claude 填出来的东西完全不对。</p>
+                        <p><strong>修复：</strong>把 <code>{data}</code> 改成 <code>{user_id: string}</code>，给占位符加类型说明和示例值。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>description 太模糊</h4>
+                        <p><strong>症状：</strong>Claude 在不相关的场景也自动激活了这个 Skill。</p>
+                        <p><strong>修复：</strong>把 "做审查" 改成 "对代码变更进行安全性、可维护性、代码质量三维度审查"。越具体，触发越精准。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>把项目细节写死了</h4>
+                        <p><strong>症状：</strong>Skill 里硬编码了特定项目的配置路径，换个项目就报错。</p>
+                        <p><strong>修复：</strong>把项目相关配置放到 <code>CLAUDE.md</code>（Memory），Skill 只保留通用方法论。用 <code>$ARGUMENTS</code> 和 <code>!`cmd`</code> 动态获取项目信息。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>Skill 没有触发</h4>
+                        <p><strong>症状：</strong>输入了相关指令，但 Claude 没有调用 Skill。</p>
+                        <p><strong>修复：</strong>① 检查 <code>description</code> 是否足够具体；② 检查目录是否在 Claude 可见范围内（<code>.claude/skills/</code>）；③ 检查是否被更高优先级的 Skill 覆盖。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>Skill 触发太频繁</h4>
+                        <p><strong>症状：</strong>Claude 在不相关的场景也自动激活了这个 Skill。</p>
+                        <p><strong>修复：</strong>收紧 <code>description</code>，增加约束条件，用更具体的触发词。例如把"做审查"改成"对 PR 变更进行代码质量审查"。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>看不到全部 Skills</h4>
+                        <p><strong>症状：</strong>输入 <code>/skills</code> 看到的列表比预期少。</p>
+                        <p><strong>修复：</strong>① 检查路径是否正确（项目级 vs 个人级）；② 检查文件权限；③ 重新加载会话让 Claude 重新扫描。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>做一个最小 PR Review Skill</h4>
+                <p>停下来，自己动手做一个。只有你自己写出来的 Skill，才是你的。</p>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>最小版本</h3>
+                        <ul>
+                            <li>创建 Skill 目录结构</li>
+                            <li>写一个 SKILL.md，包含触发条件、审查维度、输出格式</li>
+                            <li>创建 1 个审查发现模板文件</li>
+                            <li>确认 <code>/pr-review</code> 能触发</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>进阶挑战</h3>
+                        <ul>
+                            <li>加一个 <code>references/review-checklist.md</code></li>
+                            <li>用 <code>!`git diff --stat main...HEAD`</code> 注入变更统计</li>
+                            <li>思考：这个 Skill 该不该设 <code>disable-model-invocation</code>？</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>先只做最小版本——SKILL.md + 一个模板文件。跑通之后再加参考资料和上下文注入。不要一口气写太多。关于进阶挑战中的 <code>disable-model-invocation</code>：想一想 PR 审查有没有副作用——如果没有，设不设都行；如果 Skill 会自动提交评论或修改文件，设为 <code>true</code> 更安全。
+                </div>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <h4>一种可行的 pr-review Skill 写法</h4>
+                <pre><code><span style="color: var(--text-muted);"># 文件：.claude/skills/pr-review/SKILL.md</span>
+
+---
+name: pr-review
+description: 对 PR 进行安全和质量审查
+argument-hint: "[pr-number]"
+allowed-tools: Bash(git *), Read, Grep
+---
+
+# PR Review
+
+## 触发条件
+当用户请求 PR 审查、代码变更审查时自动激活。
+
+## 上下文
+- 当前分支：!`git branch --show-current`
+- 变更统计：!`git diff --stat main...HEAD`
+
+## 执行步骤
+1. 获取变更文件列表和 diff
+2. 按审查维度逐项检查
+3. 按严重程度分类发现
+4. 使用 templates/finding-template.md 格式化输出
+
+## 审查维度
+1. 安全性（输入验证、权限、敏感数据）
+2. 代码质量（命名、结构、可读性）
+3. 测试覆盖（是否有对应测试）
+
+## 输出格式
+参考 templates/finding-template.md</code></pre>
+                <pre><code><span style="color: var(--text-muted);"># 文件：.claude/skills/pr-review/templates/finding-template.md</span>
+
+## 审查结果
+
+### {severity_emoji} [{severity}] {title}
+- **文件**: {file}
+- **行**: {line}
+- **问题**: {issue}
+- **建议**: {fix}
+
+---
+**审查统计**: 🔴 {high} | 🟡 {medium} | 🟢 {low}</code></pre>
+                <div class="key-point">
+                    <strong>别直接照抄：</strong>重点不是这段文本，而是你能不能解释——为什么触发条件要写具体？为什么模板要拆成独立文件？为什么 <code>allowed-tools</code> 只给了 <code>git *</code>、<code>Read</code>、<code>Grep</code> 而不是全部权限？
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>从"每次重新描述"到"一键复用稳定输出"</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>说清 Skill 由哪些文件构成、各自职责</li>
+                            <li>理解渐进式加载为什么重要</li>
+                            <li>创建一个带模板的最小 Skill</li>
+                            <li>判断"这个需求该做 Skill 还是做 Command"</li>
+                            <li>理解 Skill 在 Memory → Skill → Subagent 链路中的定位</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>它和前后章节的关系</h4>
+                        <ul>
+                            <li><a href="./02-memory.html">Memory</a> — 为 Skill 提供约束底座</li>
+                            <li><strong>Skills</strong> — 定义"怎么做"和"输出长什么样"</li>
+                            <li><a href="./04-subagents.html">Subagents</a> — 把 Skill 交给专门的执行角色</li>
+                            <li><a href="./07-plugins.html">Plugins</a> — 把多个 Skill 打包成可安装方案</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Skill 是"方法论 + 模板"的固化。好的 Skill = 具体的触发条件 + 清晰的执行步骤 + 可复用的输出模板。你今天写好的第一个 code-review Skill，可能就是下周团队每个人都在用的标准流程。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./04-subagents.html">下一章：Subagents</a> — 把 Skill 交给专门的执行角色</li>
+                            <li><a href="./01-slash-commands.html">Slash Commands</a> — Skill 的入口机制</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章源文件 <span style="font-weight:normal;font-size:0.85em;color:var(--text-muted);">（点击查看完整内容）</span></h4>
+                        <ul>
+                            <li><code><a href="#" class="md-link" data-md="README">README.md</a></code> — 完整技能配置指南</li>
+                            <li><code>03-skills/</code> 目录 — code-review、refactor、blog-draft 等示例 Skill</li>
+                            <li>建议先看 <code>blog-draft/</code>（最简单），再看 <code>code-review/</code></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- README 弹窗 -->
+    <style>
+        .md-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .md-modal-overlay.active {
+            display: flex;
+        }
+        .md-modal {
+            background: var(--surface-color, #fff);
+            border-radius: 12px;
+            width: min(720px, 92vw);
+            max-height: 82vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+            animation: md-modal-in 0.2s ease-out;
+        }
+        @keyframes md-modal-in {
+            from { opacity: 0; transform: translateY(20px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .md-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
+        }
+        .md-modal-header h3 {
+            margin: 0;
+            font-size: 1.05em;
+            font-family: var(--font-mono, monospace);
+            color: var(--accent-color, #8A4A12);
+        }
+        .md-modal-close {
+            background: none;
+            border: none;
+            font-size: 1.6em;
+            line-height: 1;
+            cursor: pointer;
+            color: var(--text-color, #333);
+            padding: 0 4px;
+            border-radius: 4px;
+        }
+        .md-modal-close:hover {
+            background: var(--code-bg-color, #f3f4f6);
+        }
+        .md-modal-body {
+            padding: 20px 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .md-modal-body pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.88em;
+            line-height: 1.65;
+            color: var(--text-color, #333);
+            font-family: var(--font-mono, monospace);
+        }
+        .md-modal-body .md-loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted, #888);
+        }
+        a.md-link {
+            color: var(--code-text-color, #0B598E);
+            text-decoration: none;
+            border-bottom: 1px dashed var(--code-text-color, #0B598E);
+            cursor: pointer;
+        }
+        a.md-link:hover {
+            color: var(--primary-color, #D06519);
+            border-bottom-color: var(--primary-color, #D06519);
+        }
+    </style>
+
+    <div class="md-modal-overlay" id="md-modal-overlay">
+        <div class="md-modal">
+            <div class="md-modal-header">
+                <h3 id="md-modal-title"></h3>
+                <button class="md-modal-close" id="md-modal-close">&times;</button>
+            </div>
+            <div class="md-modal-body">
+                <div class="md-loading" id="md-modal-loading">加载中…</div>
+                <pre id="md-modal-content" style="display:none;"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        var overlay = document.getElementById('md-modal-overlay');
+        var titleEl = document.getElementById('md-modal-title');
+        var contentEl = document.getElementById('md-modal-content');
+        var loadingEl = document.getElementById('md-modal-loading');
+        var closeBtn = document.getElementById('md-modal-close');
+
+        var cache = {};
+
+        function openModal(name) {
+            titleEl.textContent = name + '.md';
+            contentEl.style.display = 'none';
+            loadingEl.style.display = 'block';
+            overlay.classList.add('active');
+
+            if (cache[name]) {
+                showContent(cache[name]);
+                return;
+            }
+
+            fetch('./03-skills/' + name + '.md')
+                .then(function(r) {
+                    if (!r.ok) throw new Error('Not found');
+                    return r.text();
+                })
+                .then(function(text) {
+                    cache[name] = text;
+                    showContent(text);
+                })
+                .catch(function() {
+                    loadingEl.textContent = '加载失败，请确认文件存在。';
+                });
+        }
+
+        function showContent(text) {
+            contentEl.textContent = text;
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+        }
+
+        function closeModal() {
+            overlay.classList.remove('active');
+        }
+
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && overlay.classList.contains('active')) {
+                closeModal();
+            }
+        });
+
+        document.querySelectorAll('a.md-link').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                openModal(this.getAttribute('data-md'));
+            });
+        });
+    })();
+    </script>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第51章 Docker容器化 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>Docker 容器化</h1>
+            <p>告别"在我机器上能跑"的环境噩梦</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>为什么代码在本地跑得好好的，部署到服务器就报错？为什么新同事配环境要花一整天？</h4>
+                <p>这些都是环境不一致导致的：<strong>Node 版本不同、数据库没装、环境变量没配</strong>。</p>
+                <p>Docker 把应用和它的所有依赖打包成一个<strong>容器</strong>，确保在任何环境都能一致运行。开发、测试、生产，一个镜像走天下。</p>
+            </div>
+        </section>
+
+        <!-- 核心概念 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>核心概念</h3>
+                <h4>七个 Docker 关键词</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>镜像 Image</h4>
+                        <p>只读的应用模板。类似安装光盘。</p>
+                    </div>
+                    <div class="card">
+                        <h4>容器 Container</h4>
+                        <p>镜像的运行实例。类似运行中的程序。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Dockerfile</h4>
+                        <p>构建镜像的指令文件。类似构建脚本。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Registry</h4>
+                        <p>镜像仓库。类似 npm registry。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Volume</h4>
+                        <p>持久化数据存储。类似外接硬盘。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Network</h4>
+                        <p>容器间通信网络。类似局域网。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Compose</h4>
+                        <p>多容器编排工具。管理一组容器。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Docker vs 虚拟机 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Docker vs 虚拟机</h3>
+                <h4>轻量级的进程隔离</h4>
+                <table>
+                    <thead><tr><th>特性</th><th>Docker 容器</th><th>虚拟机</th></tr></thead>
+                    <tbody>
+                        <tr><td>启动速度</td><td>秒级</td><td>分钟级</td></tr>
+                        <tr><td>资源占用</td><td>MB 级别</td><td>GB 级别</td></tr>
+                        <tr><td>性能</td><td>接近原生</td><td>有虚拟化开销</td></tr>
+                        <tr><td>镜像大小</td><td>几十到几百 MB</td><td>通常几 GB</td></tr>
+                        <tr><td>单机密度</td><td>数百个</td><td>几个到几十个</td></tr>
+                    </tbody>
+                </table>
+                <p>这个比喻只是为了帮你建立直观感受：虚拟机像整栋别墅，容器像合租公寓的一个房间。实际上容器共享宿主内核，只是进程级别的隔离。</p>
+            </div>
+        </section>
+
+        <!-- 容器架构图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>容器架构</h3>
+                <h4>Docker 如何在宿主系统上运行容器</h4>
+                <pre class="mermaid">
+graph TB
+    subgraph 宿主系统
+        subgraph Docker Engine
+            subgraph 容器1["容器: Node.js App"]
+                A1[Express 服务器]
+                A2[应用代码]
+            end
+            subgraph 容器2["容器: PostgreSQL"]
+                B1[数据库进程]
+                B2[数据文件]
+            end
+            subgraph 容器3["容器: Redis"]
+                C1[缓存进程]
+            end
+        end
+        D[Docker Daemon]
+    end
+    E[客户端: docker / docker compose]
+    E -->|API 请求| D
+    D --> 容器1
+    D --> 容器2
+    D --> 容器3
+    容器1 ---|Network| 容器2
+    容器1 ---|Network| 容器3
+    容器2 -.->|Volume 持久化| B2
+                </pre>
+            </div>
+        </section>
+
+        <!-- 安装与验证 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>安装与验证</h3>
+                <h4>三步搞定 Docker 环境</h4>
+                <pre><code class="language-bash"># macOS / Windows: 下载 Docker Desktop
+# https://www.docker.com/products/docker-desktop
+
+# Ubuntu / Debian:
+$ sudo apt-get update
+$ sudo apt-get install -y docker-ce docker-ce-cli docker-compose-plugin
+
+# 验证安装
+$ docker --version
+Docker version 24.x.x
+
+$ docker run hello-world
+Hello from Docker!</code></pre>
+            </div>
+        </section>
+
+        <!-- 常用命令 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常用命令</h3>
+                <h4>日常开发最常用的 Docker 命令</h4>
+                <pre><code class="language-bash"># 镜像管理
+$ docker pull node:20-alpine        # 拉取镜像
+$ docker images                      # 列出本地镜像
+$ docker build -t my-app:latest .    # 构建镜像
+
+# 容器管理
+$ docker run -d -p 3000:3000 --name my-app my-app:latest
+$ docker ps                          # 查看运行中容器
+$ docker logs -f my-app              # 实时查看日志
+$ docker exec -it my-app sh          # 进入容器终端
+
+# 清理
+$ docker system prune                # 清理未使用资源
+$ docker volume prune                # 清理未使用卷</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 1: Dockerfile -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: Dockerfile</h2>
+                <p>用多阶段构建打造精简的生产镜像。</p>
+            </div>
+        </section>
+
+        <!-- 多阶段构建 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>多阶段构建</h3>
+                <h4>构建和运行分离，镜像体积缩小 80%</h4>
+                <pre><code class="language-dockerfile"># 第一阶段：构建
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# 第二阶段：运行
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+# 创建非 root 用户
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 appuser
+
+# 只复制构建产物
+COPY --from=builder --chown=appuser:nodejs /app/dist ./dist
+COPY --from=builder --chown=appuser:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=appuser:nodejs /app/package.json ./
+
+USER appuser
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+
+CMD ["node", "dist/index.js"]</code></pre>
+            </div>
+        </section>
+
+        <!-- 构建效果对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>构建效果对比</h3>
+                <h4>多阶段构建的收益一目了然</h4>
+                <table>
+                    <thead><tr><th>方式</th><th>镜像大小</th><th>包含内容</th><th>安全性</th></tr></thead>
+                    <tbody>
+                        <tr><td>单阶段无优化</td><td>~1.2 GB</td><td>源码 + devDeps + 工具</td><td>低</td></tr>
+                        <tr><td>多阶段构建</td><td>~180 MB</td><td>编译产物 + prod 依赖</td><td>高</td></tr>
+                        <tr><td>多阶段 + standalone</td><td>~80 MB</td><td>仅运行时文件</td><td>最高</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>永远不要在镜像中硬编码密钥。</strong>使用 <code>-e</code> 参数或 Docker Secrets 传递敏感配置。确保 <code>.env</code> 在 <code>.dockerignore</code> 中。
+                </div>
+            </div>
+        </section>
+
+        <!-- .dockerignore -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>.dockerignore</h3>
+                <h4>排除不需要的文件，加速构建</h4>
+                <pre><code class="language-plaintext">node_modules
+npm-debug.log
+dist
+.git
+.env
+.env.local
+README.md
+.vscode
+coverage
+Dockerfile
+docker-compose*.yml
+.DS_Store
+tmp</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 2: Docker Compose -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: Compose 编排</h2>
+                <p>一个命令启动 Node + PostgreSQL + Redis 全套环境。</p>
+            </div>
+        </section>
+
+        <!-- docker-compose.yml -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Compose 编排</h3>
+                <h4>三个服务，一个文件搞定</h4>
+                <pre class="mermaid">
+graph LR
+    subgraph Docker Compose
+        N[Nginx :80] --> A[Node.js App :3000]
+        A --> DB[(PostgreSQL :5432)]
+        A --> R[(Redis :6379)]
+    end
+    U[用户] --> N
+                </pre>
+                <pre><code class="language-yaml"># docker-compose.yml
+services:
+  app:
+    build: .
+    ports: ["3000:3000"]
+    environment:
+      - DATABASE_URL=postgresql://postgres:secret@db:5432/myapp
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: myapp
+      POSTGRES_PASSWORD: secret
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+
+  redis:
+    image: redis:7-alpine
+    volumes: [redis-data:/data]
+
+volumes:
+  postgres-data:
+  redis-data:</code></pre>
+            </div>
+        </section>
+
+        <!-- 开发环境覆盖 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>开发环境覆盖</h3>
+                <h4>同一个项目，不同环境不同配置</h4>
+                <pre><code class="language-yaml"># docker-compose.override.yml（开发自动加载）
+services:
+  app:
+    command: npm run dev
+    volumes:
+      - .:/app               # 挂载源码（热重载）
+      - /app/node_modules    # 不覆盖容器依赖
+    environment:
+      - NODE_ENV=development
+    ports:
+      - "3000:3000"
+      - "9229:9229"          # 调试端口</code></pre>
+                <pre><code class="language-bash">$ docker compose up -d              # 启动所有服务
+$ docker compose logs -f app        # 查看 app 日志
+$ docker compose exec db psql -U postgres -d myapp
+$ docker compose down               # 停止所有服务</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>排错：容器问题</h3>
+                <div class="warning">
+                    <strong>症状：</strong>容器启动后立刻退出，<code>docker ps</code> 看不到。
+                    <br><strong>原因：</strong>应用启动报错（如连不上数据库），进程退出导致容器停止。
+                    <br><strong>修复：</strong>用 <code>docker logs my-app</code> 查看退出日志；确保 <code>depends_on</code> 配了 <code>condition: service_healthy</code>。
+                </div>
+                <pre><code class="language-bash"># 查看退出容器的日志
+$ docker ps -a                     # 看所有容器（含已停止的）
+$ docker logs my-app               # 查看崩溃原因
+$ docker compose logs app          # Compose 方式查看</code></pre>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：为你的 Node.js 应用编写一个多阶段 Dockerfile，要求使用 Alpine 基础镜像、非 root 用户运行。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-dockerfile">FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+RUN adduser -D appuser
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+USER appuser
+EXPOSE 3000
+CMD ["node", "dist/index.js"]</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：编写 <code>docker-compose.yml</code>，包含 Node.js 应用和 Redis 两个服务，应用通过环境变量连接 Redis。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-yaml">services:
+  app:
+    build: .
+    ports: ["3000:3000"]
+    environment:
+      - REDIS_URL=redis://redis:6379
+  redis:
+    image: redis:7-alpine</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>Docker 让应用可以一致地运行在任何环境。下一章我们学习 <strong>CI/CD</strong>——让代码推送到 main 分支后自动构建、测试、部署。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

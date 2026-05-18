@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第48章 GraphQL - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>GraphQL</h1>
+            <p>让客户端精准获取所需数据的查询语言</p>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>为什么移动端只要用户名，接口却返回了整个用户对象？为什么查用户和他的文章要发两次请求？</h4>
+                <p>这是 REST API 的典型痛点：<strong>过度获取</strong>和<strong>获取不足</strong>。</p>
+                <p>GraphQL 就是为了解决这些问题而生的。它让客户端像点菜一样，<strong>要什么字段就写什么字段</strong>，一个请求拿完所有数据。</p>
+            </div>
+        </section>
+
+        <!-- REST vs GraphQL -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>REST vs GraphQL</h3>
+                <h4>两种 API 设计理念的全面对比</h4>
+                <table>
+                    <thead><tr><th>特性</th><th>REST</th><th>GraphQL</th></tr></thead>
+                    <tbody>
+                        <tr><td>端点数量</td><td>多个（每资源一个 URL）</td><td>单个端点（/graphql）</td></tr>
+                        <tr><td>数据获取</td><td>固定结构</td><td>客户端指定字段</td></tr>
+                        <tr><td>关联数据</td><td>需要多次请求</td><td>一次请求嵌套获取</td></tr>
+                        <tr><td>版本管理</td><td>v1, v2, v3...</td><td>无版本，持续演进</td></tr>
+                        <tr><td>文档</td><td>需单独维护</td><td>Schema 即文档</td></tr>
+                        <tr><td>缓存</td><td>HTTP 缓存天然支持</td><td>需额外策略</td></tr>
+                    </tbody>
+                </table>
+                <p>这个比喻只是为了帮你建立直观感受：REST 像去食堂打饭，菜品已经配好；GraphQL 像去自助餐，想吃什么自己选。实际上 GraphQL 底层是强类型查询引擎，比 REST 更复杂。</p>
+            </div>
+        </section>
+
+        <!-- 三种核心操作 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三种核心操作</h3>
+                <h4>查询、变更、订阅</h4>
+                <p><strong>Query</strong>（查询）读数据，<strong>Mutation</strong>（变更）写数据，<strong>Subscription</strong>（订阅）实时推送。</p>
+                <pre><code class="language-graphql"># 查询：获取用户和他的文章
+query GetUserInfo {
+  user(id: 1) {
+    name
+    email
+    posts {
+      title
+      createdAt
+    }
+  }
+}
+
+# 变更：创建文章
+mutation CreatePost {
+  createPost(input: {
+    title: "我的第一篇"
+    content: "Hello GraphQL!"
+  }) {
+    id
+    title
+  }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Schema 定义语言 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Schema 定义语言</h3>
+                <h4>用 SDL 描述你的数据模型</h4>
+                <p><strong>Schema</strong> 是 GraphQL 的类型系统，定义了数据的形状和可执行的操作。</p>
+                <pre><code class="language-graphql">type User {
+  id: ID!
+  email: String!
+  name: String!
+  role: Role!
+  posts(status: PostStatus): [Post!]!
+  createdAt: DateTime!
+}
+
+enum Role {
+  ADMIN
+  EDITOR
+  USER
+}
+
+type Query {
+  user(id: ID!): User
+  users(limit: Int = 20): [User!]!
+}
+
+type Mutation {
+  createPost(input: CreatePostInput!): Post!
+}</code></pre>
+                <div class="intro-block">
+                    <p><code>!</code> 标记表示字段不可为 null。谨慎使用——一旦标记，该字段查询失败会导致整个父对象返回 null。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 完整 Schema 文件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>完整 Schema</h3>
+                <h4>一个真实项目的 schema.graphql 长什么样</h4>
+                <pre><code class="language-graphql"># src/graphql/schema.graphql
+
+scalar DateTime @scalar(class: "DateTime")
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+type Post {
+  id: ID!
+  title: String!
+  content: String!
+  status: PostStatus!
+  author: User!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type User {
+  id: ID!
+  name: String!
+  email: String!
+  posts(status: PostStatus): [Post!]!
+}
+
+input CreatePostInput {
+  title: String!
+  content: String!
+  status: PostStatus = DRAFT
+}
+
+input UpdatePostInput {
+  title: String
+  content: String
+  status: PostStatus
+}
+
+type Query {
+  me: User
+  user(id: ID!): User
+  posts(first: Int = 20, after: String): PostConnection!
+}
+
+type Mutation {
+  createPost(input: CreatePostInput!): Post!
+  updatePost(id: ID!, input: UpdatePostInput!): Post!
+  deletePost(id: ID!): Boolean!
+}</code></pre>
+                <div class="intro-block">
+                    <p><code>Input</code> 类型专用于 Mutation 参数，和 <code>type</code> 分开是因为输入和输出结构经常不同。<code>DateTime</code> 是自定义标量，需在服务端注册对应的解析器。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 1: Apollo Server -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: Apollo Server</h2>
+                <h4>搭建类型安全的 GraphQL 服务端</h4>
+                <p>从安装 Apollo Server 到编写 Query、Mutation、Subscription 的 Resolver。这部分涵盖了服务端开发的完整链路：定义 Schema、解析请求、启动服务器。</p>
+            </div>
+        </section>
+
+        <!-- 安装与 Context -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>安装与 Context</h3>
+                <h4>搭建 GraphQL 服务的第一步</h4>
+                <pre><code class="language-bash">$ npm install @apollo/server graphql
+$ npm install -D @types/node</code></pre>
+                <pre><code class="language-typescript">// src/graphql/context.ts
+import { Request, Response } from 'express';
+import { PrismaClient } from '@prisma/client';
+
+export interface GraphQLContext {
+  prisma: PrismaClient;
+  currentUser: { userId: number; role: string } | null;
+  req: Request;
+  res: Response;
+}
+
+export function createContext(prisma: PrismaClient) {
+  return async ({ req, res }: { req: Request; res: Response }) => {
+    const authHeader = req.headers.authorization;
+    let currentUser = null;
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      currentUser = verifyAccessToken(token);
+    }
+    return { prisma, currentUser, req, res };
+  };
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Resolver 实现 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Resolver 实现</h3>
+                <h4>每个字段都可以有自己的解析函数</h4>
+                <pre><code class="language-typescript">// src/graphql/resolvers/user.resolver.ts
+export const userResolvers = {
+  Query: {
+    me: async (_: any, __: any, ctx: GraphQLContext) => {
+      if (!ctx.currentUser) {
+        throw new GraphQLError('未认证', {
+          extensions: { code: 'UNAUTHENTICATED' },
+        });
+      }
+      return ctx.prisma.user.findUnique({
+        where: { id: ctx.currentUser.userId },
+      });
+    },
+    users: async (_: any, { limit, offset }, ctx) => {
+      return ctx.prisma.user.findMany({
+        take: limit, skip: offset,
+        select: { id: true, name: true, email: true,
+                  password: false },
+      });
+    },
+  },
+  User: {
+    posts: async (parent, { status }, ctx) => {
+      return ctx.prisma.post.findMany({
+        where: { authorId: parent.id, ...status },
+      });
+    },
+  },
+};</code></pre>
+            </div>
+        </section>
+
+        <!-- Mutation Resolver -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Mutation Resolver</h3>
+                <h4>增删改的 Resolver 怎么写</h4>
+                <p>Mutation 负责写数据。关键是做好<strong>输入校验</strong>和<strong>权限检查</strong>——谁能改什么，必须在 Resolver 里卡住。</p>
+                <pre><code class="language-typescript">// src/graphql/resolvers/post.resolver.ts
+export const postResolvers = {
+  Mutation: {
+    createPost: async (_, { input }, ctx) => {
+      if (!ctx.currentUser) {
+        throw new GraphQLError('请先登录', {
+          extensions: { code: 'UNAUTHENTICATED' },
+        });
+      }
+      return ctx.prisma.post.create({
+        data: {
+          title: input.title,
+          content: input.content,
+          authorId: ctx.currentUser.userId,
+        },
+      });
+    },
+    updatePost: async (_, { id, input }, ctx) => {
+      const post = await ctx.prisma.post.findUnique({ where: { id } });
+      if (!post) throw new GraphQLError('文章不存在');
+      if (post.authorId !== ctx.currentUser?.userId) {
+        throw new GraphQLError('只能修改自己的文章', {
+          extensions: { code: 'FORBIDDEN' },
+        });
+      }
+      return ctx.prisma.post.update({
+        where: { id }, data: input,
+      });
+    },
+    deletePost: async (_, { id }, ctx) => {
+      const post = await ctx.prisma.post.findUnique({ where: { id } });
+      if (!post) throw new GraphQLError('文章不存在');
+      if (post.authorId !== ctx.currentUser?.userId
+          && ctx.currentUser?.role !== 'ADMIN') {
+        throw new GraphQLError('没有删除权限', {
+          extensions: { code: 'FORBIDDEN' },
+        });
+      }
+      await ctx.prisma.post.delete({ where: { id } });
+      return true;
+    },
+  },
+};</code></pre>
+            </div>
+        </section>
+
+        <!-- 服务器启动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>启动服务器</h3>
+                <h4>将 Schema 和 Resolver 组装起来</h4>
+                <pre><code class="language-typescript">// src/server.ts
+import { ApolloServer } from '@apollo/server';
+import { expressMiddleware } from '@apollo/server/express4';
+import express from 'express';
+import cors from 'cors';
+
+const typeDefs = fs.readFileSync(
+  path.join(__dirname, './graphql/schema.graphql'), 'utf-8'
+);
+
+const resolvers = {
+  Query: { ...userResolvers.Query, ...postResolvers.Query },
+  Mutation: { ...postResolvers.Mutation },
+  User: userResolvers.User,
+  Post: postResolvers.Post,
+};
+
+const server = new ApolloServer({ typeDefs, resolvers });
+await server.start();
+
+app.use('/graphql', cors(), express.json(),
+  expressMiddleware(server, {
+    context: createContext(prisma),
+  })
+);
+await httpServer.listen({ port: 3000 });</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 1.5: Subscription -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实时数据：Subscription</h2>
+                <h4>用 WebSocket 推送实时更新</h4>
+                <p>Query 拉数据，Mutation 推一次，Subscription 持续推。聊天室、实时通知、协作编辑，都需要 Subscription。它底层走 WebSocket，服务端数据一变，客户端立刻收到。</p>
+            </div>
+        </section>
+
+        <!-- Subscription Schema & Server -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Subscription 服务端</h3>
+                <h4>Schema 定义与 PubSub 事件发布</h4>
+                <pre><code class="language-graphql"># Schema 新增
+type Subscription {
+  messageAdded(roomId: ID!): Message!
+}
+
+type Message {
+  id: ID!
+  content: String!
+  sender: User!
+  createdAt: DateTime!
+}</code></pre>
+                <pre><code class="language-typescript">// src/graphql/pubsub.ts
+// 生产环境应替换为 Redis PubSub（如 graphql-redis-subscriptions）
+import { PubSub } from 'graphql-subscriptions';
+export const pubsub = new PubSub();
+
+// Mutation 中发布事件
+createMessage: async (_, { input }, ctx) => {
+  const message = await ctx.prisma.message.create({
+    data: { ...input, senderId: ctx.currentUser.userId },
+    include: { sender: true },
+  });
+  pubsub.publish('MESSAGE_ADDED', {
+    messageAdded: message,
+  });
+  return message;
+},
+
+// Subscription Resolver
+Subscription: {
+  messageAdded: {
+    subscribe: (_, { roomId }) =>
+      pubsub.asyncIterableIterator(`MESSAGE_ADDED_${roomId}`),
+  },
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Subscription 客户端 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Subscription 客户端</h3>
+                <h4>用 graphql-ws 连接实时数据流</h4>
+                <p>客户端用 <code>graphql-ws</code> 库建立 WebSocket 连接。订阅一建立，服务端每次发布事件，客户端就收到回调。</p>
+                <pre><code class="language-typescript">// 前端：graphql-ws 客户端
+import { createClient } from 'graphql-ws';
+
+const wsClient = createClient({
+  url: 'ws://localhost:3000/graphql',
+  connectionParams: () => ({
+    token: localStorage.getItem('accessToken'),
+  }),
+});
+
+// 订阅新消息
+wsClient.subscribe(
+  {
+    query: `subscription OnMessage($roomId: ID!) {
+      messageAdded(roomId: $roomId) {
+        content sender { name } createdAt
+      }
+    }`,
+    variables: { roomId: 'room-1' },
+  },
+  {
+    next: (data) => {
+      // 收到实时消息，更新 UI
+      console.log('新消息:', data.messageAdded);
+    },
+    error: (err) => console.error('订阅错误:', err),
+    complete: () => console.log('订阅结束'),
+  }
+);</code></pre>
+                <div class="intro-block">
+                    <p>服务端需安装 <code>graphql-ws</code> 并配置 WebSocketServer。Apollo Server 4 推荐用 <code>graphql-ws</code> 替代旧的 <code>subscriptions-transport-ws</code>。生产环境 PubSub 应换 Redis 方案。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错：N+1 问题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>排错：N+1 查询</h3>
+                <div class="warning">
+                    <strong>症状：</strong>一个查询产生几十甚至上百条 SQL 语句，接口响应极慢。
+                    <br><strong>原因：</strong>查询返回 N 个 Post，每个 Post 又查 author，产生 N+1 次数据库查询。
+                    <br><strong>修复：</strong>使用 DataLoader 批量加载，或在 resolver 中用 <code>include</code> 预加载关联数据。
+                </div>
+                <pre><code class="language-typescript">// 修复：在 resolver 中使用 include 预加载
+posts: async (parent, _, ctx) => {
+  return ctx.prisma.post.findMany({
+    where: { authorId: parent.id },
+    include: { author: true }, // 一次 JOIN 搞定
+  });
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- DataLoader 批量加载 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>DataLoader</h3>
+                <h4>用批量加载彻底消灭 N+1</h4>
+                <p><code>include</code> 只解决固定关联。当多个 Resolver 各自查询同一条数据时，需要 DataLoader 做 batching + caching。</p>
+                <pre><code class="language-bash">$ npm install dataloader</code></pre>
+                <pre><code class="language-typescript">// src/graphql/dataloaders.ts
+import DataLoader from 'dataloader';
+import { PrismaClient } from '@prisma/client';
+
+// 批量加载用户：传入 [1, 2, 3]，一次查回 [user1, user2, user3]
+export function createUserLoader(prisma: PrismaClient) {
+  return new DataLoader(async (ids: number[]) => {
+    const users = await prisma.user.findMany({
+      where: { id: { in: ids } },
+    });
+    const map = new Map(users.map(u => [u.id, u]));
+    return ids.map(id => map.get(id) ?? null);
+  });
+}
+
+// 挂载到 Context
+export function createContext(prisma: PrismaClient) {
+  return async ({ req, res }) => ({
+    prisma,
+    currentUser: null,
+    loaders: {
+      user: createUserLoader(prisma), // 每个请求独立实例
+    },
+    req, res,
+  });
+}
+
+// Resolver 中使用
+User: {
+  author: async (post, _, { loaders }) => {
+    return loaders.user.load(post.authorId); // 自动批量
+  },
+}</code></pre>
+                <div class="intro-block">
+                    <p>DataLoader 在单个请求内缓存。同一个请求中多次 <code>load(1)</code> 只查一次数据库。每个请求必须创建新的 DataLoader 实例。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 游标分页 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>游标分页</h3>
+                <h4>Relay 风格的连接分页</h4>
+                <p>列表数据不能一次返回全部。游标分页用 <code>edges</code> + <code>pageInfo</code> 的结构，比 offset 分页更稳定（不怕数据变动）。</p>
+                <pre><code class="language-graphql"># Schema 定义
+type Query {
+  posts(first: Int!, after: String): PostConnection!
+}
+
+type PostConnection {
+  edges: [PostEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type PostEdge {
+  node: Post!
+  cursor: String!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  endCursor: String
+}</code></pre>
+                <pre><code class="language-typescript">// Resolver 实现
+posts: async (_, { first, after }, ctx) => {
+  const cursor = after
+    ? { id: parseInt(atob(after)) } : undefined;
+  const [posts, totalCount] = await Promise.all([
+    ctx.prisma.post.findMany({
+      take: first + 1,           // 多查一条判断 hasNext
+      cursor, orderBy: { id: 'desc' },
+    }),
+    ctx.prisma.post.count(),
+  ]);
+  const hasNextPage = posts.length > first;
+  const edges = posts.slice(0, first).map(post => ({
+    node: post,
+    cursor: btoa(String(post.id)), // Base64 编码游标
+  }));
+  return {
+    edges,
+    totalCount,
+    pageInfo: {
+      hasNextPage,
+      endCursor: edges.at(-1)?.cursor ?? null,
+    },
+  };
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 2: 生产实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 生产实践</h2>
+                <h4>错误处理、认证授权、类型生成与前端集成</h4>
+                <p>写完 Schema 和 Resolver 只是第一步。真正上线还需要标准化错误、控制权限、自动生成类型。这一部分把 GraphQL 服务从"能用"推向"好用"。</p>
+            </div>
+        </section>
+
+        <!-- 错误处理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>错误处理</h3>
+                <h4>让错误信息对客户端有用</h4>
+                <p>GraphQL 默认会暴露内部错误细节。生产环境需要统一格式化错误，附加业务错误码。</p>
+                <pre><code class="language-typescript">// src/graphql/errors.ts
+import { GraphQLError } from 'graphql';
+
+export class AppError extends GraphQLError {
+  constructor(message: string, code: string, statusCode = 400) {
+    super(message, {
+      extensions: { code, http: { status: statusCode } },
+    });
+  }
+}
+
+export const formatError = (err: GraphQLError) => {
+  // 映射 Prisma 错误到业务错误
+  if (err.message.includes('Unique constraint')) {
+    return new AppError('数据已存在', 'DUPLICATE', 409);
+  }
+  // 生产环境隐藏内部错误
+  if (process.env.NODE_ENV === 'production' && !err.extensions?.code) {
+    return new AppError('服务器内部错误', 'INTERNAL_ERROR', 500);
+  }
+  return err;
+};</code></pre>
+                <div class="intro-block">
+                    <p>在 Apollo Server 中通过 <code>formatError</code> 配置项统一处理。客户端根据 <code>extensions.code</code> 做对应 UI 提示。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 认证与授权 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>认证与授权</h3>
+                <h4>谁在调用？有没有权限？</h4>
+                <p>认证（Authentication）在 Context 中完成，解析 token 拿到用户。授权（Authorization）在 Resolver 中检查。</p>
+                <pre><code class="language-typescript">// 认证：Context 工厂（回顾）
+export function createContext(prisma: PrismaClient) {
+  return async ({ req }) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const currentUser = token
+      ? verifyAccessToken(token) // JWT 验证
+      : null;
+    return { prisma, currentUser };
+  };
+}
+
+// 授权：Resolver 中的守卫
+const resolvers = {
+  Mutation: {
+    updatePost: async (_, { id, input }, ctx) => {
+      if (!ctx.currentUser) {
+        throw new AppError('请先登录', 'UNAUTHENTICATED', 401);
+      }
+      const post = await ctx.prisma.post.findUnique({ where: { id } });
+      if (post.authorId !== ctx.currentUser.userId
+          && ctx.currentUser.role !== 'ADMIN') {
+        throw new AppError('没有权限', 'FORBIDDEN', 403);
+      }
+      return ctx.prisma.post.update({ where: { id }, data: input });
+    },
+  },
+};</code></pre>
+            </div>
+        </section>
+
+        <!-- Code Generator -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>代码生成</h3>
+                <h4>Schema 改了，类型自动跟着变</h4>
+                <pre><code class="language-bash">$ npm install -D @graphql-codegen/cli
+$ npm install -D @graphql-codegen/typescript
+$ npm install -D @graphql-codegen/typescript-resolvers
+$ npm install -D @graphql-codegen/typescript-operations</code></pre>
+                <pre><code class="language-typescript">// codegen.ts
+import type { CodegenConfig } from '@graphql-codegen/cli';
+
+const config: CodegenConfig = {
+  schema: './src/graphql/schema.graphql',
+  documents: ['src/**/*.graphql'],
+  generates: {
+    'src/graphql/generated/resolvers-types.ts': {
+      plugins: ['typescript', 'typescript-resolvers'],
+    },
+    'src/graphql/generated/operations.ts': {
+      plugins: ['typescript', 'typescript-operations'],
+    },
+  },
+};
+export default config;</code></pre>
+            </div>
+        </section>
+
+        <!-- 前端客户端选择 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>前端客户端选择</h3>
+                <h4>从轻量到重量，按需选择</h4>
+                <table>
+                    <thead><tr><th>客户端</th><th>特点</th><th>适用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td>原生 fetch</td><td>零依赖</td><td>小型项目</td></tr>
+                        <tr><td>graphql-request</td><td>轻量、支持 TS</td><td>中小型项目</td></tr>
+                        <tr><td>Apollo Client</td><td>缓存、DevTools</td><td>大型 SPA</td></tr>
+                        <tr><td>urql</td><td>轻量可插拔</td><td>React 项目</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-typescript">// 轻量方案：graphql-request
+import { GraphQLClient } from 'graphql-request';
+
+const client = new GraphQLClient('http://localhost:3000/graphql', {
+  headers: () => {
+    const token = localStorage.getItem('accessToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  },
+});
+
+const data = await client.request(query, variables);</code></pre>
+            </div>
+        </section>
+
+        <!-- React 中使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>React 中使用</h3>
+                <h4>自定义 Hook 封装 GraphQL 查询</h4>
+                <pre><code class="language-typescript">// src/hooks/usePosts.ts
+export function usePosts(options = {}) {
+  const { first = 20, status } = options;
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchPosts = useCallback(async (after?: string) => {
+    setLoading(true);
+    const result = await query(GetPostsDocument, {
+      first, after, status,
+    });
+    setData(result);
+    setLoading(false);
+  }, [first, status]);
+
+  useEffect(() => { fetchPosts(); }, [fetchPosts]);
+
+  return { posts: data?.posts.edges, loading, loadMore: fetchPosts };
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错：安全问题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>排错：查询安全</h3>
+                <div class="warning">
+                    <strong>症状：</strong>服务端 CPU 飙升，数据库连接池耗尽。
+                    <br><strong>原因：</strong>客户端构造了深度嵌套的恶意查询，或一次性请求海量数据。
+                    <br><strong>修复：</strong>配置查询深度限制、复杂度限制和查询持久化。
+                </div>
+                <pre><code class="language-typescript">// 使用 depth-limiting 防止恶意嵌套
+import depthLimit from 'graphql-depth-limit';
+
+const server = new ApolloServer({
+  typeDefs, resolvers,
+  validationRules: [depthLimit(5)], // 最大嵌套深度5层
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 知识回顾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>知识回顾</h3>
+                <h4>GraphQL 全栈开发核心知识点</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Schema 设计</h4>
+                        <p>SDL 定义类型，Input 类型做校验，自定义标量扩展数据类型。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Resolver 编写</h4>
+                        <p>Query 读数据，Mutation 写数据，Subscription 推数据。每个字段一个函数。</p>
+                    </div>
+                    <div class="card">
+                        <h4>性能优化</h4>
+                        <p>DataLoader 批量加载解决 N+1，游标分页控制数据量。</p>
+                    </div>
+                    <div class="card">
+                        <h4>生产就绪</h4>
+                        <p>错误码标准化，认证放进 Context，深度限制防恶意查询。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：编写一个 GraphQL Schema，包含 <code>Book</code> 类型（id, title, author, price）和查询 <code>books</code>。</p>
+                        <pre><code class="language-graphql"># 提示：参考 User 类型的写法
+# 你的 Schema：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-graphql">type Book {
+  id: ID!
+  title: String!
+  author: String!
+  price: Float!
+}
+
+type Query {
+  books: [Book!]!
+  book(id: ID!): Book
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：为上面的 Schema 编写一个 Resolver，用内存数组模拟数据源。</p>
+                        <pre><code class="language-typescript">// 提示：用 const books = [...] 存数据
+// 你的 Resolver：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">const books = [
+  { id: '1', title: 'Node入门', author: '张三', price: 59.0 },
+  { id: '2', title: 'GraphQL实战', author: '李四', price: 79.0 },
+];
+
+export const resolvers = {
+  Query: {
+    books: () => books,
+    book: (_, { id }) => books.find(b => b.id === id),
+  },
+};</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>GraphQL 让 API 变得灵活而精确。下一章我们看看<strong>现代全栈框架</strong>——Next.js、Nuxt、Remix 如何融合前后端。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

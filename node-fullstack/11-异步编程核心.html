@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>异步编程核心 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>异步编程核心</h1>
+            <p>从回调到 Promise，理解 JavaScript 的异步世界</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>一个烧脑的问题</h3>
+                <h4>下面这段代码，输出顺序是什么？</h4>
+                <pre><code class="language-javascript">console.log("A");
+setTimeout(() => console.log("B"), 0);
+Promise.resolve().then(() => console.log("C"));
+console.log("D");</code></pre>
+                <p>如果你的答案是 <code>A B C D</code>，那你并不孤单——大多数人第一次都会猜错。</p>
+                <p>实际输出是 <code>A D C B</code>。<code>setTimeout</code> 延迟明明是 0，为什么反而最后才执行？Promise 又凭什么插队？</p>
+                <p>要回答这个问题，需要理解 JavaScript 最核心的机制：<strong>事件循环</strong>。这一章，我们把异步编程从里到外彻底搞清楚。</p>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 同步与异步</h2>
+                <h4>单线程也能同时处理很多事</h4>
+                <p>JavaScript 是单线程的，一次只能做一件事。那网络请求、文件读写这些耗时操作怎么办？如果等它完成再往下走，整个页面就冻住了。答案就是异步：先发起请求，不等着，等结果回来了再处理。这一部分先把"同步"和"异步"的区别讲透，为后面的事件循环和 Promise 打好基础。</p>
+            </div>
+        </section>
+
+        <!-- 单线程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>单线程的 JS</h3>
+                <h4>为什么一个线程能同时处理那么多请求？</h4>
+                <p><strong>单线程</strong>意味着 JavaScript 只有一个调用栈，代码一行一行执行，前面的事没做完，后面就得等。</p>
+                <p>用生活场景说：你是一个餐厅服务员，一次只能端一盘菜。如果客人点了 10 道菜，你得一道一道上，中间不能分身。</p>
+                <p>这个比喻只是为了方便理解。实际上 JS 引擎背后有浏览器的 Web API 线程池和 Node.js 的 libuv 线程池来处理耗时任务，并不是真的"一个人干所有活"。</p>
+                <pre><code class="language-javascript">// 同步——按顺序，阻塞
+console.log("1");
+console.log("2");
+console.log("3"); // 输出: 1 2 3
+
+// 异步——不阻塞后续代码
+console.log("1");
+setTimeout(() => console.log("2"), 0);
+console.log("3"); // 输出: 1 3 2</code></pre>
+            </div>
+        </section>
+
+        <!-- 为什么需要异步 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么需要异步</h3>
+                <h4>不异步，你的程序就"卡住了"</h4>
+                <p>如果所有操作都是同步的，一个网络请求要等 3 秒，整个页面就冻结 3 秒——按钮点不了，动画不动，用户体验灾难。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>网络请求</h4>
+                        <p>fetch API、AJAX 调用</p>
+                    </div>
+                    <div class="card">
+                        <h4>文件读写</h4>
+                        <p>Node.js 的 fs 模块</p>
+                    </div>
+                    <div class="card">
+                        <h4>定时器</h4>
+                        <p>setTimeout / setInterval</p>
+                    </div>
+                    <div class="card">
+                        <h4>用户事件</h4>
+                        <p>click / scroll / input</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 事件循环</h2>
+                <h4>JavaScript 异步的核心引擎</h4>
+                <p>回到开场那道题：<code>setTimeout</code> 延迟为 0 为什么最后执行？<code>Promise.then</code> 凭什么能插队？答案藏在事件循环里。它是 JavaScript 调度任务的核心机制：先跑完同步代码，再清空微任务队列，最后才取宏任务。理解了这个"同步→微任务→宏任务"的循环，任何执行顺序题都能一步步推导出来。</p>
+            </div>
+        </section>
+
+        <!-- 事件循环流程图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>事件循环全景</h3>
+                <h4>一张图看懂 JS 如何调度任务</h4>
+                <div class="ai-diagram">
+                    <h4>图：JavaScript 事件循环全景流程图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个从上到下再循环回上方的闭环流程图，包含四个核心节点：①"同步代码（Call Stack）"（蓝色）、②"检查微任务队列"（橙色）、③"执行全部微任务（Promise.then / queueMicrotask）"（绿色）、④"取出一个宏任务（setTimeout / I/O）"（红色）
+                    - 各元素关系：同步代码执行完毕 → 检查微任务队列 → 如有微任务则执行全部微任务并回到检查步骤 → 微任务清空后取出一个宏任务 → 回到同步代码执行。形成"同步→微任务→宏任务"的无限循环
+                    - 关键标注：每条箭头旁标注触发条件，如"执行完毕""有微任务""微任务清空"；在循环外围用大字标注"事件循环 Event Loop"
+                    - 配色建议：浅蓝/浅灰背景，深色文字，节点分别用蓝(#4a90d9)、橙(#f5a623)、绿(#7ed321)、红(#d0021b)填充，关键箭头用橙色标注
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>循环规则很简单：<strong>同步代码 → 清空微任务 → 取一个宏任务 → 清空微任务 → 取下一个宏任务</strong>。如此反复。</p>
+                <p>记住这个顺序，后面所有代码题都能迎刃而解。</p>
+            </div>
+        </section>
+
+        <!-- 宏任务与微任务 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>宏任务与微任务</h3>
+                <h4>两种任务，两种优先级</h4>
+                <table>
+                    <thead>
+                        <tr><th>宏任务 Macrotask</th><th>微任务 Microtask</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>setTimeout / setInterval</td><td>Promise.then / catch / finally</td></tr>
+                        <tr><td>I/O 操作</td><td>queueMicrotask()</td></tr>
+                        <tr><td>UI 渲染</td><td>MutationObserver</td></tr>
+                        <tr><td>setImmediate (Node.js)</td><td>process.nextTick (Node.js)</td></tr>
+                        <tr><td>requestAnimationFrame</td><td></td></tr>
+                    </tbody>
+                </table>
+                <p><strong>关键区别</strong>：微任务在当前宏任务结束后、下一个宏任务开始前<strong>全部执行完</strong>。所以微任务优先级高于宏任务。</p>
+            </div>
+        </section>
+
+        <!-- 事件循环详解 Mermaid -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>执行顺序详解</h3>
+                <h4>用流程图跟踪开场那道题</h4>
+                <div class="ai-diagram">
+                    <h4>图：A D C B 执行顺序追踪流程图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从左到右的水平流程图，分为三个阶段区域。第一阶段"同步阶段"（蓝色背景框）内含四个步骤：console.log('A') → 注册 setTimeout 回调 → 注册 Promise.then 回调 → console.log('D')。第二阶段"微任务阶段"（绿色背景框）包含一个节点：Promise.then 输出 C。第三阶段"宏任务阶段"（红色背景框）包含一个节点：setTimeout 输出 B
+                    - 各元素关系：同步阶段的四个步骤从左到右依次执行，同步阶段结束后进入微任务阶段执行 C，微任务清空后进入宏任务阶段执行 B。用粗箭头连接三个阶段
+                    - 关键标注：在每个阶段上方标注阶段名称和颜色含义；最终在最上方用大字展示最终输出顺序"A D C B"；在 setTimeout 和 Promise.then 注册节点旁标注"仅注册，不执行"
+                    - 配色建议：浅蓝/浅灰背景，深色文字，同步节点蓝色(#4a90d9)，微任务节点绿色(#7ed321)，宏任务节点红色(#d0021b)，阶段间箭头用橙色标注
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <pre><code class="language-javascript">// 完整执行过程
+// 1. 同步: A → D
+// 2. 微任务: C (Promise.then)
+// 3. 宏任务: B (setTimeout)
+// 输出: A D C B</code></pre>
+            </div>
+        </section>
+
+        <!-- 复杂示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>复杂示例</h3>
+                <h4>多轮循环的完整追踪</h4>
+                <pre><code class="language-javascript">console.log("script start");
+
+setTimeout(() => console.log("timeout 1"), 0);
+
+Promise.resolve()
+    .then(() => console.log("promise 1"))
+    .then(() => console.log("promise 2"));
+
+queueMicrotask(() => console.log("microtask"));
+
+setTimeout(() => console.log("timeout 2"), 0);
+
+console.log("script end");</code></pre>
+                <p>输出顺序：</p>
+                <pre><code>script start → script end → promise 1 → microtask → promise 2 → timeout 1 → timeout 2</code></pre>
+                <div class="warning">
+                    <strong>易错点</strong>：第二个 <code>.then(() => console.log("promise 2"))</code> 是在第一个 then 回调执行后才注册的，但它依然是微任务，会在当前微任务清空阶段被执行，不会等到宏任务之后。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 回调地狱</h2>
+                <h4>代码写着写着就变成了一座金字塔</h4>
+                <p>最早的异步方式是回调函数——把"完成后要做的事"以参数传进去。能用，但如果一个异步操作依赖上一个的结果呢？回调套回调，代码缩进越来越深，最终变成一座"金字塔"。错误处理分散在每一层，根本没法用 <code>try/catch</code>。先看看这个痛点有多严重，才明白后面 Promise 为什么是救星。</p>
+            </div>
+        </section>
+
+        <!-- 回调地狱 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>回调地狱</h3>
+                <h4>嵌套越来越深，代码越来越乱</h4>
+                <pre><code class="language-javascript">// 连续依赖的异步操作——"金字塔"
+getUser(userId, (err, user) => {
+    if (err) { handleError(err); return; }
+    getOrders(user.id, (err, orders) => {
+        if (err) { handleError(err); return; }
+        getOrderDetails(orders[0].id, (err, details) => {
+            if (err) { handleError(err); return; }
+            getProduct(details.productId, (err, product) => {
+                if (err) { handleError(err); return; }
+                console.log(product);
+            });
+        });
+    });
+});</code></pre>
+                <p>回调的五大痛点：</p>
+                <ul>
+                    <li><strong>嵌套过深</strong>——代码呈金字塔状，难以阅读</li>
+                    <li><strong>错误处理复杂</strong>——每层都要 if (err)</li>
+                    <li><strong>无法 return/throw</strong>——异步回调中的 return 只是退出回调</li>
+                    <li><strong>信任问题</strong>——回调可能被调用多次或不调用</li>
+                    <li><strong>无法 try/catch</strong>——异步错误捕获不到</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: Promise</h2>
+                <h4>一个"未来的值"——要么成功，要么失败</h4>
+                <p>回调地狱的解药就是 Promise。它把嵌套的回调拉平成链式的 <code>.then().then().catch()</code>，每一步返回一个新的 Promise，错误可以统一捕获。这一部分从 Promise 的三种状态讲起，到链式调用的机制，帮你彻底搞懂"一个值怎么代表未来"。</p>
+            </div>
+        </section>
+
+        <!-- Promise 状态 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Promise 三态</h3>
+                <h4>pending → fulfilled 或 rejected，不可逆</h4>
+                <p><strong>Promise</strong> 是一个对象，代表一个异步操作的最终结果。它有三种状态：</p>
+                <div class="ai-diagram">
+                    <h4>图：Promise 三态转换图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：三个圆形/圆角矩形节点，从左到右排列。左侧"pending（等待中）"节点为橙色，中间"fulfilled（已完成）"节点为绿色，下方"rejected（已拒绝）"节点为红色
+                    - 各元素关系：pending 节点通过一条标注"resolve()"的实线箭头指向 fulfilled 节点；pending 节点通过另一条标注"reject()"的实线箭头指向 rejected 节点。从 fulfilled 和 rejected 各引出一条虚线箭头回到 pending，箭头上标注"不可逆"，并用红色叉号表示状态不可回退
+                    - 关键标注：在三个节点内分别标注状态名和中文名；在 pending 上方标注"初始状态"；在 fulfilled 右侧标注".then() 可获取值"；在 rejected 下方标注".catch() 可捕获原因"；用虚线框围住 fulfilled 和 rejected 并标注"已定型 settled"
+                    - 配色建议：浅蓝/浅灰背景，深色文字，pending 橙色(#f5a623)，fulfilled 绿色(#7ed321)，rejected 红色(#d0021b)，虚线箭头用灰色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <pre><code class="language-javascript">let p = new Promise((resolve, reject) => {
+    resolve("成功");
+    resolve("再次成功"); // 被忽略，状态已确定
+});
+
+// 快捷方法
+let p1 = Promise.resolve(42);
+let p2 = Promise.reject(new Error("出错了"));</code></pre>
+            </div>
+        </section>
+
+        <!-- then/catch/finally -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>then/catch</h3>
+                <h4>链式调用，告别金字塔</h4>
+                <p>Promise 的核心能力是<strong>链式调用</strong>：每次 <code>.then()</code> 返回一个新的 Promise，可以一直链下去。</p>
+                <pre><code class="language-javascript">fetchUser(1)
+    .then(user => fetchOrders(user.id))
+    .then(orders => fetchOrderDetail(orders[0].id))
+    .then(detail => console.log(detail))
+    .catch(err => console.error("任一环节出错:", err))
+    .finally(() => console.log("请求结束"));</code></pre>
+            </div>
+        </section>
+
+        <!-- then 返回值 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>then 的返回值</h3>
+                <h4>返回普通值还是 Promise，区别在哪？</h4>
+                <pre><code class="language-javascript">Promise.resolve(1)
+    .then(val => val + 1)
+    // 返回普通值 → 自动包装为 resolved Promise
+    .then(val => Promise.resolve(val + 1))
+    // 显式返回 Promise
+    .then(val => { throw new Error("oops"); })
+    // 抛出错误 → 变为 rejected
+    .catch(err => {
+        console.log(err.message); // "oops"
+        return "recovered"; // catch 中返回值，链继续
+    })
+    .then(val => console.log(val)); // "recovered"</code></pre>
+                <div class="warning">
+                    <strong>注意</strong>：<code>.catch()</code> 会"吞掉"错误并返回一个 resolved 的 Promise。如果你希望错误继续传播，需要在 catch 中重新 <code>throw</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 5 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 组合方法</h2>
+                <h4>多个 Promise 同时运行，怎么管理？</h4>
+                <p>页面加载时需要同时请求用户信息、配置和权限——三个请求互不依赖，串行发太慢了。<code>Promise.all</code> 可以让它们并行跑，全部完成后再继续。但如果有一个失败就全盘放弃？还是想等所有结果不管成败？<code>Promise.race</code>、<code>Promise.any</code>、<code>Promise.allSettled</code> 四个方法各有适用场景，这一部分逐一讲清楚。</p>
+            </div>
+        </section>
+
+        <!-- Promise.all -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Promise.all</h3>
+                <h4>全部成功才成功，一个失败就失败</h4>
+                <pre><code class="language-javascript">let p1 = fetch("/api/users");
+let p2 = fetch("/api/posts");
+let p3 = fetch("/api/comments");
+
+Promise.all([p1, p2, p3])
+    .then(([users, posts, comments]) => {
+        console.log("全部加载完成");
+    })
+    .catch(err => console.log("有一个失败了:", err));</code></pre>
+                <p>使用场景：页面需要多个接口数据才能渲染，必须<strong>全部到齐</strong>才行。</p>
+            </div>
+        </section>
+
+        <!-- 四种静态方法对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>四种组合</h3>
+                <h4>all / allSettled / race / any 各有用途</h4>
+                <table>
+                    <thead>
+                        <tr><th>方法</th><th>成功条件</th><th>失败条件</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>Promise.all</code></td><td>全部成功</td><td>一个失败就失败</td></tr>
+                        <tr><td><code>Promise.allSettled</code></td><td>永远成功</td><td>永远不会失败</td></tr>
+                        <tr><td><code>Promise.race</code></td><td>最先完成的</td><td>最先完成的（不论成败）</td></tr>
+                        <tr><td><code>Promise.any</code></td><td>最先成功的</td><td>全部失败才失败</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-javascript">// race 实现请求超时
+Promise.race([
+    fetch("/api/data"),
+    new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("超时")), 5000)
+    )
+]);</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 6 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: Promise 化</h2>
+                <h4>把回调风格的函数"包装"成 Promise</h4>
+                <p>Node.js 早期 API 都是回调风格 <code>fs.readFile(path, (err, data) => {})</code>，没法用 <code>.then()</code> 链式调用。手动包装一个 <code>new Promise</code> 可以解决，但每个函数都写一遍太繁琐。Node.js 提供了 <code>util.promisify</code> 一键转换，理解它的原理后，你也能写出自己的 promisify 工具。</p>
+            </div>
+        </section>
+
+        <!-- 手动 promisify -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>手动 promisify</h3>
+                <h4>把回调函数包装成 Promise</h4>
+                <pre><code class="language-javascript">// 包装 delay
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+delay(1000).then(() => console.log("1秒后"));
+
+// 包装 Node.js 回调函数
+function readFilePromise(path, encoding) {
+    return new Promise((resolve, reject) => {
+        fs.readFile(path, encoding, (err, data) => {
+            if (err) reject(err);
+            else resolve(data);
+        });
+    });
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- util.promisify -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>util.promisify</h3>
+                <h4>Node.js 内置的转换工具</h4>
+                <pre><code class="language-bash">$ node</code></pre>
+                <pre><code class="language-javascript">const util = require('util');
+const fs = require('fs');
+
+const readFile = util.promisify(fs.readFile);
+readFile('data.txt', 'utf-8')
+    .then(data => console.log(data))
+    .catch(err => console.error(err));</code></pre>
+                <pre><code class="language-javascript">// 通用 promisify 实现
+function promisify(fn) {
+    return function(...args) {
+        return new Promise((resolve, reject) => {
+            fn(...args, (err, ...result) => {
+                if (err) reject(err);
+                else resolve(result.length > 1 ? result : result[0]);
+            });
+        });
+    };
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 事件循环实战 Mermaid -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>事件循环实战</h3>
+                <h4>用 Mermaid 追踪完整执行流程</h4>
+                <div class="ai-diagram">
+                    <h4>图：多轮事件循环完整执行追踪图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个纵向的详细流程图，用大虚线框标注"第1轮事件循环"。框内分为两个区域：上半部分"同步执行"（蓝色背景）包含四个步骤从上到下：console.log('script start') → 注册 setTimeout 回调（标注"放入宏任务队列"）→ 注册 Promise.then 回调（标注"放入微任务队列"）→ console.log('script end')。下半部分"微任务清空"（绿色背景）包含四个步骤：执行 promise 1 → 注册新的 Promise.then → 执行 queueMicrotask 回调 → 执行 promise 2。虚线框外部下方是红色背景的"宏任务"节点：取出并执行 timeout 1
+                    - 各元素关系：同步执行完成后箭头指向微任务清空阶段；微任务全部清空后箭头穿出虚线框指向宏任务阶段。每个节点按执行编号标注顺序（①②③...）
+                    - 关键标注：在"注册新的 Promise.then"节点旁标注易错提示："第二个 .then 在第一个 then 执行后才注册，但仍属于本轮微任务"；在宏任务节点旁标注"下一轮循环开始"
+                    - 配色建议：浅蓝/浅灰背景，深色文字，同步节点蓝色(#4a90d9)，微任务节点绿色(#7ed321)，宏任务节点红色(#d0021b)，关键箭头用橙色标注
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见异步错误</h3>
+
+                <div class="warning">
+                    <strong>不要在异步代码中凭直觉猜执行顺序。</strong> 用事件循环的规则一步步推导：先同步，再微任务，最后宏任务。
+                </div>
+
+                <h4>问题一：Promise 链中断</h4>
+                <p><strong>原因</strong>：忘记 return 内部的 Promise。</p>
+                <pre><code class="language-javascript">// 错误
+.then(user => {
+    fetchOrders(user.id); // 忘记 return！
+})
+.then(orders => console.log(orders)); // undefined
+
+// 正确
+.then(user => {
+    return fetchOrders(user.id); // 加上 return
+})</code></pre>
+
+                <h4>问题二：forEach 中的 async</h4>
+                <p><strong>原因</strong>：<code>forEach</code> 不会等待 async 回调完成。</p>
+                <pre><code class="language-javascript">// 错误：不会等待
+items.forEach(async (item) => {
+    await process(item);
+});
+
+// 正确：用 for...of
+for (let item of items) {
+    await process(item);
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- AbortController -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>取消请求</h3>
+                <h4>用 AbortController 主动终止异步操作</h4>
+                <p><code>AbortController</code> 是浏览器和 Node.js 提供的取消机制。它创建一个 <code>AbortSignal</code> 对象，可以传递给 <code>fetch</code> 等异步操作来取消它们。</p>
+                <pre><code class="language-javascript">const controller = new AbortController();
+const signal = controller.signal;
+
+// 取消 fetch 请求
+fetch('/api/data', { signal })
+    .then(res => res.json())
+    .then(data => console.log(data))
+    .catch(err => {
+        if (err.name === 'AbortError') {
+            console.log('请求已被取消');
+        }
+    });
+
+// 5 秒后自动取消
+setTimeout(() => controller.abort(), 5000);</code></pre>
+                <pre><code class="language-javascript">// 给 Promise 加超时
+function fetchWithTimeout(url, ms) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ms);
+
+    return fetch(url, { signal: controller.signal })
+        .then(res => {
+            clearTimeout(timeout);
+            return res.json();
+        })
+        .catch(err => {
+            clearTimeout(timeout);
+            if (err.name === 'AbortError') {
+                throw new Error(`请求超时（${ms}ms）`);
+            }
+            throw err;
+        });
+}</code></pre>
+                <div class="warning">
+                    <strong>易错点</strong>：<code>controller.abort()</code> 只能调用一次，调用后 <code>signal.aborted</code> 变为 <code>true</code>，所有使用该 signal 的请求都会被取消。
+                </div>
+            </div>
+        </section>
+
+        <!-- 微任务陷阱 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>微任务陷阱</h3>
+                <h4>await 和 .then 的微妙时机</h4>
+                <p><code>await</code> 后面的代码不在同步栈中执行，而是被包装成微任务。这意味着：</p>
+                <pre><code class="language-javascript">async function foo() {
+    console.log("A");
+    await Promise.resolve();
+    console.log("B"); // 这行在微任务中执行！
+}
+foo();
+console.log("C");
+// 输出: A C B（不是 A B C）</code></pre>
+                <p>多个 <code>.then</code> 的注册时机也容易让人困惑：</p>
+                <pre><code class="language-javascript">const p = Promise.resolve();
+
+p.then(() => console.log("A"));
+p.then(() => console.log("B"));
+p.then(() => console.log("C"));
+console.log("D");
+// 输出: D A B C
+// 三个 .then 各自独立注册，按注册顺序排入微任务队列</code></pre>
+                <div class="warning">
+                    <strong>挑战题</strong>：预测下面的输出顺序。
+                </div>
+                <pre><code class="language-javascript">console.log("1");
+setTimeout(() => console.log("2"), 0);
+Promise.resolve()
+    .then(() => console.log("3"))
+    .then(() => setTimeout(() => console.log("4"), 0))
+    .then(() => console.log("5"));
+(async () => {
+    console.log("6");
+    await Promise.resolve();
+    console.log("7");
+})();
+console.log("8");</code></pre>
+                <p>答案：<code>1 6 8 3 7 5 2 4</code>。推导关键：async 函数中 <code>await</code> 前的代码是同步执行的；<code>await</code> 后的代码是微任务；第二个 <code>.then</code> 注册的 <code>setTimeout</code> 要到宏任务阶段才执行。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：预测下面代码的输出顺序。</p>
+                        <pre><code class="language-javascript">console.log("start");
+setTimeout(() => console.log("timeout"), 0);
+Promise.resolve()
+    .then(() => console.log("promise 1"))
+    .then(() => console.log("promise 2"));
+console.log("end");</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code>start → end → promise 1 → promise 2 → timeout</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：用 Promise 封装一个 <code>loadImage(url)</code> 函数，图片加载成功就 resolve，失败就 reject。</p>
+                        <pre><code class="language-javascript">// 提示：用 new Image() 和 onload/onerror
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function loadImage(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(`加载失败: ${url}`));
+        img.src = url;
+    });
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：实现一个 <code>retry(fn, retries, delay)</code> 函数，在请求失败时自动重试指定次数，每次重试间隔 <code>delay</code> 毫秒。</p>
+                        <pre><code class="language-javascript">// retry(fn, retries, delay)
+// fn: 返回 Promise 的函数
+// retries: 最大重试次数
+// delay: 每次重试间隔（毫秒）
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function retry(fn, retries, delay) {
+    return fn().catch(err => {
+        if (retries <= 0) throw err;
+        console.log(`失败，${delay}ms 后重试（剩余 ${retries} 次）`);
+        return new Promise(resolve => {
+            setTimeout(resolve, delay);
+        }).then(() => retry(fn, retries - 1, delay));
+    });
+}
+
+// 使用示例
+retry(
+    () => fetch('https://api.example.com/data').then(r => r.json()),
+    3,
+    1000
+);</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>Promise 让异步代码不再嵌套，但链式调用仍然有"视觉噪声"。下一章我们学习 <strong>async/await</strong>——用同步的写法写异步代码。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模块化 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>模块化</h1>
+            <p>把代码拆成积木块，想用哪里用哪里</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>当项目越来越大</h3>
+                <h4>一个 HTML 文件塞 5000 行代码，谁来维护？</h4>
+                <pre><code class="language-html">&lt;!-- all-in-one.html --&gt;
+&lt;script&gt;
+    // 用户管理模块
+    let users = [];
+    function addUser() { /* 200 行 */ }
+    function deleteUser() { /* 150 行 */ }
+
+    // 订单管理模块
+    let orders = [];
+    function createOrder() { /* 300 行 */ }
+    function cancelOrder() { /* 200 行 */ }
+
+    // 啊——两个模块都用了 getTotal 变量名，冲突了！
+&lt;/script&gt;</code></pre>
+                <p>所有代码堆在一个文件里，变量名冲突、难以复用、改一处动全身。<strong>模块化</strong>就是解决这个问题的方案。</p>
+                <p>模块化把代码拆分成独立文件，每个文件有自己的作用域，通过 <strong>导入/导出</strong> 机制互相通信。</p>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 为什么模块化</h2>
+                <h4>在学具体语法之前，先理解模块化解决了哪些问题</h4>
+                <p>开场那个 5000 行的 HTML 文件，变量名冲突只是最表层的问题。真正的痛点是：代码之间互相纠缠、改一处牵动全身、团队协作时谁也不敢动别人的代码。模块化的核心思想很简单——每个文件是独立王国，想用别人的东西必须显式声明。先搞清楚"为什么"，后面学 import/export 才有方向感。</p>
+            </div>
+        </section>
+
+        <!-- 模块化意义 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>模块化的价值</h3>
+                <h4>五个核心好处</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>命名隔离</h4>
+                        <p>不同文件的同名变量互不干扰。</p>
+                    </div>
+                    <div class="card">
+                        <h4>依赖清晰</h4>
+                        <p>模块间的依赖关系一目了然。</p>
+                    </div>
+                    <div class="card">
+                        <h4>代码复用</h4>
+                        <p>一个模块可以被多处引用。</p>
+                    </div>
+                    <div class="card">
+                        <h4>按需加载</h4>
+                        <p>只加载需要的代码，提升性能。</p>
+                    </div>
+                    <div class="card">
+                        <h4>团队协作</h4>
+                        <p>关注点分离，并行开发不冲突。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 早期方案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>早期方案</h3>
+                <h4>IIFE——用闭包模拟模块</h4>
+                <p>在模块系统出现之前，开发者用<strong>立即执行函数表达式（IIFE）</strong>来创建独立作用域。</p>
+                <pre><code class="language-javascript">// IIFE 模式——最原始的"模块"
+const MyModule = (function() {
+    let count = 0; // 私有变量
+    function increment() { count++; }
+    return {
+        increment,
+        getCount: () => count
+    };
+})();
+
+MyModule.increment();
+console.log(MyModule.getCount()); // 1
+// console.log(count); // ReferenceError——外部访问不到</code></pre>
+                <p>它能解决命名冲突，但无法声明依赖关系，也不能按需加载。所以后来出现了真正的模块系统。</p>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: CommonJS</h2>
+                <h4>CommonJS 是 Node.js 的默认模块系统，2009 年诞生至今仍在广泛使用</h4>
+                <p>理解了模块化的动机，来看第一个真正意义上的模块系统。CommonJS 用 <code>require()</code> 导入、<code>module.exports</code> 导出，语法简单直观。它是同步加载的，所以在服务端完全没问题。你接触的绝大多数 Node.js 项目都在用它。这节掌握 CJS 的基本用法和特点，为后面对比 ESM 打好基础。</p>
+            </div>
+        </section>
+
+        <!-- CommonJS 基础 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CommonJS</h3>
+                <h4>require 与 module.exports</h4>
+                <pre><code class="language-javascript">// math.js —— 导出
+module.exports = {
+    add: (a, b) => a + b,
+    subtract: (a, b) => a - b
+};
+// 或者逐个导出
+exports.multiply = (a, b) => a * b;</code></pre>
+                <pre><code class="language-javascript">// app.js —— 导入
+const { add, subtract } = require('./math');
+const math = require('./math');
+
+console.log(add(1, 2));     // 3
+console.log(math.multiply(3, 4)); // 12</code></pre>
+                <p>CommonJS 的特点：</p>
+                <ul>
+                    <li><code>require()</code> 是同步加载</li>
+                    <li>运行时加载——代码执行时才解析依赖</li>
+                    <li>导出的是<strong>值的拷贝</strong>（基本类型）或引用（对象）</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: ESM</h2>
+                <h4>ES Module 是 JavaScript 官方的模块标准，前端和 Node.js 的推荐方案</h4>
+                <p>CommonJS 有个致命问题：它是运行时加载，打包工具没法分析哪些代码实际用到了、哪些可以删掉。ESM 是编译时解析的，静态结构让 Tree-shaking 成为可能。<code>import/export</code> 语法也更优雅。这节学 ESM 的命名导出、默认导出，以及和 CJS 的关键区别——值的实时绑定。</p>
+            </div>
+        </section>
+
+        <!-- 命名导出 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>命名导出</h3>
+                <h4>export 什么，import 什么</h4>
+                <pre><code class="language-javascript">// utils.js —— 命名导出
+export const PI = 3.14;
+export function add(a, b) { return a + b; }
+export class Calculator { /* ... */ }
+
+// 或者统一导出
+const PI = 3.14;
+function add(a, b) { return a + b; }
+export { PI, add };
+
+// 导入
+import { PI, add } from './utils.js';
+import { PI as pi, add as sum } from './utils.js'; // 重命名
+import * as utils from './utils.js';               // 全部导入
+console.log(utils.PI);</code></pre>
+            </div>
+        </section>
+
+        <!-- 默认导出 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>默认导出</h3>
+                <h4>一个模块只有一个"主角"</h4>
+                <pre><code class="language-javascript">// User.js —— 默认导出（每个模块只能有一个）
+export default class User {
+    constructor(name) { this.name = name; }
+}
+
+// 导入默认导出——不需要花括号
+import User from './User.js';
+
+// 混合使用
+export const BASE_URL = "/api";
+export function get(url) { return fetch(BASE_URL + url); }
+export default { get };
+
+// 导入混合
+import api, { BASE_URL } from './api.js';</code></pre>
+                <p>命名导出可以有很多个，用花括号导入。默认导出只有一个，直接导入。两者可以混合使用。</p>
+            </div>
+        </section>
+
+        <!-- CommonJS vs ESM 对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CJS 与 ESM 对比</h3>
+                <h4>一张表看清两种模块系统</h4>
+                <table>
+                    <thead>
+                        <tr><th>特性</th><th>CommonJS</th><th>ESM</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>导出</td><td><code>module.exports / exports</code></td><td><code>export / export default</code></td></tr>
+                        <tr><td>导入</td><td><code>require()</code></td><td><code>import</code></td></tr>
+                        <tr><td>加载时机</td><td>运行时、同步</td><td>编译时、异步</td></tr>
+                        <tr><td>值的类型</td><td>值的拷贝</td><td>值的实时绑定</td></tr>
+                        <tr><td>顶层 this</td><td><code>module.exports</code></td><td><code>undefined</code></td></tr>
+                        <tr><td>循环引用</td><td>可能拿到不完整模块</td><td>引用绑定，能获取最新值</td></tr>
+                        <tr><td>Tree-shaking</td><td>不支持</td><td>支持</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 值拷贝 vs 实时绑定 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>值拷贝与绑定</h3>
+                <h4>两者的核心区别在"变不变"</h4>
+                <pre><code class="language-javascript">// CommonJS —— 导出值的拷贝
+// counter.js
+let count = 0;
+function increment() { count++; }
+module.exports = { count, increment };
+
+// app.js
+const { count, increment } = require('./counter');
+increment();
+console.log(count); // 0（拷贝，不会跟着变）</code></pre>
+                <pre><code class="language-javascript">// ESM —— 导出值的实时绑定
+// counter.mjs
+export let count = 0;
+export function increment() { count++; }
+
+// app.mjs
+import { count, increment } from './counter.mjs';
+increment();
+console.log(count); // 1（实时绑定，跟着变了！）</code></pre>
+                <div class="warning">
+                    <strong>选哪个？</strong> 新项目推荐 ESM。Node.js 通过 <code>"type": "module"</code> 启用 ESM。如果需要兼容旧库，CommonJS 仍然可用。
+                </div>
+            </div>
+        </section>
+
+        <!-- 模块加载流程对比图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>加载流程对比</h3>
+                <h4>同步加载 vs 异步解析</h4>
+                <div class="ai-diagram">
+                    <h4>图：CommonJS 同步加载与 ESM 异步解析的流程对比</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：左右两列并排对比流程图。左列标题"CommonJS（同步加载）"，右列标题"ESM（异步解析）"。每列包含 5-6 个纵向排列的圆角矩形节点，节点之间用箭头连接。
+                    - 左列（CommonJS）流程节点依次为：遇到 require() → 同步读取文件（橙色高亮） → 执行模块代码 → 返回 module.exports → 继续执行后续代码。整体用实线箭头表示同步阻塞，箭头旁边标注"阻塞等待"。
+                    - 右列（ESM）流程节点依次为：编译阶段 → 解析所有 import（绿色高亮） → 构建依赖图 → 异步加载所有模块 → 执行模块代码 → 建立实时绑定。用虚线箭头表示异步非阻塞，箭头旁边标注"非阻塞"。
+                    - 各元素关系：两列之间用一条竖向虚线分隔，顶部标注"同步 vs 异步"。左列整体色调偏暖（橙/琥珀色系），右列整体色调偏冷（绿/青色系），形成视觉对比。
+                    - 关键标注：在 CommonJS 的"同步读取文件"节点旁标注"阻塞主线程"；在 ESM 的"构建依赖图"节点旁标注"静态分析，支持 Tree-shaking"。两个流程的起点和终点分别用不同形状区分（起点为圆角矩形，终点为双线边框矩形）。
+                    - 配色建议：浅蓝/浅灰背景，深色文字，CommonJS 关键箭头用橙色标注，ESM 关键箭头用绿色标注
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 动态导入</h2>
+                <h4>静态 import 编译时就确定了依赖，但有时你想运行时按条件加载</h4>
+                <p>用户点了按钮才需要图表库，暗色模式才需要加载主题文件——这些场景下，静态 <code>import</code> 一开始就把所有代码拉下来太浪费了。<code>import()</code> 返回一个 Promise，什么时候需要什么时候加载。它是实现代码分割和懒加载的基础，CJS 和 ESM 通用。</p>
+            </div>
+        </section>
+
+        <!-- 动态 import() -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>动态 import()</h3>
+                <h4>按需加载，提升首屏速度</h4>
+                <pre><code class="language-javascript">// 按需加载——用户点了再加载
+button.addEventListener('click', async () => {
+    const { Chart } = await import('./chart.js');
+    new Chart(canvas, config);
+});
+
+// 条件加载
+if (isDarkMode) {
+    await import('./dark-theme.js');
+} else {
+    await import('./light-theme.js');
+}
+
+// 动态路由
+async function loadPage(route) {
+    const module = await import(`./pages/${route}.js`);
+    return module.default;
+}</code></pre>
+                <p>动态导入返回一个 Promise。它既是 CommonJS 和 ESM 通用的，又能实现代码分割和懒加载。</p>
+            </div>
+        </section>
+
+        <!-- Part 5 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 浏览器中使用</h2>
+                <h4>ESM 不只是 Node.js 的专利，浏览器也原生支持了</h4>
+                <p>学了这么多模块语法，在浏览器里到底怎么跑起来？只需要 <code>&lt;script type="module"&gt;</code> 一行。模块脚本默认严格模式、默认异步加载、默认独立作用域——以前要用 Webpack 才能实现的效果，现在浏览器原生支持。再看 Node.js 的 <code>package.json</code> 怎么配置 <code>type</code> 字段，打通两个环境。</p>
+            </div>
+        </section>
+
+        <!-- 浏览器 ESM -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>浏览器中的 ESM</h3>
+                <h4>script type="module"</h4>
+                <pre><code class="language-html">&lt;!-- 外部模块 --&gt;
+&lt;script type="module" src="./app.js"&gt;&lt;/script&gt;
+
+&lt;!-- 内联模块 --&gt;
+&lt;script type="module"&gt;
+    import { greet } from './utils.js';
+    greet('World');
+&lt;/script&gt;</code></pre>
+                <p>ESM 模块在浏览器中的行为特点：</p>
+                <ul>
+                    <li><strong>默认严格模式</strong>——不需要写 <code>"use strict"</code></li>
+                    <li><strong>独立作用域</strong>——顶层变量不会污染全局</li>
+                    <li><strong>只执行一次</strong>——同一模块多次导入只执行一次</li>
+                    <li><strong>异步加载</strong>——相当于默认 <code>defer</code></li>
+                    <li><strong>CORS 限制</strong>——跨域模块需要服务器设置正确的 CORS 头</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- package.json type -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Node.js 配置</h3>
+                <h4>package.json 中的 type 字段</h4>
+                <pre><code class="language-json">// package.json
+{
+    "type": "module"     // .js 文件被视为 ESM
+}
+
+{
+    "type": "commonjs"  // .js 文件被视为 CommonJS（默认）
+}</code></pre>
+                <table>
+                    <thead><tr><th>扩展名</th><th>type: "commonjs"</th><th>type: "module"</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>.js</code></td><td>CommonJS</td><td>ESM</td></tr>
+                        <tr><td><code>.mjs</code></td><td>ESM</td><td>ESM</td></tr>
+                        <tr><td><code>.cjs</code></td><td>CommonJS</td><td>CommonJS</td></tr>
+                    </tbody>
+                </table>
+                <p>用 <code>.mjs</code> 和 <code>.cjs</code> 扩展名可以覆盖 <code>type</code> 的设置，明确告诉 Node.js 用哪种模块系统。</p>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见模块错误</h3>
+
+                <div class="warning">
+                    <strong>ESM 的 import 路径必须写完整扩展名。</strong> <code>import { x } from './utils'</code> 在浏览器中会报错，必须写 <code>'./utils.js'</code>。
+                </div>
+
+                <h4>问题一：require 和 import 混用</h4>
+                <pre><code class="language-javascript">// ESM 文件中不能用 require
+import fs from 'fs';   // 正确
+const fs = require('fs'); // 在 ESM 中报错！
+
+// CommonJS 中不能用 import（不用 Babel 的话）
+const fs = require('fs'); // 正确
+import fs from 'fs';      // 在 CommonJS 中报错！</code></pre>
+
+                <h4>问题二：循环依赖</h4>
+                <pre><code class="language-javascript">// a.js
+const { b } = require('./b'); // b 还没执行完
+exports.a = 1;
+
+// b.js
+const { a } = require('./a'); // 拿到不完整的 a
+exports.b = 2;
+
+// 解决：重构代码，消除循环依赖
+// 或者把共享逻辑提取到第三个模块</code></pre>
+            </div>
+        </section>
+
+        <!-- Re-export 与 Barrel -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Re-export</h3>
+                <h4>用 re-export 组织模块的导出</h4>
+                <p><code>export { x } from './module.js'</code> 语法可以从另一个模块中转导出，无需先 import 再 export：</p>
+                <pre><code class="language-javascript">// 转发导出——不用自己实现，只是"传一手"
+export { add, subtract } from './math.js';
+export { default as User } from './User.js';
+export * from './utils.js'; // 转发全部命名导出</code></pre>
+                <p>大型项目常用 <strong>barrel file</strong>（桶文件）模式，用一个 <code>index.js</code> 统一汇总导出：</p>
+                <pre><code class="language-javascript">// validators/index.js —— barrel file
+export { validateEmail } from './email.js';
+export { validatePhone } from './phone.js';
+export { validateIdCard } from './id-card.js';
+export { default as Validator } from './core.js';
+
+// 使用时只需引入一个路径
+import { validateEmail, Validator } from './validators/index.js';</code></pre>
+                <div class="warning">
+                    <strong>注意</strong>：<code>export * from</code> 不会转发其他模块的 <code>default</code> 导出。如果需要转发默认导出，必须显式写 <code>export { default } from './module.js'</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 条件导出 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>条件导出</h3>
+                <h4>package.json 的 exports 字段</h4>
+                <p><code>exports</code> 字段让包作者精确控制哪些文件可以被外部导入，以及在不同环境下提供不同的入口：</p>
+                <pre><code class="language-json">{
+    "name": "my-lib",
+    "exports": {
+        ".": {
+            "import": "./dist/index.mjs",
+            "require": "./dist/index.cjs",
+            "browser": "./dist/browser.js"
+        },
+        "./utils": "./dist/utils.js",
+        "./plugins/*": "./dist/plugins/*.js"
+    }
+}</code></pre>
+                <p>使用者导入时，Node.js 会根据当前环境自动匹配对应入口：</p>
+                <pre><code class="language-javascript">import { hello } from 'my-lib';          // 匹配 "."
+import { debounce } from 'my-lib/utils'; // 匹配 "./utils"</code></pre>
+                <p>没有列在 <code>exports</code> 中的路径<strong>无法被导入</strong>——这是模块的"黑名单"机制。例如 <code>require('my-lib/internal/helper')</code> 会报错 <code>ERR_PACKAGE_PATH_NOT_EXPORTED</code>。</p>
+                <div class="warning">
+                    <strong>易错点</strong>：定义了 <code>exports</code> 后，<code>main</code> 字段会被忽略。子路径必须用 <code>"./xxx"</code> 格式（以 <code>./</code> 开头），不能省略。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：创建两个文件。在 <code>math.js</code> 中导出 <code>add</code>、<code>subtract</code>、<code>multiply</code> 函数，在 <code>main.js</code> 中导入并使用。</p>
+                        <pre><code class="language-javascript">// math.js
+// 你的代码：
+
+// main.js
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">// math.js
+export function add(a, b) { return a + b; }
+export function subtract(a, b) { return a - b; }
+export function multiply(a, b) { return a * b; }
+
+// main.js
+import { add, subtract, multiply } from './math.js';
+console.log(add(2, 3));       // 5
+console.log(subtract(10, 4)); // 6
+console.log(multiply(3, 7));  // 21</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：实现一个按钮点击后动态加载模块的示例。<code>heavy-module.js</code> 导出一个 <code>process()</code> 函数，只在按钮点击时才加载。</p>
+                        <pre><code class="language-javascript">// 提示：用 import() 动态导入
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">// heavy-module.js
+export function process(data) {
+    console.log("处理数据:", data);
+    return data.toUpperCase();
+}
+
+// main.js
+document.getElementById('btn').addEventListener('click', async () => {
+    const { process } = await import('./heavy-module.js');
+    const result = process("hello");
+    console.log(result);
+});</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习三（进阶） -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>进阶练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：创建 <code>cache.js</code> 模块，导出 <code>createCache()</code> 函数。该函数返回一个对象，包含 <code>get(key)</code>、<code>set(key, value, ttlMs?)</code>、<code>has(key)</code>、<code>clear()</code> 方法，内部数据对外不可见。然后创建 <code>main.js</code>，用命名导出和默认导出混合的方式导入 cache，并实现带 5 秒过期的缓存。</p>
+                        <pre><code class="language-javascript">// cache.js —— 你的代码：
+// 提示：用闭包隐藏数据，用 setTimeout 或时间戳实现过期
+
+// main.js —— 你的代码：
+// 提示：混合导入 createCache 和其他导出</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">// cache.js
+const DEFAULT_TTL = 5000; // 默认 5 秒过期
+
+export const DEFAULT_EXPIRY = DEFAULT_TTL;
+
+export default function createCache() {
+    const store = new Map(); // 外部无法直接访问
+    const timers = new Map();
+
+    return {
+        set(key, value, ttlMs = DEFAULT_TTL) {
+            if (timers.has(key)) clearTimeout(timers.get(key));
+            store.set(key, value);
+            const id = setTimeout(() => store.delete(key), ttlMs);
+            timers.set(key, id);
+        },
+        get(key) { return store.get(key); },
+        has(key) { return store.has(key); },
+        clear() {
+            for (const id of timers.values()) clearTimeout(id);
+            store.clear();
+            timers.clear();
+        }
+    };
+}
+
+// main.js
+import createCache, { DEFAULT_EXPIRY } from './cache.js';
+
+const cache = createCache();
+cache.set('user', { name: 'Alice' });
+cache.set('token', 'abc123', 3000); // 3 秒过期
+
+console.log(cache.get('user'));          // { name: 'Alice' }
+console.log(cache.has('token'));         // true
+
+setTimeout(() => {
+    console.log(cache.has('token'));     // false（已过期）
+    console.log(cache.get('user'));      // { name: 'Alice' }（还在）
+}, 4000);
+
+setTimeout(() => {
+    console.log(cache.has('user'));      // false（5 秒到期）
+}, 6000);</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>模块化让你能把代码拆成清晰的积木块。下一章我们走进浏览器，学习 <strong>浏览器环境中的 JavaScript</strong>——DOM、事件、BOM。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第34章 React与TypeScript - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>React 与 TypeScript</h1>
+            <p>用类型系统为组件加上安全护栏</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>为什么组件传错一个 prop，运行时才报错？能不能在写代码的时候就发现？</h4>
+                <p>React 的 Props、State、事件处理——到处都是"数据流动"。如果类型不匹配，轻则页面显示异常，重则直接白屏。<strong>TypeScript 就是你的编译时安全网</strong>，写代码时就能发现类型错误。</p>
+                <p>本章从项目创建到 Hooks 类型、事件处理、Context 泛型，逐一讲透 React + TS 的核心用法。</p>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 项目与 Props</h2>
+                <h4>创建项目，定义组件的"输入接口"。</h4>
+                <p>万事开头难。先把项目跑起来，再搞清楚怎么用 TypeScript 定义组件的 Props——这是 React + TS 的第一步。</p>
+                <p>学完本节，你会知道如何用 <code>interface</code> 约束组件参数，让编辑器在写代码时就帮你检查传参是否正确。</p>
+            </div>
+        </section>
+
+        <!-- 创建项目 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>创建项目</h3>
+                <h4>一行命令拿到完整的 React + TS 项目</h4>
+                <pre><code class="language-bash">$ npm create vite@latest my-react-app -- --template react-ts
+$ cd my-react-app && npm install && npm run dev</code></pre>
+                <p>核心依赖：</p>
+                <table>
+                    <thead>
+                        <tr><th>依赖</th><th>作用</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>react</code></td><td>React 核心库</td></tr>
+                        <tr><td><code>react-dom</code></td><td>React DOM 渲染器</td></tr>
+                        <tr><td><code>@types/react</code></td><td>React 类型定义</td></tr>
+                        <tr><td><code>@types/react-dom</code></td><td>ReactDOM 类型定义</td></tr>
+                    </tbody>
+                </table>
+                <p>项目结构：</p>
+                <pre><code class="language-text">src/
+├── main.tsx         # 入口：ReactDOM.createRoot
+├── App.tsx          # 根组件
+├── components/      # 组件目录
+├── hooks/           # 自定义 Hook
+├── types/           # 类型定义
+└── utils/           # 工具函数</code></pre>
+            </div>
+        </section>
+
+        <!-- Props 类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组件 Props 类型</h3>
+                <h4>用 interface 定义组件的"输入规格"</h4>
+                <p>Props 就是组件的参数。用 TypeScript 定义 Props 类型，编辑器就能帮你检查传参是否正确。</p>
+                <pre><code class="language-tsx">// 推荐：用 interface 定义 Props
+interface UserCardProps {
+    name: string;
+    age: number;
+    email?: string;                    // 可选属性
+    onClick?: (id: string) => void;    // 回调函数
+}
+
+function UserCard({ name, age, email, onClick }: UserCardProps) {
+    return (
+        &lt;div onClick={() => onClick?.(name)}&gt;
+            &lt;h2&gt;{name}&lt;/h2&gt;
+            &lt;p&gt;{age}岁&lt;/p&gt;
+            {email &amp;&amp; &lt;p&gt;{email}&lt;/p&gt;}
+        &lt;/div&gt;
+    );
+}</code></pre>
+                <div class="warning">
+                    <strong>关于 <code>React.FC</code></strong>：虽然可以用 <code>const Comp: React.FC&lt;Props&gt;</code> 的写法，但现在社区更推荐直接用普通函数 + interface 的方式。更简洁，泛型支持也更好。
+                </div>
+            </div>
+        </section>
+
+        <!-- children 与常用类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>children 与常用类型</h3>
+                <h4>React 提供了一组专用类型</h4>
+                <pre><code class="language-tsx">// children 的类型
+interface LayoutProps {
+    children: React.ReactNode;   // 最通用的 children 类型
+    title: string;
+}
+
+function Layout({ children, title }: LayoutProps) {
+    return (
+        &lt;div&gt;
+            &lt;h1&gt;{title}&lt;/h1&gt;
+            {children}
+        &lt;/div&gt;
+    );
+}</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>类型</th><th>用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>React.ReactNode</code></td><td>所有可渲染内容（string|number|JSX|null|undefined）</td></tr>
+                        <tr><td><code>React.ReactElement</code></td><td>JSX 元素</td></tr>
+                        <tr><td><code>React.ComponentType</code></td><td>组件类型（类组件或函数组件）</td></tr>
+                        <tr><td><code>React.CSSProperties</code></td><td>CSS 属性对象</td></tr>
+                        <tr><td><code>React.Ref&lt;T&gt;</code></td><td>ref 类型</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: Hooks 类型</h2>
+                <h4>useState、useReducer、useRef——每个 Hook 都有对应的类型写法。</h4>
+                <p>Hooks 是 React 的灵魂。TypeScript 能为每个 Hook 提供精确的类型推断，让 <code>dispatch</code>、<code>ref.current</code> 等都不再是 <code>any</code>。</p>
+                <p>本节还会讲解 <code>useEffect</code>、<code>useCallback</code>、<code>useMemo</code> 的类型要点——它们各有各的坑。</p>
+            </div>
+        </section>
+
+        <!-- useState -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>useState 类型</h3>
+                <h4>简单类型自动推断，复杂类型手动指定</h4>
+                <pre><code class="language-tsx">// 自动推断
+const [count, setCount] = useState(0);              // number
+const [name, setName] = useState("张三");            // string
+
+// 手动指定——联合类型或复杂类型
+const [user, setUser] = useState&lt;User | null&gt;(null); // 需要手动指定
+const [list, setList] = useState&lt;string[]&gt;([]);      // 空数组需要指定</code></pre>
+                <p>规则很简单：<strong>初始值能推断出类型就不用写，推断不出或推断错了就手动指定泛型参数</strong>。</p>
+            </div>
+        </section>
+
+        <!-- useReducer -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>useReducer 类型</h3>
+                <h4>用联合类型确保 dispatch 的类型安全</h4>
+                <pre><code class="language-tsx">// 定义 Action 的联合类型
+type Action =
+    | { type: "increment"; payload: number }
+    | { type: "decrement"; payload: number }
+    | { type: "reset" };
+
+function reducer(state: number, action: Action): number {
+    switch (action.type) {
+        case "increment": return state + action.payload;
+        case "decrement": return state - action.payload;
+        case "reset": return 0;
+    }
+}
+
+const [count, dispatch] = useReducer(reducer, 0);
+dispatch({ type: "increment", payload: 5 }); // OK
+// dispatch({ type: "increment" });           // 报错！缺少 payload
+// dispatch({ type: "reset", payload: 0 });   // 报错！reset 不需要 payload</code></pre>
+                <p>联合类型 + <code>switch</code> 穷举 = 完整的类型安全。编辑器会在你写 <code>dispatch</code> 的时候提示所有合法的 Action。</p>
+            </div>
+        </section>
+
+        <!-- useRef -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>useRef 类型</h3>
+                <h4>三种典型用法</h4>
+                <pre><code class="language-tsx">// 用法一：引用 DOM 元素
+const inputRef = useRef&lt;HTMLInputElement&gt;(null);
+const focus = () => inputRef.current?.focus();
+return &lt;input ref={inputRef} /&gt;;
+
+// 用法二：保存可变值（定时器 ID 等）
+const timerRef = useRef&lt;ReturnType&lt;typeof setInterval&gt;&gt;();
+
+// 用法三：保存实例引用
+const instanceRef = useRef&lt;MyClass | null&gt;(null);</code></pre>
+                <div class="intro-block">
+                    <p><code>useRef</code> 和 <code>useState</code> 的关键区别：修改 <code>ref.current</code> 不会触发重新渲染。适合保存不影响 UI 的"幕后数据"。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- useEffect 类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>useEffect 类型</h3>
+                <h4>副作用函数的返回值只能是 void 或清理函数</h4>
+                <p><code>useEffect</code> 的回调函数不能是 <code>async</code>——因为 async 函数返回 Promise，而 <code>useEffect</code> 期望返回 <code>void | (() => void)</code>。</p>
+                <pre><code class="language-tsx">// 返回类型：void | (() => void)
+useEffect(() => {
+    const controller = new AbortController();
+
+    // 正确：在内部用 async
+    async function loadData() {
+        try {
+            const res = await fetch("/api/users", {
+                signal: controller.signal,
+            });
+            const data: User[] = await res.json();
+            setUsers(data);
+        } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") {
+                return; // 组件卸载，忽略
+            }
+            setError((err as Error).message);
+        }
+    }
+    loadData();
+
+    // 清理函数：取消未完成的请求
+    return () => controller.abort();
+}, []); // 依赖数组</code></pre>
+                <div class="warning">
+                    <strong>常见错误</strong>：直接写 <code>useEffect(async () => { ... }, [])</code> 会导致类型报错。正确做法是在 Effect 内部定义 async 函数再调用。
+                </div>
+            </div>
+        </section>
+
+        <!-- useEffect 依赖数组 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>依赖数组与 ESLint</h3>
+                <h4>exhaustive-deps 规则帮你查漏补缺</h4>
+                <p>依赖数组写错了，Effect 的行为就会和预期不同。ESLint 的 <code>react-hooks/exhaustive-deps</code> 规则能帮你检查。</p>
+                <pre><code class="language-tsx">// ESLint 配置
+// .eslintrc.json
+{
+    "plugins": ["react-hooks"],
+    "rules": {
+        "react-hooks/exhaustive-deps": "warn"
+    }
+}</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>依赖缺失（危险）</h4>
+                        <pre><code class="language-tsx">// userId 变了，但 Effect 不会重新执行
+useEffect(() => {
+    fetchUser(userId);
+}, []); // 缺少 userId</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>依赖正确（安全）</h4>
+                        <pre><code class="language-tsx">// userId 变了，Effect 会重新执行
+useEffect(() => {
+    fetchUser(userId);
+}, [userId]); // 完整依赖</code></pre>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>经验法则：Effect 里用到的所有外部变量都应该放进依赖数组。如果不想频繁触发，用 <code>useMemo</code> 或 <code>useRef</code> 缓存那个变量。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- useCallback 与 useMemo -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>useCallback 类型</h3>
+                <h4>缓存回调函数，避免子组件不必要的重渲染</h4>
+                <p>大多数情况下 TypeScript 能自动推断 <code>useCallback</code> 的类型。但如果回调的参数类型复杂，可以手动指定泛型。</p>
+                <pre><code class="language-tsx">// 自动推断——大多数情况够用
+const handleClick = useCallback(() => {
+    setCount(c => c + 1);
+}, []);
+
+// 手动指定——事件回调参数需要明确类型
+const handleChange = useCallback&lt;React.ChangeEventHandler&lt;HTMLInputElement&gt;&gt;(
+    (e) => {
+        setSearch(e.target.value); // e 的类型自动推断
+    },
+    []
+);
+
+// 等价写法：直接在参数上标注类型
+const handleSubmit = useCallback(
+    (e: React.FormEvent&lt;HTMLFormElement&gt;) => {
+        e.preventDefault();
+    },
+    []
+);</code></pre>
+                <div class="warning">
+                    <strong>什么时候用？</strong> 只有当回调被传给子组件（尤其是 <code>React.memo</code> 包裹的子组件）时，<code>useCallback</code> 才有意义。如果只在当前组件内使用，加了反而增加代码复杂度。
+                </div>
+            </div>
+        </section>
+
+        <!-- useMemo -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>useMemo 类型</h3>
+                <h4>缓存计算结果，避免重复执行昂贵操作</h4>
+                <pre><code class="language-tsx">// 自动推断——返回值类型从回调函数推断
+const sortedList = useMemo(
+    () => items.sort((a, b) => a.name.localeCompare(b.name)),
+    [items]
+); // 推断为 Item[]
+
+// 手动指定——复杂返回值需要明确类型
+const stats = useMemo&lt;{ total: number; avg: number }&gt;(() => {
+    const total = scores.reduce((sum, s) => sum + s, 0);
+    return { total, avg: total / scores.length };
+}, [scores]);
+
+// 过滤 + 转换的常见模式
+const filteredUsers = useMemo(() => {
+    return users
+        .filter(u => u.age >= 18)
+        .map(u => ({ ...u, displayName: `${u.name} (${u.age})` }));
+}, [users]); // 推断为 { id: string; name: string; age: number; displayName: string }[]</code></pre>
+                <div class="intro-block">
+                    <p><strong>性能 vs 可读性</strong>：<code>useMemo</code> 不是免费的——它每次渲染都要对比依赖。如果计算本身很轻量（比如简单的 <code>.map</code>），用 <code>useMemo</code> 反而更慢。只在"计算昂贵"或"引用稳定"有实际意义时才用。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 事件与表单</h2>
+                <h4>每个 DOM 事件都有对应的 React 类型。</h4>
+                <p>表单是用户交互的核心。React 把原生 DOM 事件包装成了 <code>SyntheticEvent</code>，每个事件类型都有对应的泛型。</p>
+                <p>本节从事件类型讲起，延伸到完整表单的类型安全方案，包括受控组件和表单验证模式。</p>
+            </div>
+        </section>
+
+        <!-- 事件处理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>事件处理类型</h3>
+                <h4>React 自带一套完整的事件类型定义</h4>
+                <pre><code class="language-tsx">function Form() {
+    const handleSubmit = (e: React.FormEvent&lt;HTMLFormElement&gt;) => {
+        e.preventDefault();
+        // 表单提交逻辑
+    };
+
+    const handleChange = (e: React.ChangeEvent&lt;HTMLInputElement&gt;) => {
+        console.log(e.target.value); // string
+    };
+
+    const handleClick = (e: React.MouseEvent&lt;HTMLButtonElement&gt;) => {
+        console.log("clicked");
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent&lt;HTMLInputElement&gt;) => {
+        if (e.key === "Enter") console.log("回车");
+    };
+
+    return (
+        &lt;form onSubmit={handleSubmit}&gt;
+            &lt;input onChange={handleChange} onKeyDown={handleKeyDown} /&gt;
+            &lt;button onClick={handleClick}&gt;提交&lt;/button&gt;
+        &lt;/form&gt;
+    );
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 事件类型速查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>事件类型速查</h3>
+                <h4>六个最常用的事件类型</h4>
+                <table>
+                    <thead>
+                        <tr><th>事件类型</th><th>触发场景</th><th>常用属性</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>FormEvent</code></td><td>表单提交</td><td><code>e.preventDefault()</code></td></tr>
+                        <tr><td><code>ChangeEvent</code></td><td>输入变化</td><td><code>e.target.value</code></td></tr>
+                        <tr><td><code>MouseEvent</code></td><td>鼠标事件</td><td><code>e.clientX/Y</code></td></tr>
+                        <tr><td><code>KeyboardEvent</code></td><td>键盘事件</td><td><code>e.key</code></td></tr>
+                        <tr><td><code>FocusEvent</code></td><td>焦点事件</td><td><code>e.target</code></td></tr>
+                        <tr><td><code>DragEvent</code></td><td>拖拽事件</td><td><code>e.dataTransfer</code></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 表单类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>受控表单类型</h3>
+                <h4>用类型约束表单状态，杜绝拼写错误</h4>
+                <pre><code class="language-tsx">interface FormData {
+    username: string;
+    email: string;
+    age: number;
+    role: "admin" | "user" | "guest";
+}
+
+function TypedForm() {
+    const [form, setForm] = useState&lt;FormData&gt;({
+        username: "",
+        email: "",
+        age: 0,
+        role: "guest",
+    });
+    const [errors, setErrors] = useState&lt;Partial&lt;Record&lt;keyof FormData, string&gt;&gt;&gt;({});
+
+    const updateField = &lt;K extends keyof FormData&gt;(
+        key: K,
+        value: FormData[K]
+    ) => {
+        setForm(prev => ({ ...prev, [key]: value }));
+        setErrors(prev => ({ ...prev, [key]: undefined }));
+    };
+
+    const validate = (): boolean => {
+        const newErrors: typeof errors = {};
+        if (!form.username.trim()) newErrors.username = "用户名不能为空";
+        if (!form.email.includes("@")) newErrors.email = "邮箱格式错误";
+        if (form.age < 0 || form.age > 150) newErrors.age = "年龄不合理";
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (validate()) console.log("提交", form);
+    };
+
+    return (
+        &lt;form onSubmit={handleSubmit}&gt;
+            &lt;input value={form.username}
+                onChange={e => updateField("username", e.target.value)} /&gt;
+            {errors.username &amp;&amp; &lt;span&gt;{errors.username}&lt;/span&gt;}
+            &lt;input value={form.email}
+                onChange={e => updateField("email", e.target.value)} /&gt;
+            &lt;input type="number" value={form.age}
+                onChange={e => updateField("age", Number(e.target.value))} /&gt;
+            &lt;select value={form.role}
+                onChange={e => updateField("role", e.target.value as FormData["role"])}&gt;
+                &lt;option value="admin"&gt;管理员&lt;/option&gt;
+                &lt;option value="user"&gt;用户&lt;/option&gt;
+                &lt;option value="guest"&gt;访客&lt;/option&gt;
+            &lt;/select&gt;
+            &lt;button type="submit"&gt;提交&lt;/button&gt;
+        &lt;/form&gt;
+    );
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- react-hook-form 简介 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>react-hook-form</h3>
+                <h4>社区最流行的表单方案，类型支持一流</h4>
+                <p>受控表单在字段多时性能下降。<code>react-hook-form</code> 用非受控方式管理表单，减少不必要的渲染。</p>
+                <pre><code class="language-tsx">import { useForm } from "react-hook-form";
+
+interface LoginForm {
+    email: string;
+    password: string;
+    remember: boolean;
+}
+
+function LoginForm() {
+    const { register, handleSubmit, formState: { errors } } =
+        useForm&lt;LoginForm&gt;({
+            defaultValues: { email: "", password: "", remember: false },
+        });
+
+    const onSubmit = (data: LoginForm) => {
+        console.log("登录", data);
+    };
+
+    return (
+        &lt;form onSubmit={handleSubmit(onSubmit)}&gt;
+            &lt;input {...register("email", {
+                required: "请输入邮箱",
+                pattern: { value: /\S+@\S+/, message: "邮箱格式错误" }
+            })} /&gt;
+            {errors.email &amp;&amp; &lt;span&gt;{errors.email.message}&lt;/span&gt;}
+
+            &lt;input type="password" {...register("password", {
+                required: "请输入密码",
+                minLength: { value: 6, message: "至少6位" }
+            })} /&gt;
+            {errors.password &amp;&amp; &lt;span&gt;{errors.password.message}&lt;/span&gt;}
+
+            &lt;label&gt;
+                &lt;input type="checkbox" {...register("remember")} /&gt;
+                记住我
+            &lt;/label&gt;
+            &lt;button type="submit"&gt;登录&lt;/button&gt;
+        &lt;/form&gt;
+    );
+}</code></pre>
+                <div class="intro-block">
+                    <p><code>useForm&lt;LoginForm&gt;</code> 一行搞定泛型。<code>register</code> 返回的 <code>ref</code>、<code>onChange</code> 等属性会自动绑定到 input 上，字段名都有类型检查——拼错了立刻报红。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: Context 与泛型</h2>
+                <h4>跨组件传递数据，类型安全不能丢。</h4>
+                <p>Context 解决了"逐层传 Props"的痛点，但它的默认值机制容易引入 <code>null</code>。用泛型封装后，消费者可以放心使用。</p>
+                <p>本节还会展示 Context + useReducer 的组合模式——这是 React 社区最常用的全局状态方案。</p>
+            </div>
+        </section>
+
+        <!-- Context 类型安全 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类型安全的 Context</h3>
+                <h4>三步走：定义类型、创建 Context、封装 Hook</h4>
+                <pre><code class="language-tsx">// 1. 定义 Context 的数据类型
+interface Theme {
+    mode: "light" | "dark";
+    toggle: () => void;
+}
+
+// 2. 创建 Context
+const ThemeContext = createContext&lt;Theme | null&gt;(null);
+
+// 3. 封装自定义 Hook（带空值检查）
+function useTheme(): Theme {
+    const ctx = useContext(ThemeContext);
+    if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
+    return ctx;
+}</code></pre>
+                <p>为什么要封装成 Hook？因为 <code>useContext</code> 返回的是 <code>Theme | null</code>，每次用都要判空。封装后返回 <code>Theme</code>，使用时不再需要判空。</p>
+            </div>
+        </section>
+
+        <!-- Provider 组件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Provider 与使用</h3>
+                <h4>Provider 提供数据，消费者通过 Hook 获取</h4>
+                <pre><code class="language-tsx">// Provider 组件
+function ThemeProvider({ children }: { children: React.ReactNode }) {
+    const [mode, setMode] = useState&lt;"light" | "dark"&gt;("light");
+    const toggle = () => setMode(m =&gt; m === "light" ? "dark" : "light");
+
+    return (
+        &lt;ThemeContext.Provider value={{ mode, toggle }}&gt;
+            {children}
+        &lt;/ThemeContext.Provider&gt;
+    );
+}
+
+// 在任意子组件中使用——完整类型推断
+function ThemedButton() {
+    const { mode, toggle } = useTheme();
+    return (
+        &lt;button onClick={toggle}
+            style={{ background: mode === "dark" ? "#333" : "#fff" }}&gt;
+            切换主题
+        &lt;/button&gt;
+    );
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Context + useReducer 组合 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Context + Reducer</h3>
+                <h4>用联合类型 Action 构建类型安全的全局状态</h4>
+                <p>Context + useReducer 是 React 社区最常用的"轻量级状态管理"方案。类型写对了，dispatch 时编辑器会提示所有合法操作。</p>
+                <pre><code class="language-tsx">// 1. 定义 State 和 Action
+interface Todo {
+    id: string;
+    text: string;
+    done: boolean;
+}
+
+type TodoAction =
+    | { type: "add"; text: string }
+    | { type: "toggle"; id: string }
+    | { type: "delete"; id: string }
+    | { type: "clear_completed" };
+
+interface TodoState {
+    todos: Todo[];
+    nextId: number;
+}
+
+// 2. Reducer 函数
+function todoReducer(state: TodoState, action: TodoAction): TodoState {
+    switch (action.type) {
+        case "add":
+            return {
+                ...state,
+                todos: [...state.todos,
+                    { id: String(state.nextId), text: action.text, done: false }],
+                nextId: state.nextId + 1,
+            };
+        case "toggle":
+            return {
+                ...state,
+                todos: state.todos.map(t =>
+                    t.id === action.id ? { ...t, done: !t.done } : t
+                ),
+            };
+        case "delete":
+            return { ...state, todos: state.todos.filter(t => t.id !== action.id) };
+        case "clear_completed":
+            return { ...state, todos: state.todos.filter(t => !t.done) };
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Context + useReducer Provider -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>全局状态封装</h3>
+                <h4>Provider 组件 + 自定义 Hook = 完美的类型安全</h4>
+                <pre><code class="language-tsx">// 3. 创建 Context（值为 state + dispatch）
+const TodoContext = createContext&lt;{
+    state: TodoState;
+    dispatch: React.Dispatch&lt;TodoAction&gt;;
+} | null&gt;(null);
+
+// 4. Provider 组件
+function TodoProvider({ children }: { children: React.ReactNode }) {
+    const [state, dispatch] = useReducer(todoReducer, {
+        todos: [],
+        nextId: 1,
+    });
+    return (
+        &lt;TodoContext.Provider value={{ state, dispatch }}&gt;
+            {children}
+        &lt;/TodoContext.Provider&gt;
+    );
+}
+
+// 5. 自定义 Hook：空值保护
+function useTodo() {
+    const ctx = useContext(TodoContext);
+    if (!ctx) throw new Error("useTodo must be inside TodoProvider");
+    return ctx;
+}
+
+// 6. 使用
+function TodoList() {
+    const { state, dispatch } = useTodo();
+    return (
+        &lt;ul&gt;
+            {state.todos.map(t => (
+                &lt;li key={t.id} onClick={() => dispatch({ type: "toggle", id: t.id })}
+                    style={{ textDecoration: t.done ? "line-through" : "none" }}&gt;
+                    {t.text}
+                    &lt;button onClick={e => { e.stopPropagation(); dispatch({ type: "delete", id: t.id }); }}&gt;
+                        删除
+                    &lt;/button&gt;
+                &lt;/li&gt;
+            ))}
+        &lt;/ul&gt;
+    );
+}</code></pre>
+                <div class="intro-block">
+                    <p>这个模式的核心：<code>useTodo()</code> 返回的 <code>dispatch</code> 有完整类型约束——你只能传入合法的 Action 对象，字段名、类型全部有检查。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 自定义 Hook -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自定义 Hook 泛型</h3>
+                <h4>用泛型让 Hook 支持任意数据类型</h4>
+                <pre><code class="language-tsx">// 泛型 Hook：封装数据获取逻辑
+interface UseFetchResult&lt;T&gt; {
+    data: T | null;
+    loading: boolean;
+    error: string | null;
+    refetch: () =&gt; void;
+}
+
+function useFetch&lt;T&gt;(url: string): UseFetchResult&lt;T&gt; {
+    const [data, setData] = useState&lt;T | null&gt;(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState&lt;string | null&gt;(null);
+
+    const fetchData = useCallback(async () =&gt; {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const json = await res.json();
+            setData(json as T);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "未知错误");
+        } finally {
+            setLoading(false);
+        }
+    }, [url]);
+
+    useEffect(() =&gt; { fetchData(); }, [fetchData]);
+
+    return { data, loading, error, refetch: fetchData };
+}
+
+// 使用——data 类型自动推断
+interface User { id: string; name: string; }
+const { data, loading, error } = useFetch&lt;User[]&gt;("/api/users");
+// data: User[] | null</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 5 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: ref 转发</h2>
+                <h4>让子组件暴露方法给父组件调用。</h4>
+                <p><code>ref</code> 默认只在原生 DOM 元素上有效。<code>forwardRef</code> 让你可以把 ref 传进自定义组件。</p>
+                <p>搭配 <code>useImperativeHandle</code>，你还能精确控制子组件暴露哪些方法，实现类型安全的命令式调用。</p>
+            </div>
+        </section>
+
+        <!-- forwardRef -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>forwardRef</h3>
+                <h4>把 ref 从父组件"转发"进子组件</h4>
+                <pre><code class="language-tsx">interface InputProps {
+    label: string;
+    placeholder?: string;
+}
+
+const Input = forwardRef&lt;HTMLInputElement, InputProps&gt;(
+    ({ label, placeholder }, ref) =&gt; (
+        &lt;div&gt;
+            &lt;label&gt;{label}&lt;/label&gt;
+            &lt;input ref={ref} placeholder={placeholder} /&gt;
+        &lt;/div&gt;
+    )
+);</code></pre>
+                <p><code>forwardRef&lt;HTMLInputElement, InputProps&gt;</code> 的两个泛型参数：第一个是 ref 指向的类型，第二个是 Props 类型。</p>
+            </div>
+        </section>
+
+        <!-- useImperativeHandle -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>useImperativeHandle</h3>
+                <h4>自定义暴露给父组件的方法</h4>
+                <pre><code class="language-tsx">// 子组件：定义暴露的接口
+interface InputHandle {
+    focus: () =&gt; void;
+    clear: () =&gt; void;
+    getValue: () =&gt; string;
+}
+
+const ControlledInput = forwardRef&lt;InputHandle, InputProps&gt;(
+    ({ label }, ref) =&gt; {
+        const inputRef = useRef&lt;HTMLInputElement&gt;(null);
+        const [value, setValue] = useState("");
+
+        useImperativeHandle(ref, () =&gt; ({
+            focus: () =&gt; inputRef.current?.focus(),
+            clear: () =&gt; setValue(""),
+            getValue: () =&gt; value,
+        }));
+
+        return &lt;input ref={inputRef} value={value}
+            onChange={e =&gt; setValue(e.target.value)} /&gt;;
+    }
+);
+
+// 父组件：通过 ref 调用子组件方法
+function Parent() {
+    const inputRef = useRef&lt;InputHandle&gt;(null);
+    return (
+        &lt;&gt;
+            &lt;ControlledInput ref={inputRef} label="姓名" /&gt;
+            &lt;button onClick={() =&gt; inputRef.current?.focus()}&gt;聚焦&lt;/button&gt;
+            &lt;button onClick={() =&gt; inputRef.current?.clear()}&gt;清空&lt;/button&gt;
+        &lt;/&gt;
+    );
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 泛型组件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型组件</h3>
+                <h4>让一个组件支持多种数据类型</h3>
+                <p>当你需要一个"通用列表"、"通用选择器"时，泛型组件就派上用场了。用 <code>&lt;T&gt;</code> 让组件适配任意数据类型。</p>
+                <pre><code class="language-tsx">// 泛型列表组件——渲染任意类型的数组
+interface ListProps&lt;T&gt; {
+    items: T[];
+    renderItem: (item: T, index: number) => React.ReactNode;
+    keyExtractor: (item: T) => string;
+}
+
+function List&lt;T&gt;({ items, renderItem, keyExtractor }: ListProps&lt;T&gt;) {
+    return (
+        &lt;ul&gt;
+            {items.map((item, i) => (
+                &lt;li key={keyExtractor(item)}&gt;{renderItem(item, i)}&lt;/li&gt;
+            ))}
+        &lt;/ul&gt;
+    );
+}
+
+// 使用——类型自动推断
+interface User { id: string; name: string; }
+const users: User[] = [{ id: "1", name: "张三" }, { id: "2", name: "李四" }];
+
+&lt;List
+    items={users}
+    renderItem={user => &lt;span&gt;{user.name}&lt;/span&gt;}  // user 自动推断为 User
+    keyExtractor={user => user.id}
+/&gt;</code></pre>
+            </div>
+        </section>
+
+        <!-- 泛型选择器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型 Select</h3>
+                <h4>类型安全的下拉选择组件</h4>
+                <pre><code class="language-tsx">// 泛型 Select：选项值可以是任意类型
+interface SelectProps&lt;T&gt; {
+    options: { label: string; value: T }[];
+    value: T;
+    onChange: (value: T) => void;
+}
+
+function Select&lt;T extends string | number&gt;(
+    { options, value, onChange }: SelectProps&lt;T&gt;
+) {
+    return (
+        &lt;select
+            value={String(value)}
+            onChange={e => {
+                const raw = e.target.value;
+                const selected = options.find(o => String(o.value) === raw);
+                if (selected) onChange(selected.value);
+            }}
+        &gt;
+            {options.map(opt => (
+                &lt;option key={String(opt.value)} value={String(opt.value)}&gt;
+                    {opt.label}
+                &lt;/option&gt;
+            ))}
+        &lt;/select&gt;
+    );
+}
+
+// 使用——value 和 onChange 的类型自动推断
+type Role = "admin" | "user" | "guest";
+const [role, setRole] = useState&lt;Role&gt;("guest");
+
+&lt;Select
+    options={[
+        { label: "管理员", value: "admin" as Role },
+        { label: "用户", value: "user" as Role },
+        { label: "访客", value: "guest" as Role },
+    ]}
+    value={role}
+    onChange={setRole}  // setRole 的类型是 (value: Role) => void
+/&gt;</code></pre>
+                <div class="warning">
+                    <strong>什么时候用泛型？</strong> 当组件的 Props 类型之间有依赖关系时（比如 <code>options</code> 的 <code>value</code> 类型和 <code>onChange</code> 参数类型必须一致）。如果各 Props 独立，用联合类型就够了。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 6 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: 路由与性能</h2>
+                <h4>URL 参数和查询参数也需要类型安全。</h4>
+                <p>路由参数默认是 <code>string | undefined</code>，查询参数永远是字符串——如果不加类型约束，很容易出 bug。</p>
+                <p>本节还补充了 <code>React.memo</code> 的类型要点：什么时候该用、什么时候不该用、自定义比较函数怎么写。</p>
+            </div>
+        </section>
+
+        <!-- React Router -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>React Router 类型</h3>
+                <h4>useParams 和 useSearchParams</h4>
+                <pre><code class="language-tsx">import { useParams, useSearchParams, Link } from "react-router-dom";
+
+// useParams —— 获取路由参数
+function UserProfile() {
+    const { userId } = useParams&lt;{ userId: string }&gt;();
+    if (!userId) return &lt;div&gt;用户ID缺失&lt;/div&gt;;
+    return &lt;div&gt;用户: {userId}&lt;/div&gt;;
+}
+
+// useSearchParams —— 获取查询参数
+function ProductList() {
+    const [searchParams, setSearchParams] = useSearchParams();
+    const page = Number(searchParams.get("page")) || 1;
+
+    const goToPage = (p: number) =&gt; {
+        setSearchParams(prev =&gt; {
+            prev.set("page", String(p));
+            return prev;
+        });
+    };
+
+    return (
+        &lt;div&gt;
+            &lt;p&gt;第 {page} 页&lt;/p&gt;
+            &lt;button onClick={() =&gt; goToPage(page + 1)}&gt;下一页&lt;/button&gt;
+        &lt;/div&gt;
+    );
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- React.memo -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>React.memo</h3>
+                <h4>浅比较 Props，跳过不必要的渲染</h3>
+                <p>当父组件重新渲染时，所有子组件默认也会重新渲染。<code>React.memo</code> 让子组件在 Props 没变时跳过渲染。</p>
+                <pre><code class="language-tsx">// 基本用法：Props 类型自动从泛型推断
+interface ExpensiveListProps {
+    items: Item[];
+    onSelect: (id: string) => void;
+}
+
+const ExpensiveList = React.memo(function ExpensiveList(
+    { items, onSelect }: ExpensiveListProps
+) {
+    console.log("渲染 ExpensiveList");
+    return (
+        &lt;ul&gt;
+            {items.map(item => (
+                &lt;li key={item.id} onClick={() => onSelect(item.id)}&gt;
+                    {item.name}
+                &lt;/li&gt;
+            ))}
+        &lt;/ul&gt;
+    );
+});
+
+// 自定义比较函数
+const StableList = React.memo(function StableList(
+    props: { data: ComplexData[] }
+) {
+    return &lt;div&gt;{props.data.length} 条数据&lt;/div&gt;
+}, (prevProps, nextProps) => {
+    // 返回 true = 跳过渲染（Props 没变）
+    // 返回 false = 重新渲染（Props 变了）
+    return prevProps.data.length === nextProps.data.length
+        &amp;&amp; prevProps.data.every((d, i) => d.id === nextProps.data[i].id);
+});</code></pre>
+                <div class="warning">
+                    <strong>对象 Props 的坑</strong>：<code>React.memo</code> 做的是浅比较。如果每次渲染都传新的对象/数组/函数引用，memo 会失效。配合 <code>useMemo</code> 和 <code>useCallback</code> 才能真正起效。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见排错</h3>
+
+                <div class="warning">
+                    <strong>类型报错不是"建议"，是"错误"。</strong> 不要用 <code>any</code> 或 <code>@ts-ignore</code> 绕过类型检查。理解报错原因，写出真正类型安全的代码。
+                </div>
+
+                <h4>问题一：Props 解构时某个属性报"可能为 undefined"</h4>
+                <p><strong>原因</strong>：可选属性（带 <code>?</code> 的）在 TS 中类型包含 <code>undefined</code>。</p>
+                <p><strong>修复</strong>：使用前加判断，或用默认值：<code>const { name = "默认名" } = props;</code></p>
+
+                <h4>问题二：<code>useRef</code> 报"可能为 null"</h4>
+                <p><strong>原因</strong>：<code>useRef&lt;HTMLInputElement&gt;(null)</code> 的 <code>current</code> 类型是 <code>HTMLInputElement | null</code>。</p>
+                <p><strong>修复</strong>：使用可选链 <code>inputRef.current?.focus()</code>，或在事件回调中确认非空后使用 <code>!</code> 断言。</p>
+
+                <h4>问题三：<code>children</code> 报类型错误</h4>
+                <p><strong>原因</strong>：没有声明 <code>children</code> 的类型。</p>
+                <p><strong>修复</strong>：在 Props 接口中加上 <code>children: React.ReactNode</code>。</p>
+
+                <h4>问题四：<code>useEffect</code> 里直接写 <code>async</code> 报错</h4>
+                <p><strong>原因</strong>：<code>async</code> 函数返回 <code>Promise</code>，而 <code>useEffect</code> 要求返回 <code>void | (() => void)</code>。</p>
+                <p><strong>修复</strong>：在 Effect 内部定义 <code>async</code> 函数再调用，如 <code>useEffect(() => { async function load() { ... } load(); }, [])</code>。</p>
+
+                <h4>问题五：泛型组件报"找不到名称 T"</h4>
+                <p><strong>原因</strong>：函数声明缺少泛型参数，或者用箭头函数时泛型写法不对。</p>
+                <p><strong>修复</strong>：确保函数签名有 <code>&lt;T&gt;</code>，如 <code>function List&lt;T&gt;(props: ListProps&lt;T&gt;)</code>。箭头函数需要写成 <code>&lt;T,&gt;</code> 避免和 JSX 混淆。</p>
+
+                <h4>问题六：<code>React.memo</code> 没起效，子组件还是频繁渲染</h4>
+                <p><strong>原因</strong>：每次渲染都传了新的对象/数组/函数引用，浅比较判定 Props 变了。</p>
+                <p><strong>修复</strong>：用 <code>useMemo</code> 缓存对象和数组，用 <code>useCallback</code> 缓存回调函数，确保稳定引用。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：创建一个 <code>TodoItem</code> 组件，Props 包含 <code>title</code>（string）、<code>done</code>（boolean，默认 false）、<code>onToggle</code>（回调函数）。点击时切换完成状态。</p>
+                        <pre><code class="language-tsx">// 提示：定义 interface TodoItemProps
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-tsx">interface TodoItemProps {
+    title: string;
+    done?: boolean;
+    onToggle: () =&gt; void;
+}
+
+function TodoItem({ title, done = false, onToggle }: TodoItemProps) {
+    return (
+        &lt;div onClick={onToggle}
+            style={{ textDecoration: done ? "line-through" : "none" }}&gt;
+            {title}
+        &lt;/div&gt;
+    );
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：用 <code>useReducer</code> 实现一个计数器，支持三种操作：加 1、减 1、重置为 0。确保 dispatch 的类型安全。</p>
+                        <pre><code class="language-tsx">// 提示：定义 Action 联合类型
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-tsx">type Action =
+    | { type: "increment" }
+    | { type: "decrement" }
+    | { type: "reset" };
+
+function reducer(state: number, action: Action): number {
+    switch (action.type) {
+        case "increment": return state + 1;
+        case "decrement": return state - 1;
+        case "reset": return 0;
+    }
+}
+
+function Counter() {
+    const [count, dispatch] = useReducer(reducer, 0);
+    return (
+        &lt;&gt;
+            &lt;p&gt;{count}&lt;/p&gt;
+            &lt;button onClick={() =&gt; dispatch({ type: "increment" })}&gt;+1&lt;/button&gt;
+            &lt;button onClick={() =&gt; dispatch({ type: "decrement" })}&gt;-1&lt;/button&gt;
+            &lt;button onClick={() =&gt; dispatch({ type: "reset" })}&gt;重置&lt;/button&gt;
+        &lt;/&gt;
+    );
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：创建一个 Context + useReducer 的主题管理器。State 包含 <code>theme</code>（"light" | "dark" | "system"）和 <code>fontSize</code>（number）。Action 支持切换主题和调整字号。封装 <code>useThemeContext()</code> Hook，在 Provider 外使用时抛出错误。</p>
+                        <pre><code class="language-tsx">// 提示：定义 ThemeState 和 ThemeAction
+// 封装 ThemeProvider 和 useThemeContext
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-tsx">interface ThemeState {
+    theme: "light" | "dark" | "system";
+    fontSize: number;
+}
+
+type ThemeAction =
+    | { type: "set_theme"; theme: ThemeState["theme"] }
+    | { type: "set_fontSize"; size: number };
+
+function themeReducer(state: ThemeState, action: ThemeAction): ThemeState {
+    switch (action.type) {
+        case "set_theme": return { ...state, theme: action.theme };
+        case "set_fontSize": return { ...state, fontSize: action.size };
+    }
+}
+
+const ThemeCtx = createContext&lt;{ state: ThemeState; dispatch: React.Dispatch&lt;ThemeAction&gt; } | null&gt;(null);
+
+function ThemeProvider({ children }: { children: React.ReactNode }) {
+    const [state, dispatch] = useReducer(themeReducer, {
+        theme: "system", fontSize: 14,
+    });
+    return &lt;ThemeCtx.Provider value={{ state, dispatch }}&gt;{children}&lt;/ThemeCtx.Provider&gt;;
+}
+
+function useThemeContext() {
+    const ctx = useContext(ThemeCtx);
+    if (!ctx) throw new Error("useThemeContext must be inside ThemeProvider");
+    return ctx;
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>React + TS 搞定了。下一章学习 <strong>Vue 3 与 TypeScript</strong>——Composition API 下的类型写法，同样优雅。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

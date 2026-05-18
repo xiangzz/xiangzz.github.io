@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>10 CLI</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⌨️</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 10 章</div>
+            <h1>Claude Code CLI</h1>
+            <p>命令行接口——工程化的统一入口</p>
+            <strong>交互式开发、批处理、CI/CD — 一切从终端开始</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>怎么脚本化</h2>
+                <h4>你有没有发现，Claude Code 交互式很好用，但没法融入自动化流程？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>想自动化审查</h4>
+                        <p>每次 PR 提交后自动让 Claude 审查代码，生成 JSON 报告。但交互模式下你每次都得手动输入提示词。<strong>没法接入 CI</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>想批量处理</h4>
+                        <p>50 个源文件都要生成文档。你不想一个个手动输入，<strong>但不知道怎么批量跑</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>想统一模型配置</h4>
+                        <p>团队想统一用 Opus 做规划、Sonnet 做执行。但每个人都要自己配一遍，<strong>配置没法标准化</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>CLI 就是为这个设计的：</strong>它把 Claude Code 的所有能力暴露为命令行参数。你可以脚本化调用、管道化输入输出、JSON 格式化结果、集成进 CI/CD。从"交互式助手"变成"可工程化接口"。
+                </div>
+            </div>
+        </section>
+
+        <!-- 两种模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>两种模式</h2>
+                <h4>交互模式（默认）和打印模式（-p）</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/10-cli-1.png" alt="图：CLI 两种运行模式对比——交互式 vs 打印式" class="ai-diagram-img">
+                <div class="comparison">
+                    <div class="after">
+                        <h4>交互模式</h4>
+                        <p>多轮对话、Tab 补全、历史记录、Slash commands。</p>
+                        <pre><code>$ claude
+$ claude "解释这个认证流程"</code></pre>
+                    </div>
+                    <div class="before">
+                        <h4>打印模式（-p）</h4>
+                        <p>单次查询后退出。可脚本化、可管道化、JSON 输出。</p>
+                        <pre><code>$ claude -p "这个函数做什么？"
+$ cat error.log | claude -p "解释错误"</code></pre>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>选择依据：</strong>需要多轮对话、探索性问题 → 交互模式。需要自动化、批处理、CI 集成 → 打印模式。
+                </div>
+            </div>
+        </section>
+
+        <!-- 架构概览 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>架构概览</h2>
+                <h4>CLI 如何连接终端、API 和输出</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/10-cli-2.png" alt="图：CLI 架构流程——从用户输入到最终输出" class="ai-diagram-img">
+                <pre class="tree-structure"><span style="color: var(--text-muted);">用户终端 → Claude Code CLI → REPL / 打印 / 恢复 → Claude API → 输出 → 终端|管道</span></pre>
+            </div>
+        </section>
+
+        <!-- 核心标志 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>核心标志</h2>
+                <h4>控制 CLI 行为的关键参数</h4>
+                <table>
+                    <thead><tr><th>参数</th><th>说明</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--remote</code></td><td>在 claude.ai 上创建 web session</td><td><code>claude --remote "implement API"</code></td></tr>
+                        <tr><td><code>--remote-control, --rc</code></td><td>使用 Remote Control 交互</td><td><code>claude --rc</code></td></tr>
+                        <tr><td><code>--teleport</code></td><td>将 web session 恢复到本地</td><td><code>claude --teleport</code></td></tr>
+                        <tr><td><code>--teammate-mode</code></td><td>agent team 显示模式</td><td><code>claude --teammate-mode tmux</code></td></tr>
+                        <tr><td><code>--channels</code></td><td>订阅 MCP channel 插件</td><td><code>claude --channels discord,telegram</code></td></tr>
+                        <tr><td><code>--chrome / --no-chrome</code></td><td>启用/禁用 Chrome 集成</td><td><code>claude --chrome</code></td></tr>
+                        <tr><td><code>-n, --name</code></td><td>设置会话显示名称</td><td><code>claude -n "auth-refactor"</code></td></tr>
+                        <tr><td><code>-v, --version</code></td><td>输出版本号</td><td><code>claude -v</code></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 扩展标志 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>扩展标志</h2>
+                <h4>初始化、维护与模式控制</h4>
+                <table>
+                    <thead><tr><th>参数</th><th>说明</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--init / --init-only</code></td><td>运行初始化 hooks</td><td><code>claude --init</code></td></tr>
+                        <tr><td><code>--maintenance</code></td><td>运行维护 hooks 后退出</td><td><code>claude --maintenance</code></td></tr>
+                        <tr><td><code>--disable-slash-commands</code></td><td>禁用所有 skills 和 slash commands</td><td><code>claude --disable-slash-commands</code></td></tr>
+                        <tr><td><code>--verbose</code></td><td>启用详细日志</td><td><code>claude --verbose</code></td></tr>
+                        <tr><td><code>--input-format</code></td><td>指定输入格式（text、stream-json）</td><td><code>claude -p --input-format stream-json</code></td></tr>
+                        <tr><td><code>--dry-run</code></td><td>仅模拟执行</td><td><code>claude --dry-run "review code"</code></td></tr>
+                        <tr><td><code>--interactive</code></td><td>强制交互模式</td><td><code>claude --interactive</code></td></tr>
+                        <tr><td><code>--unsafe</code></td><td>允许更多自动化操作</td><td><code>claude --unsafe</code></td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>提示：</strong><code>--init</code> 适合首次启动项目时自动配置环境；<code>--dry-run</code> 适合预览执行效果而不实际修改；<code>--unsafe</code> 仅在受信环境中使用。
+                </div>
+            </div>
+        </section>
+
+        <!-- 核心命令速查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>命令速查</h2>
+                <h4>最常用的 CLI 命令</h4>
+                <table>
+                    <thead><tr><th>命令</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>claude</code></td><td>启动交互式 REPL</td></tr>
+                        <tr><td><code>claude "query"</code></td><td>带初始提示启动 REPL</td></tr>
+                        <tr><td><code>claude -p "query"</code></td><td>打印模式，查询后退出</td></tr>
+                        <tr><td><code>cat file | claude -p "query"</code></td><td>处理管道传入的内容</td></tr>
+                        <tr><td><code>claude -c</code></td><td>继续最近一次会话</td></tr>
+                        <tr><td><code>claude -c -p "query"</code></td><td>打印模式下继续会话</td></tr>
+                        <tr><td><code>claude -r "session"</code></td><td>恢复指定会话</td></tr>
+                        <tr><td><code>claude -w</code></td><td>在隔离 worktree 中启动</td></tr>
+                        <tr><td><code>claude --bare "query"</code></td><td>极简模式，跳过所有扩展</td></tr>
+                        <tr><td><code>claude update</code></td><td>更新到最新版本</td></tr>
+                        <tr><td><code>claude auth login</code></td><td>登录账号</td></tr>
+                        <tr><td><code>claude auth status</code></td><td>检查登录状态</td></tr>
+                        <tr><td><code>claude mcp</code></td><td>配置 MCP servers</td></tr>
+                        <tr><td><code>claude mcp serve</code></td><td>作为 MCP server 运行</td></tr>
+                        <tr><td><code>claude agents</code></td><td>列出所有已配置的 subagents</td></tr>
+                        <tr><td><code>claude auto-mode defaults</code></td><td>打印 auto mode 默认规则</td></tr>
+                        <tr><td><code>claude remote-control</code></td><td>启动远程控制服务</td></tr>
+                        <tr><td><code>claude plugin install &lt;name&gt;</code></td><td>管理插件（安装/启用/禁用）</td></tr>
+                        <tr><td><code>claude auth logout</code></td><td>注销当前账号</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 模型与配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模型与配置</h2>
+                <h4>通过参数控制模型、推理强度、权限和执行方式</h4>
+                <table>
+                    <thead><tr><th>参数</th><th>说明</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--model</code></td><td>设置模型</td><td><code>claude --model opus</code></td></tr>
+                        <tr><td><code>--effort</code></td><td>推理强度</td><td><code>claude --effort high</code></td></tr>
+                        <tr><td><code>--fallback-model</code></td><td>后备模型</td><td><code>--fallback-model sonnet</code></td></tr>
+                        <tr><td><code>--permission-mode</code></td><td>权限模式</td><td><code>claude --permission-mode plan</code></td></tr>
+                    </tbody>
+                </table>
+                <pre><code><span style="color: var(--text-muted);"># 短名称</span>
+$ claude --model sonnet     <span style="color: var(--text-muted);"># Sonnet（日常首选）</span>
+$ claude --model opus       <span style="color: var(--text-muted);"># Opus（复杂任务）</span>
+$ claude --model haiku      <span style="color: var(--text-muted);"># Haiku（快速任务）</span>
+
+<span style="color: var(--text-muted);"># opusplan 别名：Opus 规划 + Sonnet 执行</span>
+$ claude --model opusplan "design and implement caching"</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>会话与恢复</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 给会话命名</span>
+$ claude --session feature-auth
+
+<span style="color: var(--text-muted);"># 从 GitHub PR 恢复</span>
+$ claude --from-pr 42
+
+<span style="color: var(--text-muted);"># 恢复最近一次会话</span>
+$ claude --resume-last
+
+<span style="color: var(--text-muted);"># 强制开启新会话</span>
+$ claude --new-session
+
+<span style="color: var(--text-muted);"># 分叉会话做实验</span>
+$ claude --fork-session "尝试另一种方案"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>自动化专用</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 解锁 auto mode</span>
+$ claude --enable-auto-mode
+
+<span style="color: var(--text-muted);"># 通过 CLI 定义 subagent</span>
+$ claude --agent reviewer "审查代码"
+
+<span style="color: var(--text-muted);"># 禁用会话保存（敏感任务）</span>
+$ claude -p --no-session-persistence "query"</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Effort 级别 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Effort 级别</h2>
+                <h4>三种方式控制推理强度</h4>
+                <table>
+                    <thead><tr><th>方式</th><th>命令</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td>CLI 参数</td><td><code>claude --effort high</code></td><td>单次会话生效</td></tr>
+                        <tr><td>Slash command</td><td><code>/effort max</code></td><td>交互模式中切换</td></tr>
+                        <tr><td>环境变量</td><td><code>CLAUDE_EFFORT=medium</code></td><td>全局默认值</td></tr>
+                    </tbody>
+                </table>
+                <pre><code><span style="color: var(--text-muted);"># 级别选项：low / medium / high / max</span>
+$ claude --model opus --effort high "设计架构"
+
+<span style="color: var(--text-muted);"># 快速任务用 low</span>
+$ claude --model haiku --effort low -p "格式化 JSON"</code></pre>
+                <div class="info-block">
+                    <strong>经验法则：</strong>探索和规划用 <code>high/max</code>，日常编码用 <code>medium</code>，简单格式化和查询用 <code>low</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- MCP 配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>MCP 配置</h2>
+                <h4>通过 CLI 管理外部工具接入</h4>
+                <table>
+                    <thead><tr><th>参数</th><th>说明</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--mcp-config</code></td><td>从文件加载 MCP 配置</td><td><code>claude --mcp-config ./mcp.json</code></td></tr>
+                        <tr><td><code>--mcp</code></td><td>启用指定 MCP 服务</td><td><code>claude --mcp github</code></td></tr>
+                        <tr><td><code>--mcp-list</code></td><td>列出可用 MCP 配置</td><td><code>claude --mcp-list</code></td></tr>
+                    </tbody>
+                </table>
+                <pre><code><span style="color: var(--text-muted);"># 加载 GitHub MCP server</span>
+$ claude --mcp-config ./configs/github-mcp.json
+
+<span style="color: var(--text-muted);"># 严格模式：只允许指定的 server</span>
+$ claude --mcp-config ./configs/strict-mcp.json --mcp github
+
+<span style="color: var(--text-muted);"># 通过环境变量设置默认 MCP 配置</span>
+$ CLAUDE_MCP_CONFIG=~/.claude/mcp.json claude</code></pre>
+                <div class="key-point">
+                    <strong>配合环境变量：</strong>设置 <code>CLAUDE_MCP_CONFIG</code> 可以让所有会话自动加载 MCP 配置，无需每次手动指定。
+                </div>
+            </div>
+        </section>
+
+        <!-- 高级参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>高级参数</h2>
+                <h4>Checkpoint、模拟执行和安全控制</h4>
+                <table>
+                    <thead><tr><th>参数</th><th>说明</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--disable-auto-checkpoints</code></td><td>禁用自动 checkpoint</td><td><code>claude --disable-auto-checkpoints</code></td></tr>
+                        <tr><td><code>--enable-auto-checkpoints</code></td><td>启用自动 checkpoint</td><td><code>claude --enable-auto-checkpoints</code></td></tr>
+                        <tr><td><code>--interactive</code></td><td>强制交互模式</td><td><code>claude --interactive</code></td></tr>
+                        <tr><td><code>--dry-run</code></td><td>仅模拟执行不修改</td><td><code>claude --dry-run "review code"</code></td></tr>
+                        <tr><td><code>--unsafe</code></td><td>允许更多自动化操作</td><td><code>claude --unsafe</code></td></tr>
+                    </tbody>
+                </table>
+                <pre><code><span style="color: var(--text-muted);"># 长任务建议启用 checkpoint</span>
+$ claude --enable-auto-checkpoints "重构整个模块"
+
+<span style="color: var(--text-muted);"># 预览执行效果</span>
+$ claude --dry-run "删除所有未使用的 import"
+
+<span style="color: var(--text-muted);"># 调试 API 调用</span>
+$ claude --verbose -p "diagnose this issue"</code></pre>
+            </div>
+        </section>
+
+        <!-- Subagents 配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Subagents</h2>
+                <h4>通过 JSON 定义自定义角色分工</h4>
+                <pre><code><span style="color: var(--text-muted);"># agents.json 格式</span>
+{
+  "code-reviewer": {
+    "description": "Expert code reviewer",
+    "prompt": "Focus on quality, security, best practices.",
+    "tools": ["Read", "Grep", "Glob", "Bash"],
+    "model": "sonnet"
+  },
+  "debugger": {
+    "description": "Debugging specialist",
+    "prompt": "Analyze errors, identify root causes.",
+    "tools": ["Read", "Edit", "Bash", "Grep"],
+    "model": "opus"
+  }
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>字段说明</h4>
+                        <p><strong>必填：</strong><code>description</code>（何时使用）、<code>prompt</code>（角色行为）。</p>
+                        <p><strong>可选：</strong><code>tools</code>（工具白名单）、<code>model</code>（指定模型）。</p>
+                    </div>
+                    <div class="card">
+                        <h4>优先级规则</h4>
+                        <p><strong>CLI 定义</strong>（<code>--agents</code>）> <strong>用户级</strong>（<code>~/.claude/agents/</code>）> <strong>项目级</strong>（<code>.claude/agents/</code>）。</p>
+                        <p>命令行定义会覆盖本次会话的用户级和项目级 agents。</p>
+                    </div>
+                </div>
+                <pre><code><span style="color: var(--text-muted);"># 使用方式</span>
+$ claude --agents ./configs/agents.json --agent reviewer
+$ claude --agents '{"auditor":{"description":"security audit","prompt":"Find vulnerabilities.","tools":["Read","Grep"],"model":"opus"}}'</code></pre>
+            </div>
+        </section>
+
+        <!-- 系统提示词 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>提示词定制</h2>
+                <h4>三种方式自定义 Claude 的行为</h4>
+                <table>
+                    <thead><tr><th>参数</th><th>行为</th><th>交互</th><th>打印</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--system-prompt</code></td><td>替换整个默认提示词</td><td>✅</td><td>✅</td></tr>
+                        <tr><td><code>--append-system-prompt</code></td><td>追加到默认提示词后</td><td>✅</td><td>✅</td></tr>
+                        <tr><td><code>--system-prompt-file</code></td><td>从文件加载</td><td>❌</td><td>✅</td></tr>
+                    </tbody>
+                </table>
+                <pre><code><span style="color: var(--text-muted);"># 完整自定义人格</span>
+$ claude --system-prompt "你是一名资深安全工程师"
+
+<span style="color: var(--text-muted);"># 追加特定指令</span>
+$ claude --append-system-prompt "始终包含单元测试"
+
+<span style="color: var(--text-muted);"># 从文件加载（仅打印模式）</span>
+$ claude -p --system-prompt-file ./prompt.txt "review main.py"</code></pre>
+            </div>
+        </section>
+
+        <!-- 输出格式控制 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>输出控制</h2>
+                <h4>让 Claude 的输出可以被程序消费</h4>
+                <pre><code><span style="color: var(--text-muted);"># 纯文本（默认）</span>
+$ claude -p "解释这段代码"
+
+<span style="color: var(--text-muted);"># JSON 输出（供程序使用）</span>
+$ claude -p --output-format json "列出所有函数"
+
+<span style="color: var(--text-muted);"># 流式 JSON（实时处理）</span>
+$ claude -p --output-format stream-json "生成报告"
+
+<span style="color: var(--text-muted);"># Schema 验证的结构化输出</span>
+$ claude -p --json-schema '{"type":"object"}' "分析代码"
+
+<span style="color: var(--text-muted);"># 配合 jq 处理</span>
+$ claude -p --output-format json "find bugs" | \
+  jq '.[] | select(.severity=="high")'
+
+<span style="color: var(--text-muted);"># 流式输入格式</span>
+$ claude -p --input-format stream-json</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>jq 实用示例</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 提取多个字段</span>
+$ claude -p --output-format json "analyze" | \
+  jq '{summary, risk, recommendations}'
+
+<span style="color: var(--text-muted);"># 转成 CSV</span>
+$ claude -p --output-format json "list files" | \
+  jq -r '.files[] | [.name,.size] | @csv'
+
+<span style="color: var(--text-muted);"># 条件处理</span>
+$ claude -p --output-format json "check" | \
+  jq 'if .ok then "pass" else "fail" end'</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>jq 进阶用法</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 提取嵌套值</span>
+$ claude -p --output-format json "inspect" | \
+  jq '.details.metrics.coverage'
+
+<span style="color: var(--text-muted);"># 统计数组长度</span>
+$ claude -p --output-format json "find todos" | \
+  jq '.todos | length'
+
+<span style="color: var(--text-muted);"># 转换输出结构</span>
+$ claude -p --output-format json "review" | \
+  jq '{issues: [.issues[]|{file,line,msg}]}'</code></pre>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>三种格式：</strong><code>text</code>（默认，人类阅读）、<code>json</code>（程序消费）、<code>stream-json</code>（实时流式处理）。配合 <code>jq</code> 可以进一步过滤和转换。
+                </div>
+            </div>
+        </section>
+
+        <!-- 工具与权限 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工具与权限</h2>
+                <h4>通过参数精确控制 Claude 能用哪些工具</h4>
+                <pre><code><span style="color: var(--text-muted);"># 只读安全审计</span>
+$ claude --tools "Read,Grep,Glob" -p "审查代码库"
+
+<span style="color: var(--text-muted);"># 允许特定 git 命令无需提示</span>
+$ claude --allowedTools "Bash(git status:*)" "Bash(git log:*)"
+
+<span style="color: var(--text-muted);"># 阻止危险操作</span>
+$ claude --disallowedTools "Bash(rm -rf:*)" "Bash(git push --force:*)"
+
+<span style="color: var(--text-muted);"># 限制自主操作 + 高级模型</span>
+$ claude --permission-mode plan --model opus "设计认证系统"</code></pre>
+            </div>
+        </section>
+
+        <!-- 高价值场景 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战场景</h2>
+                <h4>七种最值得掌握的 CLI 用法</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>CI/CD 集成</h4>
+                        <pre><code>$ claude -p --output-format json \
+  "run tests and summarize failures"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>管道式处理</h4>
+                        <pre><code>$ cat error.log | claude -p "解释错误"
+$ git log --oneline -20 | claude -p "总结方向"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>安全审计</h4>
+                        <pre><code>$ claude --permission-mode plan \
+  -p "audit this repository"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>批量处理</h4>
+                        <pre><code>$ find src -name "*.ts" | \
+  xargs -I{} claude -p "review {}"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>多会话工作流</h4>
+                        <pre><code>$ claude --session feature-auth
+$ claude --resume feature-auth
+$ claude --fork-session "尝试另一种方案"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>自定义 Agent</h4>
+                        <pre><code>$ claude --agents ./agents.json \
+  --agent reviewer "审查代码"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>JSON API 集成</h4>
+                        <pre><code>$ result=$(claude -p \
+  --output-format json "summarize")
+$ echo "$result" | jq '.summary'</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 与项目结构的关系 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>与项目结构</h2>
+                <h4>CLI 的工作目录决定了 Claude 加载哪些配置</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/10-cli-3.png" alt="图：CLI 工作目录与配置文件加载关系" class="ai-diagram-img">
+                <pre class="tree-structure">project/                   <span style="color: var(--text-muted);">← 工作目录（--working-directory）</span>
+├── CLAUDE.md              <span style="color: var(--success-color);">[自动加载]</span>
+├── .claude/
+│   ├── settings.json      <span style="color: var(--success-color);">[自动加载]</span>
+│   ├── skills/            <span style="color: var(--success-color);">[自动发现]</span>
+│   ├── agents/            <span style="color: var(--success-color);">[自动发现]</span>
+│   └── commands/          <span style="color: var(--success-color);">[自动发现]</span>
+└── src/
+    └── CLAUDE.md          <span style="color: var(--info-color);">[按目录加载]</span></pre>
+                <pre><code><span style="color: var(--text-muted);"># 多目录协作</span>
+$ claude --working-directory ~/projects/app --add-dir ~/projects/shared
+
+<span style="color: var(--text-muted);"># 极简模式（跳过所有扩展）</span>
+$ claude --bare "简单提问"</code></pre>
+                <div class="key-point">
+                    <strong>关键：</strong>CLI 的工作目录 = Claude 的"家"。在正确的目录下运行，它才能找到 <code>CLAUDE.md</code>、<code>.claude/skills/</code> 等配置。
+                </div>
+            </div>
+        </section>
+
+        <!-- 环境变量 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>环境变量</h2>
+                <h4>通过环境变量设置默认值，适合团队统一配置</h4>
+                <table>
+                    <thead><tr><th>变量</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>ANTHROPIC_API_KEY</code></td><td>API 密钥</td></tr>
+                        <tr><td><code>CLAUDE_MODEL</code></td><td>默认模型</td></tr>
+                        <tr><td><code>CLAUDE_EFFORT</code></td><td>默认推理强度</td></tr>
+                        <tr><td><code>CLAUDE_OUTPUT_FORMAT</code></td><td>默认输出格式</td></tr>
+                        <tr><td><code>CLAUDE_MCP_CONFIG</code></td><td>默认 MCP 配置</td></tr>
+                    </tbody>
+                </table>
+                <pre><code><span style="color: var(--text-muted);"># 示例：环境变量配置</span>
+$ CLAUDE_MODEL=opus CLAUDE_EFFORT=high claude "设计架构"</code></pre>
+                <div class="info-block">
+                    <strong>团队统一：</strong>把环境变量写到 <code>.env</code> 或 CI 配置中，全团队自动使用相同的模型和参数。
+                </div>
+            </div>
+        </section>
+
+        <!-- 快速参考 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>快速参考</h2>
+                <h4>最常用命令和参数组合模式</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>常用命令</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 交互式会话</span>
+$ claude
+
+<span style="color: var(--text-muted);"># 快速提问</span>
+$ claude -p "explain this repo"
+
+<span style="color: var(--text-muted);"># 继续上次对话</span>
+$ claude -c
+
+<span style="color: var(--text-muted);"># 为脚本输出 JSON</span>
+$ claude -p --output-format json "list classes"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>参数组合模式</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 只读审查</span>
+$ claude --permission-mode plan -p "review"
+
+<span style="color: var(--text-muted);"># 高级模型 + JSON</span>
+$ claude --model opus -p --output-format json \
+  "analyze architecture"
+
+<span style="color: var(--text-muted);"># 自定义目录 + MCP</span>
+$ claude --working-directory ./backend \
+  --mcp-config ./mcp.json</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>找不到 claude 命令</h4>
+                        <p><strong>症状：</strong>终端提示 <code>command not found: claude</code>。</p>
+                        <p><strong>修复：</strong>确认 Claude Code 已安装且在 <code>PATH</code> 中。重新打开终端或运行 <code>claude update</code>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>API Key 问题</h4>
+                        <p><strong>症状：</strong>报认证错误或连接失败。</p>
+                        <p><strong>修复：</strong>检查 <code>ANTHROPIC_API_KEY</code> 环境变量是否设置正确，key 是否过期，网络是否能访问 API。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>工作目录错误</h4>
+                        <p><strong>症状：</strong>在错误目录下运行，Claude 找不到 <code>.claude/</code> 和 <code>CLAUDE.md</code>。</p>
+                        <p><strong>修复：</strong>用 <code>--working-directory</code> 明确指定，或在正确目录下运行。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>CI 权限卡住</h4>
+                        <p><strong>症状：</strong>CI 环境缺少交互式权限确认，命令卡住不动。</p>
+                        <p><strong>修复：</strong>使用 <code>--permission-mode plan</code> 或 <code>bypassPermissions</code>（仅限受信环境）。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>输出过大</h4>
+                        <p><strong>症状：</strong>JSON 输出太多，消费端处理不过来。</p>
+                        <p><strong>修复：</strong>用 <code>--max-budget-usd</code> 限制花费，或在提示词中限制输出条目数。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>找不到会话</h4>
+                        <p><strong>症状：</strong><code>-r</code> 恢复时报错，说会话不存在。</p>
+                        <p><strong>修复：</strong>确认会话名称或 ID 正确。用 <code>claude auth status</code> 检查当前账号是否一致。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>输出格式问题</h4>
+                        <p><strong>症状：</strong>JSON 输出无法被程序解析。</p>
+                        <p><strong>修复：</strong>确保使用 <code>--output-format json</code>。如果是流式输出，加入 <code>--include-partial-messages</code>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>权限被拒绝</h4>
+                        <p><strong>症状：</strong>工具调用被阻止或报权限错误。</p>
+                        <p><strong>修复：</strong>检查 <code>--permission-mode</code> 和 <code>--allowedTools</code>/<code>--disallowedTools</code> 配置，明确允许所需工具。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>用 CLI 生成一份结构化的代码审查报告</h4>
+                <div class="key-point">
+                    <strong>任务：</strong>用 CLI 命令生成一份 JSON 格式的代码审查报告。
+                </div>
+                <ol>
+                    <li>使用打印模式</li>
+                    <li>输出 JSON 格式</li>
+                    <li>结果保存到文件</li>
+                    <li>限制最大花费 2 美元</li>
+                </ol>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <pre><code><span style="color: var(--text-muted);"># 基本命令</span>
+$ claude -p --output-format json \
+  --max-budget-usd 2.00 \
+  "审查 src/ 目录下的所有 Java 文件，找出：
+   - 潜在的安全漏洞
+   - 代码质量问题
+   - 性能风险
+   每个问题包含：severity, file, line, description, suggestion" \
+  > code-review-report.json
+
+<span style="color: var(--text-muted);"># 配合 jq 提取高危问题</span>
+$ cat code-review-report.json | \
+  jq '.[] | select(.severity == "high")'
+
+<span style="color: var(--text-muted);"># CI/CD 中使用</span>
+$ claude -p --output-format json \
+  --permission-mode plan \
+  --max-budget-usd 1.00 \
+  "审查本次 PR 的改动，返回审查结论" \
+  >> pr-review-results.json</code></pre>
+                <div class="key-point">
+                    <strong>关键参数：</strong><code>-p</code>（非交互）、<code>--output-format json</code>（结构化）、<code>--max-budget-usd</code>（限制花费）、<code>></code>（输出到文件）。
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>课程回顾</h2>
+                <h4>十章走完，从入门到工程化</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>掌握最常用的 CLI 用法</li>
+                            <li>控制输出格式和权限</li>
+                            <li>理解与 <code>.claude/</code> 和 hooks/plugins 的配合</li>
+                            <li>把 CLI 集成进 CI/CD 和自动化脚本</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>完整课程路线</h4>
+                        <ul>
+                            <li><a href="./01-slash-commands.html">01</a> Slash Commands — 自制命令</li>
+                            <li><a href="./02-memory.html">02</a> Memory — 长期上下文</li>
+                            <li><a href="./03-skills.html">03</a> Skills — 可复用能力包</li>
+                            <li><a href="./04-subagents.html">04</a> Subagents — 角色分工</li>
+                            <li><a href="./05-mcp.html">05</a> MCP — 外部工具接入</li>
+                            <li><a href="./06-hooks.html">06</a> Hooks — 事件驱动自动化</li>
+                            <li><a href="./07-plugins.html">07</a> Plugins — 方案打包分发</li>
+                            <li><a href="./08-checkpoints.html">08</a> Checkpoints — 快照回退</li>
+                            <li><a href="./09-advanced-features.html">09</a> Advanced — 高级特性</li>
+                            <li><strong>10 CLI</strong> — 工程化入口</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>CLI 是 Claude Code 的工程化接口。掌握 CLI = 把 AI 能力融入你开发工作流的每个环节。从交互式助手到可编程接口——这是 Claude Code 从"好用"变成"不可或缺"的关键一步。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://code.claude.com/docs/en/cli-reference">CLI Reference</a> — 完整参数参考</li>
+                            <li><a href="https://code.claude.com/docs/en/interactive-mode">Interactive Mode</a> — 交互模式文档</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章源文件 <span style="font-weight:normal;font-size:0.85em;color:var(--text-muted);">（点击查看完整内容）</span></h4>
+                        <ul>
+                            <li><code><a href="#" class="md-link" data-md="README">README.md</a></code> — CLI 完整使用指南</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- README 弹窗 -->
+    <style>
+        .md-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .md-modal-overlay.active {
+            display: flex;
+        }
+        .md-modal {
+            background: var(--surface-color, #fff);
+            border-radius: 12px;
+            width: min(720px, 92vw);
+            max-height: 82vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+            animation: md-modal-in 0.2s ease-out;
+        }
+        @keyframes md-modal-in {
+            from { opacity: 0; transform: translateY(20px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .md-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
+        }
+        .md-modal-header h3 {
+            margin: 0;
+            font-size: 1.05em;
+            font-family: var(--font-mono, monospace);
+            color: var(--accent-color, #8A4A12);
+        }
+        .md-modal-close {
+            background: none;
+            border: none;
+            font-size: 1.6em;
+            line-height: 1;
+            cursor: pointer;
+            color: var(--text-color, #333);
+            padding: 0 4px;
+            border-radius: 4px;
+        }
+        .md-modal-close:hover {
+            background: var(--code-bg-color, #f3f4f6);
+        }
+        .md-modal-body {
+            padding: 20px 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .md-modal-body pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.88em;
+            line-height: 1.65;
+            color: var(--text-color, #333);
+            font-family: var(--font-mono, monospace);
+        }
+        .md-modal-body .md-loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted, #888);
+        }
+        a.md-link {
+            color: var(--code-text-color, #0B598E);
+            text-decoration: none;
+            border-bottom: 1px dashed var(--code-text-color, #0B598E);
+            cursor: pointer;
+        }
+        a.md-link:hover {
+            color: var(--primary-color, #D06519);
+            border-bottom-color: var(--primary-color, #D06519);
+        }
+    </style>
+
+    <div class="md-modal-overlay" id="md-modal-overlay">
+        <div class="md-modal">
+            <div class="md-modal-header">
+                <h3 id="md-modal-title"></h3>
+                <button class="md-modal-close" id="md-modal-close">&times;</button>
+            </div>
+            <div class="md-modal-body">
+                <div class="md-loading" id="md-modal-loading">加载中…</div>
+                <pre id="md-modal-content" style="display:none;"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        var overlay = document.getElementById('md-modal-overlay');
+        var titleEl = document.getElementById('md-modal-title');
+        var contentEl = document.getElementById('md-modal-content');
+        var loadingEl = document.getElementById('md-modal-loading');
+        var closeBtn = document.getElementById('md-modal-close');
+
+        var cache = {};
+
+        function openModal(name) {
+            titleEl.textContent = name + '.md';
+            contentEl.style.display = 'none';
+            loadingEl.style.display = 'block';
+            overlay.classList.add('active');
+
+            if (cache[name]) {
+                showContent(cache[name]);
+                return;
+            }
+
+            fetch('./10-cli/' + name + '.md')
+                .then(function(r) {
+                    if (!r.ok) throw new Error('Not found');
+                    return r.text();
+                })
+                .then(function(text) {
+                    cache[name] = text;
+                    showContent(text);
+                })
+                .catch(function() {
+                    loadingEl.textContent = '加载失败，请确认文件存在。';
+                });
+        }
+
+        function showContent(text) {
+            contentEl.textContent = text;
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+        }
+
+        function closeModal() {
+            overlay.classList.remove('active');
+        }
+
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && overlay.classList.contains('active')) {
+                closeModal();
+            }
+        });
+
+        document.querySelectorAll('a.md-link').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                openModal(this.getAttribute('data-md'));
+            });
+        });
+    })();
+    </script>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

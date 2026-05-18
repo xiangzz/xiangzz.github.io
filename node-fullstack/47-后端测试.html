@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后端测试 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>后端测试</h1>
+            <p>写出值得信赖的代码</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>改了一行代码，上线后发现另外三个功能坏了——这种事怎么避免？</h4>
+                <p>答案就是<strong>自动化测试</strong>。测试不是"锦上添花"，而是项目能持续迭代的"安全网"。没有测试的代码，每次修改都像走钢丝。</p>
+                <p>本章将带你从零搭建 Node.js 后端的测试体系：单元测试、集成测试、E2E 测试，一个不落。</p>
+            </div>
+        </section>
+
+        <!-- 测试金字塔 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>测试金字塔</h3>
+                <h4>底层多、顶层少——速度和覆盖的平衡</h4>
+                <div class="ai-diagram">
+                    <h4>图：测试金字塔——单元测试、集成测试、E2E 测试的层次与比例</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：经典测试金字塔形状，分三层，从下到上依次变窄
+                    - 底层（最宽层，标题"单元测试 70%"，浅绿色底色 #c8e6c9，绿色边框 #388e3c）：标注"毫秒级 | 单个函数/方法"，示例"密码哈希、邮箱验证"
+                    - 中层（中等宽度，标题"集成测试 20%"，浅黄色底色 #fff9c4，黄色边框 #f9a825）：标注"秒级 | 多模块协作"，示例"API + 数据库 + 认证"
+                    - 顶层（最窄层，标题"E2E 测试 10%"，浅橙色底色 #ffccbc，橙色边框 #d84315）：标注"十秒级 | 完整用户流程"，示例"注册-登录-操作-登出"
+                    - 各元素关系：三层之间用箭头从下到上连接，表示层级关系，底部最宽表示数量最多，顶部最窄表示数量最少
+                    - 关键标注：每层标注占比百分比（70%、20%、10%）、执行速度（毫秒级、秒级、十秒级）、测试粒度描述
+                    - 配色建议：浅灰背景，三层分别用浅绿/浅黄/浅橙底色，边框颜色略深于底色，文字用深色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>原则：单元测试量大跑得快，E2E 测试少量但覆盖关键流程。金字塔底部越扎实，你对代码越有信心。</p>
+            </div>
+        </section>
+
+        <!-- 分部标题：单元测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 单元测试</h2>
+                <h4>最小粒度的验证——一个函数一个函数地测</h4>
+                <p>单元测试是测试金字塔的基石，它验证的是<strong>单个函数或方法</strong>的行为是否正确。粒度小意味着运行速度快、定位问题精准——一个测试红了，你就知道是哪个函数出了问题。</p>
+                <p>本部分将从框架选型开始，带你掌握 AAA 编写模式、参数化测试、中间件隔离测试、文件上传测试以及 WebSocket 事件测试等核心技能。</p>
+            </div>
+        </section>
+
+        <!-- Jest vs Vitest -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>选择测试框架</h3>
+                <h4>Jest 老牌稳定，Vitest 后起之秀</h4>
+                <table>
+                    <thead>
+                        <tr><th>特性</th><th>Jest</th><th>Vitest</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>执行速度</td><td>中等</td><td>快（原生 ESM）</td></tr>
+                        <tr><td>TS 支持</td><td>需 ts-jest</td><td>原生支持</td></tr>
+                        <tr><td>API 兼容</td><td>Jest 原生</td><td>Jest 兼容</td></tr>
+                        <tr><td>覆盖率</td><td>Istanbul</td><td>c8 / V8</td></tr>
+                    </tbody>
+                </table>
+                <p>本教程选择 <strong>Vitest</strong>——与 Vite 生态无缝集成，API 与 Jest 兼容，迁移成本几乎为零。</p>
+            </div>
+        </section>
+
+        <!-- 安装配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>安装与配置</h3>
+                <h4>一行命令装好，几行配置搞定</h4>
+                <pre><code class="language-bash">$ npm install -D vitest supertest @types/supertest</code></pre>
+                <pre><code class="language-typescript">// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    globals: true,       // 使用全局 API
+    environment: 'node', // Node.js 环境
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      include: ['src/**/*.ts'],
+    },
+    setupFiles: ['./tests/setup.ts'],
+  },
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 测试 setup -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>全局 setup</h3>
+                <h4>测试前准备环境，测试后清理数据</h4>
+                <pre><code class="language-typescript">// tests/setup.ts
+import { beforeAll, afterAll, afterEach } from 'vitest';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+beforeAll(async () => {
+  await prisma.$connect();     // 连接数据库
+});
+
+afterEach(async () => {
+  // 按依赖顺序清理表数据
+  const tables = ['Message', 'Post', 'User'];
+  for (const table of tables) {
+    await (prisma as any)[table.toLowerCase()].deleteMany();
+  }
+});
+
+afterAll(async () => {
+  await prisma.$disconnect();  // 关闭连接
+});
+
+export { prisma };</code></pre>
+            </div>
+        </section>
+
+        <!-- 测试工具函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>测试工具函数</h3>
+                <h4>被测代码：密码工具</h4>
+                <pre><code class="language-typescript">// src/utils/password.util.ts
+import bcrypt from 'bcryptjs';
+
+const SALT_ROUNDS = 10;
+
+export async function hashPassword(password: string): Promise&lt;string&gt; {
+  if (!password || password.length &lt; 6) {
+    throw new Error('密码长度不能少于6位');
+  }
+  return bcrypt.hash(password, SALT_ROUNDS);
+}
+
+export async function verifyPassword(
+  password: string, hash: string
+): Promise&lt;boolean&gt; {
+  return bcrypt.compare(password, hash);
+}
+
+export function validateEmail(email: string): boolean {
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return regex.test(email);
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 编写单元测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>编写单元测试</h3>
+                <h4>AAA 模式：准备、执行、断言</h4>
+                <pre><code class="language-typescript">// tests/unit/password.util.test.ts
+import { describe, it, expect } from 'vitest';
+import { hashPassword, verifyPassword, validateEmail } from '../../src/utils/password.util';
+
+describe('hashPassword', () => {
+  it('应该成功哈希有效密码', async () => {
+    const hash = await hashPassword('MyPassword123');
+    expect(hash).toBeDefined();
+    expect(hash).not.toBe('MyPassword123');
+    expect(hash.startsWith('$2a$')).toBe(true);
+  });
+
+  it('应该在密码太短时抛出错误', async () => {
+    await expect(hashPassword('12345'))
+      .rejects.toThrow('密码长度不能少于6位');
+  });
+
+  it('每次哈希结果应该不同', async () => {
+    const hash1 = await hashPassword('samePassword');
+    const hash2 = await hashPassword('samePassword');
+    expect(hash1).not.toBe(hash2); // 盐值不同
+  });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 参数化测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>参数化测试</h3>
+                <h4>用 it.each 一批测多组数据</h4>
+                <pre><code class="language-typescript">describe('validateEmail', () => {
+  it.each([
+    ['user@example.com', true],
+    ['test.name@domain.co', true],
+    ['invalid', false],
+    ['@missing.com', false],
+    ['missing@.com', false],
+    ['', false],
+  ])('validateEmail("%s") 应该返回 %s', (email, expected) => {
+    expect(validateEmail(email)).toBe(expected);
+  });
+});</code></pre>
+                <div class="intro-block">
+                    <p><code>it.each</code> 让你用一个测试用例覆盖多组输入输出，避免重复代码。每组数据独立运行，互不影响。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 中间件测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>中间件测试</h3>
+                <h4>隔离测试 Express 中间件，Mock req/res/next</h4>
+                <p>Express 中间件本质上是接收 <code>(req, res, next)</code> 三个参数的函数。测试中间件的关键在于<strong>构造假的请求和响应对象</strong>，然后观察中间件是否调用了正确的函数。</p>
+                <pre><code class="language-typescript">// tests/unit/middleware/requireAuth.test.ts
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { requireAuth } from '../../../src/middleware/requireAuth';
+
+function createMockRes() {
+  return {
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
+  } as any;
+}
+
+describe('requireAuth 中间件', () => {
+  it('无 token 时应返回 401', () => {
+    const req = { headers: {} } as any;
+    const res = createMockRes();
+    const next = vi.fn();
+
+    requireAuth(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: '未提供认证令牌' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('有效 token 时应调用 next 并注入 user', () => {
+    const req = {
+      headers: { authorization: 'Bearer valid-token' },
+    } as any;
+    const res = createMockRes();
+    const next = vi.fn();
+
+    requireAuth(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(req.user).toBeDefined();
+  });
+});</code></pre>
+                <div class="intro-block">
+                    <p>技巧：把 <code>createMockRes</code> 提取为公共工具函数，在多个中间件测试中复用。也可以用 <code>vi.fn()</code> 监听 <code>next</code> 是否被调用、被调用时的参数等。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 文件上传测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>文件上传测试</h3>
+                <h4>用 Supertest 测试 multipart/form-data</h4>
+                <p>Supertest 提供了 <code>.attach()</code> 和 <code>.field()</code> 方法来模拟文件上传。测试时重点关注<strong>文件类型校验、大小限制、上传成功后的响应</strong>。</p>
+                <pre><code class="language-typescript">// tests/integration/upload.test.ts
+import { describe, it, expect, beforeAll } from 'vitest';
+import request from 'supertest';
+import { app } from '../../src/app';
+import path from 'path';
+import { generateAccessToken } from '../../src/utils/jwt';
+
+describe('POST /api/upload', () => {
+  let token: string;
+
+  beforeAll(async () => {
+    // 获取认证 token...
+    token = 'test-token';
+  });
+
+  it('应该成功上传图片', async () => {
+    const res = await request(app)
+      .post('/api/upload')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', path.join(__dirname, '../fixtures/test-image.png'))
+      .field('category', 'avatar');
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty('url');
+    expect(res.body.category).toBe('avatar');
+  });
+
+  it('文件超过大小限制时应返回 413', async () => {
+    const res = await request(app)
+      .post('/api/upload')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', path.join(__dirname, '../fixtures/large-file.pdf'));
+
+    expect(res.status).toBe(413);
+    expect(res.body.error).toContain('文件大小');
+  });
+
+  it('不支持的文件类型应返回 400', async () => {
+    const res = await request(app)
+      .post('/api/upload')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', path.join(__dirname, '../fixtures/malware.exe'));
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('不支持的文件类型');
+  });
+});</code></pre>
+                <div class="warning">
+                    <strong>测试前准备：</strong>在 <code>tests/fixtures/</code> 目录下放好各种测试文件（正常图片、超大文件、非法类型文件），确保测试可重复运行。
+                </div>
+            </div>
+        </section>
+
+        <!-- WebSocket/Socket.io 测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>WebSocket / Socket.io 测试</h3>
+                <h4>测试实时通信的连接、事件和广播</h4>
+                <p>测试 Socket.io 的关键是<strong>创建真实的服务器实例</strong>，然后用 <code>socket.io-client</code> 连接并监听/发送事件。注意测试结束后要关闭服务器和客户端连接。</p>
+                <pre><code class="language-typescript">// tests/unit/socket.test.ts
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { io as Client } from 'socket.io-client';
+import { setupSocketHandlers } from '../../src/socket/handlers';
+
+describe('Socket.io 事件测试', () => {
+  let io: Server;
+  let serverSocket: any;
+  let clientSocket: any;
+  let httpServer: any;
+
+  beforeAll((done) => {
+    httpServer = createServer();
+    io = new Server(httpServer);
+    setupSocketHandlers(io);
+    httpServer.listen(() => {
+      const port = (httpServer.address() as any).port;
+      clientSocket = Client(`http://localhost:${port}`);
+      io.on('connection', (socket) => { serverSocket = socket; });
+      clientSocket.on('connect', done);
+    });
+  });
+
+  afterAll(() => {
+    io.close();
+    clientSocket.close();
+    httpServer.close();
+  });
+
+  it('应该接收广播消息', (done) => {
+    clientSocket.on('message', (msg: string) => {
+      expect(msg).toBe('Hello everyone!');
+      done();
+    });
+    serverSocket.emit('message', 'Hello everyone!');
+  });
+
+  it('应该处理 join_room 事件', (done) => {
+    clientSocket.emit('join_room', 'room-1');
+    serverSocket.on('join_room', (room: string) => {
+      expect(room).toBe('room-1');
+      done();
+    });
+  });
+});</code></pre>
+                <div class="intro-block">
+                    <p>测试实时通信时，用 <code>done</code> 回调（或返回 Promise）来等待异步事件完成。如果测试出现超时，检查是否有未关闭的连接导致进程挂起。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 分部标题：HTTP 接口测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 接口测试</h2>
+                <h4>用 Supertest 模拟 HTTP 请求</h4>
+                <p>接口测试验证的是 <strong>HTTP 层的正确性</strong>——请求参数校验、响应格式、状态码、错误处理是否都符合预期。它是"不启动服务器就能测接口"的关键手段。</p>
+                <p>通过 Supertest，你可以在测试中模拟 GET/POST/PUT/DELETE 请求，覆盖正常路径和各种边界异常，确保 API 的行为在任何改动下都保持一致。</p>
+            </div>
+        </section>
+
+        <!-- Supertest -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Supertest 入门</h3>
+                <h4>不启动服务器也能测接口</h4>
+                <p><strong>Supertest</strong> 可以模拟 HTTP 请求到 Express 应用，无需真正监听端口。它自动创建临时服务器并发送请求。</p>
+                <div class="warning">
+                    <strong>关键：</strong>确保 <code>app.ts</code> 导出的是 <code>app</code> 实例，而不是调用 <code>app.listen()</code> 后的 server。<code>listen</code> 放在单独的 <code>server.ts</code> 中。
+                </div>
+                <pre><code class="language-typescript">// tests/integration/auth.test.ts
+import { describe, it, expect } from 'vitest';
+import request from 'supertest';
+import { app } from '../../src/app';
+
+describe('POST /api/auth/register', () => {
+  it('应该成功注册新用户', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        email: 'test@example.com',
+        password: 'Password123!',
+        name: 'Test User',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty('user');
+    expect(res.body.user).not.toHaveProperty('password');
+  });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 接口测试进阶 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>接口测试进阶</h3>
+                <h4>覆盖异常场景和边界情况</h4>
+                <pre><code class="language-typescript">describe('POST /api/auth/register', () => {
+  it('应该在邮箱重复时返回 409', async () => {
+    // 先注册一次
+    await request(app).post('/api/auth/register').send({
+      email: 'dup@example.com', password: 'Pass123!', name: 'First',
+    });
+    // 再用相同邮箱注册
+    const res = await request(app).post('/api/auth/register').send({
+      email: 'dup@example.com', password: 'Pass456!', name: 'Second',
+    });
+    expect(res.status).toBe(409);
+  });
+
+  // 参数化测试：多种无效输入
+  it.each([
+    [{ email: '', password: 'Pass123!', name: 'T' }, '邮箱不能为空'],
+    [{ email: 'test@example.com', password: '123', name: 'T' }, '密码长度'],
+    [{ email: 'bad-email', password: 'Pass123!', name: 'T' }, '邮箱格式'],
+  ])('参数无效时返回 400', async (body, errorMsg) => {
+    const res = await request(app)
+      .post('/api/auth/register').send(body);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain(errorMsg);
+  });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 分部标题：数据库测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 数据库测试</h2>
+                <h4>数据隔离、可重复、不污染生产</h4>
+                <p>数据库是后端的核心依赖，也是测试中最容易"翻车"的地方。如果测试之间共享数据，执行顺序一变，结果就可能不同。</p>
+                <p>本部分介绍四种数据库测试策略，教你如何用独立测试库、事务回滚、内存数据库和 Mock Prisma 来实现<strong>数据隔离</strong>，让每个测试都像在一张白纸上运行，结果可重复、可信赖。</p>
+            </div>
+        </section>
+
+        <!-- 数据库测试策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>四种策略对比</h3>
+                <h4>选对策略，测试又快又稳</h4>
+                <table>
+                    <thead>
+                        <tr><th>策略</th><th>优点</th><th>缺点</th><th>场景</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>独立测试库</td><td>最接近生产</td><td>需管理清理</td><td>集成测试（推荐）</td></tr>
+                        <tr><td>事务回滚</td><td>自动清理快</td><td>不能测事务</td><td>快速单元测试</td></tr>
+                        <tr><td>内存数据库</td><td>零配置极快</td><td>行为可能不同</td><td>简单 CRUD</td></tr>
+                        <tr><td>Mock Prisma</td><td>无需真库</td><td>不测真实 SQL</td><td>纯逻辑测试</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 环境变量配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>测试环境隔离</h3>
+                <h4>独立数据库 + 独立环境变量</h4>
+                <pre><code class="language-bash"># .env.test
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/myapp_test"
+JWT_ACCESS_SECRET="test-access-secret"
+NODE_ENV="test"</code></pre>
+                <pre><code class="language-typescript">// tests/setup-db.ts
+import { PrismaClient } from '@prisma/client';
+
+// 安全检查：绝不在生产环境跑测试
+if (process.env.NODE_ENV !== 'test') {
+  throw new Error('测试只能在 test 环境运行');
+}
+
+const prisma = new PrismaClient({
+  datasources: {
+    db: { url: process.env.DATABASE_URL },
+  },
+});
+
+afterEach(async () => {
+  const models = ['Message', 'Post', 'User'];
+  for (const model of models) {
+    await (prisma as any)[model.charAt(0).toLowerCase() + model.slice(1)]
+      .deleteMany();
+  }
+});
+
+export { prisma };</code></pre>
+                <div class="warning">
+                    <strong>绝对不要在测试中连接生产数据库！</strong>始终使用独立的测试数据库。在 setup 文件中添加环境检查是最基本的保护。
+                </div>
+            </div>
+        </section>
+
+        <!-- Mock Prisma -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Mock Prisma</h3>
+                <h4>不连数据库也能测服务层</h4>
+                <pre><code class="language-typescript">// tests/unit/user.service.test.ts
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { UserService } from '../../src/services/user.service';
+import { PrismaClient } from '@prisma/client';
+
+// Mock Prisma Client
+vi.mock('@prisma/client', () => {
+  const mockPrisma = {
+    user: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+    },
+  };
+  return { PrismaClient: vi.fn(() => mockPrisma) };
+});
+
+describe('UserService', () => {
+  let service: UserService;
+  let mockPrisma: any;
+
+  beforeEach(() => {
+    mockPrisma = new PrismaClient();
+    service = new UserService(mockPrisma);
+  });
+
+  it('创建用户不返回密码', async () => {
+    const mockUser = { id: 1, email: 't@e.com', name: 'Test' };
+    mockPrisma.user.create.mockResolvedValue(mockUser);
+
+    const result = await service.createUser('t@e.com', 'pass', 'Test');
+    expect(result).not.toHaveProperty('password');
+  });
+});</code></pre>
+                <div class="intro-block">
+                    <p>优先使用真实数据库做集成测试。只在需要隔离外部依赖或测试边界条件时才用 Mock。过度 Mock 会让测试与实现细节耦合，一重构就全红。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 分部标题：E2E -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: E2E 测试</h2>
+                <h4>从用户视角验证完整流程</h4>
+                <p>E2E（端到端）测试模拟的是<strong>真实用户的操作流程</strong>：注册、登录、创建内容、修改、删除——整个链路一气呵成。它是最接近生产环境的测试方式。</p>
+                <p>虽然 E2E 测试运行较慢、维护成本较高，但它是你上线前的最后一道防线。只要 E2E 测试全绿，你就基本可以放心部署。本部分还包括外部服务 Mock、快照测试和测试调试等实用技巧。</p>
+            </div>
+        </section>
+
+        <!-- 集成测试 CRUD -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>集成测试：CRUD</h3>
+                <h4>覆盖增删改查 + 权限控制</h4>
+                <pre><code class="language-typescript">// tests/integration/posts.test.ts
+import { describe, it, expect, beforeAll } from 'vitest';
+import request from 'supertest';
+import { app } from '../../src/app';
+import { prisma } from '../setup-db';
+import { generateAccessToken } from '../../src/utils/jwt';
+
+describe('Posts API', () => {
+  let authToken: string;
+  let userId: number;
+
+  beforeAll(async () => {
+    const user = await prisma.user.create({
+      data: { email: 'p@e.com', name: 'Poster',
+              password: 'hash', role: 'USER' },
+    });
+    userId = user.id;
+    authToken = generateAccessToken({
+      userId: user.id, email: user.email, role: user.role,
+    });
+  });
+
+  it('应该成功创建文章', async () => {
+    const res = await request(app)
+      .post('/api/posts')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ title: '测试文章', content: '内容' });
+    expect(res.status).toBe(201);
+  });
+
+  it('未认证不能创建文章', async () => {
+    const res = await request(app)
+      .post('/api/posts')
+      .send({ title: '无认证', content: '内容' });
+    expect(res.status).toBe(401);
+  });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- E2E 完整流程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>E2E：用户流程</h3>
+                <h4>注册→登录→创建→查看→更新→删除</h4>
+                <pre><code class="language-typescript">// tests/e2e/user-flow.test.ts
+import { describe, it, expect } from 'vitest';
+import request from 'supertest';
+import { app } from '../../src/app';
+
+describe('用户完整流程', () => {
+  let accessToken: string;
+  let postId: number;
+
+  it('注册→登录→创建→查看→更新→删除', async () => {
+    // 1. 注册
+    const reg = await request(app).post('/api/auth/register')
+      .send({ email: 'e2e@e.com', password: 'Pass123!', name: 'E2E' });
+    expect(reg.status).toBe(201);
+
+    // 2. 登录
+    const login = await request(app).post('/api/auth/login')
+      .send({ email: 'e2e@e.com', password: 'Pass123!' });
+    expect(login.status).toBe(200);
+    accessToken = login.body.accessToken;
+
+    // 3. 创建文章
+    const create = await request(app).post('/api/posts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ title: '第一篇', content: 'Hello!' });
+    expect(create.status).toBe(201);
+    postId = create.body.post.id;
+
+    // 4. 查看文章
+    const list = await request(app).get('/api/posts');
+    expect(list.status).toBe(200);
+    expect(list.body.posts.length).toBeGreaterThan(0);
+
+    // 5. 更新文章
+    const update = await request(app)
+      .patch(`/api/posts/${postId}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ title: '修改后' });
+    expect(update.status).toBe(200);
+
+    // 6. 删除文章
+    const del = await request(app)
+      .delete(`/api/posts/${postId}`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(del.status).toBe(200);
+  });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 外部服务 Mock -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>外部服务 Mock</h3>
+                <h4>用 nock 拦截 HTTP 请求，隔离第三方依赖</h4>
+                <p>当你的后端调用 AWS S3、邮件服务、OAuth 提供方等第三方 API 时，测试中<strong>绝对不能发真实请求</strong>。<code>nock</code> 可以拦截指定 URL 的 HTTP 请求并返回预设响应，让测试完全可控。</p>
+                <pre><code class="language-typescript">// tests/integration/avatar-upload.test.ts
+import { describe, it, expect, afterEach } from 'vitest';
+import nock from 'nock';
+import { uploadToS3 } from '../../src/services/s3';
+
+describe('uploadToS3', () => {
+  afterEach(() => nock.cleanAll());
+
+  it('成功上传时应返回文件 URL', async () => {
+    nock('https://my-bucket.s3.amazonaws.com')
+      .put(/\/uploads\//)
+      .reply(200, { Location: 'https://my-bucket.s3.amazonaws.com/uploads/avatar.png' });
+
+    const result = await uploadToS3(Buffer.from('fake-image'), 'avatar.png');
+    expect(result.url).toContain('uploads/avatar.png');
+  });
+
+  it('S3 服务异常时应抛出错误', async () => {
+    nock('https://my-bucket.s3.amazonaws.com')
+      .put(/\/uploads\//)
+      .reply(500);
+
+    await expect(uploadToS3(Buffer.from('data'), 'file.png'))
+      .rejects.toThrow();
+  });
+});</code></pre>
+                <div class="intro-block">
+                    <p>除了 <code>nock</code>，你还可以用 <code>msw</code>（Mock Service Worker）——它能在 Node 和浏览器环境中通用，API 更现代。对于定时任务相关代码，用 <code>vi.useFakeTimers()</code> 来冻结或快进时间。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Mock 时间依赖 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Mock 时间与定时器</h3>
+                <h4>用 vi.useFakeTimers 控制时间流逝</h4>
+                <p>涉及 JWT 过期检查、定时任务、延迟重试等场景时，<strong>不能真的等几小时</strong>。Vitest 提供了 <code>vi.useFakeTimers()</code> 让你自由控制时间。</p>
+                <pre><code class="language-typescript">// tests/unit/token-expiry.test.ts
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { isTokenExpired } from '../../src/utils/jwt';
+
+describe('isTokenExpired', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('token 未过期应返回 false', () => {
+    const future = Date.now() / 1000 + 3600; // 1小时后过期
+    expect(isTokenExpired({ exp: future })).toBe(false);
+  });
+
+  it('token 已过期应返回 true', () => {
+    const past = Date.now() / 1000 - 10; // 10秒前过期
+    expect(isTokenExpired({ exp: past })).toBe(true);
+  });
+
+  it('快进时间后 token 应变为过期', () => {
+    const twoHoursLater = Date.now() / 1000 + 7200;
+    expect(isTokenExpired({ exp: twoHoursLater })).toBe(false);
+    vi.advanceTimersByTime(3 * 60 * 60 * 1000); // 快进3小时
+    expect(isTokenExpired({ exp: twoHoursLater })).toBe(true);
+  });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 快照测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>快照测试</h3>
+                <h4>用 toMatchInlineSnapshot 锁定 API 响应结构</h4>
+                <p>快照测试可以<strong>捕获 API 响应的完整结构</strong>，任何字段变更都会触发测试失败，非常适合守护 API 契约。推荐用 <code>toMatchInlineSnapshot</code> 把快照写在测试文件中，一目了然。</p>
+                <pre><code class="language-typescript">// tests/integration/api-contract.test.ts
+import { describe, it, expect } from 'vitest';
+import request from 'supertest';
+import { app } from '../../src/app';
+
+describe('API 响应契约', () => {
+  it('GET /api/users 响应结构不应意外变化', async () => {
+    const res = await request(app).get('/api/users');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchInlineSnapshot(`
+      {
+        "page": 1,
+        "total": 0,
+        "users": [],
+      }
+    `);
+  });
+});</code></pre>
+                <div class="warning">
+                    <strong>注意快照漂移：</strong>当 API 确实需要变更时，运行 <code>vitest -u</code> 更新快照。但每次更新都要<strong>人工确认</strong>变更是否合理，不要盲目 <code>-u</code> 全部通过。快照测试是"守卫"而非"文档"。
+                </div>
+            </div>
+        </section>
+
+        <!-- 测试调试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>测试调试技巧</h3>
+                <h4>定位失败的测试，快速找到根因</h4>
+                <pre><code class="language-bash"># 只跑单个测试文件
+$ npx vitest run tests/unit/password.util.test.ts
+
+# 详细输出模式，显示每个测试的耗时
+$ npx vitest run --reporter=verbose
+
+# Vitest UI：可视化查看测试结果
+$ npx vitest --ui</code></pre>
+                <pre><code class="language-json">// .vscode/launch.json — VS Code 调试配置
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Current Test",
+      "program": "${workspaceFolder}/node_modules/vitest/vitest.mjs",
+      "args": ["run", "${relativeFile}"],
+      "console": "integratedTerminal"
+    }
+  ]
+}</code></pre>
+                <div class="intro-block">
+                    <p>调试流程：先跑单个文件确认问题范围，再用 <code>--reporter=verbose</code> 看详细信息，最后用 VS Code 断点调试深入排查。遇到"只有 CI 上失败"的问题，优先检查环境变量、数据库状态和时区差异。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 测试脚本 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>测试脚本配置</h3>
+                <h4>package.json 中的常用命令</h4>
+                <h4>package.json 中的常用命令</h4>
+                <pre><code class="language-json">{
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "vitest run tests/e2e",
+    "test:coverage": "vitest run --coverage",
+    "test:ci": "vitest run --coverage --reporter=json"
+  }
+}</code></pre>
+                <pre><code class="language-bash"># 日常开发：监听模式，改完代码自动跑
+$ npm run test:watch
+
+# 跑全部测试
+$ npm test
+
+# 只跑单元测试
+$ npm run test:unit
+
+# 查看覆盖率报告
+$ npm run test:coverage</code></pre>
+            </div>
+        </section>
+
+        <!-- CI 配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CI 自动化测试</h3>
+                <h4>GitHub Actions 配置</h4>
+                <pre><code class="language-yaml"># .github/workflows/test.yml
+name: Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: myapp_test
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/myapp_test
+      - run: npm run test:ci
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/myapp_test
+          NODE_ENV: test</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见坑与排错</h3>
+
+                <div class="warning">
+                    <strong>测试中的 bug 通常和"状态泄漏"有关。</strong>以下是最常踩的坑。
+                </div>
+
+                <h4>问题一：测试有时通过有时不通过</h4>
+                <p><strong>原因</strong>：测试之间共享了状态，执行顺序不同结果不同。</p>
+                <p><strong>修复</strong>：在 <code>afterEach</code> 中清理数据，确保每个测试独立运行。</p>
+
+                <h4>问题二：Supertest 报 "EADDRINUSE"</h4>
+                <p><strong>原因</strong>：导出了调用 <code>app.listen()</code> 后的 server，而不是 app 本身。</p>
+                <p><strong>修复</strong>：<code>app.ts</code> 导出 <code>export const app = express()</code>，<code>listen</code> 放在 <code>server.ts</code>。</p>
+
+                <h4>问题三：Mock 不生效，仍然连了真数据库</h4>
+                <p><strong>原因</strong>：<code>vi.mock</code> 的路径与实际 import 路径不匹配。</p>
+                <p><strong>修复</strong>：确保 mock 路径和被测文件中的 import 路径完全一致。</p>
+
+                <h4>问题四：覆盖率明明跑了但数字是 0%</h4>
+                <p><strong>原因</strong>：<code>include</code> 配置的路径没有匹配到源文件。</p>
+                <p><strong>修复</strong>：检查 <code>coverage.include</code> 中的 glob 模式是否正确。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>动手练一练</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：为以下函数编写单元测试。</p>
+                        <pre><code class="language-typescript">// src/utils/validator.ts
+export function validateUsername(name: string): string {
+  if (!name) throw new Error('用户名不能为空');
+  if (name.length &lt; 2) throw new Error('用户名至少2个字符');
+  if (name.length > 20) throw new Error('用户名不能超过20个字符');
+  return name.trim();
+}
+// 你的测试：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">// tests/unit/validator.test.ts
+import { describe, it, expect } from 'vitest';
+import { validateUsername } from '../../src/utils/validator';
+
+describe('validateUsername', () => {
+  it('正常用户名应该返回 trim 后的值', () => {
+    expect(validateUsername('  张三  ')).toBe('张三');
+  });
+
+  it('空字符串应该抛错', () => {
+    expect(() => validateUsername('')).toThrow('用户名不能为空');
+  });
+
+  it('少于2个字符应该抛错', () => {
+    expect(() => validateUsername('A')).toThrow('至少2个字符');
+  });
+
+  it.each([
+    ['', '用户名不能为空'],
+    ['A', '至少2个字符'],
+    ['A'.repeat(21), '不能超过20个字符'],
+  ])('"%s" 应该抛出含 "%s" 的错误', (input, msg) => {
+    expect(() => validateUsername(input)).toThrow(msg);
+  });
+});</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：用 Supertest 为一个 GET 接口编写集成测试。</p>
+                        <pre><code class="language-typescript">// 接口：GET /api/users?page=1&limit=10
+// 返回：{ users: User[], total: number, page: number }
+// 要求：
+// 1. 测试正常返回 200 + 数据结构
+// 2. 测试分页参数
+// 3. 测试未认证返回 401
+// 你的测试：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">import { describe, it, expect, beforeAll } from 'vitest';
+import request from 'supertest';
+import { app } from '../../src/app';
+
+describe('GET /api/users', () => {
+  let token: string;
+
+  beforeAll(async () => {
+    // 注册并登录获取 token
+    await request(app).post('/api/auth/register')
+      .send({ email: 'u@e.com', password: 'Pass123!', name: 'Test' });
+    const res = await request(app).post('/api/auth/login')
+      .send({ email: 'u@e.com', password: 'Pass123!' });
+    token = res.body.accessToken;
+  });
+
+  it('返回 200 和正确数据结构', async () => {
+    const res = await request(app)
+      .get('/api/users')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('users');
+    expect(res.body).toHaveProperty('total');
+  });
+
+  it('支持分页参数', async () => {
+    const res = await request(app)
+      .get('/api/users?page=1&limit=5')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.users.length).toBeLessThanOrEqual(5);
+  });
+
+  it('未认证返回 401', async () => {
+    const res = await request(app).get('/api/users');
+    expect(res.status).toBe(401);
+  });
+});</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>你已经掌握了后端测试的完整体系。下一章我们学习 <strong>GraphQL</strong>——一种更灵活的 API 设计方式，让前端按需获取数据，告别过度获取和不足获取。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

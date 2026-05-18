@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>01 Slash Commands</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        /* 卡片垂直排列——覆写项目 CSS 的 grid 布局 */
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+        /* Mermaid 图表容器 */
+        pre.mermaid {
+            background: #FFFFFF;
+            border: 1px solid var(--border-color, #E5E7EB);
+            border-radius: 8px;
+            padding: 24px;
+            margin: 20px 0;
+            text-align: center;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 01 章</div>
+            <h1>Slash Commands</h1>
+            <p>把重复的对话流程，压缩成一条稳定、可复用、可分享的命令</p>
+            <strong>一个命令文件，不只是快捷键，更是团队工作流的入口</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>重复的对话</h2>
+                <h4>你有没有发现，每天都在对 Claude Code 说几乎一样的话？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>每次提交代码</h4>
+                        <p>都要重新解释一遍：<em>"请根据 diff 生成 conventional commit 格式的提交信息，不要超过 72 个字符……"</em></p>
+                    </div>
+                    <div class="card">
+                        <h4>每次审查代码</h4>
+                        <p>都要重新描述一遍：<em>"请从安全性、可维护性、代码质量三个维度审查，按严重程度排列……"</em></p>
+                    </div>
+                    <div class="card">
+                        <h4>每次准备 PR</h4>
+                        <p>都要重新回忆一遍：<em>"先跑 lint，再跑测试，然后生成变更摘要……"</em></p>
+                    </div>
+                </div>
+                <p style="margin-top: 24px;">一周下来，同样的提示词你敲了不下二十遍——<strong>而且每次结果还不一样</strong>。</p>
+                <div class="key-point">
+                    <strong>Slash Command 就是为这个设计的：</strong>把重复的对话流程，压缩成一条稳定、可复用、可分享的命令。一次写好，全团队受益。
+                </div>
+            </div>
+        </section>
+
+        <!-- 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>刚开始用 Claude Code，还在重复敲同样提示词的人</li>
+                            <li>想把个人经验沉淀成团队可复用流程的人</li>
+                            <li>知道 Markdown 和基本命令行，但还没写过 Skill 的人</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该已经能</h4>
+                        <ul>
+                            <li>分清内置命令、Skill、旧式 command、插件命令、MCP prompts</li>
+                            <li>写出一个最小可运行的 slash command</li>
+                            <li>给命令加参数、上下文注入、文件引用和安全边界</li>
+                            <li>判断哪些命令适合做成教程，哪些已经太重了</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>这些内容暂时先不碰</h4>
+                        <ul>
+                            <li>复杂插件打包与发布</li>
+                            <li>多 agent 编排与 <code>context: fork</code> 的高级用法</li>
+                            <li>大型 Skill 的 references、assets、scripts 设计</li>
+                            <li>生产环境自动部署细节</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>环境与版本：</strong>基于 Claude Code 2.1.97 附近的命令体系编写。文中优先使用 <code>.claude/skills/</code>，因为自定义 slash command 已经逐步并入 Skills。如果你曾用过 <code>.claude/commands/</code>，两者仍然共存，但 Skill 同名时优先。
+                </div>
+            </div>
+        </section>
+
+        <!-- 动机：把重复的话收成命令 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>重复变命令</h2>
+                <h4>把"我每次都要重复说一遍"的操作，变成"以后只要输入一条命令"</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>学之前，常见困难</h4>
+                        <ul>
+                            <li>每次提交代码，都要重复解释"请根据 diff 生成 commit message"</li>
+                            <li>每次准备 PR，都得自己想起 lint、test、summary 这些步骤</li>
+                            <li>团队成员各写各的 prompt，结果风格不一致</li>
+                            <li>危险操作没有统一防护，容易把"方便"写成"事故"</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>学之后，可以直接做到</h4>
+                        <ul>
+                            <li><code>/commit</code> 自动读取 diff，生成合适的提交说明</li>
+                            <li><code>/pr</code> 按固定清单准备 Pull Request</li>
+                            <li><code>/push-all</code> 在安全检查后批量暂存、提交、推送</li>
+                            <li>把"隐性经验"变成"显式流程"，让自己和团队都更稳</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>这章要做的事：</strong>把"我每次都要重复说一遍"的操作，变成"以后只要输入一条命令"。
+                </div>
+            </div>
+        </section>
+
+        <!-- 命令的四种来源 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>四类命令</h2>
+                <h4>Slash Command 就是你在 Claude Code 里敲 <code>/</code> 开头的东西。说白了，它就是一个快捷方式的入口——你敲一个 <code>/命令名</code>，Claude Code 就去执行一段预设好的操作。</h4>
+                <p>这些命令有四种来源。别急，你只需要先记住前两种，后两种知道它们存在就行。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>内置命令</h4>
+                        <p>Claude Code 自带，解决通用交互问题。55+ 个内置命令 + 5 个内置 Skill。</p>
+                        <p><code>/help</code> <code>/clear</code> <code>/model</code> <code>/compact</code> <code>/config</code></p>
+                    </div>
+                    <div class="card">
+                        <h4>Skills（推荐）</h4>
+                        <p>现在最推荐的自定义方式，本质是一个带说明的目录，可打包脚本和模板。</p>
+                        <p><code>.claude/skills/commit/SKILL.md</code></p>
+                    </div>
+                    <div class="card">
+                        <h4>旧式 command（仍可用）</h4>
+                        <p>单个 Markdown 文件，直接放在 commands 目录。若与 Skill 同名，Skill 优先。</p>
+                        <p><code>.claude/commands/commit.md</code></p>
+                    </div>
+                    <div class="card">
+                        <h4>插件与 MCP prompts</h4>
+                        <p>来自插件或 MCP server，通常用于外部能力接入。</p>
+                        <p><code>/plugin:command</code> 或 <code>/mcp__github__list_prs</code></p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>先抓主线：</strong>先学自定义 Skill 的最小闭环，再看参数、上下文、目录位置和安全边界；插件与 MCP 先认识入口，不急着深挖。
+                </div>
+            </div>
+        </section>
+
+        <!-- 内置命令速查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>内置命令速查</h2>
+                <p>以下是最常用的内置命令。在 Claude Code 中输入 <code>/</code> 可查看完整列表，继续键入字母可筛选。</p>
+                <table>
+                    <thead>
+                        <tr><th>命令</th><th>用途</th><th>别名</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="3"><strong>会话与对话管理</strong></td></tr>
+                        <tr><td><code>/clear</code></td><td>清空对话</td><td><code>/reset</code> <code>/new</code></td></tr>
+                        <tr><td><code>/branch [name]</code></td><td>分支对话到新会话</td><td><code>/fork</code></td></tr>
+                        <tr><td><code>/resume [session]</code></td><td>恢复对话</td><td><code>/continue</code></td></tr>
+                        <tr><td><code>/rewind</code></td><td>回退对话和/或代码</td><td><code>/checkpoint</code></td></tr>
+                        <tr><td><code>/rename [name]</code></td><td>重命名会话</td><td>—</td></tr>
+                        <tr><td><code>/exit</code></td><td>退出 REPL</td><td><code>/quit</code></td></tr>
+                        <tr><td><code>/compact [instructions]</code></td><td>压缩对话，可附带聚焦指令</td><td>—</td></tr>
+                        <tr><td><code>/export [filename]</code></td><td>导出对话到文件或剪贴板</td><td>—</td></tr>
+                        <tr><td colspan="3"><strong>模型与推理</strong></td></tr>
+                        <tr><td><code>/model [model]</code></td><td>选择模型，可用左右箭头调整 effort</td><td>—</td></tr>
+                        <tr><td><code>/effort [low|medium|high|max|auto]</code></td><td>设置推理强度；max 需 Opus 4.6</td><td>—</td></tr>
+                        <tr><td><code>/fast [on|off]</code></td><td>切换快速模式</td><td>—</td></tr>
+                        <tr><td colspan="3"><strong>配置与环境</strong></td></tr>
+                        <tr><td><code>/config</code></td><td>打开设置</td><td><code>/settings</code></td></tr>
+                        <tr><td><code>/init</code></td><td>初始化 CLAUDE.md（可设 <code>CLAUDE_CODE_NEW_INIT=1</code> 启用交互式流程）</td><td>—</td></tr>
+                        <tr><td><code>/memory</code></td><td>编辑 CLAUDE.md / 切换自动记忆</td><td>—</td></tr>
+                        <tr><td><code>/permissions</code></td><td>查看或更新权限</td><td><code>/allowed-tools</code></td></tr>
+                        <tr><td><code>/add-dir &lt;path&gt;</code></td><td>添加工作目录</td><td>—</td></tr>
+                        <tr><td><code>/color [color|default]</code></td><td>设置提示栏颜色</td><td>—</td></tr>
+                        <tr><td><code>/theme</code></td><td>更改颜色主题</td><td>—</td></tr>
+                        <tr><td><code>/statusline</code></td><td>配置状态栏</td><td>—</td></tr>
+                        <tr><td><code>/terminal-setup</code></td><td>配置终端快捷键</td><td>—</td></tr>
+                        <tr><td><code>/keybindings</code></td><td>打开快捷键配置</td><td>—</td></tr>
+                        <tr><td><code>/sandbox</code></td><td>切换沙盒模式</td><td>—</td></tr>
+                        <tr><td><code>/hooks</code></td><td>查看 hook 配置</td><td>—</td></tr>
+                        <tr><td><code>/context</code></td><td>用彩色网格可视化上下文占用</td><td>—</td></tr>
+                        <tr><td><code>/privacy-settings</code></td><td>隐私设置（仅 Pro/Max）</td><td>—</td></tr>
+                        <tr><td colspan="3"><strong>诊断与统计</strong></td></tr>
+                        <tr><td><code>/status</code></td><td>显示版本、模型、账号</td><td>—</td></tr>
+                        <tr><td><code>/cost</code></td><td>查看 token 使用统计</td><td>—</td></tr>
+                        <tr><td><code>/doctor</code></td><td>检查安装健康状态</td><td>—</td></tr>
+                        <tr><td><code>/stats</code></td><td>可视化每日使用量、会话和连续天数</td><td>—</td></tr>
+                        <tr><td><code>/insights</code></td><td>生成会话分析报告</td><td>—</td></tr>
+                        <tr><td><code>/diff</code></td><td>查看未提交变更的交互式 diff</td><td>—</td></tr>
+                        <tr><td colspan="3"><strong>扩展能力</strong></td></tr>
+                        <tr><td><code>/mcp</code></td><td>管理 MCP servers 和 OAuth</td><td>—</td></tr>
+                        <tr><td><code>/plugin</code></td><td>管理插件</td><td>—</td></tr>
+                        <tr><td><code>/reload-plugins</code></td><td>重新加载当前插件</td><td>—</td></tr>
+                        <tr><td><code>/skills</code></td><td>列出可用 Skills</td><td>—</td></tr>
+                        <tr><td><code>/agents</code></td><td>管理 agent 配置</td><td>—</td></tr>
+                        <tr><td><code>/ide</code></td><td>管理 IDE 集成</td><td>—</td></tr>
+                        <tr><td><code>/chrome</code></td><td>配置 Chrome 浏览器集成</td><td>—</td></tr>
+                        <tr><td colspan="3"><strong>工作流与自动化</strong></td></tr>
+                        <tr><td><code>/plan [desc]</code></td><td>进入规划模式</td><td>—</td></tr>
+                        <tr><td><code>/schedule [desc]</code></td><td>创建/管理定时任务</td><td>—</td></tr>
+                        <tr><td><code>/voice</code></td><td>按住说话语音输入</td><td>—</td></tr>
+                        <tr><td><code>/tasks</code></td><td>列出/管理后台任务</td><td>—</td></tr>
+                        <tr><td><code>/copy [N]</code></td><td>将回复复制到剪贴板；<code>w</code> 写入文件</td><td>—</td></tr>
+                        <tr><td><code>/security-review</code></td><td>分析分支中的安全漏洞</td><td>—</td></tr>
+                        <tr><td><code>/pr-comments [PR]</code></td><td>获取 GitHub PR 评论</td><td>—</td></tr>
+                        <tr><td colspan="3"><strong>账号与远程</strong></td></tr>
+                        <tr><td><code>/login</code></td><td>切换 Anthropic 账号</td><td>—</td></tr>
+                        <tr><td><code>/logout</code></td><td>退出当前 Anthropic 账号</td><td>—</td></tr>
+                        <tr><td><code>/extra-usage</code></td><td>配置额外用量以应对速率限制</td><td>—</td></tr>
+                        <tr><td><code>/desktop</code></td><td>继续在桌面应用中处理</td><td><code>/app</code></td></tr>
+                        <tr><td><code>/mobile</code></td><td>生成移动端扫码二维码</td><td><code>/ios</code> <code>/android</code></td></tr>
+                        <tr><td><code>/remote-control</code></td><td>从 claude.ai 进行远程控制</td><td><code>/rc</code></td></tr>
+                        <tr><td><code>/remote-env</code></td><td>配置默认远程环境</td><td>—</td></tr>
+                        <tr><td colspan="3"><strong>帮助与反馈</strong></td></tr>
+                        <tr><td><code>/help</code></td><td>显示帮助</td><td>—</td></tr>
+                        <tr><td><code>/btw &lt;question&gt;</code></td><td>额外问题，不写入历史</td><td>—</td></tr>
+                        <tr><td><code>/feedback</code></td><td>提交反馈</td><td><code>/bug</code></td></tr>
+                        <tr><td><code>/release-notes</code></td><td>查看更新日志</td><td>—</td></tr>
+                        <tr><td><code>/passes</code></td><td>分享一周免费 Claude Code 使用权</td><td>—</td></tr>
+                        <tr><td><code>/install-github-app</code></td><td>配置 GitHub Actions app</td><td>—</td></tr>
+                        <tr><td><code>/install-slack-app</code></td><td>安装 Slack app</td><td>—</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>内置 Skills：</strong><code>/batch</code>（并行批量修改）、<code>/debug</code>（调试日志）、<code>/loop</code>（定时重复）、<code>/simplify</code>（代码质量审查）、<code>/claude-api</code>（API 参考）。调用方式和 slash command 一样。
+                </div>
+                <div class="warning">
+                    <strong>已弃用命令：</strong><code>/review</code> 已弃用，请改用 <code>code-review</code> 插件；<code>/output-style</code> 自 v2.1.73 起弃用；<code>/fork</code> 已更名为 <code>/branch</code>（别名仍可用，v2.1.77）；<code>/vim</code> 已移除，改用 <code>/config → Editor mode</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 版本演进 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>版本演进</h2>
+                <h4>命令体系最近的变更——哪些命令变了、哪些是新加的</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>更名与弃用</h4>
+                        <ul>
+                            <li><code>/fork</code> → 更名为 <code>/branch</code>，别名仍可用（v2.1.77）</li>
+                            <li><code>/output-style</code> → 自 v2.1.73 起弃用</li>
+                            <li><code>/review</code> → 已弃用，推荐改用 <code>code-review</code> 插件</li>
+                            <li><code>/vim</code> → 自 v2.1.92 起移除，改用 <code>/config → Editor mode</code></li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>新增命令</h4>
+                        <ul>
+                            <li><code>/effort</code> — 设置推理强度，<code>max</code> 级别需 Opus 4.6</li>
+                            <li><code>/voice</code> — 按住说话语音输入</li>
+                            <li><code>/schedule</code> — 创建和管理定时任务</li>
+                            <li><code>/color</code> — 自定义提示栏颜色</li>
+                        </ul>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>变更</th><th>版本</th><th>影响</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>/model</code> 选择器显示可读标签</td><td>近期</td><td>现在显示 "Sonnet 4.6" 等人类可读名称</td></tr>
+                        <tr><td><code>/resume</code> 支持 <code>/continue</code> 别名</td><td>近期</td><td>恢复对话时可用更直觉的别名</td></tr>
+                        <tr><td>MCP prompts 可作为命令使用</td><td>近期</td><td>格式为 <code>/mcp__server__prompt</code></td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>查看最新变化：</strong>在 Claude Code 中运行 <code>/release-notes</code> 可随时查看完整更新日志。
+                </div>
+            </div>
+        </section>
+
+        <!-- 最小可运行命令 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>第一个命令</h2>
+                <h4>先做一个能跑起来的命令，再逐步加参数和安全边界</h4>
+                <p>好，现在来动手。先不要上来就做 <code>/commit</code> 或 <code>/push-all</code>——那些太复杂。</p>
+                <p>我们第一步只追求一件事：<strong>命令能被 Claude Code 发现并执行</strong>。</p>
+                <pre><code># 文件：.claude/skills/explain-file/SKILL.md
+---
+name: explain-file
+description: 用初学者能看懂的语言解释一个文件
+---
+
+请解释 $ARGUMENTS 这个文件。
+先用一句话总结，再列出 3 个关键点。</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>输入</h4>
+                        <pre><code>$ /explain-file src/auth.ts</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>输出</h4>
+                        <pre><code>这个文件负责用户认证流程。
+
+1. 它定义了登录和登出逻辑
+2. 它会读取 token 并校验过期时间
+3. 它向外暴露了当前登录状态</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    这个例子已经包含两个最重要的事实：<code>name</code> 决定命令名（会变成 <code>/explain-file</code>），正文决定 Claude 实际执行的提示词。
+                </div>
+                <div class="warning">
+                    <strong>如果你在这一步发现命令找不到：</strong>大概率是文件路径不对。确认文件在 <code>.claude/skills/explain-file/SKILL.md</code>，并且 frontmatter 里 <code>name</code> 写的是 <code>explain-file</code>。改对了之后，重启 Claude Code 会话再试。
+                </div>
+            </div>
+        </section>
+
+        <!-- 最小命令的三要素 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>命令三要素</h2>
+                <h4>name、description 和正文——一个最小命令至少要有这三样</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>必须有的部分</h4>
+                        <ul>
+                            <li><code>name</code>：决定会变成哪个 <code>/命令名</code>（省略时用目录名）</li>
+                            <li><code>description</code>：帮助 Claude 判断什么时候该自动用它</li>
+                            <li>正文：真正的工作指令，写清楚干什么、怎么输出</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>为什么先只学这三个</h4>
+                        <ul>
+                            <li>足以做出第一个可运行结果</li>
+                            <li>能先建立"命令文件 = 可执行工作流入口"的直觉</li>
+                            <li>还不会把初学者拖进权限、脚本和复杂上下文里</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code>---
+name: explain-file
+description: 用初学者能看懂的语言解释一个文件
+---
+
+请解释 $ARGUMENTS 这个文件。
+先用一句话总结，再列出 3 个关键点。</code></pre>
+                <div class="key-point">
+                    <strong>现在停一下：</strong>把上面的命令名改成 <code>summarize-note</code>，并让它改为 "总结一个 Markdown 文档的核心结论"。不要往下看，先自己改一遍。
+                </div>
+            </div>
+        </section>
+
+        <!-- 参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>命令参数</h2>
+                <h4>用 $ARGUMENTS 和 $0 $1 让同一条命令接住不同输入</h4>
+                <p>上一个命令很爽，但它有个问题：解释的文件名写死了。换个文件就得改命令内容，那又回到老路上了。</p>
+                <p>别急。接下来的问题就是：<strong>同一条命令，如何接受不同对象？</strong>这时候就该参数上场了。</p>
+                <pre><code># 用 $ARGUMENTS 接收全部参数（适合传给单个对象）
+---
+name: fix-issue
+description: 根据编号修复一个 GitHub issue
+---
+按团队规范修复 issue #$ARGUMENTS
+
+# 用 $0 和 $1 接收位置参数（适合参数角色不同）
+---
+name: review-pr
+description: 按优先级审查 PR
+argument-hint: "[PR编号] [优先级: low|medium|high]"
+---
+审查 PR #$0，最低报告级别是 $1</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>用 <code>$ARGUMENTS</code></h4>
+                        <p>整段参数原样交给命令：文件名、issue 编号、自然语言补充说明。调用 <code>/fix-issue 123</code> 时 <code>$ARGUMENTS</code> 变成 <code>123</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>用 <code>$0</code>、<code>$1</code> ...</h4>
+                        <p>参数角色不同，必须分别解释。调用 <code>/review-pr 456 high</code> 时 <code>$0="456"</code>，<code>$1="high"</code>。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>argument-hint：</strong>在 frontmatter 里写 <code>argument-hint: "[severity: low|medium|high]"</code>，输入 <code>/</code> 时会出现自动补全提示。
+                </div>
+            </div>
+        </section>
+
+        <!-- 上下文注入 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>上下文注入</h2>
+                <h4>用 !`cmd` 让命令先读取环境状态，再替你做出判断</h4>
+                <p>参数解决了"换对象"的问题，但还有一个更麻烦的事。你看——真正实用的命令，往往不是"写死一段话"，而是<strong>"先看看现在什么情况，再决定怎么做"</strong>。</p>
+                <p>比如 <code>/commit</code>：你得先知道当前改了什么文件、diff 长什么样、分支叫什么，才能生成靠谱的提交信息。这时候就要用 <code>!`cmd`</code> 注入动态上下文。</p>
+                <pre><code>---
+description: 创建带上下文的 Git 提交
+allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git commit:*), Bash(git diff:*)
+argument-hint: [message]
+---
+
+## 上下文
+- 当前 git 状态：!`git status`
+- 当前 git diff：!`git diff HEAD`
+- 当前分支：!`git branch --show-current`
+- 最近提交：!`git log --oneline -10`
+
+## 你的任务
+根据上面的变更创建一个单独的 Git 提交。
+若传入了 message 参数则直接使用：$ARGUMENTS
+否则按 conventional commits 格式生成提交信息。</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>没有上下文注入</h4>
+                        <ul>
+                            <li>Claude 不知道你改了什么</li>
+                            <li>commit message 只能靠你手动解释</li>
+                            <li>结果风格容易飘</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>有上下文注入</h4>
+                        <ul>
+                            <li>命令能直接看到当前 diff 和 git 状态</li>
+                            <li>提示词和仓库状态自动绑定</li>
+                            <li>更适合做成团队标准流程</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>别忘了 allowed-tools：</strong>用了 <code>!`git ...`</code> 就得在 frontmatter 中声明 <code>allowed-tools: Bash(git *)</code>，否则命令执行时会因权限不足而失败。
+                </div>
+            </div>
+        </section>
+
+        <!-- @ 文件引用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件引用</h2>
+                <h4>用 @ 引用文件内容，省去手动复制粘贴</h4>
+                <p><code>!`cmd`</code> 适合"会变的东西"——git 状态、环境变量、构建输出。但有时候你需要的是"一个文件的内容本身"——源码、配置、文档。这些相对固定的内容，用 <code>@</code> 更直接。</p>
+                <pre><code>审查 @src/utils/helpers.js 中的实现。
+比较 @src/old-version.js 和 @src/new-version.js。
+参考 @package.json 中的依赖版本。
+
+# 也支持 glob 模式
+检查 @src/**/*.ts 中是否有未处理的 Promise。</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合 <code>!`cmd`</code></h4>
+                        <p>需要运行时状态：git 状态、当前分支、环境变量、构建输出等<strong>会变化</strong>的信息。</p>
+                    </div>
+                    <div class="card">
+                        <h4>适合 <code>@path</code></h4>
+                        <p>需要文件内容本身：源码、配置、文档等<strong>相对静态</strong>的内容。支持 glob 批量引用。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>组合使用：</strong>真正实用的命令往往两者都用——<code>!`git diff --name-only`</code> 找出变更的文件名，再用 <code>@</code> 引用这些文件的完整内容做审查。
+                </div>
+            </div>
+        </section>
+
+        <!-- Frontmatter 完整字段参考 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>字段参考</h2>
+                <h4>SKILL.md Frontmatter 完整字段一览</h4>
+                <p>以下是 SKILL.md 中可用的全部 frontmatter 字段。先掌握前三行，其余的按需取用。</p>
+                <table>
+                    <thead>
+                        <tr><th>字段</th><th>作用</th><th>默认值</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>name</code></td><td>命令名（变成 <code>/name</code>）</td><td>目录名</td></tr>
+                        <tr><td><code>description</code></td><td>简短说明，帮助 Claude 判断何时自动调用</td><td>正文首段</td></tr>
+                        <tr><td><code>argument-hint</code></td><td><code>/</code> 菜单中的参数补全提示</td><td>无</td></tr>
+                        <tr><td><code>allowed-tools</code></td><td>命令可无权限使用的工具，逗号分隔</td><td>继承</td></tr>
+                        <tr><td><code>model</code></td><td>指定要使用的模型</td><td>继承</td></tr>
+                        <tr><td><code>disable-model-invocation</code></td><td><code>true</code> 时仅用户可调用，Claude 不自动触发</td><td><code>false</code></td></tr>
+                        <tr><td><code>user-invocable</code></td><td><code>false</code> 时不出现在 <code>/</code> 菜单</td><td><code>true</code></td></tr>
+                        <tr><td><code>context</code></td><td>设为 <code>fork</code> 时在隔离 subagent 中运行</td><td>无</td></tr>
+                        <tr><td><code>agent</code></td><td><code>context: fork</code> 时使用的 agent 类型</td><td><code>general-purpose</code></td></tr>
+                        <tr><td><code>hooks</code></td><td>Skill 级别的 hooks（PreToolUse、PostToolUse、Stop）</td><td>无</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>先收在这里：</strong><code>context: fork</code>、<code>agent</code>、<code>hooks</code> 属于进阶话题，应该放到后续 Skill 章节，而不是塞进这一章。
+                </div>
+            </div>
+        </section>
+
+        <!-- 命令放在哪里 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>命令放哪里</h2>
+                <h4>.claude/skills/ vs .claude/commands/ — 为什么现在推荐 Skills</h4>
+                <p>现在你已经会写命令了。但写好的文件放哪里，Claude Code 才能找到它？换句话说：<strong>你把命令存在哪个目录？</strong></p>
+                <pre class="tree-structure">project/
+└── .claude/
+    ├── commands/          [旧式写法，仍可用]
+    │   └── optimize.md
+    └── skills/            [当前推荐]
+        ├── commit/
+        │   └── SKILL.md
+        └── pr/
+            └── SKILL.md</pre>
+                <table>
+                    <thead>
+                        <tr><th>位置</th><th>作用范围</th><th>适合什么场景</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>.claude/skills/</code></td><td>项目级</td><td>团队共用工作流，跟仓库一起版本化</td></tr>
+                        <tr><td><code>~/.claude/skills/</code></td><td>个人级</td><td>你自己常用，但不想跟项目绑定的命令</td></tr>
+                        <tr><td><code>.claude/commands/</code></td><td>兼容旧写法</td><td>已有存量命令还在继续跑；新命令建议迁移到 skills</td></tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么推荐 Skills</h4>
+                        <ul>
+                            <li>目录结构：脚本、模板、参考文件可打包在一起</li>
+                            <li>渐进披露：只在需要时加载额外文件</li>
+                            <li>自动触发：相关场景下 Claude 可自动调用</li>
+                            <li>调用控制：可决定由用户、Claude 或两者共同调用</li>
+                            <li>子 agent 执行：可在隔离上下文中运行 skill</li>
+                            <li>优先级：同名时 Skill 覆盖旧式 command</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>安装命令</h4>
+                        <pre><code># 推荐：安装为 Skill
+mkdir -p .claude/skills/commit
+cp commit.md .claude/skills/commit/SKILL.md
+
+# 兼容：安装为旧式命令
+mkdir -p .claude/commands
+cp optimize.md .claude/commands/</code></pre>
+                    </div>
+                </div>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>迁移前（旧式 Command）</h4>
+                        <pre><code>.claude/commands/optimize.md</code></pre>
+                        <p>单个 Markdown 文件，直接放在 commands 目录。</p>
+                    </div>
+                    <div class="after">
+                        <h4>迁移后（Skill）</h4>
+                        <pre><code>.claude/skills/optimize/SKILL.md</code></pre>
+                        <p>打包进独立目录，可附带脚本、模板等资源文件。同名时 Skill 优先。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>迁移很简单：</strong>旧的 <code>.claude/commands/</code> 文件可以继续直接使用，无需立即迁移。新建命令建议直接放在 <code>.claude/skills/</code> 下。
+                </div>
+            </div>
+        </section>
+
+        <!-- /commit 背后发生了什么 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>执行流水线</h2>
+                <h4><code>/commit</code> 背后发生了什么：从输入到输出的完整流程</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/01-slash-commands-1.png" alt="图：Slash Command 执行流水线——从输入到输出的 6 个步骤" class="ai-diagram-img">
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>这张图在解释什么</h4>
+                        <p>你可以把 Slash Command 想象成一台自动售货机：你按下 B3（输入 <code>/commit</code>），机器内部的一系列齿轮就开始转动——先找到对应的商品（定位文件），读取配料表（解析 frontmatter），注入实时信息（替换变量），最后把成品送到你手上。</p>
+                        <p>这个比喻只是为了帮你建立直观感受。实际上，Slash Command 并不是什么"黑盒机器"——它做的事情本质上就是<strong>文件解析 + 变量替换 + 上下文注入 + 模型执行</strong>。大多数行为仍然来自你写进文件里的说明和注入进去的环境信息，没有魔法。</p>
+                    </div>
+                    <div class="card">
+                        <h4>关键细节</h4>
+                        <p>Skill 和旧式 command 的解析顺序：先查 skills 目录，再查 commands 目录。如果两边有同名文件，<strong>Skill 优先</strong>。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 命令生命周期 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>生命周期</h2>
+                <h4>从用户输入到返回结果——一次命令调用的完整序列</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/01-slash-commands-2.png" alt="图：命令生命周期序列图——用户、Claude Code、文件系统、Shell 之间的协作" class="ai-diagram-img">
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>序列的关键节点</h4>
+                        <ol>
+                            <li><strong>文件搜索</strong>：先查 <code>.claude/skills/</code>，再查 <code>.claude/commands/</code>，Skill 优先</li>
+                            <li><strong>Frontmatter 解析</strong>：提取 <code>name</code>、<code>description</code>、<code>allowed-tools</code> 等元数据</li>
+                            <li><strong>Shell 命令执行</strong>：先运行 <code>!`cmd`</code>，将输出注入上下文</li>
+                            <li><strong>变量替换</strong>：将 <code>$ARGUMENTS</code>、<code>$0</code>、<code>$1</code> 替换为实际值</li>
+                            <li><strong>提示词组装</strong>：上下文 + 正文 + 参数合成为完整 prompt</li>
+                        </ol>
+                    </div>
+                    <div class="card">
+                        <h4>与执行流水线的区别</h4>
+                        <p>上一张"执行流水线"关注的是<strong>单条命令内部的数据变换</strong>（输入 → 定位 → 解析 → 替换 → 拼接 → 输出）。</p>
+                        <p>这张"生命周期"关注的是<strong>多个参与者之间的协作顺序</strong>——谁在什么时候做了什么，信息是如何在用户、Claude Code、文件系统和 Shell 之间流转的。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 命令解析全景 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>解析流程</h2>
+                <h4>内置 → Skill → Command → 插件/MCP：四种入口，一条流水线</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/01-slash-commands-3.png" alt="图：命令解析流程——Claude Code 如何判断命令类型并分发到对应处理器" class="ai-diagram-img">
+                <table>
+                    <thead>
+                        <tr><th>命令类型</th><th>格式</th><th>示例</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>内置命令</td><td><code>/command</code></td><td><code>/help</code> <code>/clear</code></td></tr>
+                        <tr><td>Skill</td><td><code>/skill-name</code></td><td><code>/commit</code> <code>/pr</code></td></tr>
+                        <tr><td>旧式 command</td><td><code>/command-name</code></td><td><code>/optimize</code></td></tr>
+                        <tr><td>插件命令</td><td><code>/plugin:command</code></td><td><code>/frontend-design:frontend-design</code></td></tr>
+                        <tr><td>MCP prompt</td><td><code>/mcp__server__prompt</code></td><td><code>/mcp__github__list_prs</code></td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>MCP 权限语法：</strong>在权限中控制 MCP 访问 — <code>mcp__github</code>（整个 server）、<code>mcp__github__*</code>（全部工具）、<code>mcp__github__get_issue</code>（单个工具）。
+                </div>
+            </div>
+        </section>
+
+        <!-- 插件与 MCP 深入 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>插件与MCP</h2>
+                <h4>两种外部命令入口：插件命令和 MCP prompts</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>插件命令</h4>
+                        <p>插件可以提供自定义命令，格式为 <code>/plugin-name:command-name</code>。</p>
+                        <pre><code># 完整格式（总有命名空间）
+/frontend-design:frontend-design
+/commit-commands:commit
+
+# 无冲突时可直接使用
+/commit   ← 如果只有 commit-commands 提供了 /commit</code></pre>
+                        <p>安装插件后用 <code>/reload-plugins</code> 刷新，输入 <code>/</code> 即可看到新增命令。</p>
+                    </div>
+                    <div class="after">
+                        <h4>MCP Prompts</h4>
+                        <p>MCP servers 可以把 prompt 暴露成 slash command，格式为 <code>/mcp__server__prompt</code>。</p>
+                        <pre><code># 列出 GitHub PR
+/mcp__github__list_prs
+
+# 审查指定 PR
+/mcp__github__pr_review 456
+
+# 创建 Jira Issue
+/mcp__jira__create_issue "Bug title" high</code></pre>
+                        <p>用 <code>/mcp</code> 管理 servers，支持 OAuth 认证。</p>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>插件命令的关键特性</h4>
+                        <ul>
+                            <li>命名空间隔离：<code>plugin-name:</code> 前缀防止冲突</li>
+                            <li>无冲突简写：只有一个插件提供该命令时可省略前缀</li>
+                            <li>用 <code>/plugin</code> 管理已安装插件</li>
+                            <li>用 <code>/reload-plugins</code> 热重载</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>MCP 命令的权限控制</h4>
+                        <ul>
+                            <li><code>mcp__github</code> — 访问整个 GitHub MCP server</li>
+                            <li><code>mcp__github__*</code> — 通配符访问全部工具</li>
+                            <li><code>mcp__github__get_issue</code> — 访问某个特定工具</li>
+                            <li>在 <code>/permissions</code> 中统一管理</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 示例库：四种命令模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>四种模式</h2>
+                <h4>分析、流程、上下文、安全——本章示例库的四种命令模式</h4>
+                <p>这四种模式对应一条递进的学习曲线：从纯文本封装，到参数化，再到读环境，最后到安全防护。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4><code>/optimize</code> — 分析模板</h4>
+                        <p>展示"分析类命令"的写法：强调输出结构、问题分级和修复建议。</p>
+                        <span class="tag tag-info">纯提示词封装</span>
+                    </div>
+                    <div class="card">
+                        <h4><code>/pr</code> — 流程模板</h4>
+                        <p>展示"流程清单类命令"的写法：把顺序、检查项和结果摘要写死。</p>
+                        <span class="tag tag-success">流程清单</span>
+                    </div>
+                    <div class="card">
+                        <h4><code>/commit</code> — 上下文模板</h4>
+                        <p>展示"上下文注入类命令"的写法：读取 git 状态后生成更稳的提交信息。</p>
+                        <span class="tag tag-primary">上下文注入</span>
+                    </div>
+                    <div class="card">
+                        <h4><code>/push-all</code> — 安全模板</h4>
+                        <p>展示"高副作用命令"的写法：执行前做安全检查、展示摘要、要求用户确认。</p>
+                        <span class="tag tag-warning">安全防护</span>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>换个角度看：</strong>从"纯文本"→"参数化"→"读取环境"→"带风险控制的自动化"，就是你这一章应该掌握的递进关系。
+                </div>
+            </div>
+        </section>
+
+        <!-- 深入 push-all：安全设计 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全设计</h2>
+                <h4>深入 <code>/push-all</code>：把安全检查写进命令本身</h4>
+                <p>高副作用的命令（提交、推送、部署），必须把"先检查、再确认、后执行"写进命令本身。</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>必须拦截的危险项</h4>
+                        <ul>
+                            <li>密钥文件：<code>.env*</code>、<code>*.key</code>、<code>*.pem</code>、<code>credentials.json</code></li>
+                            <li>真实 API Key：<code>sk-proj-xxx</code>、<code>AKIA...</code>、<code>sk_live_...</code></li>
+                            <li>大文件：&gt;10MB 且未使用 Git LFS</li>
+                            <li>构建产物：<code>node_modules/</code>、<code>dist/</code>、<code>__pycache__/</code></li>
+                            <li>临时文件：<code>.DS_Store</code>、<code>*.swp</code>、<code>*.tmp</code></li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>安全流程三步</h4>
+                        <ol>
+                            <li><strong>分析变更</strong>：并行运行 <code>git status</code>、<code>git diff --stat</code>、<code>git log -1</code></li>
+                            <li><strong>展示摘要 + 请求确认</strong>：列出变更文件数、行数、安全检查结果</li>
+                            <li><strong>逐个执行</strong>：<code>git add</code> → <code>git status</code>（验证）→ <code>git commit</code> → <code>git push</code></li>
+                        </ol>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>关键防线：</strong>对高副作用命令设置 <code>disable-model-invocation: true</code>，确保只有用户主动输入 <code>/push-all</code> 时才会执行，Claude 不会在任何对话中自动触发它。
+                </div>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>出错时怎么办</h4>
+                        <ul>
+                            <li><code>git add</code> 失败：检查权限、锁定文件，确认仓库已初始化</li>
+                            <li><code>git commit</code> 失败：修复 pre-commit hooks，检查 git 配置（user.name/email）</li>
+                            <li><code>git push</code> 失败：非快进时 <code>git pull --rebase && git push</code>；无远程分支时 <code>git push -u origin [branch]</code></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>什么时候不该用</h4>
+                        <ul>
+                            <li>不确定要提交哪些内容时</li>
+                            <li>包含 secrets 或敏感数据时</li>
+                            <li>受保护分支且未经过审核时</li>
+                            <li>想保留更细粒度的提交历史时</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>替代方案：</strong>拿不准时，用 <code>git add -p</code> 逐块选择，或走 PR 工作流（创建分支 → 推送 → 发起 PR，可以用 <code>/pr</code> 命令）。
+                </div>
+            </div>
+        </section>
+
+        <!-- 常见错误诊断 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <h4>常见错误诊断与修复方案</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>找不到命令</h4>
+                        <p><strong>原因：</strong>文件路径不对，<code>name</code> 跟预期不一致，或会话缓存未刷新。</p>
+                        <p><strong>修复：</strong>确认文件位于 <code>.claude/skills/&lt;name&gt;/SKILL.md</code> 或 <code>.claude/commands/&lt;name&gt;.md</code>；重开 Claude Code 会话；运行 <code>/help</code> 查看可用命令。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>命令能触发，但结果很空或跑偏</h4>
+                        <p><strong>原因：</strong><code>description</code> 太模糊，正文没有明确输出格式和成功标准。</p>
+                        <p><strong>修复：</strong>把 "做点 review" 改成 "按严重程度列出问题，每条包含文件路径、问题描述、风险说明、修复建议"。在正文中写清输出格式。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>命令要读 git / 跑 shell，但读不到</h4>
+                        <p><strong>原因：</strong>缺少 <code>allowed-tools</code> 声明，或 shell 命令写法不对。</p>
+                        <p><strong>修复：</strong>在 frontmatter 中补上 <code>allowed-tools: Bash(git *)</code>；确认 <code>!`cmd`</code> 用的是反引号而非单引号。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>Skill 和 command 同名冲突</h4>
+                        <p><strong>原因：</strong>同时存在 <code>.claude/skills/review/SKILL.md</code> 和 <code>.claude/commands/review.md</code>。</p>
+                        <p><strong>修复：</strong>Skill 优先。删除不需要的那个，或重命名其中一个。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>命令能触发，但输出不符合预期</h4>
+                        <p><strong>原因：</strong>正文指令不够具体，缺少输出格式和成功标准。</p>
+                        <p><strong>修复：</strong>在命令正文中加入示例输出；拆分复杂步骤为带编号的子任务；用简单输入先测试一遍。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>快速自检清单：</strong>路径对了吗？frontmatter 中 <code>name</code> 跟预期一致吗？命令有副作用时是否设置了 <code>allowed-tools</code>？正文是否指定了输出格式？shell 命令是否用了反引号？
+                </div>
+            </div>
+        </section>
+
+        <!-- 最佳实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践</h2>
+                <h4>写命令时容易忽略的事——一张表帮你避开常见坑</h4>
+                <table>
+                    <thead>
+                        <tr><th>应该做</th><th>不要做</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>使用清晰、以动作导向的命名</td><td>为一次性任务创建命令</td></tr>
+                        <tr><td>在 <code>description</code> 中写清触发条件</td><td>在命令里写太复杂的逻辑</td></tr>
+                        <tr><td>保持命令聚焦于单一任务</td><td>硬编码敏感信息</td></tr>
+                        <tr><td>有副作用时使用 <code>disable-model-invocation</code></td><td>跳过 <code>description</code> 字段</td></tr>
+                        <tr><td>用 <code>!`cmd`</code> 注入动态上下文</td><td>假设 Claude 知道当前状态</td></tr>
+                        <tr><td>把相关文件组织进 skill 目录</td><td>所有内容都塞进一个文件</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>判断标准：</strong>一个操作如果你一周内重复了 3 次以上，它就值得被写成一条命令。但不要把"偶尔做一次的事"也写成命令——那只会增加维护负担。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>自己做一个 <code>/code-review</code> 命令</h4>
+                <p>读到这里，你已经掌握了命令的骨架。停下来，自己动手做一遍——<strong>只有自己敲出来的命令，才是你的</strong>。</p>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习 1：最小版本</h3>
+                        <ul>
+                            <li>让命令自动读取当前分支相对于 main 的 diff</li>
+                            <li>至少从代码质量、安全性、可维护性三个维度审查</li>
+                            <li>输出必须按严重程度排序</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 2：加参数</h3>
+                        <ul>
+                            <li>增加一个 <code>severity</code> 参数</li>
+                            <li>支持 <code>low</code>、<code>medium</code>、<code>high</code></li>
+                            <li>思考：这个命令是否需要 <code>disable-model-invocation</code>？</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>从最小骨架开始，先只写 <code>name</code> + <code>description</code> + 正文。跑通之后再逐步加 <code>$ARGUMENTS</code>、<code>!`git diff main...HEAD`</code> 和 <code>allowed-tools</code>。不要一口气把所有能力写进去。
+                </div>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <h4>一种可参考的 code-review 命令写法</h4>
+                <pre><code># 文件：.claude/skills/code-review/SKILL.md
+---
+name: code-review
+description: 对当前分支的改动进行结构化代码审查
+argument-hint: "[severity: low|medium|high]"
+allowed-tools: Bash(git *), Read, Grep
+---
+
+## 上下文
+- 当前分支：!`git branch --show-current`
+- 变更统计：!`git diff main...HEAD --stat`
+- 完整 diff：!`git diff main...HEAD`
+- 最近提交：!`git log --oneline -10`
+
+## 任务
+审查以上改动，最低报告级别是 $ARGUMENTS，默认按 medium 处理。
+
+## 审查维度
+1. 代码质量
+2. 安全性
+3. 可维护性
+
+## 输出格式
+按严重程度列出发现，每条包含：
+- 文件路径
+- 问题描述
+- 风险说明
+- 修复建议</code></pre>
+                <div class="key-point">
+                    <strong>别直接照抄：</strong>真正重要的不是这段文本，而是你能不能解释清楚每一块为什么存在。尤其是 <code>allowed-tools</code>（没有它读不到 git 信息）和 <code>## 输出格式</code>（没有它 Claude 不知道你想要什么结构）。
+                </div>
+            </div>
+        </section>
+
+        <!-- 扩展：更多命令思路 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>更多思路</h2>
+                <h4>掌握了骨架之后，你还能做什么样的命令</h4>
+                <p>本章的示例只覆盖了最典型的四种模式。一旦掌握了骨架，就可以根据自己的项目扩展：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4><code>/optimize</code> — 代码优化</h4>
+                        <p>分析性能问题、内存泄漏和优化机会。</p>
+                        <pre><code>/optimize
+[粘贴你的代码]</code></pre>
+                        <span class="tag tag-info">纯提示词封装</span>
+                    </div>
+                    <div class="card">
+                        <h4><code>/pr</code> — PR 准备</h4>
+                        <p>引导你完成 PR 准备清单，包括 lint、测试和提交格式整理。</p>
+                        <pre><code>/pr</code></pre>
+                        <span class="tag tag-success">流程清单</span>
+                    </div>
+                    <div class="card">
+                        <h4><code>/generate-api-docs</code></h4>
+                        <p>从源码扫描函数签名和 JSDoc，自动生成完整的 API 文档。</p>
+                        <pre><code>/generate-api-docs</code></pre>
+                        <span class="tag tag-info">代码 → 文档</span>
+                    </div>
+                    <div class="card">
+                        <h4><code>/commit</code> — 带上下文的提交</h4>
+                        <p>基于仓库中的动态上下文（git 状态、diff、分支）创建 commit。</p>
+                        <pre><code>/commit [可选说明]</code></pre>
+                        <span class="tag tag-primary">上下文注入</span>
+                    </div>
+                    <div class="card">
+                        <h4><code>/push-all</code> — 安全推送</h4>
+                        <p>暂存所有改动，做安全检查（密钥、大文件、构建产物），再提交并推送。</p>
+                        <pre><code>/push-all</code></pre>
+                        <span class="tag tag-warning">安全防护</span>
+                    </div>
+                    <div class="card">
+                        <h4><code>/unit-test-expand</code></h4>
+                        <p>分析覆盖率报告，针对未测试分支和边界情况提升测试覆盖率。</p>
+                        <pre><code>/unit-test-expand</code></pre>
+                        <span class="tag tag-success">质量保障</span>
+                    </div>
+                    <div class="card">
+                        <h4><code>/setup-ci-cd</code></h4>
+                        <p>检测项目语言和框架，自动生成 pre-commit hooks 和 GitHub Actions CI 配置。</p>
+                        <pre><code>/setup-ci-cd</code></pre>
+                        <span class="tag tag-primary">工程化</span>
+                    </div>
+                    <div class="card">
+                        <h4><code>/doc-refactor</code></h4>
+                        <p>分析项目结构，重新组织文档目录和交叉引用，让结构更清晰。</p>
+                        <pre><code>/doc-refactor</code></pre>
+                        <span class="tag tag-warning">文档治理</span>
+                    </div>
+                </div>
+                <div class="card" style="margin-top: 16px;">
+                    <h4>自定义命令文件 <span style="font-weight:normal;font-size:0.85em;color:var(--text-muted);">（点击文件名查看命令定义）</span></h4>
+                    <pre><code>01-slash-commands/
+├── <a href="#" class="md-link" data-md="commit">commit.md</a>
+├── <a href="#" class="md-link" data-md="doc-refactor">doc-refactor.md</a>
+├── <a href="#" class="md-link" data-md="generate-api-docs">generate-api-docs.md</a>
+├── <a href="#" class="md-link" data-md="optimize">optimize.md</a>
+├── <a href="#" class="md-link" data-md="pr">pr.md</a>
+├── <a href="#" class="md-link" data-md="push-all">push-all.md</a>
+├── <a href="#" class="md-link" data-md="setup-ci-cd">setup-ci-cd.md</a>
+└── <a href="#" class="md-link" data-md="unit-test-expand">unit-test-expand.md</a></code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- 总结与下一步 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>把经验收成命令，然后继续往前</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>分清内置命令、Skill、旧式 command、插件命令、MCP prompts</li>
+                            <li>写出一个最小可运行的 Skill 命令</li>
+                            <li>用 <code>$ARGUMENTS</code> 和 <code>$0 $1</code> 给命令加参数</li>
+                            <li>用 <code>!`cmd`</code> 注入动态上下文，用 <code>@path</code> 引用文件</li>
+                            <li>为高副作用命令添加安全检查和确认机制</li>
+                            <li>诊断命令找不到、结果空、权限不足等常见问题</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>它和后面几章的关系</h4>
+                        <ul>
+                            <li>Slash Commands 负责"怎么触发一个工作流"</li>
+                            <li><a href="./02-memory.html">Memory</a> 负责"默认遵守哪些长期规则"</li>
+                            <li><a href="./03-skills.html">Skills</a> 负责"把工作流升级成能力包"</li>
+                            <li><a href="./04-subagents.html">Subagents</a> 负责"把工作分给谁做"</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Slash command 的本质不是"省几次输入"，而是把零散经验压缩成稳定流程。你写下的每一条命令，都是未来自己和团队少踩一次坑的机会。
+                    <p style="margin-top: 16px;">别小看这一步。你今天封装的第一个 <code>/code-review</code>，可能就是明天团队新同事少走三天弯路的起点。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./03-skills.html">下一章：Skills</a> — 把命令打包成带脚本和模板的目录化能力包</li>
+                            <li><a href="./02-memory.html">Memory</a> — 用 CLAUDE.md 设定长期生效的默认规则</li>
+                            <li><a href="./04-subagents.html">Subagents</a> — 委派式 AI agents</li>
+                            <li><a href="./07-plugins.html">Plugins</a> — 打包好的命令集合</li>
+                            <li><a href="./06-hooks.html">Hooks</a> — 事件驱动自动化</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://code.claude.com/docs/en/interactive-mode">Interactive Mode 文档</a> — 内置命令完整参考</li>
+                            <li><a href="https://code.claude.com/docs/en/skills">Skills 文档</a> — references、assets、自动触发等进阶用法</li>
+                            <li><a href="https://code.claude.com/docs/en/cli-reference">CLI Reference</a> — 命令行选项参考</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章源文件</h4>
+                        <ul>
+                            <li><a href="./01-slash-commands/README.md">README.md</a> — 完整的命令参考指南</li>
+                            <li><code>01-slash-commands/</code> 目录 — 所有示例命令的源文件</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 命令定义弹窗 -->
+    <style>
+        .md-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .md-modal-overlay.active {
+            display: flex;
+        }
+        .md-modal {
+            background: var(--surface-color, #fff);
+            border-radius: 12px;
+            width: min(720px, 92vw);
+            max-height: 82vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+            animation: md-modal-in 0.2s ease-out;
+        }
+        @keyframes md-modal-in {
+            from { opacity: 0; transform: translateY(20px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .md-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
+        }
+        .md-modal-header h3 {
+            margin: 0;
+            font-size: 1.05em;
+            font-family: var(--font-mono, monospace);
+            color: var(--accent-color, #8A4A12);
+        }
+        .md-modal-close {
+            background: none;
+            border: none;
+            font-size: 1.6em;
+            line-height: 1;
+            cursor: pointer;
+            color: var(--text-color, #333);
+            padding: 0 4px;
+            border-radius: 4px;
+        }
+        .md-modal-close:hover {
+            background: var(--code-bg-color, #f3f4f6);
+        }
+        .md-modal-body {
+            padding: 20px 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .md-modal-body pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.88em;
+            line-height: 1.65;
+            color: var(--text-color, #333);
+            font-family: var(--font-mono, monospace);
+        }
+        .md-modal-body .md-loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted, #888);
+        }
+        a.md-link {
+            color: var(--code-text-color, #0B598E);
+            text-decoration: none;
+            border-bottom: 1px dashed var(--code-text-color, #0B598E);
+            cursor: pointer;
+        }
+        a.md-link:hover {
+            color: var(--primary-color, #D06519);
+            border-bottom-color: var(--primary-color, #D06519);
+        }
+    </style>
+
+    <div class="md-modal-overlay" id="md-modal-overlay">
+        <div class="md-modal">
+            <div class="md-modal-header">
+                <h3 id="md-modal-title"></h3>
+                <button class="md-modal-close" id="md-modal-close">&times;</button>
+            </div>
+            <div class="md-modal-body">
+                <div class="md-loading" id="md-modal-loading">加载中…</div>
+                <pre id="md-modal-content" style="display:none;"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        var overlay = document.getElementById('md-modal-overlay');
+        var titleEl = document.getElementById('md-modal-title');
+        var contentEl = document.getElementById('md-modal-content');
+        var loadingEl = document.getElementById('md-modal-loading');
+        var closeBtn = document.getElementById('md-modal-close');
+
+        var cache = {};
+
+        function openModal(name) {
+            titleEl.textContent = name + '.md';
+            contentEl.style.display = 'none';
+            loadingEl.style.display = 'block';
+            overlay.classList.add('active');
+
+            if (cache[name]) {
+                showContent(cache[name]);
+                return;
+            }
+
+            fetch('./01-slash-commands/' + name + '.md')
+                .then(function(r) {
+                    if (!r.ok) throw new Error('Not found');
+                    return r.text();
+                })
+                .then(function(text) {
+                    cache[name] = text;
+                    showContent(text);
+                })
+                .catch(function() {
+                    loadingEl.textContent = '加载失败，请确认文件存在。';
+                });
+        }
+
+        function showContent(text) {
+            contentEl.textContent = text;
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+        }
+
+        function closeModal() {
+            overlay.classList.remove('active');
+        }
+
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && overlay.classList.contains('active')) {
+                closeModal();
+            }
+        });
+
+        document.querySelectorAll('a.md-link').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                openModal(this.getAttribute('data-md'));
+            });
+        });
+    })();
+    </script>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+        mermaid.run();
+    </script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

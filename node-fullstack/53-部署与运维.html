@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第53章 部署与运维 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>部署与运维</h1>
+            <p>让应用在互联网上稳定运行</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>写完代码、跑通测试之后，怎么让全世界都能访问你的网站？服务器挂了怎么办？数据库数据丢了怎么办？</h4>
+                <p>部署不是简单地把文件传到服务器。生产环境需要：<strong>进程管理、反向代理、SSL 证书、数据库备份、监控告警</strong>。</p>
+                <p>这一章覆盖从 PaaS 快速部署到传统 VPS 运维的完整知识链。</p>
+            </div>
+        </section>
+
+        <!-- 平台对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>PaaS 平台对比</h3>
+                <h4>三个最流行的部署平台</h4>
+                <table>
+                    <thead><tr><th>特性</th><th>Vercel</th><th>Railway</th><th>Render</th></tr></thead>
+                    <tbody>
+                        <tr><td>最适合</td><td>Next.js / 前端</td><td>全栈 + 数据库</td><td>Web 服务 + Worker</td></tr>
+                        <tr><td>数据库</td><td>需外部服务</td><td>内置 PG/Redis</td><td>内置 PG/Redis</td></tr>
+                        <tr><td>自动部署</td><td>Git push 自动</td><td>Git push 自动</td><td>Git push 自动</td></tr>
+                        <tr><td>预览部署</td><td>每个 PR 自动</td><td>支持</td><td>支持</td></tr>
+                        <tr><td>Serverless</td><td>核心特性</td><td>不支持</td><td>部分支持</td></tr>
+                        <tr><td>WebSocket</td><td>有限</td><td>支持</td><td>支持</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 1: PaaS 部署 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: PaaS 部署</h2>
+                <p>推代码即部署，适合快速上线。</p>
+            </div>
+        </section>
+
+        <!-- 部署到 Vercel -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>部署到 Vercel</h3>
+                <h4>两条命令上线你的 Next.js 应用</h4>
+                <pre><code class="language-bash">$ npm install -g vercel
+$ vercel login
+$ vercel                    # 首次部署（preview）
+$ vercel --prod             # 生产部署</code></pre>
+                <pre><code class="language-json">// vercel.json（可选配置）
+{
+  "framework": "nextjs",
+  "env": {
+    "DATABASE_URL": "@database_url",
+    "JWT_SECRET": "@jwt_secret"
+  }
+}</code></pre>
+                <pre><code class="language-bash">$ vercel env add DATABASE_URL production
+$ vercel env add JWT_SECRET production</code></pre>
+            </div>
+        </section>
+
+        <!-- 部署到 Railway -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>部署到 Railway</h3>
+                <h4>内置数据库，全栈一站搞定</h4>
+                <pre><code class="language-bash">$ npm install -g @railway/cli
+$ railway login
+$ railway init
+$ railway up                    # 部署
+$ railway run npm run migrate   # 在 Railway 环境运行迁移</code></pre>
+                <pre><code class="language-ini"># railway.toml（可选配置）
+[build]
+buildCommand = "npm run build"
+
+[deploy]
+startCommand = "node dist/index.js"
+healthcheckPath = "/health"
+restartPolicyType = "on_failure"</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 2: 传统部署 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 传统 VPS</h2>
+                <p>PM2 + Nginx + SSL，完全掌控你的服务器。</p>
+            </div>
+        </section>
+
+        <!-- VPS 部署架构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>VPS 部署架构</h3>
+                <h4>用户请求从互联网到 Node.js 的完整链路</h4>
+                <div class="ai-diagram">
+                    <h4>图：传统 VPS 部署的完整架构图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：展示一个典型 VPS 服务器的内部架构，从用户浏览器到 Node.js 应用的完整请求链路
+                    - 从左到右的层次结构：
+                      1. 左侧：互联网云朵图标，标注"用户浏览器"，发出 HTTPS 请求（箭头）
+                      2. 防火墙层：一堵半透明的墙，标注"iptables / UFW 防火墙"，只放行 80/443 端口
+                      3. Nginx 层：一个蓝色方块，标注"Nginx 反向代理"，内部注明职责：SSL 终止、静态文件服务、负载均衡、安全头注入。箭头分两路：一路标注"静态文件 / → /var/www/static"，另一路标注"API /api/* → proxy_pass"
+                      4. PM2 层：一个橙色方块，标注"PM2 进程管理器"，内部展示 2-3 个并排的小方块，每个标注"Node.js Worker (cluster 模式)"，旁边标注"自动重启、零停机重载、内存监控"
+                      5. 数据层：底部两个圆柱体，左侧标注"PostgreSQL (5432)"，右侧标注"Redis (6379)"，用虚线箭头连接到 Node.js Workers
+                    - 右上角单独画一个监控区域：标注"Sentry 错误追踪 + UptimeRobot 可用性监控"，用虚线连接到 Node.js Workers
+                    - 各层之间用实线箭头连接，箭头上标注通信协议（HTTP、FastCGI、TCP）
+                    - 用虚线框把整个 VPS 内部组件框起来，框外标注"VPS 服务器 (Ubuntu 22.04)"
+                    - 配色建议：浅灰背景，Nginx 用浅蓝色，PM2/Node 用浅橙色，数据库用浅绿色，防火墙用浅红色，监控用浅紫色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、文字过小
+                    - 标注文字用中文，字号适中，关键数字（端口号）用等宽字体
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- PM2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>PM2 进程管理</h3>
+                <h4>Node.js 的守护神</h4>
+                <pre><code class="language-bash">$ npm install -g pm2
+$ pm2 start dist/index.js --name "my-app"</code></pre>
+                <pre><code class="language-javascript">// ecosystem.config.js
+module.exports = {
+  apps: [{
+    name: 'my-app',
+    script: 'dist/index.js',
+    instances: 'max',           // 按 CPU 核心数启动
+    exec_mode: 'cluster',       // 集群模式
+    max_memory_restart: '512M', // 内存超限自动重启
+    env_production: { NODE_ENV: 'production', PORT: 3000 },
+  }],
+};</code></pre>
+                <pre><code class="language-bash">$ pm2 start ecosystem.config.js --env production
+$ pm2 list          # 查看进程
+$ pm2 logs my-app   # 查看日志
+$ pm2 monit         # 实时监控
+$ pm2 reload my-app # 零停机重载
+$ pm2 startup       # 开机自启
+$ pm2 save          # 保存进程列表</code></pre>
+            </div>
+        </section>
+
+        <!-- Nginx 配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Nginx 反向代理</h3>
+                <h4>HTTPS、安全头、静态文件一站搞定</h4>
+                <pre><code class="language-nginx"># /etc/nginx/sites-available/my-app
+upstream nodejs_app {
+    server 127.0.0.1:3000;
+    keepalive 64;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name myapp.com;
+
+    ssl_certificate /etc/letsencrypt/live/myapp.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/myapp.com/privkey.pem;
+
+    # 安全头
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    # API 反向代理
+    location /api/ {
+        proxy_pass http://nodejs_app;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location / {
+        proxy_pass http://nodejs_app;
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- SSL 证书 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>SSL 证书</h3>
+                <h4>Let's Encrypt 免费 HTTPS</h4>
+                <pre><code class="language-bash"># 安装 Certbot
+$ sudo apt-get install -y certbot python3-certbot-nginx
+
+# 获取证书（自动配置 Nginx）
+$ sudo certbot --nginx -d myapp.com -d www.myapp.com
+
+# 自动续期（Certbot 已自动添加定时任务）
+$ sudo certbot renew --dry-run</code></pre>
+                <div class="warning">
+                    <strong>确保 Nginx 不暴露敏感路径。</strong>显式拒绝 <code>/.env</code>、<code>/node_modules/</code>、<code>/.git/</code> 的外部访问。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3: 监控 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 监控与日志</h2>
+                <p>知道出问题了，才能解决问题。</p>
+            </div>
+        </section>
+
+        <!-- 健康检查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>健康检查端点</h3>
+                <h4>让监控系统知道你的应用还好不好</h4>
+                <pre><code class="language-typescript">// src/routes/health.ts
+app.get('/health', async (req, res) =&gt; {
+  const checks = {
+    status: 'ok',
+    uptime: process.uptime(),
+    checks: {
+      database: await checkDatabase(),
+      redis: await checkRedis(),
+      memory: checkMemory(),
+    },
+  };
+  const isHealthy = Object.values(checks.checks)
+    .every(c =&gt; c.status === 'ok');
+  res.status(isHealthy ? 200 : 503).json(checks);
+});
+
+async function checkDatabase() {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return { status: 'ok' };
+  } catch (error) {
+    return { status: 'error', message: error.message };
+  }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 监控工具 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>监控工具选型</h3>
+                <h4>从小型项目到企业级，按需选择</h4>
+                <table>
+                    <thead><tr><th>层级</th><th>工具</th><th>监控内容</th></tr></thead>
+                    <tbody>
+                        <tr><td>可用性</td><td>UptimeRobot / Uptime Kuma</td><td>服务是否在线</td></tr>
+                        <tr><td>指标</td><td>Prometheus + Grafana</td><td>CPU/内存/请求量</td></tr>
+                        <tr><td>错误</td><td>Sentry</td><td>异常堆栈、用户影响</td></tr>
+                        <tr><td>日志</td><td>Pino + ELK / Loki</td><td>结构化日志</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>小型项目推荐免费组合：UptimeRobot + Sentry + PM2。规模增长后再引入 Prometheus + Grafana。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sentry -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Sentry 错误追踪</h3>
+                <h4>线上报错了，第一时间知道</h4>
+                <pre><code class="language-typescript">// npm install @sentry/node
+import * as Sentry from '@sentry/node';
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+  tracesSampleRate: 0.1,
+});
+
+// Express 中间件（放在路由前后）
+app.use(Sentry.Handlers.requestHandler());
+// ... 你的路由 ...
+app.use(Sentry.Handlers.errorHandler());
+
+// 手动捕获错误
+try {
+  await riskyOperation();
+} catch (error) {
+  Sentry.captureException(error, {
+    extra: { userId: currentUser.id },
+  });
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>排错：服务挂了</h3>
+                <div class="warning">
+                    <strong>症状：</strong>网站突然无法访问，502 Bad Gateway。
+                    <br><strong>原因：</strong>Node.js 进程崩溃（内存溢出、未捕获异常）。
+                    <br><strong>修复：</strong>PM2 会自动重启。用 <code>pm2 logs</code> 查看崩溃日志，定位原因。常见问题：内存泄漏（重启频率高）、未处理的 Promise rejection。
+                </div>
+                <pre><code class="language-bash">$ pm2 logs my-app --lines 100   # 查看最近日志
+$ pm2 show my-app                # 查看重启次数
+$ pm2 monit                      # 实时监控内存和 CPU</code></pre>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：在你的应用中添加 <code>/health</code> 端点，检查数据库连接和内存使用情况。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">app.get('/health', async (req, res) =&gt; {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    const mem = process.memoryUsage();
+    res.json({ status: 'ok', heapUsed: mem.heapUsed });
+  } catch (e) {
+    res.status(503).json({ status: 'error' });
+  }
+});</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：将应用部署到 Vercel 或 Railway，配置环境变量并验证线上可访问。</p>
+                        <pre><code class="language-bash"># 提示：先在平台导入 GitHub 仓库
+# 再配置 DATABASE_URL 等环境变量
+# 最后访问平台分配的域名验证</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>应用跑起来了，但用户抱怨慢？下一章是最后一章——<strong>性能优化与安全</strong>，让应用又快又安全。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

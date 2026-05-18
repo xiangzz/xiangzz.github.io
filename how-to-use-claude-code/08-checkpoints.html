@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>08 Checkpoints</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔄</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 08 章</div>
+            <h1>Checkpoints</h1>
+            <p>快照与回退——让探索和迭代变得安全可控</p>
+            <strong>大胆尝试，随时回退 — 不再害怕改坏代码</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>不敢大胆试</h2>
+                <h4>你有没有发现，想试一个新方案但怕改坏了回不去？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>想试新方案</h4>
+                        <p>你想给 API 加个 Redis 缓存层。改了 8 个文件后，发现这个方案跟现有架构不兼容。<strong>撤回 8 个文件的修改，比重新写还痛苦</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>重构到一半</h4>
+                        <p>把认证模块从 Session 迁移到 JWT。改到一半发现 OAuth 集成被弄坏了。<strong>代码处于半成品状态，前进也不是，后退也不是</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>想比较方案</h4>
+                        <p>两种实现思路都想试试。但试完一个想试另一个时，<strong>代码已经被改得面目全非</strong>，回不到起点了。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>Checkpoints 就是为这个设计的：</strong>每次改动前自动保存状态快照。随时可以回退到任意历史节点，零成本撤销。大胆试，不怕错。
+                </div>
+            </div>
+        </section>
+
+        <!-- 核心概念 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三个概念</h2>
+                <h4>Checkpoint、Rewind、Branch Point</h4>
+                <p><strong>Checkpoint</strong>是当前对话状态的完整快照，包含所有消息、文件修改、工具使用历史和会话上下文。</p>
+                <p>说白了，它就是一个<strong>"游戏存档"</strong>——你玩到某个关键节点，存一下。后面走错了路，读档回去就行。这个比喻只是为了帮你建立直观感受。实际上，Checkpoint 保存的是对话历史和文件状态的元数据，而不是文件内容的完整拷贝——恢复时它会重放操作历史来还原状态。</p>
+                <table>
+                    <thead><tr><th>概念</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Checkpoint</strong></td><td>保存消息、文件和上下文的对话快照</td></tr>
+                        <tr><td><strong>Rewind</strong></td><td>回到之前的 checkpoint，丢弃之后的更改</td></tr>
+                        <tr><td><strong>Branch Point</strong></td><td>从同一个 checkpoint 出发，探索多个方案</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>自动机制：</strong>每次用户输入都会自动创建 checkpoint，无需手动操作。你只管做事，该存的时候它会自动存。
+                </div>
+            </div>
+        </section>
+
+        <!-- 如何访问 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>如何回退</h2>
+                <h4>两种方式打开 Checkpoint 浏览器</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>快捷键</h4>
+                        <p>按两次 <code>Esc</code>（Esc + Esc）打开 checkpoint 浏览界面。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Slash Command</h4>
+                        <pre><code>$ /rewind
+<span style="color: var(--text-muted);"># 或别名</span>
+$ /checkpoint</code></pre>
+                    </div>
+                </div>
+                <h3>每个 Checkpoint 显示什么</h3>
+                <div class="intro-block">
+                    <p>打开 checkpoint 浏览器后，你会看到每个快照包含四项信息：<strong>创建时间</strong>、<strong>被修改的文件</strong>、<strong>对话中的消息数量</strong>、<strong>使用过的工具</strong>。这些信息帮你快速判断哪个节点值得回退。</p>
+                </div>
+                <h3>Rewind 的 5 个选项</h3>
+                <table>
+                    <thead><tr><th>选项</th><th>效果</th></tr></thead>
+                    <tbody>
+                        <tr><td>恢复代码和对话</td><td>文件和消息都恢复到该 checkpoint</td></tr>
+                        <tr><td>恢复对话</td><td>只回退消息，保留当前代码</td></tr>
+                        <tr><td>恢复代码</td><td>只回退文件修改，保留完整对话</td></tr>
+                        <tr><td>从这里开始总结</td><td>把后续对话压缩成摘要，原始消息仍保留在记录中</td></tr>
+                        <tr><td>算了</td><td>取消，返回当前状态</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 总结压缩 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>总结压缩</h2>
+                <h4>长对话的"减肥"工具——不丢结论，只减噪音</h4>
+                <p>当你经过 20 多条消息的调试和探索后，对话已经很长了。这时你可以用<strong>"从这里开始总结"</strong>来压缩对话——它会把从该 checkpoint 到现在的所有消息压缩成一段 AI 生成的摘要。</p>
+                <pre><code><span style="color: var(--text-muted);"># 场景：长调试会话后压缩上下文</span>
+
+用户: [经过 20 多条消息的调试和探索]
+
+[按 Esc+Esc，选择较早的 checkpoint，选择"从这里开始总结"]
+[可选：提供指令，如"重点保留我们尝试过什么，以及什么有效"]
+
+Claude: [生成从该点开始的对话总结]
+[原始消息仍保留在记录里，不会丢失]
+[总结替换当前可见对话，减少上下文窗口占用]
+
+用户: "现在继续推进那个有效的方案"</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>三个要点</h4>
+                        <ul>
+                            <li><strong>原始消息不丢失</strong>——它们仍在记录中，只是不可见了</li>
+                            <li><strong>可以指定摘要重点</strong>——告诉 Claude 聚焦什么主题</li>
+                            <li><strong>释放上下文窗口</strong>——长对话不再挤占 AI 的工作记忆</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>什么时候用</h4>
+                        <ul>
+                            <li>经过长时间调试，对话已经很长</li>
+                            <li>探索了多个方向，想压缩成结论</li>
+                            <li>回退前想保留之前的发现，而非直接丢弃</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 场景 1：分支探索 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>分支探索</h2>
+                <h4>保存 → 试方案 A → Rewind → 试方案 B → 比较</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/08-checkpoints-1.png" alt="图：分支探索模式——从同一个 Checkpoint 出发探索两条路径" class="ai-diagram-img">
+                <pre><code><span style="color: var(--text-muted);"># 场景：给 API 加缓存层</span>
+
+用户: "我们给 API 加一个缓存层吧"
+Claude: 我会为你的 API 端点添加 Redis 缓存……
+[在 checkpoint A 处做出修改]
+
+用户: "其实我们先试试内存缓存"
+Claude: 我会 rewind 回去，探索另一种方案……
+[用户按 Esc+Esc，回退到 checkpoint A]
+[在 checkpoint B 处实现内存缓存]
+
+用户: "现在我可以比较两种方案了"</code></pre>
+                <div class="key-point">
+                    <strong>核心模式：</strong>从同一个 checkpoint 出发，尝试不同的实现路径。比较完之后选择最佳方案，丢弃其他尝试。
+                </div>
+            </div>
+        </section>
+
+        <!-- 场景 2：安全重构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全重构</h2>
+                <h4>当前状态 → checkpoint → 开始重构 → 运行测试 → 失败则 Rewind</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/08-checkpoints-2.png" alt="图：安全重构循环——每次改动都有 checkpoint 托底" class="ai-diagram-img">
+                <pre><code><span style="color: var(--text-muted);"># 场景：重构认证模块</span>
+
+用户: "把认证模块重构成 JWT"
+Claude: 我会重构认证模块……
+[做出大量修改]
+
+用户: "等等，这把 OAuth 集成弄坏了。我们回去。"
+Claude: 我来帮你回退到重构之前……
+[用户按 Esc+Esc，选择重构前的 checkpoint]
+
+用户: "这次我们试一个更保守的方案"
+Claude: [基于回退后的状态，逐步重构]</code></pre>
+                <div class="info-block">
+                    <strong>安全重构模式：</strong>不需要手动 git stash 或创建备份分支。直接开始重构，每一步都有 checkpoint 托底。测试失败了就 Rewind，成本几乎为零。
+                </div>
+            </div>
+        </section>
+
+        <!-- 场景 3：性能优化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>性能优化</h2>
+                <h4>同一起点出发，试 3 种策略，组合后提升 79%</h4>
+                <pre><code><span style="color: var(--text-muted);"># 起点：API 响应时间 450ms</span>
+
+用户: "我们来优化 API 响应时间"
+      [Checkpoint "Baseline" 自动创建]
+
+<span style="color: var(--text-muted);"># --- 第一轮：Redis 缓存 ---</span>
+Claude: 我来加数据库查询缓存…… [实现 Redis 缓存]
+用户: 运行性能测试
+Claude: 结果：280ms（提升 38%）
+
+<span style="color: var(--text-muted);"># --- Rewind 回 Baseline，试第二种 ---</span>
+用户: [按 Esc+Esc，选择 Baseline]
+用户: 改试数据库查询优化
+Claude: [添加索引，优化 N+1 查询]
+用户: 运行性能测试
+Claude: 结果：180ms（提升 60%）<strong>← 最优</strong>
+
+<span style="color: var(--text-muted);"># --- Rewind 回 Baseline，试第三种 ---</span>
+用户: [按 Esc+Esc，选择 Baseline]
+用户: 尝试响应压缩和 CDN
+Claude: [实现 gzip + CDN]
+用户: 运行性能测试
+Claude: 结果：320ms（提升 29%）
+
+<span style="color: var(--text-muted);"># --- 回到最优方案，叠加缓存 ---</span>
+用户: 查询优化最好。回到那个版本，再加上 Redis 缓存。
+Claude: [在优化查询之上添加 Redis 缓存]
+Claude: 结果：<strong>95ms（提升 79%）</strong></code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>三种策略对比</h4>
+                        <table>
+                            <thead><tr><th>策略</th><th>响应时间</th><th>提升</th></tr></thead>
+                            <tbody>
+                                <tr><td>Redis 缓存</td><td>280ms</td><td>38%</td></tr>
+                                <tr><td>查询优化</td><td>180ms</td><td>60%</td></tr>
+                                <tr><td>压缩 + CDN</td><td>320ms</td><td>29%</td></tr>
+                                <tr><td><strong>查询优化 + 缓存</strong></td><td><strong>95ms</strong></td><td><strong>79%</strong></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>关键思路</h4>
+                        <ul>
+                            <li>同一起点（Baseline）出发，分别测试 3 种策略</li>
+                        </ul>
+                        <p>找到最优解后，<strong>回到该检查点叠加第二种优化</strong>——组合效果远超单独使用任何一种。这种"试 → 比 → 叠加"的模式，只有检查点才能低成本实现。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 场景 4：调试会话 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>调试会话</h2>
+                <h4>多个假设逐一排除——内存泄漏排查实录</h4>
+                <pre><code><span style="color: var(--text-muted);"># 起点：应用存在内存泄漏</span>
+
+用户: "应用里有内存泄漏"
+      [Checkpoint "Before debugging" 自动创建]
+
+<span style="color: var(--text-muted);"># --- 假设 1：事件监听器 ---</span>
+用户: 我觉得问题在事件监听器里
+Claude: [修复事件监听器清理逻辑]
+用户: 运行内存分析器
+Claude: ❌ 仍然在泄漏——不是事件监听器的问题
+
+<span style="color: var(--text-muted);"># --- Rewind，试假设 2 ---</span>
+用户: [按 Esc+Esc，选择 "Before debugging"]
+用户: 也许是数据库连接的问题？
+Claude: [实现连接池修复]
+用户: 运行内存分析器
+Claude: ❌ 还是在泄漏——也不是连接的问题
+
+<span style="color: var(--text-muted);"># --- Rewind，试假设 3 ---</span>
+用户: [按 Esc+Esc，选择 "Before debugging"]
+用户: 检查一下有没有循环引用
+Claude: <strong>[找到并修复缓存中的循环引用]</strong>
+用户: 运行内存分析器
+Claude: ✅ 内存泄漏修复了！</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>假设驱动的调试模式</h4>
+                        <ul>
+                            <li>提出假设 → 实现修复 → 验证结果</li>
+                            <li>假设失败 → Rewind 回起点 → 换下一个假设</li>
+                            <li>每次回到同一个检查点，确保代码状态干净</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>为什么检查点关键</h4>
+                        <p>传统调试中，每个失败的修复都会<strong>污染代码状态</strong>——你得手动撤销才能试下一个假设。有了检查点，每次回退都是完整、干净的，不存在"改了 A 又忘了改回 B"的风险。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 场景 5：安全试验 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全试验</h2>
+                <h4>激进改动不怕错——试了不行就回退</h4>
+                <pre><code><span style="color: var(--text-muted);"># 场景：尝试函数式风格改写</span>
+
+用户: "我们试着把它改写成函数式风格"
+      [检查点在提示前自动创建]
+
+Claude: [执行实验性修改——重写核心逻辑为纯函数]
+Claude: [移除可变状态，改用不可变数据流]
+
+用户: 运行测试
+Claude: ❌ 12 个测试失败，类型推断出了问题
+
+用户: 测试失败了。我们回退吧。
+[用户按 Esc+Esc，回退到实验前的检查点]
+
+Claude: 我已经回退这些更改了。我们试另一个方案。</code></pre>
+                <div class="key-point">
+                    <strong>安全试验模式：</strong>想试一个激进的想法？直接试。不需要手动备份、不需要 git stash。检查点在改动之前就自动保存了——如果实验失败，一条命令回到原点，什么都没丢。
+                </div>
+                <div class="info-block">
+                    <strong>适用场景：</strong>函数式风格改写、新的设计模式引入、依赖升级、不熟悉的库的试水……凡是"不确定能不能成"的改动，都可以先试再说。
+                </div>
+            </div>
+        </section>
+
+        <!-- 什么时候该回退 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>何时该回退</h2>
+                <h4>这些信号出现时，通常就该考虑 rewind 了</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>方向变复杂了</h4>
+                        <p>当前方案开始变复杂，而且你还没确定方向。这说明你可能走偏了——回退到上一个"干净"状态，换个思路重新来。</p>
+                    </div>
+                    <div class="card">
+                        <h4>测试刚失败</h4>
+                        <p>问题大概率就是最近一两步引入的。别在错误的基础上继续改——回退到测试通过的那一步，从那里重新出发。</p>
+                    </div>
+                    <div class="card">
+                        <h4>想比较两种实现</h4>
+                        <p>你觉得当前方案可以，但又想试另一种。先记住当前方案的效果，rewind 回去试新方案，最后对比选择。</p>
+                    </div>
+                    <div class="card">
+                        <h4>想要一个干净起点</h4>
+                        <p>探索了半天方向不明确。回退到一个已知的"好状态"，重新规划路线，比在混乱中继续摸索更高效。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>简单原则：</strong>当你觉得"这段改动可能不对"的时候，就是回退的最佳时机。越早回退，成本越低。
+                </div>
+            </div>
+        </section>
+
+        <!-- 与 Git 的关系 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>与 Git 互补</h2>
+                <h4>Checkpoints 和 Git 是互补的，不是替代关系</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>Checkpoints</h4>
+                        <ul>
+                            <li>会话级快照，自动创建</li>
+                            <li>适合快速试错和方案比较</li>
+                            <li>跨会话保留，30 天后自动清理</li>
+                            <li>仅当前用户可见，不共享</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Git</h4>
+                        <ul>
+                            <li>代码级版本控制，需手动 commit</li>
+                            <li>适合长期保存和团队协作</li>
+                            <li>永久保留（除非手动删除）</li>
+                            <li>可共享，团队协作基础</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>推荐用法</h4>
+                        <ul>
+                            <li>✅ 用 Checkpoints 快速试错、比较方案</li>
+                            <li>✅ 找到最佳方案后，提交到 Git</li>
+                            <li>✅ 关键节点手动 commit 到 Git 保存</li>
+                            <li>✅ 长会话用"总结"保持可管理</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>避免的做法</h4>
+                        <ul>
+                            <li>❌ 只依赖 Checkpoints 保存代码</li>
+                            <li>❌ 指望 Checkpoints 跟踪外部文件变化</li>
+                            <li>❌ 把 Checkpoints 当成 Git commit 的替代品</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 局限性 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>局限性</h2>
+                <h4>Checkpoints 很强，但它不是万能的</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>不是版本控制系统</h4>
+                        <p>Checkpoints 适合会话内的快速回退和方案探索，但<strong>它不能替代 Git</strong>。需要长期保存、可审计、可共享的改动，仍然应该使用 git commit。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>30 天自动清理</h4>
+                        <p>旧检查点最多保留 30 天，之后自动清理。如果你有一个月前的探索记录想保留，<strong>关键结果必须手动提交到 Git</strong>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>不跟踪外部变化</h4>
+                        <p>检查点只记录 Claude Code 会话中的操作。你在会话外用编辑器改的文件、用终端跑的命令，<strong>检查点无法感知</strong>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>仅当前用户可见</h4>
+                        <p>检查点是个人会话快照，不能共享给团队成员。<strong>团队协作请用 Git</strong>，检查点只负责帮你快速试错。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>简单原则：</strong>检查点负责"探索和试错"，Git 负责"落地和保存"。两者互补，不要只用一个。
+                </div>
+            </div>
+        </section>
+
+        <!-- 配置与保留 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置与保留</h2>
+                <h4>自动保存、跨会话持久化、可关闭</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>自动机制</h4>
+                        <p><strong>每次用户输入都会自动创建 checkpoint</strong>，无需手动操作。你只管做事，该存的时候它会自动存。这些快照会跨会话保留——即使你关掉 Claude Code，下次打开时仍然可以回到之前的节点。</p>
+                        <p>旧 checkpoint 最多保留 <strong>30 天</strong>，之后自动清理，避免存储无限增长。</p>
+                    </div>
+                    <div class="card">
+                        <h4>可配置项</h4>
+                        <p>如果你不需要自动 checkpoint，可以在设置中关闭：</p>
+                        <pre><code class="language-json">{
+  "autoCheckpoint": false
+}</code></pre>
+                        <p>默认值是 <code>true</code>。关闭后，Claude Code 不再自动创建快照，你需要手动管理状态。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>找不到 Checkpoints</h4>
+                        <p><strong>症状：</strong>按 Esc+Esc 后没有看到任何快照。</p>
+                        <p><strong>检查：</strong>确认你的 Claude Code 版本是否支持 checkpoints；检查 <code>autoCheckpoint</code> 设置是否被关闭了；试试重新打开会话。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>Rewind 失败</h4>
+                        <p><strong>症状：</strong>选择 checkpoint 后回退操作失败。</p>
+                        <p><strong>检查：</strong>确认选择的是一个有效 checkpoint；查看是否有文件系统或权限限制；试试先单独恢复代码或对话，不要同时恢复两者。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>回退太频繁</h4>
+                        <p><strong>症状：</strong>每次小改动都 rewind，浪费大量时间。</p>
+                        <p><strong>修复：</strong>只在关键转折点回退。小修改直接撤销就好，不需要 checkpoint。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>改动太多才回退</h4>
+                        <p><strong>症状：</strong>改了 20 个文件才想起来可以回退，回退代价太大。</p>
+                        <p><strong>修复：</strong>养成习惯：每完成一个"可验证的阶段"就确认一下。如果这个阶段结果不对，立刻 rewind。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>只依赖 Checkpoints</h4>
+                        <p><strong>症状：</strong>从来不手动 git commit，全指望 checkpoints 保存代码。</p>
+                        <p><strong>修复：</strong>Checkpoints 30 天后自动清理。关键代码必须手动 commit 到 Git。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>回退后忘了之前试过什么</h4>
+                        <p><strong>症状：</strong>rewind 了但忘了之前的方案，又重复探索了一遍。</p>
+                        <p><strong>修复：</strong>在 Rewind 时选择"从这里开始总结"——它会压缩后续对话成摘要，保留关键结论但不占空间。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>设计一个"三段式 Checkpoint"策略</h4>
+                <p>不用真的去改代码，只设计分段策略——每个阶段什么时候打点、验证什么、什么情况下 rewind。</p>
+                <div class="key-point">
+                    <strong>题目：</strong>重构用户认证模块（从 Session 迁移到 JWT）。拆成 3 个阶段。
+                </div>
+                <ul>
+                    <li>每个阶段的创建时机</li>
+                    <li>每个阶段的验证标准</li>
+                    <li>什么情况下需要 rewind</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <strong>Checkpoint 1</strong>
+                        <p style="font-size: 0.85em;">开始前<br>✅ 原有测试通过</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>Checkpoint 2</strong>
+                        <p style="font-size: 0.85em;">提取接口后<br>✅ 编译通过</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>Checkpoint 3</strong>
+                        <p style="font-size: 0.85em;">替换实现后<br>✅ 测试全部通过</p>
+                    </div>
+                </div>
+                <table>
+                    <thead><tr><th>阶段</th><th>目标</th><th>验证标准</th><th>Rewind 条件</th></tr></thead>
+                    <tbody>
+                        <tr><td>1 → 2</td><td>提取 AuthProvider 接口</td><td>编译通过，无报错</td><td>编译失败或引入新错误</td></tr>
+                        <tr><td>2 → 3</td><td>实现 JWTAuthProvider</td><td>原有测试全部通过</td><td>任何原有测试失败</td></tr>
+                        <tr><td>3 → 完成</td><td>添加 JWT 专属测试</td><td>新旧测试全部通过</td><td>新测试无法通过</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>核心原则：</strong>每个 checkpoint 对应一个<strong>可验证的结果</strong>。验证通过就继续，验证失败就 rewind。这样无论重构到哪一步，你都不会"回不去"。
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>说清 Checkpoint 与 Rewind 的用途</li>
+                            <li>知道触发时机和访问方式</li>
+                            <li>设计分段式 Checkpoint 策略</li>
+                            <li>理解与 Git 的互补关系</li>
+                            <li>掌握分支探索和安全重构两种模式</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>它和前后章节的关系</h4>
+                        <ul>
+                            <li><a href="./06-hooks.html">Hooks</a> — 在 checkpoint 前后自动做质量检查</li>
+                            <li><a href="./07-plugins.html">Plugins</a> — 插件工作流中的安全试错</li>
+                            <li><strong>Checkpoints</strong> — 让探索更安全的快照机制</li>
+                            <li><a href="./09-advanced-features.html">Advanced Features</a> — 规划模式 + checkpoints 的系统化组合</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Checkpoints 让"先试再说"变得安全。它降低了探索的成本，让你敢于尝试更多方案。但别忘了——关键代码还是要手动 commit 到 Git。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./09-advanced-features.html">下一章：Advanced Features</a> — 规划模式 + checkpoints 的系统化组合</li>
+                            <li><a href="./10-cli.html">CLI</a> — 通过命令行控制 checkpoint 行为</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>示例文件 <span style="font-weight:normal;font-size:0.85em;color:var(--text-muted);">（点击查看完整内容）</span></h4>
+                        <pre><code>08-checkpoints/
+└── <a href="#" class="md-link" data-md="checkpoint-examples">checkpoint-examples.md</a></code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>更多实战示例</h4>
+                        <ul>
+                            <li><a href="#" class="md-link" data-md="checkpoint-examples">checkpoint-examples.md</a> — 7 个完整工作流示例</li>
+                            <li>数据库迁移（直接迁移 vs 双写模式）</li>
+                            <li>UI/UX 迭代（三种布局比较，最终组合方案）</li>
+                            <li>API 设计演进（REST vs GraphQL 来回比较）</li>
+                            <li>配置管理（环境变量 vs YAML 配置文件）</li>
+                            <li>测试策略（单元测试 → 集成测试 → E2E 渐进构建）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>外部资源</h4>
+                        <ul>
+                            <li><a href="https://docs.anthropic.com/en/docs/claude-code/checkpoints" target="_blank">Claude Code 官方检查点文档</a></li>
+                            <li><a href="./README.html">根目录中文指南</a></li>
+                            <li><a href="./09-advanced-features/README.md">Advanced Features 指南</a> — 规划模式与检查点的高级组合</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章源文件</h4>
+                        <ul>
+                            <li><code>08-checkpoints/README.md</code> — 完整说明文档</li>
+                            <li><code>08-checkpoints/checkpoint-examples.md</code> — 实战示例集合</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Markdown 文件弹窗 -->
+    <style>
+        .md-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .md-modal-overlay.active {
+            display: flex;
+        }
+        .md-modal {
+            background: var(--surface-color, #fff);
+            border-radius: 12px;
+            width: min(720px, 92vw);
+            max-height: 82vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+            animation: md-modal-in 0.2s ease-out;
+        }
+        @keyframes md-modal-in {
+            from { opacity: 0; transform: translateY(20px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .md-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
+        }
+        .md-modal-header h3 {
+            margin: 0;
+            font-size: 1.05em;
+            font-family: var(--font-mono, monospace);
+            color: var(--accent-color, #8A4A12);
+        }
+        .md-modal-close {
+            background: none;
+            border: none;
+            font-size: 1.6em;
+            line-height: 1;
+            cursor: pointer;
+            color: var(--text-color, #333);
+            padding: 0 4px;
+            border-radius: 4px;
+        }
+        .md-modal-close:hover {
+            background: var(--code-bg-color, #f3f4f6);
+        }
+        .md-modal-body {
+            padding: 20px 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .md-modal-body pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.88em;
+            line-height: 1.65;
+            color: var(--text-color, #333);
+            font-family: var(--font-mono, monospace);
+        }
+        .md-modal-body .md-loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted, #888);
+        }
+        a.md-link {
+            color: var(--code-text-color, #0B598E);
+            text-decoration: none;
+            border-bottom: 1px dashed var(--code-text-color, #0B598E);
+            cursor: pointer;
+        }
+        a.md-link:hover {
+            color: var(--primary-color, #D06519);
+            border-bottom-color: var(--primary-color, #D06519);
+        }
+    </style>
+
+    <div class="md-modal-overlay" id="md-modal-overlay">
+        <div class="md-modal">
+            <div class="md-modal-header">
+                <h3 id="md-modal-title"></h3>
+                <button class="md-modal-close" id="md-modal-close">&times;</button>
+            </div>
+            <div class="md-modal-body">
+                <div class="md-loading" id="md-modal-loading">加载中…</div>
+                <pre id="md-modal-content" style="display:none;"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        var overlay = document.getElementById('md-modal-overlay');
+        var titleEl = document.getElementById('md-modal-title');
+        var contentEl = document.getElementById('md-modal-content');
+        var loadingEl = document.getElementById('md-modal-loading');
+        var closeBtn = document.getElementById('md-modal-close');
+
+        var cache = {};
+
+        function openModal(name) {
+            titleEl.textContent = name + '.md';
+            contentEl.style.display = 'none';
+            loadingEl.style.display = 'block';
+            overlay.classList.add('active');
+
+            if (cache[name]) {
+                showContent(cache[name]);
+                return;
+            }
+
+            fetch('./08-checkpoints/' + name + '.md')
+                .then(function(r) {
+                    if (!r.ok) throw new Error('Not found');
+                    return r.text();
+                })
+                .then(function(text) {
+                    cache[name] = text;
+                    showContent(text);
+                })
+                .catch(function() {
+                    loadingEl.textContent = '加载失败，请确认文件存在。';
+                });
+        }
+
+        function showContent(text) {
+            contentEl.textContent = text;
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+        }
+
+        function closeModal() {
+            overlay.classList.remove('active');
+        }
+
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && overlay.classList.contains('active')) {
+                closeModal();
+            }
+        });
+
+        document.querySelectorAll('a.md-link').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                openModal(this.getAttribute('data-md'));
+            });
+        });
+    })();
+    </script>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

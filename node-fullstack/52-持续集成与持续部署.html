@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第52章 持续集成与持续部署 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>持续集成与持续部署</h1>
+            <p>代码推送到 main，自动测试、构建、上线</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>为什么大公司的代码从不出现"忘记跑测试就上线"的事故？为什么他们的部署只需要点一个按钮？</h4>
+                <p>因为他们有 CI/CD。每次代码推送，机器自动执行：<strong>检查代码 → 跑测试 → 构建 → 部署</strong>。</p>
+                <p>这个比喻只是为了帮你建立直观感受：CI/CD 像一条自动质检流水线，代码像产品一样经过每道工序。不合格的产品（代码）会被自动拦截，不会到达客户手中。</p>
+            </div>
+        </section>
+
+        <!-- CI/CD 流程图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CI/CD 流程</h3>
+                <h4>从 git push 到自动部署的完整链路</h4>
+                <pre class="mermaid">
+graph LR
+    A[git push] --> B[GitHub Actions]
+    B --> C[Lint 检查]
+    B --> D[类型检查]
+    B --> E[单元测试]
+    C --> F{全部通过?}
+    D --> F
+    E --> F
+    F -->|是| G[构建 Docker 镜像]
+    F -->|否| H[通知开发者]
+    G --> I[推送镜像到 Registry]
+    I --> J[SSH 部署到服务器]
+    J --> K[健康检查]
+    K -->|通过| L[部署完成]
+    K -->|失败| M[自动回滚]
+                </pre>
+            </div>
+        </section>
+
+        <!-- 核心概念 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>核心概念</h3>
+                <h4>GitHub Actions 的六个关键词</h4>
+                <table>
+                    <thead><tr><th>概念</th><th>说明</th><th>类比</th></tr></thead>
+                    <tbody>
+                        <tr><td>Workflow</td><td>自动化流程定义</td><td>一条流水线</td></tr>
+                        <tr><td>Event</td><td>触发条件</td><td>启动按钮</td></tr>
+                        <tr><td>Job</td><td>一组步骤</td><td>一个工位</td></tr>
+                        <tr><td>Step</td><td>单个操作</td><td>工位上的动作</td></tr>
+                        <tr><td>Action</td><td>可复用操作单元</td><td>可复用的工具</td></tr>
+                        <tr><td>Runner</td><td>执行任务的虚拟机</td><td>执行环境</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 1: 基础工作流 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 基础 CI</h2>
+                <p>配置一个完整的持续集成流水线。</p>
+            </div>
+        </section>
+
+        <!-- CI 工作流配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CI 工作流配置</h3>
+                <h4>推代码时自动跑 Lint + 测试 + 构建</h4>
+                <pre><code class="language-yaml"># .github/workflows/ci.yml
+name: CI
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npx eslint src/ --max-warnings=0
+      - run: npx tsc --noEmit
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_DB: test_db, POSTGRES_USER: test_user, POSTGRES_PASSWORD: test_password }
+        ports: ['5432:5432']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npx vitest run --coverage</code></pre>
+            </div>
+        </section>
+
+        <!-- 触发事件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>触发事件</h3>
+                <h4>什么时候跑流水线？你来定</h4>
+                <table>
+                    <thead><tr><th>事件</th><th>触发条件</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>push</code></td><td>代码推送到分支</td><td><code>branches: [main]</code></td></tr>
+                        <tr><td><code>pull_request</code></td><td>创建/更新 PR</td><td><code>types: [opened]</code></td></tr>
+                        <tr><td><code>release</code></td><td>发布 Release</td><td><code>types: [published]</code></td></tr>
+                        <tr><td><code>schedule</code></td><td>定时执行</td><td><code>cron: '0 2 * * *'</code></td></tr>
+                        <tr><td><code>workflow_dispatch</code></td><td>手动触发</td><td>UI 点击运行</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>使用 <code>npm ci</code> 而不是 <code>npm install</code>。它严格按照 lock 文件安装，速度更快，结果更可预测。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: 自动部署 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 自动部署</h2>
+                <p>测试通过后，自动构建镜像并部署到服务器。</p>
+            </div>
+        </section>
+
+        <!-- 部署到 VPS -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>部署到 VPS</h3>
+                <h4>通过 SSH + Docker 自动部署</h4>
+                <pre><code class="language-yaml"># .github/workflows/deploy-vps.yml
+name: Deploy to VPS
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npx vitest run
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/myapp
+            git pull origin main
+            docker compose up -d --build
+            docker compose exec -T app npx prisma migrate deploy</code></pre>
+            </div>
+        </section>
+
+        <!-- Docker 镜像发布 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Docker 镜像发布</h3>
+                <h4>构建并推送到 GitHub Container Registry</h4>
+                <pre><code class="language-yaml"># .github/workflows/docker-publish.yml
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions: { packages: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max</code></pre>
+            </div>
+        </section>
+
+        <!-- 自动 Release -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自动 Release</h3>
+                <h4>打 Tag 自动生成发布说明</h4>
+                <pre><code class="language-yaml"># .github/workflows/release.yml
+name: Create Release
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Generate changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^)
+          git log --pretty=format:"- %s (%h)" $PREV_TAG..HEAD > changelog.txt
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        with:
+          tag_name: ${{ github.ref }}
+          body_path: changelog.txt</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>排错：CI 失败</h3>
+                <div class="warning">
+                    <strong>症状：</strong>PR 提交后 CI 一直红灯，但本地测试全部通过。
+                    <br><strong>原因：</strong>CI 环境和本地不同——Node 版本不一致、数据库没启动、环境变量缺失。
+                    <br><strong>修复：</strong>检查 <code>actions/setup-node</code> 的版本号；确认 <code>services</code> 中的数据库健康检查配置；检查 <code>env</code> 环境变量。
+                </div>
+                <pre><code class="language-bash"># 本地复现 CI 环境
+$ act pull_request    # 用 act 工具在本地跑 GitHub Actions</code></pre>
+            </div>
+        </section>
+
+        <!-- 最佳实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>最佳实践</h3>
+                <h4>让 CI/CD 更快、更安全</h4>
+                <table>
+                    <thead><tr><th>实践</th><th>说明</th><th>收益</th></tr></thead>
+                    <tbody>
+                        <tr><td>缓存依赖</td><td><code>cache: 'npm'</code></td><td>加速 CI</td></tr>
+                        <tr><td>最小权限</td><td>只授予必要的 permissions</td><td>安全</td></tr>
+                        <tr><td>并行任务</td><td>lint 和 test 并行执行</td><td>减少总时间</td></tr>
+                        <tr><td>环境保护</td><td>GitHub Environments 配审批</td><td>防误部署</td></tr>
+                        <tr><td>Secrets 管理</td><td>敏感信息存 GitHub Secrets</td><td>安全</td></tr>
+                        <tr><td>分支保护</td><td>PR 必须通过 CI 才能合并</td><td>最后防线</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：为你的项目创建 <code>.github/workflows/ci.yml</code>，在 push 到 main 时自动运行 ESLint 和测试。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-yaml">name: CI
+on:
+  push:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npx eslint src/
+      - run: npx vitest run</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：添加 <code>npm audit --audit-level=high</code> 到 CI 流水线，实现自动安全审计。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-yaml">  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm audit --audit-level=high</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>CI/CD 让部署自动化。下一章我们学习 <strong>部署与运维</strong>——从 PaaS 到传统 VPS，从 PM2 到 Nginx。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

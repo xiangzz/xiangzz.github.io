@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第46章 实时通信 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>实时通信</h1>
+            <p>WebSocket 与 Socket.io——让服务器主动推送数据</p>
+        </section>
+
+        <!-- 开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>微信聊天消息为什么能"秒到"？股票价格为什么能实时跳动？</h4>
+                <p>这些都不是前端不停刷新请求来的。它们用的是 <strong>WebSocket</strong>——一种让服务器能主动向客户端推送数据的协议。</p>
+                <p>传统的 HTTP 是"你问我答"，WebSocket 是"随时聊"。这一章你将学会：WebSocket 原理、Socket.io 框架、实现一个完整的聊天室。</p>
+            </div>
+        </section>
+
+        <!-- Part 1: WebSocket 基础 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: WebSocket</h2>
+                <h4>从 HTTP 升级到全双工通信</h4>
+                <p>WebSocket 是全双工通信协议，和 HTTP 的"请求-响应"模式不同，它建立一次连接后，双方可以随时互发消息。这一部分我们先掌握 WebSocket 的原理和原生用法，再对比 SSE——另一种服务端推送方案，理解什么场景该选什么技术。</p>
+            </div>
+        </section>
+
+        <!-- HTTP vs WebSocket -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>HTTP vs WebSocket</h3>
+                <h4>通信模式完全不同</h4>
+                <table>
+                    <thead><tr><th>特性</th><th>HTTP</th><th>WebSocket</th></tr></thead>
+                    <tbody>
+                        <tr><td>通信模式</td><td>请求-响应（单向）</td><td>全双工（双向）</td></tr>
+                        <tr><td>连接生命周期</td><td>短连接</td><td>长连接（持久保持）</td></tr>
+                        <tr><td>服务端推送</td><td>不支持（需轮询）</td><td>原生支持</td></tr>
+                        <tr><td>数据格式</td><td>文本（头部开销大）</td><td>文本或二进制（帧头仅2-10字节）</td></tr>
+                        <tr><td>适用场景</td><td>常规 API</td><td>聊天、通知、实时数据</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 握手过程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>握手过程</h3>
+                <h4>WebSocket 连接从一个 HTTP 升级请求开始</h4>
+                <div class="ai-diagram">
+                    <h4>图：WebSocket 握手与双向通信时序</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术时序图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：客户端与服务器之间的 WebSocket 连接建立和双向通信时序
+                    - 各元素关系：客户端向服务器发送 GET /ws HTTP/1.1 请求（携带 Upgrade: websocket 头），服务器返回 HTTP/1.1 101 Switching Protocols 响应，中间用注释标注"连接建立，开始双向通信"，之后双方自由互发消息——客户端发送消息、服务器推送消息两次、客户端再发送消息
+                    - 关键标注：Upgrade: websocket、101 Switching Protocols、握手阶段用特殊颜色区分、双向通信阶段的箭头用不同颜色
+                    - 配色建议：浅灰背景，客户端用蓝色方框，服务器用绿色方框，握手箭头用橙色标注，双向通信箭头用深灰色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>客户端发起 <code>Upgrade: websocket</code> 请求，服务器返回 <code>101 Switching Protocols</code>，之后连接就从 HTTP 升级为 WebSocket 协议。</p>
+            </div>
+        </section>
+
+        <!-- ws 库 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>ws 库使用</h3>
+                <h4>Node.js 生态中最流行的原生 WebSocket 库</h4>
+                <pre><code class="language-bash">$ npm install ws
+$ npm install -D @types/ws</code></pre>
+                <pre><code class="language-javascript">import { WebSocketServer, WebSocket } from 'ws';
+import http from 'http';
+
+const server = http.createServer();
+const wss = new WebSocketServer({ server, path: '/ws' });
+
+const clients = new Map&lt;string, { ws: WebSocket; userId?: string }&gt;();
+
+wss.on('connection', (ws) => {
+    const clientId = Math.random().toString(36).substring(2, 10);
+    clients.set(clientId, { ws });
+
+    ws.on('message', (raw) => {
+        const message = JSON.parse(raw.toString());
+        switch (message.type) {
+            case 'ping':
+                ws.send(JSON.stringify({ type: 'pong' }));
+                break;
+            case 'broadcast':
+                const data = JSON.stringify({ type: 'message', data: message.data });
+                clients.forEach((client) => {
+                    if (client.ws.readyState === WebSocket.OPEN) client.ws.send(data);
+                });
+                break;
+        }
+    });
+
+    ws.on('close', () => clients.delete(clientId));
+});
+
+server.listen(3000);</code></pre>
+            </div>
+        </section>
+
+        <!-- 浏览器客户端 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>浏览器客户端</h3>
+                <h4>浏览器原生支持 WebSocket API</h4>
+                <pre><code class="language-javascript">const ws = new WebSocket('ws://localhost:3000/ws');
+
+ws.addEventListener('open', () => {
+    console.log('已连接');
+    ws.send(JSON.stringify({ type: 'broadcast', data: { content: '你好' } }));
+});
+
+ws.addEventListener('message', (event) => {
+    const message = JSON.parse(event.data);
+    console.log('收到:', message);
+});
+
+ws.addEventListener('close', (event) => {
+    console.log('断开:', event.code);
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- SSE vs WebSocket -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>SSE (Server-Sent Events)</h3>
+                <h4>不是所有场景都需要双向通信</h4>
+                <table>
+                    <thead><tr><th>特性</th><th>SSE</th><th>WebSocket</th></tr></thead>
+                    <tbody>
+                        <tr><td>通信方向</td><td>服务端 → 客户端（单向）</td><td>全双工（双向）</td></tr>
+                        <tr><td>协议</td><td>标准 HTTP</td><td>独立协议（ws://）</td></tr>
+                        <tr><td>重连机制</td><td>浏览器原生自动重连</td><td>需要自己实现</td></tr>
+                        <tr><td>数据格式</td><td>纯文本</td><td>文本或二进制</td></tr>
+                        <tr><td>浏览器支持</td><td>所有现代浏览器</td><td>所有现代浏览器</td></tr>
+                        <tr><td>典型场景</td><td>通知推送、实时日志、股票行情</td><td>聊天、游戏、协同编辑</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>选型建议：</strong>只需要服务端推送的场景（如通知、日志流），用 SSE 更简单——它基于标准 HTTP，不需要额外协议，浏览器原生支持自动重连。只有需要双向实时通信时才选 WebSocket。
+                </div>
+            </div>
+        </section>
+
+        <!-- SSE 服务端 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>SSE 服务端实现</h3>
+                <h4>用 Express 搭建 SSE 端点</h4>
+                <pre><code class="language-javascript">// Express SSE 端点
+import express from 'express';
+
+const app = express();
+
+app.get('/events', (req, res) => {
+    // 设置 SSE 必需的响应头
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+    });
+
+    // 定时推送数据
+    const interval = setInterval(() => {
+        const data = JSON.stringify({
+            time: new Date().toISOString(),
+            message: `服务时间: ${new Date().toLocaleTimeString()}`,
+        });
+        // SSE 格式: "data: ...\n\n"
+        res.write(`data: ${data}\n\n`);
+    }, 1000);
+
+    // 客户端断开时清理
+    req.on('close', () => {
+        clearInterval(interval);
+        res.end();
+    });
+});
+
+app.listen(3000);</code></pre>
+                <p>SSE 的核心就是三个响应头：<code>Content-Type: text/event-stream</code> 告诉浏览器这是 SSE 流，<code>Cache-Control: no-cache</code> 禁止缓存，<code>Connection: keep-alive</code> 保持长连接。数据格式固定为 <code>data: 内容\n\n</code>。</p>
+            </div>
+        </section>
+
+        <!-- SSE 客户端 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>SSE 客户端：EventSource</h3>
+                <h4>浏览器原生 API，开箱即用</h4>
+                <pre><code class="language-javascript">// 前端代码
+const evtSource = new EventSource('http://localhost:3000/events');
+
+evtSource.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    console.log('收到推送:', data.message);
+};
+
+// 监听自定义事件名
+evtSource.addEventListener('notification', (event) => {
+    const notification = JSON.parse(event.data);
+    showToast(notification.title, notification.body);
+});
+
+// 连接出错时浏览器会自动重连
+evtSource.onerror = (event) => {
+    console.log('SSE 连接中断，浏览器将自动重连...');
+};
+
+// 主动关闭
+// evtSource.close();</code></pre>
+                <pre><code class="language-javascript">// 服务端推送自定义事件名
+// res.write(`event: notification\n`);
+// res.write(`data: ${JSON.stringify({ title: '新消息', body: '你好' })}\n\n`);</code></pre>
+                <p><code>EventSource</code> 的 API 比 WebSocket 更简单：不用手动处理重连，浏览器断线后自动重试。服务端用 <code>event:</code> 字段可以推送具名事件，客户端用 <code>addEventListener</code> 按名监听。</p>
+            </div>
+        </section>
+
+        <!-- Part 2: Socket.io 进阶 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: Socket.io 进阶</h2>
+                <h4>生产级实时通信框架</h4>
+                <p>Socket.io 是建立在 WebSocket 之上的框架，自动处理重连、房间、广播，浏览器不支持 WebSocket 时自动降级到轮询。这一部分我们将学习如何把 Socket.io 挂载到 Express 服务器上、用 Redis 适配器支持多实例部署、实现在线状态系统、处理断线重连，以及集成 JWT 认证。</p>
+            </div>
+        </section>
+
+        <!-- 类型定义 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>事件类型定义</h3>
+                <h4>前后端共享类型，保证事件名和载荷类型一致</h4>
+                <pre><code class="language-bash">$ npm install socket.io
+$ npm install socket.io-client  # 前端</code></pre>
+                <pre><code class="language-javascript">// src/types/socket.events.ts
+export interface ServerToClientEvents {
+    'chat:message': (message: ChatMessage) => void;
+    'chat:history': (messages: ChatMessage[]) => void;
+    'room:joined': (data: { room: string; users: string[] }) => void;
+    'user:online': (userId: string) => void;
+    'user:offline': (userId: string) => void;
+}
+
+export interface ClientToServerEvents {
+    'chat:message': (data: { room: string; content: string }) => void;
+    'room:join': (room: string) => void;
+    'room:leave': (room: string) => void;
+}
+
+export interface ChatMessage {
+    id: string;
+    userId: string;
+    username: string;
+    content: string;
+    room: string;
+    timestamp: number;
+}
+
+export interface SocketData {
+    userId: string;
+    username: string;
+    rooms: string[];
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Socket.io 服务端 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Socket.io 服务端</h3>
+                <h4>类型安全的 Socket.io 服务器配置</h4>
+                <pre><code class="language-javascript">import { Server } from 'socket.io';
+import { createServer } from 'http';
+
+const httpServer = createServer();
+const io = new Server&lt;ClientToServerEvents, ServerToClientEvents, {}, SocketData&gt;(httpServer, {
+    cors: { origin: 'http://localhost:5173' },
+    pingInterval: 10000,
+    pingTimeout: 5000,
+});
+
+io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) return next(new Error('缺少令牌'));
+    // 验证 token...
+    socket.data.userId = 'user_123';
+    socket.data.username = 'Alice';
+    socket.data.rooms = [];
+    next();
+});
+
+io.on('connection', (socket) => {
+    console.log(`${socket.data.username} 已连接`);
+
+    socket.on('room:join', (room) => {
+        socket.join(room);
+        io.to(room).emit('room:joined', { room, users: [] });
+    });
+
+    socket.on('chat:message', (data) => {
+        io.to(data.room).emit('chat:message', {
+            id: Date.now().toString(36),
+            userId: socket.data.userId,
+            username: socket.data.username,
+            content: data.content,
+            room: data.room,
+            timestamp: Date.now(),
+        });
+    });
+
+    socket.on('disconnect', () => {
+        io.emit('user:offline', socket.data.userId);
+    });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- Socket.io 客户端 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Socket.io 客户端</h3>
+                <h4>前端连接 Socket.io 服务器</h4>
+                <pre><code class="language-javascript">// 前端代码
+import { io, Socket } from 'socket.io-client';
+
+const socket: Socket&lt;ServerToClientEvents, ClientToServerEvents&gt; = io(
+    'http://localhost:3000',
+    {
+        autoConnect: false,
+        auth: { token: localStorage.getItem('accessToken') },
+    }
+);
+
+socket.on('chat:message', (message) => {
+    console.log(`${message.username}: ${message.content}`);
+});
+
+socket.connect();
+
+// 发送消息
+socket.emit('chat:message', { room: 'general', content: '你好' });</code></pre>
+            </div>
+        </section>
+
+        <!-- Socket.io + Express 集成 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Socket.io + Express 集成</h3>
+                <h4>把 Socket.io 挂载到现有的 Express HTTP 服务器上</h4>
+                <pre><code class="language-javascript">import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import session from 'express-session';
+
+const app = express();
+const httpServer = createServer(app);
+
+// Socket.io 挂载到同一个 HTTP 服务器
+const io = new Server(httpServer, {
+    cors: { origin: 'http://localhost:5173', credentials: true },
+});
+
+// Express 中间件
+app.use(express.json());
+app.use(session({ secret: 'your-secret', resave: false, saveUninitialized: false }));
+
+// REST API 路由正常工作
+app.get('/api/messages', async (req, res) => {
+    const messages = await MessageService.getRoomMessages('general');
+    res.json(messages);
+});
+
+// Socket.io 共享 session
+io.engine.use(session({ secret: 'your-secret', resave: false, saveUninitialized: false }));
+
+io.on('connection', (socket) => {
+    // 从握手请求中读取 session
+    const session = socket.request.session;
+    console.log('用户 session:', session.userId);
+});
+
+// 两者共用同一个端口
+httpServer.listen(3000, () => {
+    console.log('HTTP + WebSocket 服务运行在 3000 端口');
+});</code></pre>
+                <p>关键点：Socket.io 通过 <code>createServer(app)</code> 挂载到 Express 的底层 HTTP 服务器上，REST API 和 WebSocket 共用同一个端口。用 <code>io.engine.use()</code> 可以让 WebSocket 握手请求也走 Express 中间件，实现 session 共享。</p>
+            </div>
+        </section>
+
+        <!-- Redis 适配器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Redis 适配器</h3>
+                <h4>多实例部署时，不同服务器上的 Socket.io 需要通信</h4>
+                <div class="ai-diagram">
+                    <h4>图：Socket.io 多实例通过 Redis Pub/Sub 同步消息架构</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：客户端 A、客户端 B 分别连接到两台服务器，两台服务器通过 Redis Pub/Sub 进行消息同步的架构图
+                    - 各元素关系：客户端 A 通过连接箭头指向服务器 1，客户端 B 通过连接箭头指向服务器 2，服务器 1 与 Redis 之间有双向箭头标注"Redis Pub/Sub"，Redis 与服务器 2 之间也有双向箭头标注"Redis Pub/Sub"，Redis 用圆柱体图标表示数据库/中间件
+                    - 关键标注：两个客户端分别标注"客户端 A"和"客户端 B"，两台服务器分别标注"服务器 1"和"服务器 2"，中间件标注"Redis"，连接线标注"Redis Pub/Sub"
+                    - 配色建议：浅灰背景，客户端用蓝色方框，服务器用绿色方框，Redis 用红色圆柱体图标，连接线用深灰色箭头
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <pre><code class="language-bash">$ npm install @socket.io/redis-adapter redis</code></pre>
+                <pre><code class="language-javascript">import { createAdapter } from '@socket.io/redis-adapter';
+import { createClient } from 'redis';
+
+const pubClient = createClient({ url: 'redis://localhost:6379' });
+const subClient = pubClient.duplicate();
+
+await Promise.all([pubClient.connect(), subClient.connect()]);
+
+const io = new Server(httpServer, {
+    cors: { origin: 'http://localhost:5173' },
+});
+
+// 挂载 Redis 适配器
+io.adapter(createAdapter(pubClient, subClient));
+
+// 现在 io.emit() 和 io.to(room).emit() 会跨实例广播
+io.on('connection', (socket) => {
+    console.log(`连接来自实例: ${process.pid}`);
+});</code></pre>
+                <p>单实例部署时 Socket.io 用内存就够了。一旦有多个实例（PM2 集群、Docker 副本、K8s Pod），消息广播就需要通过 Redis Pub/Sub 同步到所有实例。否则连接在服务器 A 的用户发消息，连接在服务器 B 的用户收不到。</p>
+            </div>
+        </section>
+
+        <!-- 在线状态系统 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>在线状态系统</h3>
+                <h4>追踪谁在线，谁离开了</h4>
+                <pre><code class="language-javascript">// 在线用户管理
+const onlineUsers = new Map&lt;string, { userId: string; username: string; rooms: string[] }&gt;();
+
+io.on('connection', (socket) => {
+    const { userId, username } = socket.data;
+
+    // 用户上线
+    onlineUsers.set(socket.id, { userId, username, rooms: [] });
+    io.emit('presence:online', { userId, username, onlineCount: onlineUsers.size });
+
+    // 加入房间时更新
+    socket.on('room:join', (room) => {
+        socket.join(room);
+        const user = onlineUsers.get(socket.id);
+        if (user) {
+            user.rooms.push(room);
+            // 向房间内广播在线用户列表
+            const roomUsers = [...onlineUsers.values()]
+                .filter(u => u.rooms.includes(room));
+            io.to(room).emit('room:users', roomUsers.map(u => ({
+                userId: u.userId,
+                username: u.username,
+            })));
+        }
+    });
+
+    // 用户下线
+    socket.on('disconnect', () => {
+        const user = onlineUsers.get(socket.id);
+        onlineUsers.delete(socket.id);
+        io.emit('presence:offline', {
+            userId: user?.userId,
+            onlineCount: onlineUsers.size,
+        });
+    });
+});</code></pre>
+                <p>在线状态系统的核心是维护一个 <code>Map&lt;socketId, userInfo&gt;</code>，在 <code>connection</code> 时添加、<code>disconnect</code> 时移除，并通过自定义事件广播上下线通知。多实例部署时，可以把状态存到 Redis 而不是内存。</p>
+            </div>
+        </section>
+
+        <!-- 断线重连与状态恢复 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>断线重连与状态恢复</h3>
+                <h4>网络不稳定时，用户体验不能断</h4>
+                <pre><code class="language-javascript">// 客户端：Socket.io 自动重连配置
+const socket = io('http://localhost:3000', {
+    reconnection: true,
+    reconnectionAttempts: 10,     // 最多重试 10 次
+    reconnectionDelay: 1000,      // 初始延迟 1s
+    reconnectionDelayMax: 5000,   // 最大延迟 5s
+    randomizationFactor: 0.5,     // 随机抖动因子
+});
+
+// 监听重连事件
+socket.on('connect', () => {
+    console.log('已连接，重新加入房间');
+    // 重连后需要重新加入之前的房间
+    currentRooms.forEach(room => socket.emit('room:join', room));
+    // 请求离线期间的消息
+    socket.emit('message:catchup', { lastTimestamp });
+});
+
+socket.on('disconnect', (reason) => {
+    console.log('断开原因:', reason);
+    // 'io server disconnect' — 服务端主动断开，需要手动重连
+    if (reason === 'io server disconnect') {
+        socket.connect();
+    }
+    // 其他原因 Socket.io 会自动重连
+});</code></pre>
+                <pre><code class="language-javascript">// 服务端：为断线重连的用户提供消息补发
+socket.on('message:catchup', async ({ lastTimestamp }) => {
+    const missedMessages = await MessageService.getMessagesAfter(lastTimestamp);
+    socket.emit('chat:history', missedMessages);
+});</code></pre>
+                <p>Socket.io 内置了自动重连机制，支持指数退避策略。但重连成功后，需要客户端主动重新加入房间和请求离线期间的消息，这些逻辑需要你手动实现。</p>
+            </div>
+        </section>
+
+        <!-- Socket.io 认证集成 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Socket.io 认证集成</h3>
+                <h4>用 JWT 保护 WebSocket 连接</h4>
+                <pre><code class="language-javascript">import jwt from 'jsonwebtoken';
+
+// Socket.io 认证中间件
+io.use((socket, next) => {
+    const token = socket.handshake.auth.token
+        || socket.handshake.headers.authorization?.replace('Bearer ', '');
+
+    if (!token) {
+        return next(new Error('AUTH_REQUIRED'));
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+
+        // 检查 token 是否即将过期（可选）
+        const expiresIn = (decoded.exp * 1000) - Date.now();
+        if (expiresIn &lt; 0) {
+            return next(new Error('TOKEN_EXPIRED'));
+        }
+
+        // 将用户信息挂载到 socket.data
+        socket.data.userId = decoded.userId;
+        socket.data.username = decoded.username;
+        next();
+    } catch (err) {
+        // 区分不同错误类型
+        if (err.name === 'TokenExpiredError') {
+            return next(new Error('TOKEN_EXPIRED'));
+        }
+        return next(new Error('TOKEN_INVALID'));
+    }
+});</code></pre>
+                <pre><code class="language-javascript">// 客户端：连接时传递 token
+const socket = io('http://localhost:3000', {
+    auth: { token: localStorage.getItem('accessToken') },
+});
+
+// 监听认证错误
+socket.on('connect_error', (err) => {
+    if (err.message === 'TOKEN_EXPIRED') {
+        // 刷新 token 后重连
+        refreshToken().then(newToken => {
+            socket.auth.token = newToken;
+            socket.connect();
+        });
+    }
+});</code></pre>
+                <p>WebSocket 握手没有 HTTP 请求体，token 通过 <code>handshake.auth</code> 或 <code>headers.authorization</code> 传递。验证失败时调用 <code>next(new Error(...))</code>，客户端会在 <code>connect_error</code> 事件中收到错误消息，据此决定是刷新 token 还是跳转到登录页。</p>
+            </div>
+        </section>
+
+        <!-- Part 3: 聊天室 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 聊天室实战</h2>
+                <h4>从零搭建一个完整聊天应用</h4>
+                <p>把前面学的知识组合起来，做一个完整的聊天室应用。这个项目涵盖实时消息收发、房间隔离、历史消息分页、在线状态追踪、消息持久化等核心功能，是你掌握实时通信的综合性练习。</p>
+            </div>
+        </section>
+
+        <!-- 项目结构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>项目结构</h3>
+                <h4>清晰分层，实时通信和 REST API 共存</h4>
+                <pre><code class="language-plaintext">chat-app/
+  src/
+    server.ts           # 服务器入口
+    websocket/
+      socket-server.ts  # Socket.io 配置
+      chat.handler.ts   # 聊天业务逻辑
+    routes/
+      chat.routes.ts    # REST API（历史消息）
+    services/
+      message.service.ts # 消息存储
+    types/
+      socket.events.ts  # 类型定义</code></pre>
+            </div>
+        </section>
+
+        <!-- 消息服务 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>消息服务</h3>
+                <h4>用 Prisma 持久化聊天消息</h4>
+                <pre><code class="language-javascript">// prisma/schema.prisma
+// model Message {
+//   id        String   @id @default(cuid())
+//   userId    String
+//   username  String
+//   content   String   @db.Text
+//   room      String   @default("general")
+//   createdAt DateTime @default(now())
+//   @@index([room, createdAt])
+// }</code></pre>
+                <pre><code class="language-javascript">// src/services/message.service.ts
+export class MessageService {
+    static async saveMessage(data: { userId: string; username: string; content: string; room: string }) {
+        return prisma.message.create({ data });
+    }
+
+    static async getRoomMessages(room: string, limit = 50) {
+        const messages = await prisma.message.findMany({
+            where: { room },
+            orderBy: { createdAt: 'desc' },
+            take: limit,
+        });
+        return messages.reverse();
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 聊天功能清单 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>功能清单</h3>
+                <h4>一个完整聊天室需要的七大功能</h4>
+                <table>
+                    <thead><tr><th>功能</th><th>实现方式</th><th>技术点</th></tr></thead>
+                    <tbody>
+                        <tr><td>实时消息</td><td>Socket.io emit/on</td><td>WebSocket 双向通信</td></tr>
+                        <tr><td>房间隔离</td><td>Socket.io rooms</td><td>socket.join/leave</td></tr>
+                        <tr><td>历史消息</td><td>REST API + 分页</td><td>Prisma cursor 分页</td></tr>
+                        <tr><td>在线状态</td><td>connection/disconnect</td><td>在线用户 Map</td></tr>
+                        <tr><td>正在输入</td><td>typing 事件</td><td>节流 + 广播</td></tr>
+                        <tr><td>消息持久化</td><td>异步写入数据库</td><td>Prisma + 异步 catch</td></tr>
+                        <tr><td>XSS 防护</td><td>服务端过滤</td><td>HTML 实体编码</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>多实例部署需要 Redis Adapter。</strong> Socket.io 默认用内存存储，多个服务器实例之间消息无法互通。生产环境用 <code>@socket.io/redis-adapter</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <div class="warning">
+                    <strong>实时通信的排错比较棘手。</strong> 建议在服务端和客户端都加上详细的日志，打印事件的发送和接收。
+                </div>
+
+                <h4>问题一：客户端连不上 WebSocket</h4>
+                <p><strong>原因</strong>：CORS 配置不对，或服务器端口没监听。</p>
+                <p><strong>修复</strong>：在 Socket.io 配置中设置正确的 <code>cors.origin</code>，确认服务器在监听正确的端口。</p>
+
+                <h4>问题二：消息发送了但对方收不到</h4>
+                <p><strong>原因</strong>：发送者和接收者不在同一个 Socket.io 房间。</p>
+                <p><strong>修复</strong>：确认双方都执行了 <code>socket.join(room)</code>，用 <code>io.to(room).emit(...)</code> 而不是 <code>socket.emit(...)</code>。</p>
+
+                <h4>问题三：频繁断线重连</h4>
+                <p><strong>原因</strong>：网络不稳定，或心跳超时设置太短。</p>
+                <p><strong>修复</strong>：增大 <code>pingInterval</code> 和 <code>pingTimeout</code> 的值，或在客户端设置 <code>reconnectionAttempts</code>。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：用 ws 库创建一个 WebSocket 服务器，实现"回声"功能——把收到的消息原样发回去。</p>
+                        <pre><code class="language-javascript">// 提示：ws.on('message', ...) 中调用 ws.send()
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">wss.on('connection', (ws) => {
+    ws.on('message', (data) => {
+        ws.send(data); // 原样返回
+    });
+});</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：在 Socket.io 聊天室中添加"正在输入"功能。用户输入时通知房间内其他人。</p>
+                        <pre><code class="language-javascript">// 提示：监听 chat:typing 事件，用 socket.to(room).emit 广播
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">socket.on('chat:typing', (data) => {
+    socket.to(data.room).emit('chat:typing', {
+        room: data.room,
+        isTyping: data.isTyping,
+        username: socket.data.username,
+    });
+});</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>实时通信搞定了。下一章学习<strong>后端测试</strong>——单元测试、集成测试、E2E 测试，让代码更有信心。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

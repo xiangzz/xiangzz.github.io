@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>07 Plugins</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 07 章</div>
+            <h1>Plugins</h1>
+            <p>把多个能力组合成可安装、可分发的一体化方案</p>
+            <strong>一条命令安装 = 命令 + 角色 + MCP + Hooks 全部就绪</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>碎片化配置</h2>
+                <h4>你有没有发现，让新同事把 Claude Code 环境配好，要折腾一整个下午？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>复制一堆文件</h4>
+                        <p>先复制 Skill 文件，再配 MCP server，再创建 subagent 角色，再装 Hook 脚本。<strong>六七个步骤，少一步就出问题</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>配置不一致</h4>
+                        <p>A 同事配了安全审查 Hook，B 同事没配。A 审查出来的问题，B 根本看不到。<strong>团队标准全靠口头传达</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>升级靠手动</h4>
+                        <p>PR 审查流程改了。你在 Slack 里通知全组"把 review 命令更新到 v2"。然后？<strong>三天了还有人在用 v1</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>Plugin 就是为这个设计的：</strong>把命令、角色、MCP server、Hook、模板打包成一个整体。一条命令安装，所有组件就绪。升级时一条命令更新，全组同步。
+                </div>
+            </div>
+        </section>
+
+        <!-- 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>想把个人最佳实践变成团队标准的人</li>
+                            <li>需要在多个仓库/团队复用同一套流程的人</li>
+                            <li>已经理解前面章节的命令、Skill、Subagent、Hook、MCP</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该已经能</h4>
+                        <ul>
+                            <li>说清 Plugin 的定位和组成</li>
+                            <li>判断"什么时候该升级到 Plugin 层"</li>
+                            <li>创建一个最小 Plugin 结构</li>
+                            <li>理解版本化和分发策略</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Plugin 是什么 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>什么是 Plugin</h2>
+                <h4>一句话：把多个能力打包成一套可安装的工作流</h4>
+                <p><strong>Plugin</strong>是把 slash commands、subagents、MCP servers 和 hooks 组合在一起的功能集合，可以通过一条命令安装和分发。</p>
+                <p>说白了，Plugin 就是一个<strong>"开箱即用的工作流套餐"</strong>——你不需要逐个配置每个组件，装完就能用。这个比喻只是为了帮你建立直观感受。在技术上，Plugin 是一个符合特定目录规范的文件夹，包含清单文件和各组件的定义文件。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/07-plugins-1.png" alt="图：插件组成架构——一个 Plugin 包含哪些组件" class="ai-diagram-img">
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Commands</h4>
+                        <p>以 Markdown 形式存放的命令</p>
+                    </div>
+                    <div class="card">
+                        <h4>Agents</h4>
+                        <p>自定义 agent 角色定义</p>
+                    </div>
+                    <div class="card">
+                        <h4>Skills</h4>
+                        <p>带 SKILL.md 的技能</p>
+                    </div>
+                    <div class="card">
+                        <h4>Hooks</h4>
+                        <p>事件处理器</p>
+                    </div>
+                    <div class="card">
+                        <h4>MCP Servers</h4>
+                        <p>外部工具配置</p>
+                    </div>
+                    <div class="card">
+                        <h4>Configuration</h4>
+                        <p>默认设置</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 插件类型分类 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>插件类型</h2>
+                <h4>按范围和共享对象，插件分为四类</h4>
+                <table>
+                    <thead><tr><th>类型</th><th>范围</th><th>共享对象</th><th>维护者</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>官方</strong></td><td>全局</td><td>所有用户</td><td>Anthropic</td><td>PR 审查、安全指导</td></tr>
+                        <tr><td><strong>社区</strong></td><td>公开</td><td>所有用户</td><td>社区</td><td>DevOps、数据科学</td></tr>
+                        <tr><td><strong>组织</strong></td><td>内部</td><td>团队成员</td><td>公司</td><td>内部规范、工具</td></tr>
+                        <tr><td><strong>个人</strong></td><td>个人</td><td>单个用户</td><td>开发者</td><td>自定义工作流</td></tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>官方 vs 社区</h4>
+                        <p>官方插件由 Anthropic 审核维护，质量有保障；社区插件由开源贡献者提交，生态更丰富。两者都通过市场分发。</p>
+                    </div>
+                    <div class="card">
+                        <h4>组织 vs 个人</h4>
+                        <p>组织插件放在企业私有仓库，通过 <code>strictKnownMarketplaces</code> 白名单管控。个人插件适合开发调试，不对外共享。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 目录结构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>目录结构</h2>
+                <h4>一个插件文件夹里该有什么</h4>
+                <pre class="tree-structure">my-plugin/
+├── .claude-plugin/
+│   └── plugin.json        <span style="color: var(--success-color);">[清单 — 必需]</span>
+├── commands/              <span style="color: var(--info-color);">[命令]</span>
+│   └── review-pr.md
+├── agents/                <span style="color: var(--info-color);">[角色]</span>
+│   └── security-reviewer.md
+├── skills/                <span style="color: var(--info-color);">[技能]</span>
+│   └── pr-review/
+│       └── SKILL.md
+├── hooks/                 <span style="color: var(--info-color);">[事件处理]</span>
+│   └── hooks.json
+├── .mcp.json              <span style="color: var(--info-color);">[MCP 配置]</span>
+├── settings.json          <span style="color: var(--info-color);">[默认设置]</span>
+└── templates/             <span style="color: var(--text-muted);">[模板]</span></pre>
+                <pre><code><span style="color: var(--text-muted);"># 文件：.claude-plugin/plugin.json</span>
+
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "description": "一个示例插件",
+  "author": { "name": "Your Name" },
+  "license": "MIT",
+  "userConfig": {
+    "apiKey": {
+      "description": "API 密钥",
+      "sensitive": true
+    },
+    "region": {
+      "description": "部署区域",
+      "default": "us-east-1"
+    }
+  }
+}</code></pre>
+                <div class="key-point">
+                    <strong>唯一必需的文件：</strong><code>plugin.json</code>。其他都是可选的——你的插件可以只包含命令，也可以包含所有组件。<code>userConfig</code> 声明用户可配置的选项，<code>sensitive: true</code> 的值会存入系统密钥链而非明文文件。
+                </div>
+                <div class="warning">
+                    <strong>插件中的角色安全限制：</strong>插件里的 subagent 不能注册自己的 hooks、不能配置 MCP servers、不能覆盖权限模式。这些限制确保插件不会在用户不知情的情况下扩展权限。
+                </div>
+            </div>
+        </section>
+
+        <!-- 本仓示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本仓示例</h2>
+                <h4>三个不同场景的插件</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid var(--primary-color);">
+                        <h4>DevOps Automation</h4>
+                        <p>部署自动化、回滚、事件响应。包含 deploy、rollback、status、incident 四个命令和 deployment-specialist、incident-commander 两个角色。</p>
+                        <span class="tag tag-primary">DevOps</span>
+                    </div>
+                    <div class="card" style="border-top: 3px solid var(--success-color);">
+                        <h4>Documentation</h4>
+                        <p>文档生成、校验和同步。包含 generate-api-docs、generate-readme、sync-docs 三个命令和 api-documenter、code-commentator 两个角色。</p>
+                        <span class="tag tag-success">文档</span>
+                    </div>
+                    <div class="card" style="border-top: 3px solid var(--info-color);">
+                        <h4>PR Review</h4>
+                        <p>完整的 PR 审查工作流。包含 review-pr、check-security、check-tests 三个命令和 security-reviewer、performance-analyzer 两个角色，还集成了 GitHub MCP。</p>
+                        <span class="tag tag-info">审查</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 安装与生命周期 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安装与更新</h2>
+                <h4>一条命令完成安装、启用、更新、卸载</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/07-plugins-2.png" alt="图：插件生命周期——从发现到卸载的完整流程" class="ai-diagram-img">
+                <pre><code><span style="color: var(--text-muted);"># 从 GitHub 安装</span>
+$ /plugin install github:acme/pr-review-plugin
+
+<span style="color: var(--text-muted);"># 从本地路径安装</span>
+$ /plugin install ./my-plugin
+
+<span style="color: var(--text-muted);"># 列出已安装</span>
+$ /plugin list --installed
+
+<span style="color: var(--text-muted);"># 启用 / 禁用 / 更新 / 卸载</span>
+$ /plugin enable pr-review
+$ /plugin disable pr-review
+$ /plugin update pr-review
+$ /plugin uninstall pr-review</code></pre>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <strong>安装</strong>
+                        <p style="font-size: 0.85em;">所有组件<br>自动就位</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>使用</strong>
+                        <p style="font-size: 0.85em;">命令、角色<br>直接可用</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>更新</strong>
+                        <p style="font-size: 0.85em;">一条命令<br>全组同步</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>卸载</strong>
+                        <p style="font-size: 0.85em;">干净移除<br>不留残余</p>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>命令命名空间</h4>
+                        <p>独立命令用 <code>/review</code>，插件命令用 <code>/pr-review:review-pr</code>——自动加上插件名前缀，避免不同插件的命令冲突。</p>
+                    </div>
+                    <div class="card">
+                        <h4>开发时热重载</h4>
+                        <p>开发插件时，用 <code>/reload-plugins</code> 重新加载所有插件配置，不用重启会话。也支持 <code>claude --plugin-dir ./my-plugin</code> 从本地目录临时加载。</p>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>持久化数据目录</h4>
+                        <p>每个插件有专属的 <code>${CLAUDE_PLUGIN_DATA}</code> 目录，用于缓存、统计等跨会话持久状态。安装时自动创建，卸载时自动清理。</p>
+                        <pre><code><span style="color: var(--text-muted);">// hooks.json — 在 Hook 中使用持久化目录</span>
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "command": "node ${CLAUDE_PLUGIN_DATA}/track-usage.js"
+      }
+    ]
+  }
+}</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>完整 CLI 命令</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 所有插件操作都可通过 CLI 完成</span>
+claude plugin install name@marketplace
+claude plugin uninstall name
+claude plugin list
+claude plugin enable name
+claude plugin disable name
+claude plugin validate  <span style="color: var(--success-color);"># 验证结构</span></code></pre>
+                    </div>
+                </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 测试插件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>测试插件</h2>
+                <h4>发布前用 <code>--plugin-dir</code> 在本地充分验证</h4>
+                <pre><code><span style="color: var(--text-muted);"># 加载单个插件进行测试</span>
+$ claude --plugin-dir ./my-plugin
+
+<span style="color: var(--text-muted);"># 同时加载多个插件测试兼容性</span>
+$ claude --plugin-dir ./my-plugin --plugin-dir ./another-plugin</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>六项验证清单</h4>
+                        <ul>
+                            <li>所有 slash commands 是否可用</li>
+                            <li>subagents 和 agents 是否正常工作</li>
+                            <li>MCP servers 能正确连接</li>
+                            <li>hooks 的执行符合预期</li>
+                            <li>LSP server 配置正确加载</li>
+                            <li>没有配置错误或路径问题</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>热重载加速开发</h4>
+                        <p>修改插件文件后，用 <code>/reload-plugins</code> 重新加载所有配置（清单、命令、角色、技能、Hook、MCP/LSP），无需重启会话。</p>
+                        <pre><code>/reload-plugins
+<span style="color: var(--text-muted);"># 重新读取所有插件，会话不中断</span></code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 分发策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>分发渠道</h2>
+                <h4>插件可以从多个来源安装</h4>
+                <table>
+                    <thead><tr><th>来源</th><th>语法</th><th>适合</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>GitHub</strong></td><td><code>/plugin install github:owner/repo</code></td><td>开源插件、团队内部仓库</td></tr>
+                        <tr><td><strong>本地路径</strong></td><td><code>/plugin install ./my-plugin</code></td><td>开发调试、私有项目</td></tr>
+                        <tr><td><strong>npm</strong></td><td><code>/plugin install @acme/claude-plugin</code></td><td>公开发布的插件</td></tr>
+                        <tr><td><strong>Git URL</strong></td><td><code>/plugin install https://git.internal/plugin.git</code></td><td>企业内网</td></tr>
+                        <tr><td><strong>Git 子目录</strong></td><td><code>{ "source": "git-subdir", "url": "...", "path": "packages/plugin" }</code></td><td>Monorepo 中的插件</td></tr>
+                        <tr><td><strong>pip</strong></td><td><code>{ "source": "pip", "package": "claude-data-plugin" }</code></td><td>Python 生态插件</td></tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>版本锁定</h4>
+                        <p>GitHub 和 Git 来源支持可选的 <code>ref</code>（分支/标签）和 <code>sha</code>（提交哈希）字段，用于锁定到特定版本，确保可复现的环境。</p>
+                    </div>
+                    <div class="card">
+                        <h4>企业管控</h4>
+                        <p>通过 <code>strictKnownMarketplaces</code> 和 <code>deniedPlugins</code> 控制团队可安装的插件范围，防止安装来源不明的插件。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 插件市场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>插件市场</h2>
+                <h4>官方目录 + 企业私有市场 + 内联定义</h4>
+                <pre><code><span style="color: var(--text-muted);"># 添加市场源</span>
+/plugin marketplace add owner/repo-name
+/plugin marketplace add https://gitlab.com/org/marketplace-repo.git
+
+<span style="color: var(--text-muted);"># 内联定义（在 settings.json 中直接嵌入插件）</span>
+{
+  "pluginMarketplaces": [
+    {
+      "name": "inline-tools",
+      "source": "settings",
+      "plugins": [
+        { "name": "quick-lint", "source": "./local-plugins/quick-lint" }
+      ]
+    }
+  ]
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>marketplace.json 字段</h4>
+                        <table>
+                            <thead><tr><th>字段</th><th>必填</th><th>说明</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>name</code></td><td>是</td><td>kebab-case 市场名</td></tr>
+                                <tr><td><code>owner</code></td><td>是</td><td>组织或用户</td></tr>
+                                <tr><td><code>plugins</code></td><td>是</td><td>插件条目数组</td></tr>
+                                <tr><td><code>plugins[].source</code></td><td>是</td><td>路径字符串或来源对象</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>组织管控设置</h4>
+                        <table>
+                            <thead><tr><th>设置</th><th>说明</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>enabledPlugins</code></td><td>默认启用的白名单</td></tr>
+                                <tr><td><code>deniedPlugins</code></td><td>禁止安装的黑名单</td></tr>
+                                <tr><td><code>strictKnownMarketplaces</code></td><td>限制允许的市场</td></tr>
+                                <tr><td><code>allowedChannelPlugins</code></td><td>每渠道允许的插件</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>严格模式：</strong><code>strict: true</code>（默认）下本地 <code>plugin.json</code> 为权威来源；<code>strict: false</code> 下市场条目即完整定义。配合 <code>strictKnownMarketplaces</code> 白名单模式，只允许匹配的市场被添加。
+                </div>
+            </div>
+        </section>
+
+        <!-- 何时创建插件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>何时升级</h2>
+                <h4>不是什么都需要做成插件——先判断再行动</h4>
+                <div class="comparison">
+                    <div class="after">
+                        <h4>适合用插件</h4>
+                        <ul>
+                            <li><strong>团队入职</strong>：新同事一条命令装好所有配置</li>
+                            <li><strong>框架初始化</strong>：打包框架专属命令和模板</li>
+                            <li><strong>企业规范</strong>：集中分发，版本控制，统一升级</li>
+                            <li><strong>多组件协作</strong>：命令 + 角色 + Hook + MCP 协同工作</li>
+                        </ul>
+                    </div>
+                    <div class="before">
+                        <h4>不需要插件</h4>
+                        <ul>
+                            <li>快速自动化 → 用 Command 就够</li>
+                            <li>单一领域能力 → 用 Skill 就够</li>
+                            <li>专门化分析 → 用 Subagent 就够</li>
+                            <li>实时数据访问 → 用 MCP 就够</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>判断标准：</strong>当你的配置涉及<strong>多个组件协同</strong>，且需要<strong>团队共享和版本管理</strong>时，才该升级到 Plugin。
+                </div>
+            </div>
+        </section>
+
+        <!-- 能力对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>能力对比</h2>
+                <h4>Slash Command / Skill / Subagent / Plugin 九维度横评</h4>
+                <table>
+                    <thead><tr><th>维度</th><th>Slash Command</th><th>Skill</th><th>Subagent</th><th>Plugin</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>安装</strong></td><td>手动复制</td><td>手动复制</td><td>手动配置</td><td>一条命令</td></tr>
+                        <tr><td><strong>设置时间</strong></td><td>5 分钟</td><td>10 分钟</td><td>15 分钟</td><td>2 分钟</td></tr>
+                        <tr><td><strong>打包</strong></td><td>单文件</td><td>单文件</td><td>单文件</td><td>多文件</td></tr>
+                        <tr><td><strong>版本管理</strong></td><td>手动</td><td>手动</td><td>手动</td><td>自动</td></tr>
+                        <tr><td><strong>团队共享</strong></td><td>复制文件</td><td>复制文件</td><td>复制文件</td><td>安装 ID</td></tr>
+                        <tr><td><strong>更新</strong></td><td>手动</td><td>手动</td><td>手动</td><td>自动可用</td></tr>
+                        <tr><td><strong>依赖</strong></td><td>无</td><td>无</td><td>无</td><td>可能包含</td></tr>
+                        <tr><td><strong>市场</strong></td><td>否</td><td>否</td><td>否</td><td>是</td></tr>
+                        <tr><td><strong>分发</strong></td><td>仓库</td><td>仓库</td><td>仓库</td><td>市场</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>选择依据：</strong>单一场景用独立功能（Command/Skill/Subagent），多组件协作 + 团队分发用 Plugin。Plugin 是唯一支持市场分发和版本管理的扩展方式。
+                </div>
+            </div>
+        </section>
+
+        <!-- LSP 支持 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>LSP 支持</h2>
+                <h4>插件可以内置代码智能——实时诊断、跳转定义、类型提示</h4>
+                <p>通过在插件中配置 <code>.lsp.json</code>，你可以让 Claude Code 获得 Language Server Protocol 的能力。这意味着 Claude 在编辑代码时能获得和 IDE 一样的实时反馈。</p>
+                <table>
+                    <thead><tr><th>字段</th><th>必填</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>command</code></td><td>是</td><td>LSP server 可执行文件（须在 PATH 中）</td></tr>
+                        <tr><td><code>extensionToLanguage</code></td><td>是</td><td>文件扩展名 → 语言 ID 映射</td></tr>
+                        <tr><td><code>args</code></td><td>否</td><td>server 命令行参数</td></tr>
+                        <tr><td><code>transport</code></td><td>否</td><td>通信方式：<code>stdio</code>（默认）或 <code>socket</code></td></tr>
+                        <tr><td><code>env</code></td><td>否</td><td>server 进程的环境变量</td></tr>
+                        <tr><td><code>initializationOptions</code></td><td>否</td><td>LSP 初始化期间发送的选项</td></tr>
+                        <tr><td><code>settings</code></td><td>否</td><td>传递给 server 的工作区配置</td></tr>
+                        <tr><td><code>workspaceFolder</code></td><td>否</td><td>覆盖工作区文件夹路径</td></tr>
+                        <tr><td><code>startupTimeout</code></td><td>否</td><td>等待 server 启动最长时间（毫秒）</td></tr>
+                        <tr><td><code>shutdownTimeout</code></td><td>否</td><td>优雅关闭最长时间（毫秒）</td></tr>
+                        <tr><td><code>restartOnCrash</code></td><td>否</td><td>server 崩溃时自动重启</td></tr>
+                        <tr><td><code>maxRestarts</code></td><td>否</td><td>放弃前最大重启次数</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- LSP 多语言示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>LSP 多语言</h2>
+                <h4>Python / Go / TypeScript 三种语言的配置示例</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Python（pyright）</h4>
+                        <pre><code>{
+  "python": {
+    "command": "pyright-langserver",
+    "args": ["--stdio"],
+    "extensionToLanguage": {
+      ".py": "python",
+      ".pyi": "python"
+    }
+  }
+}</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Go（gopls）</h4>
+                        <pre><code>{
+  "go": {
+    "command": "gopls",
+    "args": ["serve"],
+    "extensionToLanguage": {
+      ".go": "go"
+    }
+  }
+}</code></pre>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>TypeScript</h4>
+                        <pre><code>{
+  "typescript": {
+    "command": "typescript-language-server",
+    "args": ["--stdio"],
+    "extensionToLanguage": {
+      ".ts": "typescript",
+      ".tsx": "typescriptreact",
+      ".js": "javascript",
+      ".jsx": "javascriptreact"
+    }
+  }
+}</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>预置 LSP 插件</h4>
+                        <table>
+                            <thead><tr><th>语言</th><th>安装</th></tr></thead>
+                            <tbody>
+                                <tr><td>Python</td><td><code>pip install pyright</code></td></tr>
+                                <tr><td>TypeScript</td><td><code>npm i -g typescript-language-server typescript</code></td></tr>
+                                <tr><td>Rust</td><td><code>rustup component add rust-analyzer</code></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>LSP 提供的能力：</strong>即时诊断（错误/警告）、代码导航（跳转到定义、查找引用）、悬浮信息（类型签名和文档）、符号列表（文件或工作区范围）。
+                </div>
+            </div>
+        </section>
+
+        <!-- 完整工作流 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>完整工作流</h2>
+                <h4>PR Review 插件：从安装到审查的端到端流程</h4>
+                <pre class="tree-structure"><strong>Step 1：用户执行</strong>  /review-pr
+
+<strong>Step 2：插件自动编排</strong>
+├── pre-review.js hook    → 验证 git repo 状态
+├── GitHub MCP            → 获取 PR diff 和元数据
+├── security-reviewer     → 分析安全漏洞
+├── test-checker          → 验证测试覆盖率
+└── performance-analyzer  → 检查性能影响
+
+<strong>Step 3：汇总并展示结果</strong>
+    ✅ 安全：没有发现关键问题
+    ⚠️  测试：覆盖率 65%（建议 80%+）
+    ✅ 性能：没有明显影响
+    📝 提供了 12 条改进建议</pre>
+                <div class="key-point">
+                    <strong>端到端体验：</strong>用户只输入一条命令，插件自动调度 Hook、MCP、多个 Subagent 协同工作，最终汇总成结构化报告。这就是 Plugin 的核心价值——把复杂的多步工作流封装成一键操作。
+                </div>
+            </div>
+        </section>
+
+        <!-- 发布插件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>发布插件</h2>
+                <h4>从本地开发到市场上架的 8 步流程</h4>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <strong>1. 创建结构</strong>
+                        <p style="font-size: 0.8em;">组织所有组件文件</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>2. 编写清单</strong>
+                        <p style="font-size: 0.8em;">.claude-plugin/plugin.json</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>3. 写 README</strong>
+                        <p style="font-size: 0.8em;">完整文档和使用说明</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>4. 本地测试</strong>
+                        <p style="font-size: 0.8em;">claude --plugin-dir</p>
+                    </div>
+                </div>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <strong>5. 提交市场</strong>
+                        <p style="font-size: 0.8em;">PR 到市场仓库</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>6. 审核批准</strong>
+                        <p style="font-size: 0.8em;">官方/组织审核</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>7. 正式发布</strong>
+                        <p style="font-size: 0.8em;">上架到市场</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>8. 用户安装</strong>
+                        <p style="font-size: 0.8em;">一条命令即可</p>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>提交模板要点</h4>
+                        <ul>
+                            <li>描述插件功能和使用场景</li>
+                            <li>列出包含的所有组件</li>
+                            <li>提供安装和使用命令</li>
+                            <li>标明依赖和环境要求</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>对比：手动 vs 插件</h4>
+                        <p><strong>手动设置（2+ 小时）：</strong>逐个安装命令、创建角色、配置 MCP、设置 Hook、手动记录和分享。</p>
+                        <p><strong>使用插件（2 分钟）：</strong><code>/plugin install pr-review</code> — 一切都已安装配置，团队可复现完全相同的设置。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 最佳实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践</h2>
+                <div class="comparison">
+                    <div class="after">
+                        <h4>应该做的</h4>
+                        <ul>
+                            <li>使用清晰、描述性的插件名</li>
+                            <li>提供完整 README 和使用示例</li>
+                            <li>正确使用语义化版本（semver）</li>
+                            <li>一起测试所有组件</li>
+                            <li>清楚记录依赖和环境要求</li>
+                            <li>包含错误处理和完整测试</li>
+                            <li>为发现性添加合适标签</li>
+                            <li>保持向后兼容和聚焦一致</li>
+                            <li>记录所有外部依赖</li>
+                        </ul>
+                    </div>
+                    <div class="before">
+                        <h4>不要做的</h4>
+                        <ul>
+                            <li>不要打包无关功能</li>
+                            <li>不要硬编码凭据或密钥</li>
+                            <li>不要跳过测试就发布</li>
+                            <li>不要忘记文档</li>
+                            <li>不要创建功能重复的插件</li>
+                            <li>不要忽略版本管理</li>
+                            <li>不要把依赖搞得过于复杂</li>
+                            <li>不要忘记优雅处理错误</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>安装失败</h4>
+                        <p><strong>症状：</strong><code>/plugin install</code> 报错。</p>
+                        <p><strong>修复：</strong>检查 Claude Code 版本（<code>/version</code>）。验证 <code>plugin.json</code> 语法。远程插件检查网络。用 <code>claude plugin validate</code> 验证插件结构。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>组件未加载</h4>
+                        <p><strong>症状：</strong>安装成功但命令/角色不可用。</p>
+                        <p><strong>修复：</strong>检查路径是否匹配实际目录结构。确认插件已启用（<code>/plugin list --installed</code>）。尝试 <code>/reload-plugins</code> 重新加载。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>MCP 连接失败</h4>
+                        <p><strong>症状：</strong>插件中的 MCP 工具调用报错。</p>
+                        <p><strong>修复：</strong>确认环境变量已设置（如 <code>GITHUB_TOKEN</code>）。检查 MCP server 是否已安装。用 <code>/plugin debug plugin-name</code> 查看详细日志。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>命令冲突</h4>
+                        <p><strong>症状：</strong>两个插件定义了同名命令。</p>
+                        <p><strong>修复：</strong>插件命令自动加前缀（<code>/plugin-name:command</code>）。如果前缀也冲突，禁用其中一个：<code>/plugin disable plugin-name</code>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>安装后命令不可用</h4>
+                        <p><strong>症状：</strong>安装成功但找不到插件的命令。</p>
+                        <p><strong>修复：</strong>确认插件已安装且启用（<code>/plugin list --installed</code> + <code>/plugin status plugin-name</code>）。重启 Claude Code（<code>exit</code> 后重新打开）。检查是否与现有命令冲突。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>Hook 执行问题</h4>
+                        <p><strong>症状：</strong>插件的 Hook 没有按预期触发或报错。</p>
+                        <p><strong>修复：</strong>确认 Hook 文件有执行权限（<code>chmod +x</code>）。检查 Hook 语法和事件名是否正确。查看 Hook 日志中的错误细节。如有可能，手动测试 Hook 脚本。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>把 PR 审查流程打包成最小插件</h4>
+                <div class="key-point">
+                    <strong>任务：</strong>创建一个只包含清单 + 1 个命令 + 1 个角色的最小插件。
+                </div>
+                <ul>
+                    <li>创建 <code>plugin.json</code> 清单</li>
+                    <li>包含 1 个审查命令</li>
+                    <li>包含 1 个审查角色（只读权限）</li>
+                    <li>能通过 <code>/plugin install</code> 安装</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <pre class="tree-structure">pr-review-plugin/
+├── .claude-plugin/
+│   └── plugin.json
+├── commands/
+│   └── review-pr.md
+└── agents/
+    └── security-reviewer.md</pre>
+                <pre><code><span style="color: var(--text-muted);"># .claude-plugin/plugin.json</span>
+{
+  "name": "pr-review",
+  "version": "1.0.0",
+  "description": "包含安全检查的 PR 审查工作流"
+}
+
+<span style="color: var(--text-muted);"># commands/review-pr.md</span>
+---
+name: review-pr
+description: 启动包含安全检查的完整 PR 审查
+---
+审查当前分支的所有改动，包含安全分析。
+
+<span style="color: var(--text-muted);"># agents/security-reviewer.md</span>
+---
+name: security-reviewer
+description: 安全代码审查
+tools: Read, Grep, Glob
+---
+专注安全漏洞：注入攻击、数据暴露、权限问题。</code></pre>
+                <div class="key-point">
+                    <strong>最小够用：</strong>一个插件可以很简单——清单 + 命令 + 角色，三个文件就够了。别一开始就追求完美，先跑起来再迭代。
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>说清 Plugin 的定位和组成</li>
+                            <li>判断何时该升级到 Plugin 层</li>
+                            <li>创建最小 Plugin 结构</li>
+                            <li>理解版本化和分发策略</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>它和前后章节的关系</h4>
+                        <ul>
+                            <li><a href="./01-slash-commands.html">Commands</a> — 插件中的命令</li>
+                            <li><a href="./03-skills.html">Skills</a> — 插件中的技能</li>
+                            <li><a href="./04-subagents.html">Subagents</a> — 插件中的角色</li>
+                            <li><a href="./05-mcp.html">MCP</a> — 插件中的外部工具</li>
+                            <li><a href="./06-hooks.html">Hooks</a> — 插件中的事件处理</li>
+                            <li><strong>Plugins</strong> — 把以上全部打包</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Plugin 是 Claude Code 最高级别的扩展方式。当你的个人最佳实践需要变成团队标准时，就该创建插件了。一条命令安装，全团队配置一致。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./08-checkpoints.html">下一章：Checkpoints</a> — 在插件工作流中安全试错</li>
+                            <li><a href="./09-advanced-features.html">Advanced Features</a> — 规划模式 + 插件的组合</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章源文件 <span style="font-weight:normal;font-size:0.85em;color:var(--text-muted);">（点击查看完整内容）</span></h4>
+                        <ul>
+                            <li><code><a href="#" class="md-link" data-md="README">README.md</a></code> — Plugins 完整配置指南</li>
+                            <li><code>07-plugins/</code> 目录 — DevOps、Documentation、PR Review 三个示例插件</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- README 弹窗 -->
+    <style>
+        .md-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .md-modal-overlay.active {
+            display: flex;
+        }
+        .md-modal {
+            background: var(--surface-color, #fff);
+            border-radius: 12px;
+            width: min(720px, 92vw);
+            max-height: 82vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+            animation: md-modal-in 0.2s ease-out;
+        }
+        @keyframes md-modal-in {
+            from { opacity: 0; transform: translateY(20px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .md-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
+        }
+        .md-modal-header h3 {
+            margin: 0;
+            font-size: 1.05em;
+            font-family: var(--font-mono, monospace);
+            color: var(--accent-color, #8A4A12);
+        }
+        .md-modal-close {
+            background: none;
+            border: none;
+            font-size: 1.6em;
+            line-height: 1;
+            cursor: pointer;
+            color: var(--text-color, #333);
+            padding: 0 4px;
+            border-radius: 4px;
+        }
+        .md-modal-close:hover {
+            background: var(--code-bg-color, #f3f4f6);
+        }
+        .md-modal-body {
+            padding: 20px 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .md-modal-body pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.88em;
+            line-height: 1.65;
+            color: var(--text-color, #333);
+            font-family: var(--font-mono, monospace);
+        }
+        .md-modal-body .md-loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted, #888);
+        }
+        a.md-link {
+            color: var(--code-text-color, #0B598E);
+            text-decoration: none;
+            border-bottom: 1px dashed var(--code-text-color, #0B598E);
+            cursor: pointer;
+        }
+        a.md-link:hover {
+            color: var(--primary-color, #D06519);
+            border-bottom-color: var(--primary-color, #D06519);
+        }
+    </style>
+
+    <div class="md-modal-overlay" id="md-modal-overlay">
+        <div class="md-modal">
+            <div class="md-modal-header">
+                <h3 id="md-modal-title"></h3>
+                <button class="md-modal-close" id="md-modal-close">&times;</button>
+            </div>
+            <div class="md-modal-body">
+                <div class="md-loading" id="md-modal-loading">加载中…</div>
+                <pre id="md-modal-content" style="display:none;"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        var overlay = document.getElementById('md-modal-overlay');
+        var titleEl = document.getElementById('md-modal-title');
+        var contentEl = document.getElementById('md-modal-content');
+        var loadingEl = document.getElementById('md-modal-loading');
+        var closeBtn = document.getElementById('md-modal-close');
+
+        var cache = {};
+
+        function openModal(name) {
+            titleEl.textContent = name + '.md';
+            contentEl.style.display = 'none';
+            loadingEl.style.display = 'block';
+            overlay.classList.add('active');
+
+            if (cache[name]) {
+                showContent(cache[name]);
+                return;
+            }
+
+            fetch('./07-plugins/' + name + '.md')
+                .then(function(r) {
+                    if (!r.ok) throw new Error('Not found');
+                    return r.text();
+                })
+                .then(function(text) {
+                    cache[name] = text;
+                    showContent(text);
+                })
+                .catch(function() {
+                    loadingEl.textContent = '加载失败，请确认文件存在。';
+                });
+        }
+
+        function showContent(text) {
+            contentEl.textContent = text;
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+        }
+
+        function closeModal() {
+            overlay.classList.remove('active');
+        }
+
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && overlay.classList.contains('active')) {
+                closeModal();
+            }
+        });
+
+        document.querySelectorAll('a.md-link').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                openModal(this.getAttribute('data-md'));
+            });
+        });
+    })();
+    </script>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

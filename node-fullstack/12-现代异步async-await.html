@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>现代异步 async/await - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>现代异步 async/await</h1>
+            <p>用同步的写法，处理异步的事</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>对比一下</h3>
+                <h4>两种写法，同一个功能，哪个更易读？</h4>
+                <pre><code class="language-javascript">// Promise 链式写法
+function getUser(id) {
+    return fetch(`/api/users/${id}`)
+        .then(res => res.json())
+        .then(user => fetch(`/api/orders/${user.id}`))
+        .then(res => res.json())
+        .catch(err => console.error(err));
+}
+
+// async/await 写法
+async function getUser(id) {
+    try {
+        let res = await fetch(`/api/users/${id}`);
+        let user = await res.json();
+        let orders = await fetch(`/api/orders/${user.id}`);
+        return await orders.json();
+    } catch (err) {
+        console.error(err);
+    }
+}</code></pre>
+                <p>第二种写法读起来就像同步代码——一行一行往下走，逻辑清晰。这就是 <strong>async/await</strong> 的魅力。</p>
+                <p>它不是什么新魔法，本质上是 Promise 的语法糖。但这个糖实在太甜了。</p>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: async 函数</h2>
+                <h4>加个关键字，普通函数变成 Promise 工厂</h4>
+                <p>对比开场的两种写法，<code>async/await</code> 版本读起来就像同步代码——没有 <code>.then()</code>，没有嵌套。秘密就在 <code>async</code> 关键字上：把它加在函数声明前面，函数就自动返回 Promise。这一部分先搞懂 <code>async</code> 函数的基本行为，为后面的 <code>await</code> 打好基础。</p>
+            </div>
+        </section>
+
+        <!-- async 基础 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>async 函数</h3>
+                <h4>加个关键字，普通函数变成 Promise 工厂</h4>
+                <p><strong>async 函数</strong>是使用 <code>async</code> 关键字声明的函数。它总是返回一个 Promise。即使你返回一个普通值，也会被自动包装成 <code>Promise.resolve(value)</code>。</p>
+                <p>说人话：<code>async</code> 就像给函数贴了个标签，告诉 JS 引擎"这个函数里面有异步操作，请用 Promise 的方式对待它"。</p>
+                <p>这个比喻只是便于记忆。实际上 <code>async</code> 做的事情就是改写函数的返回值处理逻辑，在引擎层面并没有什么"标签"。</p>
+                <pre><code class="language-javascript">async function greet() {
+    return "Hello!"; // 等同于 return Promise.resolve("Hello!")
+}
+greet().then(msg => console.log(msg)); // "Hello!"
+
+// async 箭头函数
+const greet2 = async () => "Hello!";
+
+// async 方法
+const obj = {
+    async fetchData() {
+        return { data: "ok" };
+    }
+};
+
+// 抛出错误 → rejected Promise
+async function fail() {
+    throw new Error("出错了");
+}
+fail().catch(err => console.log(err.message)); // "出错了"</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: await</h2>
+                <h4>暂停函数，等 Promise 完成再继续</h4>
+                <p><code>async</code> 函数本身只是返回 Promise，真正让代码"看起来同步"的是 <code>await</code>。它会在 Promise 完成前暂停当前函数，拿到结果后再继续往下走。但注意：暂停的不是整个程序，只是这一个函数，外部代码照常运行。理解了"暂停不等于阻塞"，才算真正掌握了 <code>await</code>。</p>
+            </div>
+        </section>
+
+        <!-- await 基础 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>await 暂停</h3>
+                <h4>等一等，结果来了再继续</h4>
+                <p><strong>await</strong> 只能在 async 函数中使用（ES2022 顶层 await 除外）。它会暂停当前函数的执行，等待 Promise 完成，然后返回结果。</p>
+                <pre><code class="language-javascript">async function fetchUser() {
+    let response = await fetch("/api/users/1");
+    let user = await response.json();
+    console.log(user);
+    return user;
+}
+
+// await 后面不一定是 Promise
+async function example() {
+    let value = await 42;    // 等同于 await Promise.resolve(42)
+    let name = await "hello";
+    console.log(value, name);
+}</code></pre>
+                <div class="warning">
+                    <strong>顶层 await</strong>：在 ES 模块中可以直接在顶层使用 await，不需要包裹在 async 函数中。但普通 JS 文件中依然需要 async 包装。
+                </div>
+            </div>
+        </section>
+
+        <!-- await 执行流程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>await 流程</h3>
+                <h4>暂停 ≠ 阻塞</h4>
+                <div class="ai-diagram">
+                    <h4>图：await 执行流程——async 函数的暂停与恢复机制</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个纵向流程图，展示 async 函数从开始到结束的完整执行过程，包含 7 个节点
+                    - 各元素关系：从上到下依次排列——"async 函数开始执行"→"遇到 await"（橙色高亮）分出两条路径：左侧路径"暂停当前函数"→"函数返回 pending Promise"（蓝色），右侧路径"主线程继续"→"执行其他同步代码"→"事件循环正常运行"→"Promise 完成"→"恢复 async 函数"（绿色）→"await 返回结果"→"继续执行下一行"
+                    - 关键标注：在"遇到 await"节点旁标注"暂停 ≠ 阻塞"，用虚线框将主线程路径和 async 函数路径分开，箭头用不同颜色区分暂停路径（蓝色）和恢复路径（绿色）
+                    - 配色建议：浅蓝/浅灰背景，深色文字，"遇到 await"节点用橙色标注，暂停路径用蓝色箭头，恢复路径用绿色箭头，主线程路径用灰色箭头
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>关键：<strong>await 只暂停 async 函数内部，不会阻塞整个线程</strong>。外部代码照常运行。</p>
+            </div>
+        </section>
+
+        <!-- IIFE -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>IIFE 包装</h3>
+                <h4>没有 async 函数？自己造一个</h4>
+                <pre><code class="language-javascript">// 在不支持顶层 await 的环境中，用 IIFE 包裹
+(async () => {
+    let data = await fetchData();
+    console.log(data);
+})();</code></pre>
+                <p>IIFE（Immediately Invoked Function Expression）就是"立即执行函数表达式"。定义完立刻调用，不需要名字。</p>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 错误处理</h2>
+                <h4>异步出错怎么办？四种模式各有适用场景</h4>
+                <p><code>await</code> 拿到的是 Promise 的结果，但如果 Promise 被拒绝了呢？不处理就直接崩溃。同步代码用 <code>try/catch</code>，异步也一样——但还有更灵活的模式：单独捕获每个 <code>await</code>，或者用包装函数避免到处写 <code>try/catch</code>。这一部分给出四种错误处理方式，帮你根据场景选择最合适的。</p>
+            </div>
+        </section>
+
+        <!-- try/catch -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>try/catch</h3>
+                <h4>最直观的错误处理方式</h4>
+                <pre><code class="language-javascript">async function getUser(id) {
+    try {
+        let response = await fetch(`/api/users/${id}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        let user = await response.json();
+        return user;
+    } catch (error) {
+        console.error("获取用户失败:", error.message);
+        return null;
+    } finally {
+        console.log("请求完成");
+    }
+}</code></pre>
+                <p>模式一：<strong>try/catch 包裹整个函数体</strong>。适合简单场景，所有错误统一处理。</p>
+            </div>
+        </section>
+
+        <!-- 多种错误处理模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>错误处理模式</h3>
+                <h4>四种方式，各有适用场景</h4>
+                <pre><code class="language-javascript">// 模式一：try/catch 包裹全部
+async function mode1() {
+    try {
+        let a = await step1();
+        let b = await step2(a);
+        return b;
+    } catch (e) {
+        console.error("出错了:", e);
+    }
+}
+
+// 模式二：每个 await 单独 try/catch
+async function mode2() {
+    let a = await step1().catch(e => {
+        console.error("step1 失败:", e);
+        return defaultValue;
+    });
+    let b = await step2(a).catch(e => {
+        console.error("step2 失败:", e);
+        return defaultValue;
+    });
+    return b;
+}
+
+// 模式三：包装函数（不写 try/catch）
+async function mode3() {
+    let [a, err1] = await safeExecute(step1());
+    if (err1) return handleError(err1);
+    let [b, err2] = await safeExecute(step2(a));
+    if (err2) return handleError(err2);
+    return b;
+}
+async function safeExecute(promise) {
+    try { return [await promise, null]; }
+    catch (e) { return [null, e]; }
+}
+
+// 模式四：catch 链式
+async function mode4() {
+    let a = await step1().catch(handleError);
+    let b = await step2(a).catch(handleError);
+    return b;
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 并行优化</h2>
+                <h4>没有依赖关系的操作，别排队，一起跑</h4>
+                <p>连续写两个 <code>await</code>，它们是串行执行的——第一个完成才开始第二个。但如果两个请求互不依赖，串行等于白等一倍时间。用 <code>Promise.all</code> 配合 <code>await</code>，可以让多个异步操作并行跑。这一部分讲清楚串行和并行的区别，以及如何控制并发数量防止"一次性发太多请求"。</p>
+            </div>
+        </section>
+
+        <!-- 串行 vs 并行 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>串行与并行</h3>
+                <h4>同样的操作，时间差一半</h4>
+                <pre><code class="language-javascript">// 串行（慢）——一个接一个
+async function serial() {
+    const a = await fetchA(); // 等待 1s
+    const b = await fetchB(); // 再等 1s，总共 2s
+    return [a, b];
+}
+
+// 并行（快）——同时发起
+async function parallel() {
+    const [a, b] = await Promise.all([
+        fetchA(), // 同时发起
+        fetchB()  // 同时发起，总共 1s
+    ]);
+    return [a, b];
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 时间线对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>时间线对比</h3>
+                <h4>可视化串行与并行的执行差异</h4>
+                <div class="ai-diagram">
+                    <h4>图：串行与并行时间线对比——2 秒 vs 1 秒</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：左右并排的两条水平时间线对比图。上方为"串行执行"时间线，下方为"并行执行"时间线，每条时间线左侧有标题标签，右侧有总耗时标注
+                    - 各元素关系：上方串行时间线——从左到右依次排列"fetchA（1s）"红色色块和"fetchB（1s）"红色色块，总长 2s，箭头串联；下方并行时间线——"fetchA（1s）"绿色色块和"fetchB（1s）"绿色色块上下堆叠对齐，同时开始同时结束，总长 1s；用虚线在 1s 处画竖线对齐两条时间线
+                    - 关键标注：串行时间线右上角标注"总共 2s"，并行时间线右上角标注"总共 1s"，1s 处的虚线旁标注"快一倍"，串行色块用红色，并行色块用绿色，形成视觉对比
+                    - 配色建议：浅蓝/浅灰背景，深色文字，串行色块用浅红色（#d0021b），并行色块用浅绿色（#7ed321），关键箭头用橙色标注，时间轴刻度用灰色细线
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <pre><code class="language-javascript">// 按需并行
+async function optimized() {
+    // 不互相依赖的请求并行
+    let [users, config] = await Promise.all([
+        fetchUsers(),
+        fetchConfig()
+    ]);
+    // 依赖前面的结果
+    let details = await fetchDetails(users[0].id);
+    return { users, config, details };
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 批量处理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>批量并发</h3>
+                <h4>控制并发数量，既快又稳</h4>
+                <pre><code class="language-javascript">async function batchProcess(items, concurrency = 5) {
+    let results = [];
+    for (let i = 0; i &lt; items.length; i += concurrency) {
+        let batch = items.slice(i, i + concurrency);
+        let batchResults = await Promise.all(
+            batch.map(item => processItem(item))
+        );
+        results.push(...batchResults);
+    }
+    return results;
+}</code></pre>
+                <p>每批发 5 个请求，等这 5 个全部完成后再发下一批。避免一次性发 1000 个请求导致服务器崩溃。</p>
+            </div>
+        </section>
+
+        <!-- Part 5 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 顶层 await</h2>
+                <h4>模块顶层直接 await，不用再包一层</h4>
+                <p>以前用 <code>await</code> 必须包在 <code>async</code> 函数里，顶部代码想 <code>await</code> 就得写一个 IIFE。ES2022 的顶层 <code>await</code> 终于免去了这个麻烦：在 ES 模块顶层直接 <code>await</code>，模块会等它完成后再暴露给导入方。适合配置加载、条件导入等场景。</p>
+            </div>
+        </section>
+
+        <!-- 顶层 await -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>顶层 await</h3>
+                <h4>模块级别直接等待</h4>
+                <pre><code class="language-javascript">// config.mjs
+const config = await loadConfig();
+export default config;
+
+// app.mjs
+import config from './config.mjs';
+// 等 config 加载完成后才执行后续代码
+console.log(config);
+
+// 条件加载
+const adapter = await (isNode
+    ? import('./node-adapter.js')
+    : import('./browser-adapter.js'));</code></pre>
+                <div class="warning">
+                    <strong>限制</strong>：顶层 await 只能在 ES 模块中使用（<code>.mjs</code> 文件或在 <code>package.json</code> 中设置 <code>"type": "module"</code>）。CommonJS 模块不支持。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 6 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: 异步迭代</h2>
+                <h4>逐个消费异步数据流</h4>
+                <p>分页接口每次返回一页数据，想拿全部数据怎么办？<code>for await...of</code> 配合异步生成器，可以像遍历普通数组一样遍历异步数据源。每拿一页处理一页，不需要一次性加载全部，内存占用恒定。在文件逐行读取、流式处理等场景中非常好用。</p>
+            </div>
+        </section>
+
+        <!-- for await...of -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>for await</h3>
+                <h4>逐个消费异步数据流</h4>
+                <pre><code class="language-javascript">// 异步生成器
+async function* fetchPages(url) {
+    let page = 1;
+    while (true) {
+        let res = await fetch(`${url}?page=${page}`);
+        let data = await res.json();
+        if (data.items.length === 0) return;
+        yield data.items;
+        page++;
+    }
+}
+
+// 用 for await...of 消费
+async function getAllItems() {
+    let all = [];
+    for await (let items of fetchPages("/api/items")) {
+        all.push(...items);
+    }
+    return all;
+}</code></pre>
+                <pre><code class="language-javascript">// 逐行读取文件（Node.js）
+const fs = require('fs/promises');
+const readline = require('readline');
+
+async function readFileLines(path) {
+    const stream = fs.createReadStream(path);
+    const rl = readline.createInterface({ input: stream });
+    for await (let line of rl) {
+        console.log(line);
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见 async 错误</h3>
+
+                <div class="warning">
+                    <strong>await 只能在 async 函数内使用。</strong> 如果在普通函数中写 await，会直接报 SyntaxError。
+                </div>
+
+                <h4>问题一：忘记 await</h4>
+                <pre><code class="language-javascript">// 错误：拿到的是 Promise，不是结果
+async function wrong() {
+    let user = fetchUser(1); // 忘记 await
+    console.log(user); // Promise { &lt;pending&gt; }
+}
+
+// 正确
+async function right() {
+    let user = await fetchUser(1);
+    console.log(user); // { name: "张三", ... }
+}</code></pre>
+
+                <h4>问题二：循环中的串行陷阱</h4>
+                <pre><code class="language-javascript">// 慢：串行执行（每个请求等上一个完成）
+for (let url of urls) {
+    let data = await fetch(url);
+    console.log(data);
+}
+
+// 快：并行执行
+let promises = urls.map(url => fetch(url));
+let results = await Promise.all(promises);</code></pre>
+            </div>
+        </section>
+
+        <!-- 并发控制 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>并发控制</h3>
+                <h4>限制同时运行的 Promise 数量</h4>
+                <pre><code class="language-javascript">async function limitConcurrency(tasks, limit) {
+    const results = [];
+    const executing = new Set();
+
+    for (const task of tasks) {
+        // 如果正在执行的数量达到上限，等待任意一个完成
+        if (executing.size >= limit) {
+            await Promise.race(executing);
+        }
+
+        // 创建 Promise 并加入执行集合
+        const p = Promise.resolve().then(() => task());
+        const wrapped = p.then(result => {
+            executing.delete(wrapped);
+            return result;
+        });
+        executing.add(wrapped);
+        results.push(wrapped);
+    }
+
+    // 等待所有剩余任务完成
+    return Promise.all(results);
+}
+
+// 使用场景：批量请求不压垮服务器
+const urls = Array.from({ length: 100 }, (_, i) =>
+    `https://api.example.com/items/${i}`
+);
+
+async function fetchAll() {
+    const tasks = urls.map(url => () => fetch(url));
+    // 最多同时 5 个请求
+    const responses = await limitConcurrency(tasks, 5);
+    const data = await Promise.all(responses.map(r => r.json()));
+    console.log(`获取了 ${data.length} 条数据`);
+}</code></pre>
+                <div class="warning">
+                    <strong>易错点</strong>：<code>Promise.race</code> 只能告诉我们"有一个完成了"，但不会返回它在数组中的位置。用 <code>Set</code> 管理 <code>executing</code> 并在完成时 <code>delete</code>，才能正确追踪剩余并发数。
+                </div>
+            </div>
+        </section>
+
+        <!-- 异步迭代实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>异步迭代实战</h3>
+                <h4>用异步生成器优雅处理分页</h4>
+                <pre><code class="language-javascript">// 异步生成器：自动翻页，逐页 yield 数据
+async function* paginate(url, transform) {
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+        const res = await fetch(`${url}?page=${page}`);
+        const data = await res.json();
+
+        if (data.items.length === 0) {
+            hasMore = false;
+            return;
+        }
+
+        // 用 transform 函数处理每一页数据
+        yield transform ? transform(data.items) : data.items;
+        page++;
+    }
+}
+
+// 消费数据流：逐页处理，内存友好
+async function syncAllUsers() {
+    const batchSize = 50;
+    let total = 0;
+
+    for await (let users of paginate('/api/users', items =>
+        items.filter(u => u.active).map(u => ({
+            id: u.id,
+            name: u.name
+        }))
+    )) {
+        await batchSave(users);
+        total += users.length;
+        console.log(`已同步 ${total} 条用户`);
+    }
+
+    console.log(`同步完成，共 ${total} 条`);
+}
+
+// 模拟批量保存
+async function batchSave(users) {
+    await new Promise(r => setTimeout(r, 100)); // 模拟 IO
+}</code></pre>
+                <p>异步生成器的优势：<strong>不需要一次性加载所有数据</strong>。每处理完一页才请求下一页，内存占用恒定。配合 <code>transform</code> 函数可以在 yield 前对数据做清洗、过滤、映射。</p>
+            </div>
+        </section>
+
+        <!-- Part 7 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 7: 进阶实战</h2>
+                <h4>把 async/await、错误处理、并发控制组合起来</h4>
+                <p>前面的知识都学完了，现在要把它们组合起来解决真实问题：用 <code>async/await</code> 重写 Promise 链、给请求加超时控制、实现一个带并发限制的批量处理器。三道练习题从易到难，做完就算真正出师了。</p>
+            </div>
+        </section>
+
+        <!-- 练习一 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习一</h3>
+                <p><strong>任务</strong>：用 async/await 重写下面的 Promise 链。</p>
+                <pre><code class="language-javascript">function getData() {
+    return fetch("/api/data")
+        .then(res => res.json())
+        .then(data => {
+            console.log(data);
+            return data;
+        })
+        .catch(err => console.error(err));
+}
+// 你的 async/await 版本：</code></pre>
+                <div class="answer-section">
+                    <h4>参考答案</h4>
+                    <pre><code class="language-javascript">async function getData() {
+    try {
+        let res = await fetch("/api/data");
+        let data = await res.json();
+        console.log(data);
+        return data;
+    } catch (err) {
+        console.error(err);
+    }
+}</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习二 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习二</h3>
+                <p><strong>任务</strong>：实现一个 <code>withTimeout(fetch(url), 3000)</code> 函数，如果请求 3 秒内没完成就抛出超时错误。</p>
+                <pre><code class="language-javascript">// 提示：Promise.race + setTimeout
+// 你的代码：</code></pre>
+                <div class="answer-section">
+                    <h4>参考答案</h4>
+                    <pre><code class="language-javascript">async function withTimeout(promise, ms) {
+    let timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("超时")), ms)
+    );
+    return Promise.race([promise, timeout]);
+}</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习三 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习三</h3>
+                <p><strong>任务</strong>：实现 <code>promiseMap(items, fn, concurrency)</code>——对数组中的每个元素执行异步函数 <code>fn</code>，但限制并发数量为 <code>concurrency</code>。返回所有结果的数组（保持原顺序）。</p>
+                <pre><code class="language-javascript">// 提示：维护一个执行中的 Promise 集合
+// 每当有空位就启动下一个任务
+// 最后 Promise.all 保证顺序
+// 你的代码：</code></pre>
+                <div class="answer-section">
+                    <h4>参考答案</h4>
+                    <pre><code class="language-javascript">async function promiseMap(items, fn, concurrency) {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+
+    async function worker() {
+        while (nextIndex &lt; items.length) {
+            const index = nextIndex++;
+            results[index] = await fn(items[index], index);
+        }
+    }
+
+    // 启动 concurrency 个 worker 并行执行
+    const workers = Array.from(
+        { length: Math.min(concurrency, items.length) },
+        () => worker()
+    );
+
+    await Promise.all(workers);
+    return results;
+}
+
+// 测试
+async function test() {
+    const items = [1, 2, 3, 4, 5, 6, 7, 8];
+    const results = await promiseMap(
+        items,
+        async (n) => {
+            await new Promise(r => setTimeout(r, 100));
+            return n * 2;
+        },
+        3 // 最多 3 个并发
+    );
+    console.log(results); // [2, 4, 6, 8, 10, 12, 14, 16]
+}
+test();</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>async/await 让异步代码变得优雅。下一章我们探索一个更高级的特性：<strong>生成器与迭代器</strong>——能暂停、能恢复的函数。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

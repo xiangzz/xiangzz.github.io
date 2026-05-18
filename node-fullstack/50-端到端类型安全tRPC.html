@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第50章 端到端类型安全tRPC - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>端到端类型安全 tRPC</h1>
+            <p>后端改了接口，前端立刻报错——不需要代码生成</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>为什么后端改了一个字段名，前端要到上线后才发现接口报错？为什么前后端的类型定义总是不同步？</h4>
+                <p>传统 REST 开发中，后端定义接口后，前端要手动维护类型。API 一变，类型就对不上了。</p>
+                <p>tRPC 解决了这个痛点：<strong>后端的路由类型自动传到前端</strong>，零代码生成，改了接口立刻有红色波浪线提醒你。</p>
+            </div>
+        </section>
+
+        <!-- tRPC vs REST vs GraphQL -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三种方案对比</h3>
+                <h4>tRPC 的定位和优势</h4>
+                <table>
+                    <thead><tr><th>特性</th><th>REST</th><th>GraphQL</th><th>tRPC</th></tr></thead>
+                    <tbody>
+                        <tr><td>类型安全</td><td>手动维护</td><td>Schema 生成</td><td>自动推导</td></tr>
+                        <tr><td>代码生成</td><td>需要</td><td>需要</td><td>不需要</td></tr>
+                        <tr><td>学习成本</td><td>低</td><td>中等</td><td>低（纯 TS）</td></tr>
+                        <tr><td>请求批处理</td><td>不支持</td><td>支持</td><td>自动批处理</td></tr>
+                        <tr><td>语言绑定</td><td>语言无关</td><td>语言无关</td><td>TypeScript 专属</td></tr>
+                    </tbody>
+                </table>
+                <p>这个比喻只是为了帮你建立直观感受：tRPC 像是前后端之间的一根类型电话线，后端改了什么前端立刻知道。实际上它是利用 TypeScript 的泛型和条件类型实现的编译时检查。</p>
+            </div>
+        </section>
+
+        <!-- 类型推导原理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类型推导原理</h3>
+                <h4>一根类型电话线连接前后端</h4>
+                <pre><code class="language-typescript">// 后端：定义 Router
+import { initTRPC } from '@trpc/server';
+import { z } from 'zod';
+
+const t = initTRPC.create();
+
+const appRouter = t.router({
+  user: t.router({
+    list: t.procedure.query(() =&gt; getUsers()),
+    getById: t.procedure
+      .input(z.object({ id: z.string() }))
+      .query(({ input }) =&gt; getUserById(input.id)),
+  }),
+});
+
+// 关键：导出类型（不是值）
+export type AppRouter = typeof appRouter;</code></pre>
+            </div>
+        </section>
+
+        <!-- 前端调用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>前端自动推导</h3>
+                <h4>导入类型，所有调用都有检查</h4>
+                <pre><code class="language-typescript">// 前端：导入后端类型
+import type { AppRouter } from '../server/routers';
+import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
+
+const client = createTRPCProxyClient&lt;AppRouter&gt;({
+  links: [httpBatchLink({ url: 'http://localhost:3000/trpc' })],
+});
+
+// 所有调用都有完整的类型检查和自动补全！
+const users = await client.user.list.query();
+const user = await client.user.getById.query({ id: '1' });</code></pre>
+                <div class="intro-block">
+                    <p>tRPC 的核心优势是"零代码生成"。后端改了接口，前端会立即得到类型错误提示。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 1: 后端路由 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 后端路由</h2>
+                <p>用 Router 和 Procedure 组织你的 API。</p>
+            </div>
+        </section>
+
+        <!-- 初始化 tRPC -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>初始化 tRPC</h3>
+                <h4>绑定 Context，导出构建器</h4>
+                <pre><code class="language-typescript">// server/trpc.ts
+import { initTRPC, TRPCError } from '@trpc/server';
+
+const t = initTRPC.context&lt;Context&gt;().create();
+
+export const router = t.router;
+export const publicProcedure = t.procedure;
+
+// 需要认证的 procedure
+export const protectedProcedure = t.procedure.use(
+  t.middleware(({ ctx, next }) =&gt; {
+    if (!ctx.user) {
+      throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+    return next({ ctx: { ...ctx, user: ctx.user } });
+  })
+);</code></pre>
+            </div>
+        </section>
+
+        <!-- 定义 Router -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>定义 Router</h3>
+                <h4>用 Zod 验证输入，用 query/mutation 分类</h4>
+                <pre><code class="language-typescript">// server/routers/userRouter.ts
+export const userRouter = router({
+  list: publicProcedure
+    .input(z.object({
+      page: z.number().default(1),
+      limit: z.number().max(100).default(10),
+    }))
+    .query(async ({ ctx, input }) =&gt; {
+      const [users, total] = await Promise.all([
+        ctx.db.user.findMany({
+          skip: (input.page - 1) * input.limit,
+          take: input.limit,
+        }),
+        ctx.db.user.count(),
+      ]);
+      return { users, pagination: { page: input.page, total } };
+    }),
+
+  register: publicProcedure
+    .input(z.object({
+      name: z.string().min(1, '姓名不能为空'),
+      email: z.string().email('邮箱格式不正确'),
+      password: z.string().min(8, '密码至少8位'),
+    }))
+    .mutation(async ({ ctx, input }) =&gt; {
+      const hashed = await bcrypt.hash(input.password, 12);
+      return ctx.db.user.create({ data: { ...input, password: hashed } });
+    }),
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- Procedure 类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Procedure 类型</h3>
+                <h4>三种操作，对应不同语义</h4>
+                <table>
+                    <thead><tr><th>类型</th><th>HTTP 方法</th><th>适用场景</th><th>幂等性</th></tr></thead>
+                    <tbody>
+                        <tr><td>query</td><td>GET</td><td>获取列表、详情</td><td>是</td></tr>
+                        <tr><td>mutation</td><td>POST</td><td>创建、更新、删除</td><td>否</td></tr>
+                        <tr><td>subscription</td><td>WebSocket</td><td>实时通知、聊天</td><td>N/A</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>路由嵌套不要过深。</strong>建议最多两层：<code>router.resource.action</code>。过深嵌套让代码难以维护。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: 前端调用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 前端调用</h2>
+                <p>React Query 集成，让数据获取变得优雅。</p>
+            </div>
+        </section>
+
+        <!-- React Query 集成 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>React Query 集成</h3>
+                <h4>Provider 配置一次，全局可用</h4>
+                <pre><code class="language-typescript">// client/trpc.ts
+import { createTRPCReact, httpBatchLink } from '@trpc/react-query';
+import type { AppRouter } from '../server/routers';
+
+export const trpc = createTRPCReact&lt;AppRouter&gt;();
+
+// providers/TRPCProvider.tsx
+export function TRPCProvider({ children }) {
+  const [queryClient] = useState(() =&gt; new QueryClient());
+  const [trpcClient] = useState(() =&gt;
+    trpc.createClient({
+      links: [httpBatchLink({ url: '/api/trpc' })],
+    })
+  );
+  return (
+    &lt;trpc.Provider client={trpcClient} queryClient={queryClient}&gt;
+      &lt;QueryClientProvider client={queryClient}&gt;
+        {children}
+      &lt;/QueryClientProvider&gt;
+    &lt;/trpc.Provider&gt;
+  );
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 组件中使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组件中使用</h3>
+                <h4>自动补全、参数检查、缓存管理</h4>
+                <pre><code class="language-typescript">// components/UserList.tsx
+export function UserList() {
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = trpc.user.list.useQuery({ page, limit: 10 });
+
+  if (isLoading) return &lt;div&gt;加载中...&lt;/div&gt;;
+
+  return (
+    &lt;div&gt;
+      {data?.users.map(user =&gt; (
+        &lt;div key={user.id}&gt;{user.name} - {user.email}&lt;/div&gt;
+      ))}
+      &lt;button disabled={page &lt;= 1}
+        onClick={() =&gt; setPage(p =&gt; p - 1)}&gt;上一页&lt;/button&gt;
+      &lt;button onClick={() =&gt; setPage(p =&gt; p + 1)}&gt;下一页&lt;/button&gt;
+    &lt;/div&gt;
+  );
+}
+
+// 创建用户
+const create = trpc.user.register.useMutation({
+  onSuccess() {
+    trpc.useUtils().user.list.invalidate(); // 刷新列表
+  },
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- Express 集成 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Express 集成</h3>
+                <h4>tRPC 可以和 REST 共存</h4>
+                <pre><code class="language-typescript">// server/index.ts
+import express from 'express';
+import * as trpcExpress from '@trpc/server/adapters/express';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// tRPC 路由
+app.use('/trpc', trpcExpress.createExpressMiddleware({
+  router: appRouter,
+  createContext,
+}));
+
+// REST 路由（共存）
+app.get('/health', (req, res) =&gt; res.json({ status: 'ok' }));
+
+app.listen(3000);</code></pre>
+                <div class="intro-block">
+                    <p>核心业务用 tRPC 获得类型安全，第三方集成（支付回调、Webhook）用 REST。两者可以和平共处。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>排错：类型不匹配</h3>
+                <div class="warning">
+                    <strong>症状：</strong>前端调用 tRPC 方法时 TypeScript 报类型错误，但后端代码明明没问题。
+                    <br><strong>原因：</strong>前端的 <code>AppRouter</code> 类型导入路径错误，或者前后端不在同一个 TypeScript 项目中。
+                    <br><strong>修复：</strong>确保 <code>import type { AppRouter }</code> 指向后端正确的导出。在 monorepo 中使用 TypeScript Project References。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：创建一个 tRPC Router，包含 <code>todo</code> 子路由，有 <code>list</code>（query）和 <code>add</code>（mutation）两个 procedure。</p>
+                        <pre><code class="language-typescript">// 提示：用内存数组存储 todo
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">const todos: { id: number; text: string; done: boolean }[] = [];
+
+const todoRouter = router({
+  list: publicProcedure.query(() =&gt; todos),
+  add: publicProcedure
+    .input(z.object({ text: z.string().min(1) }))
+    .mutation(({ input }) =&gt; {
+      const todo = { id: Date.now(), text: input.text, done: false };
+      todos.push(todo);
+      return todo;
+    }),
+});</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>tRPC 让前后端类型永远同步。下一章我们学习 <strong>Docker 容器化</strong>——让应用在任何环境都能一致运行。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

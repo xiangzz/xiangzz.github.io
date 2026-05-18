@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第26章 联合类型、交叉类型与收窄 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>联合类型、交叉类型与收窄</h1>
+            <p>灵活组合类型，用类型守卫精确收窄</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>一个问题</h3>
+                <h4>一个变量可能是字符串，也可能是数字，怎么描述？</h4>
+                <pre><code class="language-javascript">// JS：参数可能是字符串或数组，运行时才能判断
+function formatInput(input) {
+    // input 是 string 还是 string[]？不确定
+    if (typeof input === "string") {
+        return input.trim();
+    }
+    return input.map(s => s.trim());
+}</code></pre>
+                <pre><code class="language-typescript">// TS：用联合类型明确告诉编译器
+function formatInput(input: string | string[]): string | string[] {
+    if (typeof input === "string") {
+        return input.trim();      // TS 知道这里是 string
+    }
+    return input.map(s => s.trim()); // TS 知道这里是 string[]
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 1: 联合与交叉 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 联合与交叉</h2>
+                <h4>联合类型表示"或者"，交叉类型表示"并且"</h4>
+                <p>开篇的问题你已经看到了——一个变量可能是字符串，也可能是数组，用联合类型就能精确描述。反过来，如果你想把两个接口的属性合到一起呢？交叉类型就是干这个的。一个取"或"，一个取"且"，接下来我们搞清楚它们各自的语法和典型场景。</p>
+            </div>
+        </section>
+
+        <!-- 联合类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>联合类型</h3>
+                <h4>值可以是多种类型之一</h4>
+                <pre><code class="language-typescript">// 基本用法
+let id: string | number;
+id = "abc";    // OK
+id = 123;      // OK
+// id = true;  // 报错
+
+// 字面量联合——限制为特定值
+type Status = "pending" | "active" | "closed";
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";</code></pre>
+                <div class="intro-block">
+                    <p>用人话说：联合类型就像"套餐 A <strong>或</strong> 套餐 B"——你只能选一个，但每次可以选不同的。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 可辨识联合 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>可辨识联合</h3>
+                <h4>用共同属性区分不同变体</h4>
+                <pre><code class="language-typescript">interface Circle {
+    kind: "circle";     // 辨识属性
+    radius: number;
+}
+interface Rectangle {
+    kind: "rectangle";
+    width: number;
+    height: number;
+}
+interface Triangle {
+    kind: "triangle";
+    base: number;
+    height: number;
+}
+
+type Shape = Circle | Rectangle | Triangle;
+
+function area(shape: Shape): number {
+    switch (shape.kind) {
+        case "circle":
+            return Math.PI * shape.radius ** 2;
+        case "rectangle":
+            return shape.width * shape.height;
+        case "triangle":
+            return 0.5 * shape.base * shape.height;
+    }
+}</code></pre>
+                <p>每个变体都有 <code>kind</code> 属性，但值不同。TS 根据这个属性自动收窄类型。</p>
+            </div>
+        </section>
+
+        <!-- 交叉类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>交叉类型</h3>
+                <h4>合并多个类型的所有成员</h4>
+                <pre><code class="language-typescript">interface Timestamped {
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+interface Identifiable {
+    id: string;
+}
+
+type Entity = Identifiable & Timestamped;
+
+const user: Entity = {
+    id: "u-001",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+};
+// 必须同时拥有 id、createdAt、updatedAt</code></pre>
+                <pre><code class="language-typescript">// 交叉类型冲突——同属性不同类型会产生 never
+interface A { value: string; }
+interface B { value: number; }
+type AB = A & B;
+// AB 的 value 类型是 string & number -> never
+// 实际上无法创建 AB 类型的值</code></pre>
+            </div>
+        </section>
+
+        <!-- 联合 vs 交叉对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>联合 vs 交叉</h3>
+                <h4>"或者"和"并且"的本质区别</h4>
+                <table>
+                    <thead>
+                        <tr><th>特性</th><th>联合 <code>|</code></th><th>交叉 <code>&amp;</code></th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>语义</td><td>A 或 B（取其一）</td><td>A 且 B（同时拥有）</td></tr>
+                        <tr><td>属性集合</td><td>取公共成员（交集）</td><td>合并所有成员（并集）</td></tr>
+                        <tr><td>赋值</td><td>满足任一类型即可</td><td>必须满足所有类型</td></tr>
+                        <tr><td>典型用途</td><td>多种形态的数据</td><td>混入、组合能力</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>记住：联合取公共（只能安全用共有的属性），交叉取全部（必须提供所有属性）。</p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：联合类型与交叉类型的属性集合关系</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 两个重叠圆形：A(name,age)和B(name,email)，重叠区name
+                  - 上方：A|B联合→只能安全访问重叠区name(绿色高亮)
+                  - 下方：A&B交叉→可访问所有属性name+age+email(绿色高亮全部)
+                  - 注释："联合取交集(安全属性)|交叉取并集(全部属性)"
+                  - 配色：浅蓝背景，圆形半透明蓝和橙，重叠绿色，16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: 类型收窄 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 类型收窄</h2>
+                <h4>TypeScript 根据代码逻辑自动缩小变量的类型范围</h4>
+                <p>联合类型描述了"可能是 A 也可能是 B"，但在具体使用时你得知道它到底是哪个。TypeScript 会在你的 if、switch、typeof 检查之后自动把类型缩小到更精确的范围。这个过程叫"收窄"（Narrowing），是联合类型能真正发挥作用的关键。</p>
+            </div>
+        </section>
+
+        <!-- typeof 守卫 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>typeof 守卫</h3>
+                <h4>最基础的收窄方式</h4>
+                <pre><code class="language-typescript">function padLeft(value: string, padding: string | number): string {
+    if (typeof padding === "number") {
+        // 这里 padding 被 TS 收窄为 number
+        return " ".repeat(padding) + value;
+    }
+    // 这里 padding 被 TS 收窄为 string
+    return padding + value;
+}</code></pre>
+                <pre><code class="language-typescript">// typeof 支持检查的类型：
+// "string" | "number" | "bigint" | "boolean"
+// "symbol" | "undefined" | "object" | "function"
+
+// 注意：typeof null === "object"（JS 历史遗留）
+// 判断 null 要用 val === null 或真值检查</code></pre>
+            </div>
+        </section>
+
+        <!-- 真值检查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>真值收窄</h3>
+                <h4>在条件中排除 falsy 值</h4>
+                <pre><code class="language-typescript">function printLength(val: string | null | undefined) {
+    if (val) {
+        // val: string（排除了 null 和 undefined）
+        console.log(val.length);
+    } else {
+        // val: null | undefined
+        console.log(0);
+    }
+}
+
+// 利用空值合并
+const input: string | null = getInput();
+const name = input ?? "匿名"; // string</code></pre>
+            </div>
+        </section>
+
+        <!-- in 守卫 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>in 操作符守卫</h3>
+                <h4>检查对象是否有某个属性来收窄类型</h4>
+                <pre><code class="language-typescript">interface Fish {
+    swim(): void;
+    name: string;
+}
+
+interface Bird {
+    fly(): void;
+    name: string;
+}
+
+function move(animal: Fish | Bird) {
+    if ("swim" in animal) {
+        // animal 收窄为 Fish
+        animal.swim();
+    } else {
+        // animal 收窄为 Bird
+        animal.fly();
+    }
+}</code></pre>
+                <pre><code class="language-typescript">// 实际应用：区分不同类型的 API 响应
+interface SuccessResponse { data: unknown; status: number; }
+interface ErrorResponse { error: string; status: number; }
+
+function handleResponse(res: SuccessResponse | ErrorResponse) {
+    if ("data" in res) {
+        console.log("成功:", res.data);
+    } else {
+        console.log("错误:", res.error);
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- instanceof 守卫 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>instanceof 守卫</h3>
+                <h4>检查值是否是某个类的实例</h4>
+                <pre><code class="language-typescript">function logValue(x: Date | string) {
+    if (x instanceof Date) {
+        // x 收窄为 Date
+        console.log(x.toUTCString());
+    } else {
+        // x 收窄为 string
+        console.log(x.toUpperCase());
+    }
+}</code></pre>
+                <pre><code class="language-typescript">// 实际应用：错误类型区分
+class NetworkError extends Error {
+    constructor(public statusCode: number) {
+        super("网络错误");
+    }
+}
+
+class ValidationError extends Error {
+    constructor(public field: string) {
+        super("验证错误");
+    }
+}
+
+function handleError(error: NetworkError | ValidationError) {
+    if (error instanceof NetworkError) {
+        console.log(`HTTP ${error.statusCode}`);
+    } else {
+        console.log(`字段 ${error.field} 验证失败`);
+    }
+}</code></pre>
+                <div class="warning">
+                    <strong>注意</strong>：instanceof 只能用于类实例，不能用于接口/类型别名（接口在运行时不存在）。检查接口用 <code>in</code> 操作符。
+                </div>
+            </div>
+        </section>
+
+        <!-- switch 类型收窄 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>switch 收窄</h3>
+                <h4>用 switch 代替 if/else 进行类型收窄</h4>
+                <pre><code class="language-typescript">function formatValue(value: string | number | boolean): string {
+    switch (typeof value) {
+        case "string":
+            // value: string
+            return `"${value}"`;
+        case "number":
+            // value: number
+            return value.toFixed(2);
+        case "boolean":
+            // value: boolean
+            return value ? "是" : "否";
+    }
+}
+
+console.log(formatValue("hello"));  // '"hello"'
+console.log(formatValue(3.14159));  // '3.14'
+console.log(formatValue(true));     // '是'</code></pre>
+                <pre><code class="language-typescript">// switch 的穷尽性检查：TypeScript 能判断是否覆盖所有分支
+// 如果联合类型新增了 bigint，上面函数会立刻报错
+// 如果漏掉 boolean 分支，也会在 default 处提醒你</code></pre>
+                <div class="intro-block">
+                    <p><strong>什么时候用 switch？</strong>分支 ≥ 3 个时，switch 比 if/else 更清晰；switch 天然支持穷尽性检查；可辨识联合的 <code>kind</code>/<code>type</code> 字段最适合用 switch。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 控制流分析的限制 (1/2) -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>控制流限制(上)</h3>
+                <h4>收窄不会跨越赋值和异步边界</h4>
+                <pre><code class="language-typescript">// 陷阱一：重新赋值会覆盖收窄结果
+let x: string | number = "hello";
+if (typeof x === "string") {
+    console.log(x.toUpperCase()); // OK，x 是 string
+    x = 42;                       // 重新赋值！
+    // console.log(x.toUpperCase()); // 报错！x 现在是 number
+}
+
+// 陷阱二：let 变量的收窄在闭包中可能不安全
+let val: string | number = "hi";
+if (typeof val === "string") {
+    setTimeout(() => {
+        // val 可能被其他代码修改了
+        // TypeScript 仍然认为是 string（同步闭包安全）
+        console.log(val.toUpperCase()); // OK
+    }, 100);
+}
+val = 42; // 但如果在 setTimeout 之前执行，运行时会出错</code></pre>
+                <div class="warning">
+                    <strong>关键</strong>：<code>let</code> 变量可以被重新赋值，收窄后的类型不是永久的。如果你需要"锁住"收窄结果，赋值给 <code>const</code> 变量：<code>const str = val;</code>
+                </div>
+            </div>
+        </section>
+
+        <!-- 控制流分析的限制 (2/2) -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>控制流限制(下)</h3>
+                <h4>async/await 与 .then() 的收窄差异</h4>
+                <pre><code class="language-typescript">// async/await：收窄安全 ✓
+async function safeNarrow(x: string | number) {
+    if (typeof x === "string") {
+        await Promise.resolve();
+        console.log(x.toUpperCase()); // OK，收窄保持
+    }
+}
+
+// .then() 回调：收窄有时丢失 ✗
+function unsafeNarrow(x: string | number) {
+    if (typeof x === "string") {
+        Promise.resolve().then(() => {
+            console.log(x.toUpperCase()); // OK（同步闭包）
+        });
+    }
+}
+
+// 真正的陷阱：回调中修改外部变量
+let data: string | null = null;
+function loadData() {
+    if (data !== null) {
+        fetch("/api").then(() => {
+            // data 可能在此期间被设为 null
+            console.log(data.length); // TS 认为可以，但运行时可能出错
+        });
+    }
+}</code></pre>
+                <div class="intro-block">
+                    <p><strong>解决方案</strong>：遇到复杂的控制流场景，用 <code>const</code> 保存收窄后的值，或使用<strong>类型谓词</strong>（<code>is</code>）在回调内重新收窄。这就是下一节"自定义守卫"存在的意义。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3: 自定义守卫 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 自定义守卫</h2>
+                <h4>当内置守卫不够用时，自己写类型谓词和断言函数</h4>
+                <p>typeof 和 instanceof 能收窄简单场景，但遇到复杂的业务判断就力不从心了。比如你怎么判断一个 API 响应是成功还是失败？这就需要自己写守卫函数。用 <code>is</code> 关键字告诉 TypeScript "检查通过后，这个值就是这个类型"，收窄逻辑由你掌控。</p>
+            </div>
+        </section>
+
+        <!-- 类型谓词 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类型谓词</h3>
+                <h4>用 is 关键字告诉 TS 收窄后的类型</h4>
+                <pre><code class="language-typescript">type ApiResult =
+    | { success: true; data: string[] }
+    | { success: false; error: string };
+
+// 定义类型守卫函数
+function isSuccess(result: ApiResult): result is { success: true; data: string[] } {
+    return result.success === true;
+}
+
+function handleResult(result: ApiResult) {
+    if (isSuccess(result)) {
+        console.log(result.data);    // TS 知道有 data 属性
+    } else {
+        console.log(result.error);   // TS 知道有 error 属性
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 实用守卫 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实用守卫函数</h3>
+                <h4>判断非空、过滤数组</h4>
+                <pre><code class="language-typescript">// 通用的非空判断
+function isDefined&lt;T&gt;(val: T | null | undefined): val is T {
+    return val !== null && val !== undefined;
+}
+
+const items: (string | null | undefined)[] = ["a", null, "b", undefined, "c"];
+const filtered = items.filter(isDefined);
+// filtered 类型: string[]（而非 (string | null | undefined)[]）
+
+// 守卫复数类型
+function isStringOrNumber(val: unknown): val is string | number {
+    return typeof val === "string" || typeof val === "number";
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 断言函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>断言函数</h3>
+                <h4>调用后直接收窄类型</h4>
+                <pre><code class="language-typescript">// asserts 语法：如果函数正常返回，则条件一定成立
+function assertIsString(val: unknown): asserts val is string {
+    if (typeof val !== "string") {
+        throw new Error("期望字符串，得到: " + typeof val);
+    }
+}
+
+const input: unknown = "hello";
+assertIsString(input);
+// 此处 TS 知道 input 是 string
+console.log(input.toUpperCase());</code></pre>
+                <pre><code class="language-typescript">// 断言非空
+function assertDefined&lt;T&gt;(val: T | null | undefined, msg?: string): asserts val is T {
+    if (val == null) {
+        throw new Error(msg ?? "值不能为 null 或 undefined");
+    }
+}
+
+const maybeUser: { name: string } | null = findUser(1);
+assertDefined(maybeUser, "用户不存在");
+console.log(maybeUser.name); // OK，TS 知道不是 null</code></pre>
+                <div class="intro-block">
+                    <p>类型谓词用在 <code>if</code> 条件中收窄，断言函数在调用后直接收窄。两者互补，按场景选择。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4: 穷尽性检查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 穷尽检查</h2>
+                <h4>利用 never 类型确保所有分支都被处理</h4>
+                <p>用 switch 处理联合类型时，你有没有担心过——万一漏了一个分支怎么办？穷尽检查就是你的安全网。把 default 分支的值赋给 never 类型，只要还有没处理的分支，TypeScript 就会报错。新增枚举值或联合成员时再也不怕忘改 switch 了。</p>
+            </div>
+        </section>
+
+        <!-- never 与穷尽检查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>never 穷尽检查</h3>
+                <h4>确保 switch 语句覆盖所有分支</h4>
+                <pre><code class="language-typescript">type Shape = "circle" | "rectangle" | "triangle";
+
+function assertNever(x: never): never {
+    throw new Error("未处理的分支: " + x);
+}
+
+function getArea(shape: Shape): number {
+    switch (shape) {
+        case "circle": return 100;
+        case "rectangle": return 200;
+        // case "triangle": return 150;  // 故意注释掉
+        default:
+            return assertNever(shape);
+            // 报错！shape 的类型 "triangle" 不能赋值给 never
+            // 提醒你有一个分支没处理
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Redux 实际应用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实际应用</h3>
+                <h4>Redux reducer 中的穷尽检查</h4>
+                <pre><code class="language-typescript">type Action =
+    | { type: "INCREMENT"; payload: number }
+    | { type: "DECREMENT"; payload: number }
+    | { type: "RESET" };
+
+function reducer(state: number, action: Action): number {
+    switch (action.type) {
+        case "INCREMENT": return state + action.payload;
+        case "DECREMENT": return state - action.payload;
+        case "RESET": return 0;
+        default:
+            // 如果新增了 Action 类型但忘了处理
+            // 这里会在编译时报错
+            const _exhaustive: never = action;
+            return _exhaustive;
+    }
+}</code></pre>
+                <div class="warning">
+                    <strong>原则</strong>：处理联合类型的 switch 语句中，始终添加 <code>default: assertNever(x)</code>。新增变体但忘记处理时，TS 会立即报错。
+                </div>
+            </div>
+        </section>
+
+        <!-- satisfies 与收窄 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>satisfies + 收窄</h3>
+                <h4>用 satisfies 验证可辨识联合，同时保留精确类型</h4>
+                <pre><code class="language-typescript">type Event =
+    | { kind: "click"; x: number; y: number }
+    | { kind: "keypress"; key: string }
+    | { kind: "focus"; element: string };
+
+// satisfies 确保数据满足 Event 联合类型
+// 但每个变量的类型比 Event 更精确
+const clickEvent = { kind: "click", x: 100, y: 200 } as const satisfies Event;
+// clickEvent.kind 是 "click"（而不是 "click" | "keypress" | "focus"）</code></pre>
+                <pre><code class="language-typescript">// 实战：配置对象验证
+type ThemeConfig = {
+    colors: {
+        primary: string;
+        secondary: string;
+    };
+    fontSize: number | string;
+};
+
+const config = {
+    colors: {
+        primary: "#007bff",
+        secondary: "#6c757d",
+    },
+    fontSize: 16,
+} satisfies ThemeConfig;
+
+// config.fontSize 是 16（字面量类型）
+// 而不是 number | string</code></pre>
+            </div>
+        </section>
+
+        <!-- satisfies 深入用法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>satisfies 深入</h3>
+                <h4>satisfies vs 类型注解：何时用哪个？</h4>
+                <pre><code class="language-typescript">// 类型注解： widened（拓宽），丢失字面量信息
+const t1: ThemeConfig = {
+    colors: { primary: "#007bff", secondary: "#6c757d" },
+    fontSize: 16,
+};
+// t1.fontSize 类型是 number | string
+
+// satisfies：保留字面量类型，同时验证结构
+const t2 = {
+    colors: { primary: "#007bff", secondary: "#6c757d" },
+    fontSize: 16,
+} satisfies ThemeConfig;
+// t2.fontSize 类型是 16（字面量！）</code></pre>
+                <pre><code class="language-typescript">// satisfies + as const：最强组合
+const ROUTES = {
+    home: "/",
+    users: "/users",
+    settings: "/settings",
+} as const satisfies Record&lt;string, string&gt;;
+
+// ROUTES.home 类型是 "/"（字面量）
+// 同时被约束为 Record&lt;string, string&gt;，值必须是 string
+// 错误会被捕获：写 123 会报错</code></pre>
+                <div class="intro-block">
+                    <p><strong>口诀</strong>：要<strong>验证结构但保留精确类型</strong>用 <code>satisfies</code>；要<strong>放宽类型</strong>用类型注解；两者都要就写 <code>as const satisfies Type</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 可辨识联合流程图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>可辨识联合原理</h3>
+                <h4>kind 字段如何驱动类型自动收窄？</h4>
+                <div class="ai-diagram">
+                    <h4>图：可辨识联合工作原理</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从左到右的收窄流程
+                    - 左侧：三个接口卡片 Circle（kind:"circle", radius）、Rectangle（kind:"rectangle", width/height）、Triangle（kind:"triangle", sides），每个 kind 值用不同颜色标注
+                    - 中间：用 | 组成联合类型 Shape → switch(shape.kind) 判断
+                    - 右侧：三条收窄分支
+                      - case "circle" → 自动收窄为 Circle → 可访问 radius（绿色）
+                      - case "rectangle" → 自动收窄为 Rectangle → 可访问 width/height（蓝色）
+                      - case "triangle" → 自动收窄为 Triangle → 可访问 sides（橙色）
+                    - 配色建议：浅灰背景，kind 字段用高亮色，收窄结果用对应颜色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <pre><code class="language-typescript">type Shape =
+    | { kind: "circle"; radius: number }
+    | { kind: "rect"; w: number; h: number };
+
+function area(s: Shape): number {
+    switch (s.kind) {
+        case "circle":
+            // s 自动收窄为 { kind: "circle"; radius: number }
+            return Math.PI * s.radius ** 2;
+        case "rect":
+            // s 自动收窄为 { kind: "rect"; w: number; h: number }
+            return s.w * s.h;
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Redux/Zustand action 实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Redux action 类型</h3>
+                <h4>可辨识联合 + 穷尽检查 = 安全的状态管理</h4>
+                <pre><code class="language-typescript">// 用可辨识联合定义所有 action
+type TodoAction =
+    | { type: "ADD_TODO"; payload: { text: string } }
+    | { type: "TOGGLE_TODO"; payload: { id: number } }
+    | { type: "DELETE_TODO"; payload: { id: number } }
+    | { type: "CLEAR_ALL" };
+
+function todoReducer(state: Todo[], action: TodoAction): Todo[] {
+    switch (action.type) {
+        case "ADD_TODO":
+            return [...state, { id: Date.now(), text: action.payload.text, done: false }];
+        case "TOGGLE_TODO":
+            return state.map(t => t.id === action.payload.id ? { ...t, done: !t.done } : t);
+        case "DELETE_TODO":
+            return state.filter(t => t.id !== action.payload.id);
+        case "CLEAR_ALL":
+            return [];
+        default:
+            const _exhaustive: never = action;
+            return _exhaustive;
+    }
+}</code></pre>
+                <div class="intro-block">
+                    <p>新增 action 类型但忘记处理时，<code>default</code> 分支的穷尽检查会立即报错。这就是类型系统帮你兜底。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 可辨识联合最佳实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>可辨识最佳实践</h3>
+                <h4>如何设计清晰、一致的可辨识联合？</h4>
+                <pre><code class="language-typescript">// ✅ 推荐：用 kind/type 作为辨识属性名，保持项目统一
+interface Circle   { kind: "circle";   radius: number }
+interface Rectangle { kind: "rectangle"; width: number; height: number }
+
+// ✅ 推荐：用 string 字面量而非 enum 作为辨识值
+// string 字面量更简单，无需额外导入，且 TypeScript 推断更好
+
+// ✅ 推荐：用 satisfies 验证联合的完整性
+type Shape = Circle | Rectangle;
+const shapes = {
+    circle: { kind: "circle", radius: 5 },
+    rect: { kind: "rectangle", width: 3, height: 4 },
+} satisfies Record&lt;keyof any, Shape&gt;;</code></pre>
+                <pre><code class="language-typescript">// ✅ 真实案例：API 响应的可辨识联合设计
+type ApiResult&lt;T&gt; =
+    | { status: "success"; data: T; timestamp: number }
+    | { status: "error";   error: string; code: number }
+    | { status: "loading"; progress?: number };
+
+function handleResult&lt;T&gt;(result: ApiResult&lt;T&gt;) {
+    switch (result.status) {       // status 是辨识属性
+        case "success":
+            return result.data;     // 自动收窄，可访问 data
+        case "error":
+            throw new Error(result.error);
+        case "loading":
+            console.log(`${result.progress ?? 0}%`);
+    }
+}</code></pre>
+                <div class="warning">
+                    <strong>命名约定</strong>：全项目统一辨识属性名。常见选择：<code>type</code>（Redux 风格）、<code>kind</code>（TypeScript 官方文档风格）、<code>tag</code>（函数式编程风格）。选一个，保持一致。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习：交通信号灯状态机 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：信号灯状态机</h3>
+                <h4>用可辨识联合实现红绿灯循环切换</h4>
+                <p><strong>需求</strong>：定义三种状态 Red、Green、Yellow，每种有自己的持续时长。实现 <code>next</code> 函数让信号灯按 红→绿→黄→红 循环。用 <code>switch</code> + 穷尽检查确保安全。</p>
+                <pre><code class="language-typescript">// 定义状态类型
+// type LightState = Red | Green | Yellow
+
+// 实现 next 函数：红→绿→黄→红
+// function next(state: LightState): LightState</code></pre>
+                <div class="answer-section">
+                    <h4>参考答案</h4>
+                    <pre><code class="language-typescript">interface RedLight    { kind: "red";    duration: 30; }
+interface GreenLight  { kind: "green";  duration: 25; }
+interface YellowLight { kind: "yellow"; duration: 5;  }
+
+type LightState = RedLight | GreenLight | YellowLight;
+
+function next(state: LightState): LightState {
+    switch (state.kind) {
+        case "red":    return { kind: "green",  duration: 25 };
+        case "green":  return { kind: "yellow", duration: 5  };
+        case "yellow": return { kind: "red",    duration: 30 };
+    }
+}
+
+// 循环测试
+let light: LightState = { kind: "red", duration: 30 };
+light = next(light); // green
+light = next(light); // yellow
+light = next(light); // red —— 回到起点</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见收窄问题</h3>
+
+                <div class="warning">
+                    <strong>收窄的关键</strong>：TS 只在确定的控制流中收窄类型。如果你把值赋给新变量，收窄就失效了。
+                </div>
+
+                <h4>问题一：联合类型上不存在某个属性</h4>
+                <p><strong>原因</strong>：联合类型只能安全使用所有成员共有的属性。</p>
+                <p><strong>修复</strong>：先用 <code>typeof</code>、<code>in</code> 等方式收窄，再调用专属方法。</p>
+
+                <h4>问题二：收窄在回调函数中失效</h4>
+                <p><strong>原因</strong>：回调函数可能在任何时候被调用，TS 无法保证收窄后的类型仍然有效。</p>
+                <p><strong>修复</strong>：在回调函数内部重新做类型检查，或把值赋给一个 <code>const</code> 变量。</p>
+
+                <h4>问题三：交叉类型冲突产生 never</h4>
+                <p><strong>原因</strong>：两个类型有同名属性但类型不同，交叉后变成 never。</p>
+                <p><strong>修复</strong>：检查交叉的类型是否有冲突属性，用 Omit 等工具类型排除冲突属性。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：实现一个函数，根据形状类型计算面积。要求用可辨识联合 + 穷尽检查。</p>
+                        <pre><code class="language-typescript">// 定义三种形状的接口
+// Circle: kind "circle", radius
+// Square: kind "square", side
+// Triangle: kind "triangle", base, height
+
+// 实现 getArea 函数</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">interface Circle {
+    kind: "circle";
+    radius: number;
+}
+interface Square {
+    kind: "square";
+    side: number;
+}
+interface Triangle {
+    kind: "triangle";
+    base: number;
+    height: number;
+}
+
+type Shape = Circle | Square | Triangle;
+
+function getArea(shape: Shape): number {
+    switch (shape.kind) {
+        case "circle":
+            return Math.PI * shape.radius ** 2;
+        case "square":
+            return shape.side ** 2;
+        case "triangle":
+            return 0.5 * shape.base * shape.height;
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：写一个类型守卫函数 <code>isErrorResponse</code>，区分成功和失败的 API 响应。</p>
+                        <pre><code class="language-typescript">type ApiResponse =
+    | { ok: true; data: string }
+    | { ok: false; error: string };
+
+function handle(res: ApiResponse) {
+    // 用 isErrorResponse 收窄类型
+}</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">function isErrorResponse(
+    res: ApiResponse
+): res is { ok: false; error: string } {
+    return res.ok === false;
+}
+
+function handle(res: ApiResponse) {
+    if (isErrorResponse(res)) {
+        console.log("错误:", res.error);
+    } else {
+        console.log("数据:", res.data);
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>联合和交叉掌握了，下一章学习<strong>枚举</strong>——另一种限定取值范围的方式。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

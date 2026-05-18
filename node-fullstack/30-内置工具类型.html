@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第30章 内置工具类型 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>内置工具类型</h1>
+            <p>TypeScript 自带的类型变换利器，拿来就用</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>先看一个问题</h3>
+                <h4>更新用户信息时，所有字段都是可选的；创建用户时，id 不需要传。你每次都手写新类型吗？</h4>
+                <pre><code class="language-typescript">interface User {
+    id: string;
+    name: string;
+    email: string;
+    age: number;
+    password: string;
+    createdAt: Date;
+}
+
+// 更新：所有字段可选 → 手写一遍？
+interface UpdateUser {
+    id?: string; name?: string; email?: string;
+    age?: number; password?: string; createdAt?: Date;
+}
+
+// 创建：不要 id 和 createdAt → 又手写一遍？
+interface CreateUser {
+    name: string; email: string;
+    age: number; password: string;
+}</code></pre>
+                <p>TypeScript 内置了十几个工具类型，专门解决这类问题——基于已有类型变换出新的类型。</p>
+            </div>
+        </section>
+
+        <!-- Part 1: 属性修饰符 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 属性修饰</h2>
+                <h4>Partial、Required、Readonly——修改属性的修饰状态</h4>
+                <p>开篇那个问题你肯定遇到过：更新接口要所有字段可选，创建接口要排除 id。手写重复接口太痛苦了。TypeScript 内置了一组工具类型，专门解决这类问题。先从最常用的三个开始：让属性变可选、变必选、变只读。</p>
+            </div>
+        </section>
+
+        <!-- Partial -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Partial 全部可选</h3>
+                <h4>让所有属性变成可选</h4>
+                <pre><code class="language-typescript">interface User {
+    name: string;
+    age: number;
+    email: string;
+}
+
+type PartialUser = Partial&lt;User&gt;;
+// { name?: string; age?: number; email?: string; }
+
+// 实际应用：更新函数
+function updateUser(user: User, updates: Partial&lt;User&gt;): User {
+    return { ...user, ...updates };
+}
+
+const user: User = { name: "张三", age: 25, email: "a@b.c" };
+updateUser(user, { age: 26 });          // 只更新 age
+updateUser(user, { name: "李四" });      // 只更新 name
+updateUser(user, { name: "李四", email: "new@email.com" });</code></pre>
+            </div>
+        </section>
+
+        <!-- Required & Readonly -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Required 与 Readonly</h3>
+                <h4>全部必选 / 全部只读</h4>
+                <pre><code class="language-typescript">// Required——所有属性变必选（移除可选标记）
+interface Config {
+    host: string;
+    port?: number;
+    timeout?: number;
+}
+type StrictConfig = Required&lt;Config&gt;;
+// { host: string; port: number; timeout: number; }</code></pre>
+                <pre><code class="language-typescript">// Readonly——所有属性变只读
+type FrozenUser = Readonly&lt;User&gt;;
+// { readonly name: string; readonly age: number; readonly email: string; }
+
+const frozen: FrozenUser = { name: "张三", age: 25, email: "a@b.c" };
+// frozen.name = "李四"; // 报错！
+
+// Readonly 也可以用于数组
+const arr: ReadonlyArray&lt;string&gt; = ["a", "b"];
+// arr.push("c"); // 报错！</code></pre>
+            </div>
+        </section>
+
+        <!-- ReadonlyArray 详解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>ReadonlyArray 详解</h3>
+                <h4>只读数组的两种写法与使用场景</h4>
+                <pre><code class="language-typescript">// 两种写法完全等价
+const arr: readonly number[] = [1, 2, 3];
+const arr2: ReadonlyArray&lt;number&gt; = [1, 2, 3];
+
+// 都禁止修改
+arr.push(4);   // 报错！Property 'push' does not exist
+arr[0] = 10;   // 报错！Index signature only permits reading</code></pre>
+                <pre><code class="language-typescript">// Readonly&lt;T&gt; vs readonly T[]
+// Readonly 把所有属性变 readonly，但不影响嵌套数组的方法
+type Obj = Readonly&lt;{ items: number[] }&gt;;
+// { readonly items: number[] }  items 的引用不可改，但内容可改！
+
+// 元组也可以 readonly
+const pair: readonly [string, number] = ["张三", 25];
+// pair[0] = "李四"; // 报错！</code></pre>
+                <div class="warning">
+                    <p>常见误区：<code>Readonly&lt;T&gt;</code> 和 <code>readonly T[]</code> 不是一回事。前者让对象所有属性不可写，后者让数组不可变。对函数参数用 <code>readonly</code> 可以防止意外修改调用方的数据。</p>
+                </div>
+                <pre><code class="language-typescript">// 实际场景：函数参数不该被修改
+function printNames(names: readonly string[]): void {
+    // names.push("新名字"); // 报错！安全
+    names.forEach(n => console.log(n));
+}
+
+const myNames = ["Alice", "Bob"];
+printNames(myNames); // 调用方确信数据不会被改</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 2: 属性筛选 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 属性筛选</h2>
+                <h4>Pick、Omit、Record——选取、排除、创建属性</h4>
+                <p>属性修饰解决了"改状态"的问题，但还有一类需求：从接口里挑几个属性组成新类型，或者排除掉敏感字段。Pick 和 Omit 就是干这个的——一个"我要这几个"，一个"我不要这几个"。Record 则是从零开始创建键值对类型。</p>
+            </div>
+        </section>
+
+        <!-- Pick -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Pick 选取属性</h3>
+                <h4>从类型中选取部分属性</h4>
+                <pre><code class="language-typescript">interface User {
+    id: string;
+    name: string;
+    email: string;
+    age: number;
+    password: string;
+    createdAt: Date;
+}
+
+// API 返回给前端的公开信息——排除 password
+type PublicUser = Pick&lt;User, "id" | "name" | "email"&gt;;
+// { id: string; name: string; email: string; }
+
+// 列表项只需要名字和头像
+type UserListItem = Pick&lt;User, "id" | "name" | "age"&gt;;
+// { id: string; name: string; age: number; }</code></pre>
+            </div>
+        </section>
+
+        <!-- Omit -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Omit 排除属性</h3>
+                <h4>从类型中排除部分属性</h4>
+                <pre><code class="language-typescript">// 排除敏感字段
+type UserWithoutPassword = Omit&lt;User, "password"&gt;;
+// { id: string; name: string; email: string; age: number; createdAt: Date; }
+
+// 排除多个属性
+type UserBasic = Omit&lt;User, "password" | "createdAt"&gt;;
+
+// 实际应用：创建和更新 DTO
+type CreateUserDTO = Omit&lt;User, "id" | "createdAt"&gt;;
+// 创建时不需要 id 和 createdAt
+
+type UpdateUserDTO = Partial&lt;Omit&lt;User, "id" | "createdAt"&gt;&gt;;
+// 更新时所有字段可选，且不能改 id 和 createdAt</code></pre>
+                <div class="intro-block">
+                    <p>Pick 是"我要这几个"，Omit 是"我不要这几个"。两者互补，通常选更短的那个。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Record -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Record 键值对</h3>
+                <h4>快速创建键值对类型</h4>
+                <pre><code class="language-typescript">// Record——用联合类型作为键，统一值的类型
+type Role = "admin" | "editor" | "viewer";
+type Permissions = Record&lt;Role, string[]&gt;;
+// { admin: string[]; editor: string[]; viewer: string[]; }
+
+const perms: Permissions = {
+    admin: ["read", "write", "delete"],
+    editor: ["read", "write"],
+    viewer: ["read"],
+};</code></pre>
+                <pre><code class="language-typescript">// Record 的实现原理
+type MyRecord&lt;K extends string | number | symbol, V&gt; = {
+    [key in K]: V;
+};</code></pre>
+            </div>
+        </section>
+
+        <!-- Pick vs Omit 对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Pick vs Omit</h3>
+                <h4>选择困难？看这张对比表</h4>
+                <table>
+                    <thead>
+                        <tr><th>工具类型</th><th>思路</th><th>适合场景</th><th>示例</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>Pick&lt;T, K&gt;</code></td><td>保留指定的</td><td>需要的属性少时</td><td><code>Pick&lt;User, "id" | "name"&gt;</code></td></tr>
+                        <tr><td><code>Omit&lt;T, K&gt;</code></td><td>排除指定的</td><td>不需要的属性少时</td><td><code>Omit&lt;User, "password"&gt;</code></td></tr>
+                    </tbody>
+                </table>
+                <p>属性多选少用 Pick，属性少排多用 Omit。两者可以组合使用：</p>
+                <pre><code class="language-typescript">// 组合使用
+type CreateDTO = Partial&lt;Omit&lt;User, "id"&gt;&gt;;
+// 先排除 id，再全部变可选</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 3: 联合类型操作 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 联合操作</h2>
+                <h4>Exclude、Extract、NonNullable——操作联合类型的成员</h4>
+                <p>前面两节操作的是对象接口的属性。如果操作对象是联合类型呢？Exclude 能从联合中去掉某些成员，Extract 能提取匹配的成员，NonNullable 专门去掉 null 和 undefined。它们和上一章学的条件类型、never 过滤是一脉相承的。</p>
+            </div>
+        </section>
+
+        <!-- Exclude / Extract / NonNullable -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>排除与提取</h3>
+                <h4>操作联合类型的成员</h4>
+                <pre><code class="language-typescript">// Exclude——从联合类型中排除成员
+type AllTypes = string | number | boolean | null;
+type NoNull = Exclude&lt;AllTypes, null&gt;;
+// string | number | boolean
+
+type Status = "pending" | "active" | "closed" | "archived";
+type ActiveStatus = Exclude&lt;Status, "archived"&gt;;
+// "pending" | "active" | "closed"</code></pre>
+                <pre><code class="language-typescript">// Extract——从联合类型中提取成员
+type StringOrNumber = Extract&lt;AllTypes, string | number&gt;;
+// string | number
+
+// NonNullable——排除 null 和 undefined
+type MaybeString = string | null | undefined;
+type DefiniteString = NonNullable&lt;MaybeString&gt;;
+// string</code></pre>
+            </div>
+        </section>
+
+        <!-- 实际应用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实际应用</h3>
+                <h4>过滤数组中的空值</h4>
+                <pre><code class="language-typescript">// NonNullable 的实际应用
+function filterNull&lt;T&gt;(items: (T | null | undefined)[]): NonNullable&lt;T&gt;[] {
+    return items.filter((item): item is NonNullable&lt;T&gt; => item != null);
+}
+
+const mixed = ["a", null, "b", undefined, "c"];
+const strings = filterNull(mixed); // string[]
+
+// Exclude 的实际应用
+type AllEvents = "click" | "focus" | "blur" | "scroll";
+type KeyboardEvents = Exclude&lt;AllEvents, "click" | "scroll">;
+// "focus" | "blur"</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 4: 函数类型操作 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 函数操作</h2>
+                <h4>ReturnType、Parameters、Awaited——提取函数的类型信息</h4>
+                <p>写高阶函数时，你经常需要"拿到某个函数的返回类型"或"拿到参数类型"——但不该手写，应该自动提取。ReturnType 和 Parameters 正是为此而生。再加上 Awaited 解包 Promise，异步函数的类型信息也能轻松获取。</p>
+            </div>
+        </section>
+
+        <!-- ReturnType / Parameters -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>返回类型与参数</h3>
+                <h4>从函数中提取类型信息</h4>
+                <pre><code class="language-typescript">// ReturnType——获取函数的返回类型
+function getUser() {
+    return { name: "张三", age: 25, email: "a@b.c" };
+}
+type UserFromFn = ReturnType&lt;typeof getUser&gt;;
+// { name: string; age: number; email: string; }</code></pre>
+                <pre><code class="language-typescript">// Parameters——获取函数的参数类型（元组）
+function createUser(name: string, age: number, email: string) {
+    return { name, age, email };
+}
+type CreateUserParams = Parameters&lt;typeof createUser&gt;;
+// [string, number, string]</code></pre>
+                <pre><code class="language-typescript">// 使用参数类型创建包装函数
+function withLog&lt;T extends (...args: any[]) => any&gt;(
+    fn: T
+): (...args: Parameters&lt;T&gt;) => ReturnType&lt;T&gt; {
+    return (...args) => {
+        console.log("调用:", args);
+        return fn(...args);
+    };
+}
+const loggedCreate = withLog(createUser);
+loggedCreate("张三", 25, "a@b.c"); // 自动提示参数</code></pre>
+            </div>
+        </section>
+
+        <!-- ThisParameterType & OmitThisParameter -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>This 类型工具</h3>
+                <h4>ThisParameterType 与 OmitThisParameter</h4>
+                <pre><code class="language-typescript">// ThisParameterType——提取函数的 this 参数类型
+function greet(this: { name: string }) {
+    console.log(`Hello, ${this.name}`);
+}
+
+type ThisType = ThisParameterType&lt;typeof greet&gt;;
+// { name: string }
+
+// OmitThisParameter——返回去掉 this 参数的函数类型
+type BoundGreet = OmitThisParameter&lt;typeof greet&gt;;
+// () => void</code></pre>
+                <pre><code class="language-typescript">// 实际场景：类型安全的事件绑定
+function bindMethod&lt;T, M extends keyof T&gt;(
+    obj: T,
+    method: M
+): OmitThisParameter&lt;T[M] extends (...args: any[]) => any ? T[M] : never&gt; {
+    return (obj[method] as Function).bind(obj) as any;
+}
+
+const logger = {
+    prefix: "[APP]",
+    log(this: { prefix: string }, msg: string) {
+        console.log(`${this.prefix} ${msg}`);
+    }
+};
+
+const boundLog = bindMethod(logger, "log");
+boundLog("服务启动"); // [APP] 服务启动</code></pre>
+                <div class="intro-block">
+                    <p><code>ThisType&lt;T&gt;</code> 是另一个相关工具，用于给对象字面量的方法提供共享的 this 上下文，常见于 Vue 的 Options API 类型定义中。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Awaited -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Awaited 解包</h3>
+                <h4>从 Promise 中提取内部类型</h4>
+                <pre><code class="language-typescript">// Awaited——解包 Promise 的内部类型
+async function fetchUsers() {
+    const res = await fetch("/api/users");
+    return res.json() as Promise&lt;User[]&gt;;
+}
+
+// 不用 Awaited：Promise&lt;User[]&gt;
+// 用 Awaited：User[]
+type UsersData = Awaited&lt;ReturnType&lt;typeof fetchUsers&gt;&gt;;
+// User[]
+
+// ConstructorParameters &amp; InstanceType
+class Person {
+    constructor(public name: string, public age: number) {}
+}
+
+type PersonArgs = ConstructorParameters&lt;typeof Person&gt;;
+// [string, number]
+
+type PersonInstance = InstanceType&lt;typeof Person&gt;;
+// Person</code></pre>
+            </div>
+        </section>
+
+        <!-- ConstructorParameters 与 InstanceType 深入 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>构造器类型工具</h3>
+                <h4>ConstructorParameters 与 InstanceType</h4>
+                <pre><code class="language-typescript">class User {
+    constructor(public name: string, public age: number) {}
+    greet() { return `Hi, I'm ${this.name}`; }
+}
+
+type UserParams = ConstructorParameters&lt;typeof User&gt;;  // [string, number]
+type UserInstance = InstanceType&lt;typeof User&gt;;          // User</code></pre>
+                <pre><code class="language-typescript">// 实际场景：泛型工厂函数
+function create&lt;T&gt;(
+    Ctor: new (...args: any[]) => T,
+    ...args: ConstructorParameters&lt;typeof Ctor&gt;
+): T {
+    return new Ctor(...args);
+}
+
+const user = create(User, "张三", 25);
+// 自动推断出 user: User</code></pre>
+                <div class="warning">
+                    <p><code>ConstructorParameters</code> 只能用于 class 或 <code>new (...args) => T</code> 形式的构造签名，不能用在普通函数上。对普通函数请用 <code>Parameters&lt;typeof fn&gt;</code>。</p>
+                </div>
+                <pre><code class="language-typescript">// 进阶：依赖注入容器
+type ServiceCtor&lt;T&gt; = new (...args: any[]) => T;
+
+class Container {
+    private instances = new Map&lt;ServiceCtor&lt;any&gt;, any&gt;();
+
+    resolve&lt;T&gt;(Ctor: ServiceCtor&lt;T&gt;): InstanceType&lt;ServiceCtor&lt;T&gt;&gt; {
+        if (!this.instances.has(Ctor)) {
+            this.instances.set(Ctor, new Ctor());
+        }
+        return this.instances.get(Ctor);
+    }
+}
+const container = new Container();
+const u = container.resolve(User); // u: User</code></pre>
+            </div>
+        </section>
+
+        <!-- Awaited 深入用法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Awaited 深入</h3>
+                <h4>不只是解包一层 Promise</h4>
+                <pre><code class="language-typescript">// 嵌套 Promise 自动展平到最内层
+type Deep = Awaited&lt;Promise&lt;Promise&lt;string&gt;&gt;&gt;;
+// string —— 递归解包所有 Promise 层</code></pre>
+                <pre><code class="language-typescript">// 结合泛型：提取异步函数的实际返回类型
+async function getValue&lt;T&gt;(): Promise&lt;T&gt; { /* ... */ }
+
+type ValueType = Awaited&lt;ReturnType&lt;typeof getValue&lt;number&gt;&gt;&gt;;
+// number</code></pre>
+                <pre><code class="language-typescript">// 实际场景：解包 API 响应类型
+interface User { id: string; name: string; }
+type ApiResponse&lt;T&gt; = Promise&lt;{ data: T; error?: string }&gt;;
+
+type UserData = Awaited&lt;ApiResponse&lt;User&gt;&gt;["data"];
+// User
+
+// async function 的返回值自动 Awaited
+async function fetchUser(id: string): Promise&lt;User&gt; {
+    const res = await fetch(`/api/users/${id}`);
+    return res.json();
+}
+
+// ReturnType 得到 Promise&lt;User&gt;
+// 在 async 上下文中 TS 会自动 Awaited，所以实际类型是 User</code></pre>
+                <div class="intro-block">
+                    <p><code>Awaited</code> 是 TypeScript 4.5 引入的。在此之前，<code>ReturnType&lt;typeof asyncFn&gt;</code> 返回的是 <code>Promise&lt;T&gt;</code> 而非 <code>T</code>，需要手动写 <code>ReturnType&lt;typeof asyncFn&gt; extends Promise&lt;infer U&gt; ? U : never</code>。现在直接用 <code>Awaited</code> 就行。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 速查表 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>工具类型速查</h3>
+                <h4>一张表掌握所有内置工具类型</h4>
+                <table>
+                    <thead>
+                        <tr><th>类型</th><th>作用</th><th>示例</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>Partial&lt;T&gt;</code></td><td>所有属性变可选</td><td><code>{ name?: string }</code></td></tr>
+                        <tr><td><code>Required&lt;T&gt;</code></td><td>所有属性变必选</td><td><code>{ name: string }</code></td></tr>
+                        <tr><td><code>Readonly&lt;T&gt;</code></td><td>所有属性变只读</td><td><code>{ readonly name: string }</code></td></tr>
+                        <tr><td><code>Pick&lt;T, K&gt;</code></td><td>选取部分属性</td><td><code>{ id: string; name: string }</code></td></tr>
+                        <tr><td><code>Omit&lt;T, K&gt;</code></td><td>排除部分属性</td><td>排除 password</td></tr>
+                        <tr><td><code>Record&lt;K, V&gt;</code></td><td>键值对类型</td><td><code>{ admin: string[] }</code></td></tr>
+                        <tr><td><code>Exclude&lt;U, E&gt;</code></td><td>排除联合成员</td><td><code>string | number</code></td></tr>
+                        <tr><td><code>Extract&lt;U, E&gt;</code></td><td>提取联合成员</td><td><code>string</code></td></tr>
+                        <tr><td><code>NonNullable&lt;T&gt;</code></td><td>排除 null/undefined</td><td><code>string</code></td></tr>
+                        <tr><td><code>ReturnType&lt;F&gt;</code></td><td>函数返回类型</td><td><code>{ name: string }</code></td></tr>
+                        <tr><td><code>Parameters&lt;F&gt;</code></td><td>函数参数类型</td><td><code>[string, number]</code></td></tr>
+                        <tr><td><code>Awaited&lt;T&gt;</code></td><td>解包 Promise</td><td><code>User[]</code></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 5: 自定义工具类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 自定义扩展</h2>
+                <h4>内置的不够用？自己造</h4>
+                <p>TypeScript 内置了十几个工具类型，覆盖了最常见的场景。但实际项目中你总会遇到"内置搞不定"的需求——比如递归可选、合并两个类型、提取非空属性名。别怕，前面学的映射类型和条件类型组合起来，什么都能造。这就是"类型编程"的实战。</p>
+            </div>
+        </section>
+
+        <!-- 自定义工具类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自定义工具类型</h3>
+                <h4>DeepPartial、DeepReadonly 等</h4>
+                <pre><code class="language-typescript">// DeepPartial——递归让所有属性可选
+type DeepPartial&lt;T&gt; = {
+    [K in keyof T]?: T[K] extends object ? DeepPartial&lt;T[K]&gt; : T[K];
+};
+
+interface Config {
+    db: { host: string; port: number };
+    cache: { ttl: number; maxSize: number };
+}
+type PartialConfig = DeepPartial&lt;Config&gt;;
+// { db?: { host?: string; port?: number }; ... }</code></pre>
+                <pre><code class="language-typescript">// Merge——合并两个类型（后者覆盖前者）
+type Merge&lt;A, B&gt; = Omit&lt;A, keyof B&gt; &amp; B;
+
+// NonNullableKeys——提取非空属性名
+type NonNullableKeys&lt;T&gt; = {
+    [K in keyof T]: null extends T[K] ? never : K
+}[keyof T];
+
+interface User { name: string; nickname: string | null; age: number; }
+type RequiredKeys = NonNullableKeys&lt;User&gt;; // "name" | "age"</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：Partial 与 DeepPartial 的递归深度</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 左侧 Partial：第一层虚线(可选)，嵌套db:{host,port}保持实线(必填)
+                  - 右侧 DeepPartial：所有层级虚线(可选)，host? port? 也是可选
+                  - 底部："Partial只处理第一层→嵌套对象内部仍是必填！"
+                  - 配色：必填实线深蓝，可选虚线橙色，嵌套层级渐变背景，16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 组合模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组合模式</h3>
+                <h4>像搭积木一样构建复杂 DTO</h4>
+                <pre><code class="language-typescript">interface User {
+    id: string;
+    name: string;
+    email: string;
+    password: string;
+    role: "admin" | "editor" | "viewer";
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+// 组合1：创建 DTO——排除自动生成的字段
+type CreateUserDTO = Omit&lt;User, "id" | "createdAt" | "updatedAt"&gt;;
+
+// 组合2：更新 DTO——部分可选 + 排除不可变字段
+type UpdateUserDTO = Partial&lt;Omit&lt;User, "id" | "createdAt"&gt;&gt;;
+
+// 组合3：API 响应——公开信息 + 额外字段
+type UserResponse = Pick&lt;User, "id" | "name" | "email" | "role"&gt; &amp; {
+    postCount: number;
+};
+
+// 组合4：列表项——精简 + 关联计数
+type UserListItem = Pick&lt;User, "id" | "name" | "role"&gt; &amp; {
+    avatar: string;
+};</code></pre>
+                <div class="intro-block">
+                    <p>工具类型的真正威力在于组合。单个工具类型做一件事，组合起来就能覆盖 90% 的 DTO 场景——不用手写重复的接口。</p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：工具类型组合管线</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 左侧：User { id, name, email, password, role, createdAt } 完整卡片
+                  - 管线第一站：Omit<"password"> → 去掉password(删除线)
+                  - 管线分叉：Omit<"id"|"createdAt">→CreateUserDTO | Partial→UpdateUserDTO(虚线边框) | Pick<"id"|"name">→PublicUser
+                  - 配色：浅灰背景，原始深蓝边框，DTO暖色系，箭头橙色，16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 工具类型高级组合模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>高级组合模式</h3>
+                <h4>用工具类型构建完整的 CRUD DTO 管线</h4>
+                <pre><code class="language-typescript">// 定义基础实体
+interface BaseEntity {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+interface Article extends BaseEntity {
+    title: string;
+    content: string;
+    authorId: string;
+    tags: string[];
+}
+
+// 通用 DTO 工厂——任何实体都能复用
+type CreateDTO&lt;T extends BaseEntity&gt; = Omit&lt;T, "id" | "createdAt" | "updatedAt"&gt;;
+type UpdateDTO&lt;T extends BaseEntity&gt; = Partial&lt;CreateDTO&lt;T&gt;&gt;;
+type PublicDTO&lt;T, K extends keyof T = keyof T&gt; = Pick&lt;T, K&gt;;
+
+// 具体使用
+type CreateArticle = CreateDTO&lt;Article&gt;;
+// { title: string; content: string; authorId: string; tags: string[] }
+
+type UpdateArticle = UpdateDTO&lt;Article&gt;;
+// { title?: string; content?: string; authorId?: string; tags?: string[] }
+
+type ArticlePublic = PublicDTO&lt;Article, "id" | "title" | "tags"&gt;;
+// { id: string; title: string; tags: string[] }</code></pre>
+                <pre><code class="language-typescript">// 条件组合：根据字段类型做不同处理
+type TrimmedString&lt;T&gt; = T extends string ? string : T;
+
+type StrictUpdate&lt;T&gt; = {
+    [K in keyof T]?: T[K] extends string ? string : T[K];
+};
+
+// 组合验证：标记必填字段
+type WithValidation&lt;T, Required extends keyof T&gt; =
+    Required&lt;Pick&lt;T, Required&gt;&gt; &amp; Partial&lt;Omit&lt;T, Required&gt;&gt;;
+
+type ArticleSubmit = WithValidation&lt;CreateDTO&lt;Article&gt;, "title" | "content"&gt;;
+// title 和 content 必填，其余可选</code></pre>
+                <div class="warning">
+                    <p>组合嵌套不要太深。如果 <code>Partial&lt;Omit&lt;Pick&lt;T, ...&gt;, ...&gt;&gt;</code> 超过三层，考虑定义中间类型别名提高可读性。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 工具类型分类图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>分类总览</h3>
+                <h4>四大类工具类型，各司其职</h4>
+                <div class="ai-diagram">
+                    <h4>图：内置工具类型四大分类</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：树形分类图，顶部为"TypeScript 内置工具类型"
+                    - 四大分支，每分支用不同颜色：
+                      - 属性修饰类（蓝色）：Partial、Required、Readonly——修改属性的可选性和可写性
+                      - 属性筛选类（绿色）：Pick、Omit、Record——选取、排除或创建属性
+                      - 联合操作类（橙色）：Exclude、Extract、NonNullable——操作联合类型的成员
+                      - 函数操作类（紫色）：ReturnType、Parameters、Awaited、ConstructorParameters、InstanceType——提取函数的类型信息
+                    - 配色建议：浅灰背景，四大类用四种不同暖色，子项用浅色卡片
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>记住这四个分类，遇到类型变换需求时先想"该用哪一类"，再从中选具体的工具类型。</p>
+            </div>
+        </section>
+
+        <!-- NoInfer -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>NoInfer</h3>
+                <h4>TS 5.4+ 新增，阻止推断到不该推断的地方</h4>
+                <pre><code class="language-typescript">// 问题：createAPI 的 baseUrl 被推断为传入的字符串字面量
+function createAPI&lt;T extends string&gt;(baseUrl: T, routes: T[]): T {
+    return baseUrl;
+}
+// TS 推断 baseUrl 为 "/api/v1"（字面量类型）
+// 而我们希望 baseUrl 只是被约束，不被推断</code></pre>
+                <pre><code class="language-typescript">// 解决：用 NoInfer 包裹不想被推断的参数
+function createAPI&lt;T extends string&gt;(
+    baseUrl: NoInfer&lt;T&gt;,  // 不会从这里推断 T
+    routes: T[]            // 从这里推断 T
+): T { return baseUrl; }
+
+// 现在 T 只从 routes 推断
+createAPI("/api/v1", ["/users", "/posts"]); // OK</code></pre>
+                <div class="intro-block">
+                    <p>简单理解：<code>NoInfer&lt;T&gt;</code> 告诉 TS "这个位置不要参与推断"。适合 API 函数中有多个泛型参数、你想精确控制推断来源的场景。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习：博客系统 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>博客系统练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习</h3>
+                        <p><strong>任务</strong>：基于下面的 Post 接口，用工具类型组合出 5 个 DTO。</p>
+                        <pre><code class="language-typescript">interface Post {
+    id: string;
+    title: string;
+    content: string;
+    authorId: string;
+    tags: string[];
+    status: "draft" | "published" | "archived";
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+// 1. CreatePostDTO: 创建文章，不含自动生成的字段
+// 2. UpdatePostDTO: 更新文章，所有字段可选，不能改 id
+// 3. PublicPost: 公开文章，排除 authorId
+// 4. PostListItem: 列表项，只要 id、title、tags、status
+// 5. PostDetail: 详情页，PublicPost + authorName
+
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">type CreatePostDTO = Omit&lt;Post, "id" | "createdAt" | "updatedAt"&gt;;
+type UpdatePostDTO = Partial&lt;Omit&lt;Post, "id" | "createdAt" | "updatedAt"&gt;&gt;;
+type PublicPost = Omit&lt;Post, "authorId"&gt;;
+type PostListItem = Pick&lt;Post, "id" | "title" | "tags" | "status"&gt;;
+type PostDetail = PublicPost &amp; { authorName: string };</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 工具类型性能考量 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>性能考量</h3>
+                <h4>大型项目中的工具类型注意事项</h4>
+                <pre><code class="language-typescript">// 问题：深层递归类型会让编译器变慢
+type DeepPartial&lt;T&gt; = {
+    [K in keyof T]?: T[K] extends object
+        ? DeepPartial&lt;T[K]&gt;   // 每层递归都增加编译开销
+        : T[K];
+};
+// 如果 T 有 10+ 层嵌套，编译时间会明显增长</code></pre>
+                <pre><code class="language-typescript">// 排查慢类型：用 tsc --diagnostics
+// $ tsc --diagnostics
+// Files:          120
+// Types:         8500   &lt;-- 数值异常大？检查是否有过度复杂的类型
+// Instantiations: 50000  &lt;-- 超过 10 万就该优化了</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>优化策略</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>优先用内置工具类型</td><td>内置类型使用 <code>intrinsic</code> 编译器魔法，比手写实现快得多</td></tr>
+                        <tr><td>限制递归深度</td><td>给递归类型加上深度计数器，超过 5-7 层就停止</td></tr>
+                        <tr><td>用 interface 替代复杂别名</td><td><code>interface</code> 的缓存机制比 <code>type</code> 更好</td></tr>
+                        <tr><td>拆分大类型</td><td>把巨型交叉类型拆成多个中间别名</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>内置工具类型（如 <code>Partial</code>、<code>Readonly</code>）底层有些使用了 <code>intrinsic</code> 关键字——这是编译器内置实现，比我们手写的映射类型快得多。所以"能用内置就用内置"不只是风格问题，还有性能收益。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <h4>问题一：Partial 只做浅层可选</h4>
+                <pre><code class="language-typescript">interface Config {
+    db: { host: string; port: number };
+}
+type P = Partial&lt;Config&gt;;
+// { db?: { host: string; port: number } }
+// db 是可选的，但 db 里面的属性不是可选的！</code></pre>
+                <p><strong>解决</strong>：需要递归可选时，用 <code>DeepPartial</code>。</p>
+
+                <h4>问题二：ReturnType 对泛型函数效果有限</h4>
+                <pre><code class="language-typescript">function foo&lt;T&gt;(val: T): T { return val; }
+type R = ReturnType&lt;typeof foo&gt;; // unknown（泛型未实例化）</code></pre>
+                <p><strong>解决</strong>：在具体使用场景下获取返回类型，而非对泛型定义直接使用。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：给定 User 接口，用工具类型创建一个"注册 DTO"（不要 id 和 createdAt）和一个"公开信息"（只要 id、name、email）。</p>
+                        <pre><code class="language-typescript">interface User {
+    id: string; name: string; email: string;
+    password: string; createdAt: Date;
+}
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">type RegisterDTO = Omit&lt;User, "id" | "createdAt"&gt;;
+// { name: string; email: string; password: string }
+
+type PublicInfo = Pick&lt;User, "id" | "name" | "email"&gt;;
+// { id: string; name: string; email: string }</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：写一个 <code>Merge&lt;A, B&gt;</code> 工具类型，让 B 的属性覆盖 A 中同名的属性。</p>
+                        <pre><code class="language-typescript">type Result = Merge&lt;{ a: string; b: number }, { b: boolean }&gt;;
+// 期望：{ a: string; b: boolean }</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">type Merge&lt;A, B&gt; = Omit&lt;A, keyof B&gt; &amp; B;
+// 先排除 A 中与 B 同名的属性，再与 B 交叉</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>工具类型让你从已有类型变换出新类型。下一章我们学习 <strong>TypeScript 中的类</strong>——给 OOP 加上类型保护。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

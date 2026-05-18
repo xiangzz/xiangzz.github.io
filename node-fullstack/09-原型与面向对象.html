@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>原型与面向对象 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>原型与面向对象</h1>
+            <p>理解 JavaScript 继承机制的核心秘密</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>为什么两个对象能调用同一个方法，却不占用两份内存？为什么 <code>arr.push()</code> 能用，但你从来没给 <code>arr</code> 定义过 <code>push</code>？</h4>
+                <p>答案藏在 JavaScript 最独特的机制里：<strong>原型链</strong>。</p>
+                <p>JavaScript 没有传统面向对象语言中的"类继承"，而是通过原型链实现对象之间的委托。理解原型，就理解了 JS 中对象、继承和 <code>this</code> 的底层逻辑。</p>
+            </div>
+        </section>
+
+        <!-- 分部标题：构造函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 构造函数</h2>
+                <h4>批量生产对象的"工厂模板"</h4>
+                <p>你已经会写对象字面量 <code>{ name: "张三", age: 25 }</code>，但如果要创建 100 个结构相同的对象呢？总不能手写 100 遍。构造函数配合 <code>new</code> 关键字，就是用来批量"生产"对象的模板。搞懂 <code>new</code> 背后做了什么，才能理解后面的原型和继承。</p>
+            </div>
+        </section>
+
+        <!-- 构造函数与 new -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>构造函数与 new</h3>
+                <h4>用一个函数当模板，批量创建相似对象</h4>
+                <p><strong>构造函数</strong>就是普通函数，只是约定首字母大写。配合 <code>new</code> 关键字，它能批量生产结构一致的对象。</p>
+                <p>打个比方：构造函数是"饼干模具"，<code>new</code> 是"压一下"的动作。每压一次，就产出一块形状相同的饼干。</p>
+                <pre><code class="language-javascript">// 构造函数（首字母大写是约定）
+function Person(name, age) {
+    this.name = name;
+    this.age = age;
+    this.sayHi = function() {
+        console.log(`Hi, I'm ${this.name}`);
+    };
+}
+
+let person1 = new Person("张三", 25);
+let person2 = new Person("李四", 30);
+
+person1.sayHi(); // "Hi, I'm 张三"
+person2.sayHi(); // "Hi, I'm 李四"</code></pre>
+            </div>
+        </section>
+
+        <!-- new 做了什么 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>new 做了什么</h3>
+                <h4>四步走：创建、绑定、执行、返回</h4>
+                <p>当你写 <code>new Person("张三", 25)</code> 时，引擎背后执行了四个步骤：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>1. 创建空对象</h4>
+                        <p>在内存中开辟一个新对象 <code>{}</code></p>
+                    </div>
+                    <div class="card">
+                        <h4>2. 绑定 this</h4>
+                        <p>将构造函数的 <code>this</code> 指向新对象</p>
+                    </div>
+                    <div class="card">
+                        <h4>3. 执行代码</h4>
+                        <p>运行构造函数内部的赋值语句</p>
+                    </div>
+                    <div class="card">
+                        <h4>4. 返回对象</h4>
+                        <p>自动返回新对象（除非手动 return 了对象）</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 手动模拟 new 的过程
+function myNew(Constructor, ...args) {
+    const obj = {};                    // 步骤1
+    Constructor.apply(obj, args);      // 步骤2+3
+    return obj;                        // 步骤4
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 忘记 new 的后果 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>忘记 new 怎么办</h3>
+                <h4>漏掉 new，this 会"离家出走"</h4>
+                <div class="warning">
+                    <strong>忘记写 <code>new</code> 不会报错，但 this 会指向全局对象（非严格模式）或直接抛错（严格模式）。</strong>这是一个隐蔽的 bug 来源。
+                </div>
+                <pre><code class="language-javascript">// 忘记 new 的后果
+let person3 = Person("王五", 28);
+// 非严格模式：this 指向 window/global
+// 严格模式：TypeError: Cannot set property
+
+// 安全的构造函数：无论有没有 new 都能工作
+function SafePerson(name) {
+    if (!(this instanceof SafePerson)) {
+        return new SafePerson(name);
+    }
+    this.name = name;
+}
+let p1 = SafePerson("测试"); // 正常工作</code></pre>
+            </div>
+        </section>
+
+        <!-- 分部标题：原型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 原型机制</h2>
+                <h4>所有对象共享方法的秘密</h4>
+                <p>用构造函数创建对象有个问题：每个实例都会复制一份方法，100 个实例就有 100 份相同函数，浪费内存。怎么让所有实例共享一份方法？答案就是原型（prototype）。每个函数自带一个 <code>prototype</code> 属性，它就像一个公共公告栏——上面贴的东西，所有实例都能看到。</p>
+            </div>
+        </section>
+
+        <!-- prototype 与 __proto__ -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>prototype 是什么</h3>
+                <h4>每个函数自带一个"公共仓库"</h4>
+                <p><strong>prototype</strong> 是函数的一个属性，它是一个对象，用来存放所有实例共享的属性和方法。</p>
+                <p>打个比方：构造函数是"班级"，prototype 是"班级公告栏"。公告栏上的东西，所有同学（实例）都能看到和使用。</p>
+                <pre><code class="language-javascript">function Animal(name) {
+    this.name = name; // 每个实例独有
+}
+
+// 把方法放在 prototype 上——所有实例共用一份
+Animal.prototype.speak = function() {
+    console.log(`${this.name} makes a sound`);
+};
+
+let dog = new Animal("Dog");
+let cat = new Animal("Cat");
+
+dog.speak(); // "Dog makes a sound"
+cat.speak(); // "Cat makes a sound"
+
+// 关键：两个实例共享的是同一个方法
+console.log(dog.speak === cat.speak); // true</code></pre>
+            </div>
+        </section>
+
+        <!-- __proto__ -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>__proto__ 链接</h3>
+                <h4>每个对象都有一个"隐秘指针"指向原型</h4>
+                <p>每个 JS 对象都有一个内部属性 <code>__proto__</code>（也叫 <code>[[Prototype]]</code>），它指向构造函数的 <code>prototype</code>。</p>
+                <p>这是实例能访问原型方法的根本原因：实例通过 <code>__proto__</code> 找到了原型对象上的方法。</p>
+                <pre><code class="language-javascript">let dog = new Animal("Dog");
+
+// 实例的 __proto__ 指向构造函数的 prototype
+console.log(dog.__proto__ === Animal.prototype); // true
+
+// 原型对象的 constructor 指回构造函数
+console.log(Animal.prototype.constructor === Animal); // true
+
+// 三者关系：
+// dog ---> dog.__proto__ (Animal.prototype) ---> Animal
+// dog.constructor === Animal（通过原型链找到的）</code></pre>
+            </div>
+        </section>
+
+        <!-- Mermaid 图：构造函数-原型-实例关系 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>原型关系图</h3>
+                <h4>一张图看懂构造函数、原型、实例三角关系</h4>
+                <div class="ai-diagram">
+    <h4>图：构造函数、原型与实例的关系</h4>
+    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+    - 画面主体：展示构造函数 Animal、其 prototype 属性、以及实例 dog/cat 之间的关系
+    - 图示结构：
+      1. 左上角矩形"Animal 构造函数"
+      2. 右上角大矩形"Animal.prototype"，内部列出"{ speak, constructor }"
+      3. 两者之间双向箭头：构造函数 → .prototype → 原型，原型 → .constructor → 构造函数
+      4. 下方两个小矩形"dog 实例 { name: 'Dog' }"和"cat 实例 { name: 'Cat' }"
+      5. 两个实例都有向上的箭头标注"__proto__"指向 Animal.prototype
+    - 关键标注：用虚线圈出"原型对象"，用实线箭头表示引用关系
+    - 配色建议：浅灰背景，构造函数用浅蓝色，原型用浅绿色，实例用浅橙色
+    - 画面比例：16:9
+    - 避免：过度装饰、3D 效果
+    - 标注文字用中文，属性名用等宽字体
+    </p>
+</div>
+                <p>实例通过 <code>__proto__</code> 找到原型，原型通过 <code>constructor</code> 找回构造函数。这就是经典的"三角关系"。</p>
+            </div>
+        </section>
+
+        <!-- 属性放哪里 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>属性与方法分家</h3>
+                <h4>属性放构造函数，方法放原型</h4>
+                <table>
+                    <thead>
+                        <tr><th>放哪里</th><th>什么内容</th><th>为什么</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>构造函数里</td><td>属性（name、age）</td><td>每个实例的值不同，需要独立存储</td></tr>
+                        <tr><td>prototype 上</td><td>方法（sayHi、speak）</td><td>逻辑相同，共享一份节省内存</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-javascript">function User(name, email) {
+    this.name = name;       // 属性：每个实例独有
+    this.email = email;
+}
+User.prototype.getInfo = function() {
+    return `${this.name} (${this.email})`;
+};
+
+let u1 = new User("张三", "z@qq.com");
+let u2 = new User("李四", "l@qq.com");
+console.log(u1.getInfo()); // "张三 (z@qq.com)"</code></pre>
+            </div>
+        </section>
+
+        <!-- 分部标题：原型链 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 原型链</h2>
+                <h4>对象查找属性的"寻宝路线"</h4>
+                <p>知道原型是什么了，那当你访问 <code>obj.name</code> 时，引擎到底是怎么找的？先查自身，找不到就沿着 <code>__proto__</code> 往上找，一层一层，直到找到或者到达 <code>null</code> 为止。这条查找路径就是原型链。理解了它，你就明白为什么所有对象都能调用 <code>toString</code>、<code>hasOwnProperty</code> 这些方法。</p>
+            </div>
+        </section>
+
+        <!-- 原型链与属性查找 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>什么是原型链</h3>
+                <h4>对象找属性时，沿着 __proto__ 一层层往上找</h4>
+                <p>当你访问 <code>obj.name</code> 时，引擎先在 <code>obj</code> 自身上找。找不到？就沿着 <code>__proto__</code> 到原型上找。还找不到？继续往上……直到 <code>null</code> 为止。</p>
+                <p>这条查找路径就叫<strong>原型链</strong>。就像你找东西：先翻自己口袋，再翻书包，再翻抽屉，直到找到或找无可找。</p>
+                <pre><code class="language-javascript">function GrandParent() { this.family = "Smith"; }
+GrandParent.prototype.heritage = "old money";
+
+function Parent() { this.job = "engineer"; }
+Parent.prototype = Object.create(GrandParent.prototype);
+Parent.prototype.constructor = Parent;
+
+function Child() { this.school = "MIT"; }
+Child.prototype = Object.create(Parent.prototype);
+Child.prototype.constructor = Child;
+
+let child = new Child();
+console.log(child.school);    // "MIT"   ← 自身属性
+console.log(child.job);       // "engineer" ← Parent.prototype
+console.log(child.heritage);  // "old money" ← GrandParent.prototype</code></pre>
+            </div>
+        </section>
+
+        <!-- Mermaid 图：原型链查找过程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>原型链查找图</h3>
+                <h4>从 child 出发，一路向上直到 null</h4>
+                <div class="ai-diagram">
+    <h4>图：原型链的查找路径</h4>
+    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+    - 画面主体：展示 JavaScript 中属性查找沿着原型链向上追溯的完整路径
+    - 图示结构（从上到下的链式结构）：
+      1. 顶部矩形"child 实例 { school: 'MIT' }"，浅蓝色
+      2. 向下箭头标注"__proto__" → "Child.prototype { constructor: Child }"
+      3. 继续向下箭头 → "Parent.prototype { constructor }"，包含 job 属性
+      4. 继续向下箭头 → "GrandParent.prototype { heritage: 'old money' }"
+      5. 继续向下箭头 → "Object.prototype { toString, hasOwnProperty... }"
+      6. 继续向下箭头 → 红色矩形"null"，标注"链的终点"
+    - 每一层用不同深浅的颜色表示层级深度
+    - 配色建议：浅灰背景，从上到下颜色渐深：浅蓝→蓝→蓝紫→紫→深紫→红色(null)
+    - 画面比例：9:16（纵向链式结构）
+    - 避免：过度装饰、3D 效果
+    - 标注文字用中文，属性名用等宽字体
+    </p>
+</div>
+                <p>查找顺序：child → Child.prototype → Parent.prototype → GrandParent.prototype → Object.prototype → <code>null</code>（终点）</p>
+            </div>
+        </section>
+
+        <!-- hasOwnProperty -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自身还是继承</h3>
+                <h4>用 hasOwnProperty 区分属性来源</h4>
+                <pre><code class="language-javascript">console.log(child.hasOwnProperty("school"));   // true  ← 自身
+console.log(child.hasOwnProperty("job"));       // false ← 继承的
+console.log(child.hasOwnProperty("heritage"));  // false ← 继承的
+
+// Object.getPrototypeOf：获取原型
+console.log(Object.getPrototypeOf(child) === Child.prototype); // true
+
+// 原型链终点
+console.log(Object.prototype.__proto__); // null</code></pre>
+                <div class="warning">
+                    <strong>安全写法：</strong>如果对象自身有一个叫 <code>hasOwnProperty</code> 的属性，<code>obj.hasOwnProperty()</code> 会失效。安全做法：<code>Object.prototype.hasOwnProperty.call(obj, "name")</code>
+                </div>
+            </div>
+        </section>
+
+        <!-- 分部标题：原型风险 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 原型风险</h2>
+                <h4>动原型链就像改地基，一改全楼晃</h4>
+                <p>原型链很强大，但也意味着修改它会影响到所有实例。往 <code>Array.prototype</code> 上加一个方法，所有数组立刻都能用——听着很方便，但隐患也很大。这一部分讲清楚哪些操作安全、哪些操作危险，以及遇到原型相关 bug 时该怎么排查。</p>
+            </div>
+        </section>
+
+        <!-- 原型扩展风险 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>扩展原生原型</h3>
+                <h4>能做不代表应该做</h4>
+                <div class="warning">
+                    <strong>不要随意扩展原生对象的原型！</strong>这可能导致与其他库冲突、与未来 ES 标准冲突、<code>for...in</code> 遍历到额外属性。
+                </div>
+                <pre><code class="language-javascript">// 危险操作！不要这样做
+Array.prototype.first = function() {
+    return this[0];
+};
+[1, 2, 3].first(); // 1 ——能用，但别这样
+
+// 如果必须扩展，至少让它不可枚举
+Object.defineProperty(Array.prototype, 'last', {
+    value: function() { return this[this.length - 1]; },
+    enumerable: false,
+    writable: true,
+    configurable: true
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 分部标题：instanceof -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: instanceof</h2>
+                <h4>判断"你是不是某类的实例"</h4>
+                <p>有了原型链的基础，<code>instanceof</code> 的原理就很好理解了：它沿着对象的原型链逐级检查，看构造函数的 <code>prototype</code> 是否在链上。最后还会对比几种创建对象的模式，帮你决定在什么场景下该用哪种。</p>
+            </div>
+        </section>
+
+        <!-- instanceof 原理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>instanceof 原理</h3>
+                <h4>检查构造函数的 prototype 在不在原型链上</h4>
+                <p><code>instanceof</code> 的判断逻辑：沿着对象的原型链，逐级检查是否存在构造函数的 <code>prototype</code>。</p>
+                <pre><code class="language-javascript">function Dog(name) { this.name = name; }
+let d = new Dog("Buddy");
+
+console.log(d instanceof Dog);    // true
+console.log(d instanceof Object); // true（所有对象都继承自 Object）
+
+// 手动实现 instanceof
+function myInstanceof(obj, Constructor) {
+    let proto = Object.getPrototypeOf(obj);
+    while (proto !== null) {
+        if (proto === Constructor.prototype) return true;
+        proto = Object.getPrototypeOf(proto);
+    }
+    return false;
+}
+
+// 原始类型不适用 instanceof
+console.log(42 instanceof Number);   // false
+console.log("hi" instanceof String); // false</code></pre>
+            </div>
+        </section>
+
+        <!-- Mermaid 图：instanceof 检查过程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>instanceof 流程</h3>
+                <h4>沿着原型链逐级比对 prototype</h4>
+                <div class="ai-diagram">
+    <h4>图：instanceof 运算符的判断流程</h4>
+    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+    - 画面主体：左侧展示原型链结构，右侧展示 instanceof 的判断逻辑
+    - 图示结构：
+      左侧（原型链）：
+      1. 矩形"d 实例" → 箭头 __proto__ → "Dog.prototype"
+      2. → 箭头 __proto__ → "Object.prototype"
+      3. → 箭头 __proto__ → "null"
+
+      右侧（判断逻辑）：
+      1. 菱形判断框"d instanceof Dog?"
+      2. 箭头"检查 Dog.prototype" → 菱形"=== d.__proto__?"
+      3. 是 → 绿色矩形"返回 true"（用勾号标注）
+      4. 否 → "继续往上找"（指向 Object.prototype 的检查）
+    - 配色建议：浅灰背景，左侧链用蓝色系，右侧判断用黄色系，成功用绿色
+    - 画面比例：16:9
+    - 避免：过度装饰、3D 效果
+    - 标注文字用中文，技术术语用等宽字体
+    </p>
+</div>
+            </div>
+        </section>
+
+        <!-- 对象创建模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>创建模式对比</h3>
+                <h4>工厂 vs 构造函数 vs Object.create</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>工厂函数</h4>
+                        <pre><code class="language-javascript">function createUser(name) {
+    return {
+        name,
+        greet() {
+            return `Hi, ${this.name}`;
+        }
+    };
+}
+// 简单、灵活
+// 没有 prototype 开销
+// 不能用 instanceof</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>构造函数 + 原型</h4>
+                        <pre><code class="language-javascript">function User(name) {
+    this.name = name;
+}
+User.prototype.greet = function() {
+    return `Hi, ${this.name}`;
+};
+// 方法共享（省内存）
+// 可以用 instanceof
+// 写法较繁琐</code></pre>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>现代开发中工厂函数越来越流行——简单直观、没有 <code>this</code> 绑定问题。构造函数+原型是 JS 继承的底层机制，<code>class</code> 语法糖就是基于它。下一章会看到 ES6 的 <code>class</code> 如何简化写法。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见坑与排错</h3>
+
+                <div class="warning">
+                    <strong>原型链上的 bug 通常很隐蔽。</strong>以下是最常踩的坑，遇到时先对照排查。
+                </div>
+
+                <h4>问题一：修改原型后，已有实例不更新</h4>
+                <p><strong>原因</strong>：用 <code>Animal.prototype = { ... }</code> 整体替换了原型，但已有实例的 <code>__proto__</code> 还指向旧原型。</p>
+                <p><strong>修复</strong>：使用 <code>Animal.prototype.newMethod = ...</code> 逐个添加，而不是整体替换。</p>
+
+                <h4>问题二：<code>constructor</code> 丢失</h4>
+                <p><strong>原因</strong>：用 <code>Child.prototype = Object.create(Parent.prototype)</code> 后，<code>constructor</code> 指向了 Parent。</p>
+                <p><strong>修复</strong>：替换后手动修正 <code>Child.prototype.constructor = Child;</code></p>
+
+                <h4>问题三：方法放在构造函数里导致内存浪费</h4>
+                <p><strong>原因</strong>：每次 <code>new</code> 都会创建一个新的函数实例。</p>
+                <p><strong>修复</strong>：把方法移到 <code>prototype</code> 上，所有实例共享一份。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>动手练一练</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：创建一个 <code>Car</code> 构造函数，包含品牌和价格属性，并在 prototype 上添加一个 <code>getInfo</code> 方法。</p>
+                        <pre><code class="language-javascript">// 要求：
+// 1. new Car("Toyota", 200000) 创建实例
+// 2. 实例.getInfo() 返回 "Toyota - ¥200000"
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function Car(brand, price) {
+    this.brand = brand;
+    this.price = price;
+}
+Car.prototype.getInfo = function() {
+    return `${this.brand} - ¥${this.price}`;
+};
+
+let myCar = new Car("Toyota", 200000);
+console.log(myCar.getInfo()); // "Toyota - ¥200000"</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：实现 <code>ElectricCar</code> 继承 <code>Car</code>，增加 <code>battery</code> 属性和 <code>charge()</code> 方法。</p>
+                        <pre><code class="language-javascript">// 要求：
+// 1. ElectricCar 继承 Car 的所有属性和方法
+// 2. new ElectricCar("Tesla", 350000, 100)
+// 3. 实例.charge() 返回 "Tesla 正在充电...75kWh"
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function ElectricCar(brand, price, battery) {
+    Car.call(this, brand, price);
+    this.battery = battery;
+}
+ElectricCar.prototype = Object.create(Car.prototype);
+ElectricCar.prototype.constructor = ElectricCar;
+
+ElectricCar.prototype.charge = function() {
+    return `${this.brand} 正在充电...${this.battery}kWh`;
+};
+
+let tesla = new ElectricCar("Tesla", 350000, 100);
+console.log(tesla.charge());   // "Tesla 正在充电...100kWh"
+console.log(tesla.getInfo());  // "Tesla - ¥350000"</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 综合练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>综合练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习三：类型检查器</h3>
+                        <p><strong>任务</strong>：实现一个 <code>typeCheck</code> 函数，利用原型链判断值的真实类型。要能区分数组、null、普通对象。</p>
+                        <pre><code class="language-javascript">console.log(typeCheck([]));        // "array"
+console.log(typeCheck(null));      // "null"
+console.log(typeCheck({}));        // "object"
+console.log(typeCheck(42));        // "number"
+console.log(typeCheck("hello"));   // "string"</code></pre>
+                        <p><strong>提示</strong>：用 <code>Object.prototype.toString.call(value)</code>，它返回 <code>"[object Type]"</code> 格式。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function typeCheck(value) {
+    if (value === null) return "null";
+    if (Array.isArray(value)) return "array";
+    return typeof value === "object"
+        ? Object.prototype.toString.call(value)
+              .slice(8, -1).toLowerCase()
+        : typeof value;
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>你已经掌握了原型链——JavaScript 继承的根基。下一章我们学习 <strong>ES6+ 核心特性</strong>，看看现代 JS 是如何让代码更简洁、更强大的。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

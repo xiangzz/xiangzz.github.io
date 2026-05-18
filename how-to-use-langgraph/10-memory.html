@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>10 记忆管理</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 10 章</div>
+            <h1>记忆管理</h1>
+            <p>短期记忆 + 长期记忆——让智能体真正"记住"用户</p>
+            <strong>线程内对话不丢失，跨会话偏好永久保存</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>每次都陌生</h2>
+                <h4>智能体和用户聊了 20 分钟，关掉重开就全忘了——每次都像第一次见面。</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>对话断了</h4>
+                        <p>用户说"我喜欢深色模式"。下一轮对话时，智能体推荐了亮色主题。<strong>短期记忆丢失</strong>——同一线程内的上下文没能保留。</p>
+                    </div>
+                    <div class="card">
+                        <h4>换线程就忘</h4>
+                        <p>用户在对话 A 中说了"我对花生过敏"。开了新对话 B，智能体推荐了花生酱。<strong>长期记忆缺失</strong>——跨线程的信息没有保存。</p>
+                    </div>
+                    <div class="card">
+                        <h4>上下文爆炸</h4>
+                        <p>聊了 100 轮后，把全部消息历史丢给模型——超出 token 限制。<strong>记忆需要管理</strong>——不是越多越好。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>LangGraph 的记忆方案：</strong>短期记忆（MemorySaver + thread_id）解决对话内记忆，长期记忆（InMemoryStore + 语义搜索）解决跨会话记忆。两者组合，智能体才能真正"认识"用户。
+                </div>
+            </div>
+        </section>
+
+        <!-- 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>前置知识</h4>
+                        <ul>
+                            <li><a href="./05-persistence.html">持久化</a> — checkpointer 和线程</li>
+                            <li><a href="./04-quickstart.html">快速上手</a> — 完整的智能体代码</li>
+                            <li>了解 MessagesValue 的消息追加机制</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>学完后你应该能</h4>
+                        <ul>
+                            <li>区分短期记忆和长期记忆</li>
+                            <li>用 MemorySaver 实现多轮对话</li>
+                            <li>用 InMemoryStore 实现跨线程记忆</li>
+                            <li>管理消息历史（裁剪、删除、总结）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 两种记忆 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>两种记忆</h2>
+                <h4>短期记忆管对话，长期记忆管用户</h4>
+                <div class="ai-diagram">
+                    <h4>图：短期记忆 vs 长期记忆</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：左右两部分，用虚线分隔
+                    - 左侧标题"短期记忆"（蓝色），包含：
+                      - 一个"Thread 线程"方框，内部有多个消息气泡（用户→AI→用户→AI）
+                      - 标注："MemorySaver + thread_id"
+                      - 底部标注："对话结束 → 记忆保留在线程内"
+                    - 右侧标题"长期记忆"（绿色），包含：
+                      - 一个"Store 存储"圆柱体，内部有多条记忆条目
+                      - 标注："InMemoryStore + namespace"
+                      - 三个线程（Thread A/B/C）都有箭头指向 Store
+                      - 底部标注："任何线程都能访问"
+                    - 中间虚线标注："线程内 vs 跨线程"
+                    - 各元素关系：短期记忆绑定到单个线程（一对一），线程内消息按时间顺序排列；长期记忆是独立存储，多个线程共享访问（多对一）
+                    - 关键标注：左侧标注"MemorySaver + thread_id"，右侧标注"InMemoryStore + namespace"，中间虚线标注"线程内 vs 跨线程"，三个线程箭头标注"均可读写"
+                    - 配色建议：浅灰背景，短期蓝色，长期绿色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <table>
+                    <thead><tr><th></th><th>短期记忆</th><th>长期记忆</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>范围</strong></td><td>线程内（单次对话）</td><td>跨线程（跨所有对话）</td></tr>
+                        <tr><td><strong>实现</strong></td><td>Checkpointer（MemorySaver）</td><td>Store（InMemoryStore）</td></tr>
+                        <tr><td><strong>访问方式</strong></td><td>自动（通过 state.messages）</td><td>手动（通过 runtime.store）</td></tr>
+                        <tr><td><strong>典型数据</strong></td><td>对话历史</td><td>用户偏好、知识、摘要</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 短期记忆 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>短期记忆</h2>
+                <h4>MemorySaver + thread_id = 多轮对话</h4>
+                <pre><code><span style="color: var(--primary-color);">import</span> { MemorySaver, StateGraph } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+
+<span style="color: var(--primary-color);">const</span> checkpointer = <span style="color: var(--primary-color);">new</span> MemorySaver();
+<span style="color: var(--primary-color);">const</span> graph = builder.compile({ checkpointer });
+
+<span style="color: var(--text-muted);">// 第一轮</span>
+<span style="color: var(--primary-color);">await</span> graph.invoke(
+  { messages: [{ role: <span style="color: var(--success-color);">"user"</span>, content: <span style="color: var(--success-color);">"hi! i am Bob"</span> }] },
+  { configurable: { thread_id: <span style="color: var(--success-color);">"1"</span> } }
+);
+
+<span style="color: var(--text-muted);">// 第二轮 — 同一个 thread_id，保留上一轮的上下文</span>
+<span style="color: var(--primary-color);">await</span> graph.invoke(
+  { messages: [{ role: <span style="color: var(--success-color);">"user"</span>, content: <span style="color: var(--success-color);">"what is my name?"</span> }] },
+  { configurable: { thread_id: <span style="color: var(--success-color);">"1"</span> } }
+);
+<span style="color: var(--text-muted);">// 模型知道你是 Bob！</span></code></pre>
+                <div class="key-point">
+                    <strong>关键：</strong>同一个 <code>thread_id</code> 下，每轮对话都会保留之前的消息历史。MessagesValue 的 reducer 自动把新消息拼到已有消息后面。
+                </div>
+            </div>
+        </section>
+
+        <!-- 生产环境 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>生产环境</h2>
+                <h4>MemorySaver 是内存存储，重启就丢。生产用 PostgresSaver。</h4>
+                <pre><code><span style="color: var(--primary-color);">import</span> { PostgresSaver } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph-checkpoint-postgres"</span>;
+
+<span style="color: var(--primary-color);">const</span> DB_URI = <span style="color: var(--success-color);">"postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"</span>;
+<span style="color: var(--primary-color);">const</span> checkpointer = PostgresSaver.fromConnString(DB_URI);
+<span style="color: var(--primary-color);">const</span> graph = builder.compile({ checkpointer });</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>子图中使用</h4>
+                        <p>只需在编译父图时提供 checkpointer，LangGraph 会自动传播给子图：</p>
+                        <pre><code><span style="color: var(--primary-color);">const</span> subgraph = subgraphBuilder.compile(); <span style="color: var(--text-muted);">// 不需要单独指定</span>
+<span style="color: var(--primary-color);">const</span> graph = builder.compile({ checkpointer }); <span style="color: var(--text-muted);">// 父图指定即可</span></code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 长期记忆 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>长期记忆</h2>
+                <h4>InMemoryStore + namespace = 跨线程的用户数据</h4>
+                <pre><code><span style="color: var(--primary-color);">import</span> { InMemoryStore, StateGraph } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+
+<span style="color: var(--primary-color);">const</span> store = <span style="color: var(--primary-color);">new</span> InMemoryStore();
+<span style="color: var(--primary-color);">const</span> graph = builder.compile({ store });</code></pre>
+                <pre><code><span style="color: var(--primary-color);">import</span> { v4 <span style="color: var(--primary-color);">as</span> uuidv4 } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"uuid"</span>;
+
+<span style="color: var(--text-muted);">// 在节点中访问 store</span>
+<span style="color: var(--primary-color);">const</span> callModel: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> State&gt; = <span style="color: var(--primary-color);">async</span> (state, runtime) => {
+  <span style="color: var(--primary-color);">const</span> userId = runtime.context?.userId;
+  <span style="color: var(--primary-color);">const</span> namespace = [userId, <span style="color: var(--success-color);">"memories"</span>];
+
+  <span style="color: var(--text-muted);">// 搜索相关记忆</span>
+  <span style="color: var(--primary-color);">const</span> memories = <span style="color: var(--primary-color);">await</span> runtime.store?.search(namespace, {
+    query: state.messages.at(-<span style="color: var(--primary-color);">1</span>)?.content,
+    limit: <span style="color: var(--primary-color);">3</span>,
+  });
+  <span style="color: var(--primary-color);">const</span> info = memories?.map((d) => d.value.data).join(<span style="color: var(--success-color);">"\n"</span>) || <span style="color: var(--success-color);">""</span>;
+
+  <span style="color: var(--text-muted);">// 存储新记忆</span>
+  <span style="color: var(--primary-color);">await</span> runtime.store?.put(namespace, uuidv4(), { data: <span style="color: var(--success-color);">"User prefers dark mode"</span> });
+
+  <span style="color: var(--text-muted);">// 使用记忆增强模型调用...</span>
+};</code></pre>
+                <div class="info-block">
+                    <strong>调用时传入 context：</strong><code>await graph.invoke({ messages: [...] }, { configurable: { thread_id: "1" }, context: { userId: "1" } })</code>。节点通过 <code>runtime.context</code> 获取。
+                </div>
+            </div>
+        </section>
+
+        <!-- 语义搜索 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>语义搜索</h2>
+                <h4>用嵌入模型实现"模糊匹配"记忆</h4>
+                <pre><code><span style="color: var(--primary-color);">import</span> { OpenAIEmbeddings } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/openai"</span>;
+
+<span style="color: var(--primary-color);">const</span> store = <span style="color: var(--primary-color);">new</span> InMemoryStore({
+  index: {
+    embeddings: <span style="color: var(--primary-color);">new</span> OpenAIEmbeddings({ model: <span style="color: var(--success-color);">"text-embedding-3-small"</span> }),
+    dims: <span style="color: var(--primary-color);">1536</span>,
+  },
+});
+
+<span style="color: var(--text-muted);">// 存入记忆</span>
+<span style="color: var(--primary-color);">await</span> store.put([<span style="color: var(--success-color);">"user_123"</span>, <span style="color: var(--success-color);">"memories"</span>], <span style="color: var(--success-color);">"1"</span>, { text: <span style="color: var(--success-color);">"I love pizza"</span> });
+<span style="color: var(--primary-color);">await</span> store.put([<span style="color: var(--success-color);">"user_123"</span>, <span style="color: var(--success-color);">"memories"</span>], <span style="color: var(--success-color);">"2"</span>, { text: <span style="color: var(--success-color);">"I am a plumber"</span> });
+
+<span style="color: var(--text-muted);">// 语义搜索——"我饿了" 匹配到 "I love pizza"</span>
+<span style="color: var(--primary-color);">const</span> items = <span style="color: var(--primary-color);">await</span> store.search([<span style="color: var(--success-color);">"user_123"</span>, <span style="color: var(--success-color);">"memories"</span>], {
+  query: <span style="color: var(--success-color);">"I'm hungry"</span>,
+  limit: <span style="color: var(--primary-color);">1</span>,
+});</code></pre>
+                <div class="key-point">
+                    <strong>语义搜索 vs 精确匹配：</strong>没有嵌入模型时，search 只能精确匹配。加上嵌入模型后，"我饿了"也能找到"我爱吃披萨"——因为它们的语义相近。
+                </div>
+            </div>
+        </section>
+
+        <!-- 管理短期记忆 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>管理短期记忆</h2>
+                <h4>消息越来越多时要控制——裁剪、删除、总结</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>裁剪消息</h4>
+                        <pre><code><span style="color: var(--primary-color);">import</span> { trimMessages } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/messages"</span>;
+
+<span style="color: var(--primary-color);">const</span> messages = trimMessages(state.messages, {
+  strategy: <span style="color: var(--success-color);">"last"</span>,
+  maxTokens: <span style="color: var(--primary-color);">128</span>,
+  startOn: <span style="color: var(--success-color);">"human"</span>,
+  endOn: [<span style="color: var(--success-color);">"human"</span>, <span style="color: var(--success-color);">"tool"</span>],
+});</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>删除消息</h4>
+                        <pre><code><span style="color: var(--primary-color);">import</span> { RemoveMessage } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/messages"</span>;
+
+<span style="color: var(--primary-color);">if</span> (messages.length > <span style="color: var(--primary-color);">2</span>) {
+  <span style="color: var(--primary-color);">return</span> {
+    messages: messages
+      .slice(<span style="color: var(--primary-color);">0</span>, <span style="color: var(--primary-color);">2</span>)
+      .map((m) => <span style="color: var(--primary-color);">new</span> RemoveMessage({ id: m.id })),
+  };
+}</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>总结消息</h4>
+                        <p>把旧消息压缩成摘要，删除原始消息。保留最近几条 + 摘要作为上下文。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 管理检查点 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>管理检查点</h2>
+                <h4>查看、遍历、清理线程数据</h4>
+                <pre><code><span style="color: var(--text-muted);">// 查看线程当前状态</span>
+<span style="color: var(--primary-color);">await</span> graph.getState({ configurable: { thread_id: <span style="color: var(--success-color);">"1"</span> } });
+
+<span style="color: var(--text-muted);">// 遍历线程历史</span>
+<span style="color: var(--primary-color);">for await</span> (<span style="color: var(--primary-color);">const</span> state <span style="color: var(--primary-color);">of</span> graph.getStateHistory({ configurable: { thread_id: <span style="color: var(--success-color);">"1"</span> } })) {
+  console.log(state);
+}
+
+<span style="color: var(--text-muted);">// 删除线程的所有检查点</span>
+<span style="color: var(--primary-color);">await</span> checkpointer.deleteThread(<span style="color: var(--success-color);">"1"</span>);</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>MemorySaver 的数据存在内存中。进程重启后所有检查点都会丢失。生产环境务必使用 PostgresSaver 等持久化后端。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>第二轮对话忘了上一轮</h4>
+                        <p><strong>症状：</strong>换了 thread_id，之前的对话内容全没了。</p>
+                        <p><strong>修复：</strong>确保多轮对话使用同一个 <code>thread_id</code>。thread_id 不同 = 不同对话。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>Store 搜索没有结果</h4>
+                        <p><strong>症状：</strong><code>store.search()</code> 返回空数组。</p>
+                        <p><strong>修复：</strong>检查 namespace 是否一致。put 和 search 必须用相同的 namespace 路径。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>token 超限</h4>
+                        <p><strong>症状：</strong>对话很长后报 <code>context_length_exceeded</code>。</p>
+                        <p><strong>修复：</strong>用 trimMessages 或 RemoveMessage 裁剪历史消息。别把所有消息都丢给模型。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 动手练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>构建一个有记忆的聊天机器人</h4>
+                <div class="key-point">
+                    <strong>任务：</strong>基于 Ch04 的计算器智能体，添加记忆功能。
+                </div>
+                <ul>
+                    <li>加上 MemorySaver，让多轮计算能保持上下文</li>
+                    <li>加上 InMemoryStore，在节点中存储用户的计算偏好（比如"总是返回整数"）</li>
+                    <li>用 trimMessages 限制最多保留最近 10 条消息</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <pre><code><span style="color: var(--text-muted);">// 1. 添加 MemorySaver</span>
+<span style="color: var(--primary-color);">const</span> checkpointer = <span style="color: var(--primary-color);">new</span> MemorySaver();
+
+<span style="color: var(--text-muted);">// 2. 添加 InMemoryStore</span>
+<span style="color: var(--primary-color);">const</span> store = <span style="color: var(--primary-color);">new</span> InMemoryStore();
+
+<span style="color: var-text-muted);">// 3. 编译时同时传入</span>
+<span style="color: var(--primary-color);">const</span> graph = builder.compile({ checkpointer, store });
+
+<span style="color: var(--text-muted);">// 4. 在 llmCall 节点中管理记忆</span>
+<span style="color: var(--primary-color);">const</span> llmCall: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> State&gt; = <span style="color: var(--primary-color);">async</span> (state, runtime) => {
+  <span style="color: var(--text-muted);">// 裁剪消息</span>
+  <span style="color: var(--primary-color);">const</span> messages = trimMessages(state.messages, {
+    strategy: <span style="color: var(--success-color);">"last"</span>,
+    maxTokens: <span style="color: var(--primary-color);">2000</span>,
+    startOn: <span style="color: var(--success-color);">"human"</span>,
+  });
+
+  <span style="color: var(--text-muted);">// 读取用户偏好</span>
+  <span style="color: var(--primary-color);">const</span> userId = runtime.context?.userId;
+  <span style="color: var(--primary-color);">const</span> prefs = <span style="color: var(--primary-color);">await</span> runtime.store?.search([userId, <span style="color: var(--success-color);">"prefs"</span>], { limit: <span style="color: var(--primary-color);">3</span> });
+
+  <span style="color: var(--text-muted);">// ... 使用偏好增强模型调用</span>
+};</code></pre>
+                <div class="key-point">
+                    <strong>模式：</strong>checkpointer 管线程内记忆（对话历史），store 管跨线程记忆（用户偏好）。两者互不干扰，组合使用。
+                </div>
+            </div>
+        </section>
+
+        <!-- 本章回顾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>区分短期记忆和长期记忆</li>
+                            <li>用 MemorySaver 实现多轮对话</li>
+                            <li>用 InMemoryStore 存储跨线程数据</li>
+                            <li>用嵌入模型实现语义搜索</li>
+                            <li>管理消息历史（裁剪/删除/总结）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>它和前后章节的关系</h4>
+                        <ul>
+                            <li><a href="./05-persistence.html">持久化</a> — 短期记忆的底层机制</li>
+                            <li><a href="./06-durable-execution.html">持久化执行</a> — 长时间运行的记忆保持</li>
+                            <li><strong>记忆管理</strong> — 短期 + 长期记忆</li>
+                            <li><a href="./11-subgraphs.html">下一章：子图</a> — 子图中的记忆共享</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>短期记忆让智能体记住当前对话，长期记忆让智能体认识用户。两者配合，才能构建真正有用的 AI 助手。别忘了管理记忆大小——不是越多越好。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./11-subgraphs.html">下一章：子图</a> — 图中图的组合</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关章节</h4>
+                        <ul>
+                            <li><a href="./05-persistence.html">持久化</a> — Checkpointer 详解</li>
+                            <li><a href="./09-time-travel.html">时间旅行</a> — 检查点的回溯</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

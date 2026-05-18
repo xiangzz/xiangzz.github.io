@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第20章 设计模式初探 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>设计模式初探</h1>
+            <p>前人踩过的坑，总结成的"套路"</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>为什么项目越写越乱？为什么改一个功能牵连十个文件？为什么同样的逻辑到处复制粘贴？</h4>
+                <p>这些问题不是你代码写得少，而是缺少<strong>设计模式</strong>的指导。设计模式是前人在大量实践中总结出来的、解决特定问题的通用方案。</p>
+                <p>用人话说：<strong>设计模式就是编程界的"菜谱"——遇到什么问题，翻开对应的那一页，照着做</strong>。</p>
+                <p>这一章介绍最实用的几种模式：单例、工厂、观察者、发布/订阅、策略、代理、装饰器。</p>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 创建型模式</h2>
+                <h4>关注"怎么创建对象"。单例保证唯一，工厂隐藏创建细节</h4>
+                <p>数据库连接在整个应用中只需要一个，new 多了反而出问题——怎么保证？创建对象时要写一堆 if/else 判断类型——能不能让调用方不关心这些细节？创建型模式就是解决"怎么创建对象"的。这一节学两个最常用的：单例模式保证全局唯一，工厂模式把创建逻辑藏起来。</p>
+            </div>
+        </section>
+
+        <!-- 单例模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>单例模式</h3>
+                <h4>一个类只允许创建一个实例</h4>
+                <p>数据库连接、全局配置、日志管理器——这些东西在整个应用中只需要一个。单例模式确保不管 new 多少次，拿到的都是同一个对象。</p>
+                <pre><code class="language-javascript">class Database {
+    static #instance = null;
+    constructor() {
+        if (Database.#instance) return Database.#instance;
+        this.connected = true;
+        Database.#instance = this;
+    }
+}
+const db1 = new Database();
+const db2 = new Database();
+console.log(db1 === db2); // true</code></pre>
+                <div class="intro-block">
+                    <p>实现原理：用一个静态私有变量保存实例。第二次 new 时发现已经有实例了，直接返回它。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 工厂模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>工厂模式</h3>
+                <h4>不直接 new，通过工厂函数创建对象</h4>
+                <p>当你需要根据不同条件创建不同对象时，工厂模式让创建逻辑集中在一处，调用方不用关心具体实现。</p>
+                <pre><code class="language-javascript">class Animal {
+    constructor(name, sound) {
+        this.name = name;
+        this.sound = sound;
+    }
+    speak() { return `${this.name}: ${this.sound}`; }
+}
+
+function createAnimal(type) {
+    const map = {
+        dog: () => new Animal("Dog", "Woof"),
+        cat: () => new Animal("Cat", "Meow"),
+        duck: () => new Animal("Duck", "Quack"),
+    };
+    return (map[type] || map.dog)();
+}
+
+console.log(createAnimal("cat").speak()); // "Cat: Meow"</code></pre>
+                <p>好处：如果新增一种动物，只需要在 map 里加一行，调用方代码完全不用改。</p>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 行为型模式</h2>
+                <h4>关注"对象之间怎么通信"</h4>
+                <p>对象创建好了，但它们之间怎么"说话"？模块 A 直接调用模块 B，改 B 的时候 A 也得改——代码耦合得像一团乱麻。行为型模式解决的就是"对象之间怎么通信"。观察者模式让一个变化通知所有人，策略模式把一堆 if/else 变成可插拔的方案。学完你会发现，日常开发中的很多痛点其实都有现成解法。</p>
+            </div>
+        </section>
+
+        <!-- 观察者模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>观察者模式</h3>
+                <h4>一个对象变化，所有订阅者自动收到通知</h4>
+                <p>观察者模式就像<strong>微信群</strong>：群主发一条消息，所有群成员都能收到。成员可以随时加入或退出。</p>
+                <pre><code class="language-javascript">class EventEmitter {
+    #listeners = {};
+    on(event, fn) {
+        (this.#listeners[event] ??= []).push(fn);
+        return () => this.off(event, fn); // 返回取消订阅函数
+    }
+    off(event, fn) {
+        this.#listeners[event] =
+            this.#listeners[event]?.filter(f => f !== fn) ?? [];
+    }
+    emit(event, ...args) {
+        this.#listeners[event]?.forEach(fn => fn(...args));
+    }
+}
+
+const emitter = new EventEmitter();
+const unsub = emitter.on("data", data => console.log("收到:", data));
+emitter.emit("data", { id: 1 }); // "收到: {id: 1}"
+unsub(); // 取消订阅</code></pre>
+            </div>
+        </section>
+
+        <!-- 发布/订阅 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>发布/订阅模式</h3>
+                <h4>和观察者的区别：中间多了一个"调度中心"</h4>
+                <p>观察者模式中，发布者直接通知订阅者。发布/订阅模式中，发布者和订阅者互不认识，通过一个"事件总线"通信。</p>
+                <pre><code class="language-javascript">class PubSub {
+    #topics = new Map();
+    subscribe(topic, callback) {
+        if (!this.#topics.has(topic))
+            this.#topics.set(topic, new Set());
+        this.#topics.get(topic).add(callback);
+        return () => this.#topics.get(topic)?.delete(callback);
+    }
+    publish(topic, data) {
+        this.#topics.get(topic)?.forEach(cb => cb(data));
+    }
+}
+
+const bus = new PubSub();
+bus.subscribe("user:login", user => console.log(`${user.name} 登录`));
+bus.publish("user:login", { name: "张三" });</code></pre>
+                <div class="warning">
+                    <strong>观察者 vs 发布/订阅的区别</strong>：观察者中发布者知道订阅者是谁；发布/订阅中两者完全解耦，通过事件总线中转。项目大了用发布/订阅更灵活。
+                </div>
+            </div>
+        </section>
+
+        <!-- 策略模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>策略模式</h3>
+                <h4>把算法封装成可互换的策略</h4>
+                <p>当你有一堆 if/else 或 switch 来选择不同算法时，策略模式能让代码更清晰、更易扩展。</p>
+                <pre><code class="language-javascript">const strategies = {
+    add: (a, b) => a + b,
+    subtract: (a, b) => a - b,
+    multiply: (a, b) => a * b,
+};
+
+function calculate(strategy, a, b) {
+    return strategies[strategy]?.(a, b) ?? NaN;
+}
+
+console.log(calculate("add", 2, 3));      // 5
+console.log(calculate("multiply", 2, 3)); // 6</code></pre>
+                <p>新增策略只需在对象里加一个键值对，不用改 <code>calculate</code> 函数。这比写一堆 if/else 好维护得多。</p>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 结构型模式</h2>
+                <h4>关注"怎么组合对象"</h4>
+                <p>对象有了，通信方式也有了。但有时候你想在不改原代码的情况下给它"加点料"——比如给函数加日志、给对象加缓存。结构型模式关注的就是"怎么组合和包装对象"。代理模式在对象外面套一层拦截器，装饰器模式给函数动态加功能，依赖注入让代码不再写死依赖关系。</p>
+            </div>
+        </section>
+
+        <!-- 代理模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>代理模式</h3>
+                <h4>Proxy：给对象加一层"拦截器"</h4>
+                <p>代理模式就像<strong>明星的经纪人</strong>：粉丝不能直接联系明星，得通过经纪人。经纪人可以在中间做过滤、记录、缓存。</p>
+                <pre><code class="language-javascript">const handler = {
+    get(target, prop) {
+        console.log(`访问: ${String(prop)}`);
+        return target[prop];
+    },
+    set(target, prop, value) {
+        console.log(`设置: ${String(prop)} = ${value}`);
+        target[prop] = value;
+        return true;
+    }
+};
+
+const proxy = new Proxy({ name: "张三" }, handler);
+proxy.name;        // 打印 "访问: name"
+proxy.age = 25;    // 打印 "设置: age = 25"</code></pre>
+                <p>Vue 3 的响应式系统就是基于 Proxy 实现的——拦截 get/set，自动追踪依赖和触发更新。</p>
+            </div>
+        </section>
+
+        <!-- 装饰器模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>装饰器模式</h3>
+                <h4>不修改原函数，动态给它"加功能"</h4>
+                <pre><code class="language-javascript">function withLogging(fn) {
+    return function(...args) {
+        console.log(`调用 ${fn.name}，参数:`, args);
+        const result = fn.apply(this, args);
+        console.log(`返回:`, result);
+        return result;
+    };
+}
+
+const add = withLogging((a, b) => a + b);
+add(1, 2);
+// 调用 add，参数: [1, 2]
+// 返回: 3</code></pre>
+                <p>装饰器的精髓：<strong>原函数一行不改</strong>，但在它外面"包了一层"新功能。日志、缓存、权限检查都可以用这种方式添加。</p>
+            </div>
+        </section>
+
+        <!-- 依赖注入 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>依赖注入</h3>
+                <h4>不自己创建依赖，由外部传入</h4>
+                <pre><code class="language-javascript">// UserService 不自己 new Repository，而是从外部注入
+class UserService {
+    constructor(repository) {
+        this.repo = repository; // 注入依赖
+    }
+    async getUser(id) {
+        return this.repo.findById(id);
+    }
+}
+
+// 在应用启动时决定用哪个实现
+const service = new UserService(new PostgresUserRepo());
+// 测试时换成 mock
+const testService = new UserService(new MockUserRepo());</code></pre>
+                <p>依赖注入让代码<strong>松耦合</strong>：UserService 不关心数据来自 PostgreSQL 还是内存，它只依赖接口。测试时可以轻松替换为 mock。</p>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 实战对照</h2>
+                <h4>设计模式不是理论课，而是解决实际问题的工具</h4>
+                <p>学了这么多模式，到底什么时候该用哪个？这一节不做新概念的讲解，而是把日常开发中的真实痛点列出来，对号入座找到对应的模式。同时会补充中间件模式、状态模式两个实战常用的模式，最后帮你避开"为了用模式而用模式"的常见误区。</p>
+            </div>
+        </section>
+
+        <!-- 痛点对照 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>痛点与模式对照</h3>
+                <h4>对号入座，看看你的项目需要哪个模式</h4>
+                <table>
+                    <thead><tr><th>痛点</th><th>对应模式</th><th>解决方式</th></tr></thead>
+                    <tbody>
+                        <tr><td>全局状态散乱</td><td>单例 + 观察者</td><td>统一状态管理</td></tr>
+                        <tr><td>回调嵌套</td><td>Promise/async-await</td><td>扁平化异步流程</td></tr>
+                        <tr><td>硬编码依赖</td><td>工厂 + 依赖注入</td><td>解耦创建和使用</td></tr>
+                        <tr><td>重复代码</td><td>策略 / 模板方法</td><td>封装可复用逻辑</td></tr>
+                        <tr><td>模块紧耦合</td><td>发布/订阅</td><td>通过事件总线通信</td></tr>
+                        <tr><td>需要动态加功能</td><td>装饰器</td><td>包装原函数，不修改代码</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见误区</h3>
+
+                <div class="warning">
+                    <strong>不要为了用模式而用模式。</strong> 设计模式是解决问题的工具，不是炫技的资本。简单的问题用简单的方案解决就好。
+                </div>
+
+                <h4>误区一：到处用单例</h4>
+                <p><strong>问题</strong>：单例是全局状态，测试时很难 mock，容易导致隐性依赖。</p>
+                <p><strong>正确做法</strong>：只在真正需要全局唯一的场景使用（如数据库连接、日志器）。</p>
+
+                <h4>误区二：过度使用观察者</h4>
+                <p><strong>问题</strong>：事件太多时，数据流向不清晰，调试时不知道是谁触发的。</p>
+                <p><strong>正确做法</strong>：简单的一对一通信用直接调用，只有需要解耦时才用观察者。</p>
+
+                <h4>误区三：设计模式能解决所有问题</h4>
+                <p><strong>问题</strong>：过度设计，一个简单功能套了三层模式，反而更难维护。</p>
+                <p><strong>正确做法</strong>：先写出能跑的代码，发现痛点了再引入对应的模式重构。</p>
+            </div>
+        </section>
+
+        <!-- 中间件模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>中间件模式</h3>
+                <h4>Express / Koa 的核心：函数组合 + next() 调用链</h4>
+                <p>中间件模式的本质是<strong>把一个个独立的功能串成一条处理链</strong>。每个中间件处理完后调用 <code>next()</code> 把控制权交给下一个，就像流水线上的工人各司其职。</p>
+                <pre><code class="language-javascript">function compose(middlewares) {
+    return function (ctx) {
+        let index = -1;
+        function dispatch(i) {
+            if (i <= index) throw new Error("next() called multiple times");
+            index = i;
+            const fn = middlewares[i];
+            if (!fn) return Promise.resolve();
+            return Promise.resolve(fn(ctx, () => dispatch(i + 1)));
+        }
+        return dispatch(0);
+    };
+}
+
+// 使用示例
+const app = compose([
+    async (ctx, next) => {
+        console.log("1. 请求开始");
+        await next();
+        console.log("4. 请求结束");
+    },
+    async (ctx, next) => {
+        console.log("2. 处理业务");
+        ctx.body = "Hello";
+        await next();
+        console.log("3. 业务完成");
+    },
+]);
+
+app({}).then(() => console.log("done"));
+// 输出: 1 → 2 → 3 → 4 → done</code></pre>
+                <p>Express 用类似机制处理请求；Koa 的洋葱模型更进一步——<code>next()</code> 之后的代码在响应返回时执行，适合写日志、计时等"后置"逻辑。</p>
+                <div class="warning">
+                    <strong>易错点</strong>：忘记 <code>await next()</code> 会导致后续中间件不执行，或执行顺序错乱。在 async 中间件里一定要 <code>await</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 状态模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>状态模式</h3>
+                <h4>用对象映射替代 if/else 状态判断</h4>
+                <p>当一个对象的行为取决于它的状态，而且状态会来回切换时，状态模式比写一堆 if/else 清晰得多。每个状态定义自己允许的转换，就像<strong>订单在各个阶段只能做特定操作</strong>。</p>
+                <pre><code class="language-javascript">const transitions = {
+    pending: { pay: "paid" },
+    paid:    { ship: "shipped" },
+    shipped: { confirm: "completed" },
+    completed: {},
+};
+
+class Order {
+    #state = "pending";
+    get state() { return this.#state; }
+
+    handle(action) {
+        const next = transitions[this.#state]?.[action];
+        if (!next) {
+            throw new Error(
+                `状态 [${this.#state}] 不允许操作 [${action}]`
+            );
+        }
+        console.log(`${this.#state} --${action}--> ${next}`);
+        this.#state = next;
+    }
+}
+
+const order = new Order();
+order.handle("pay");      // pending --pay--> paid
+order.handle("ship");     // paid --ship--> shipped
+order.handle("confirm");  // shipped --confirm--> completed
+order.handle("pay");      // Error: 状态 [completed] 不允许操作 [pay]</code></pre>
+                <div class="warning">
+                    <strong>易错点</strong>：不要忘记处理"非法转换"。比如已完成的订单不能再支付，必须抛出明确错误，否则状态机会被破坏。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习三 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>中间件实战</h3>
+                <h4>综合练习：用中间件模式实现请求处理器</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习三（挑战）</h3>
+                        <p><strong>任务</strong>：实现一个简易请求处理器，基础功能是记录请求日志和返回响应。用中间件扩展以下功能：</p>
+                        <ol>
+                            <li><strong>认证检查</strong>：检查 header 中是否有 token</li>
+                            <li><strong>请求计时</strong>：记录处理耗时（ms）</li>
+                            <li><strong>错误捕获</strong>：捕获处理中的异常并返回 500</li>
+                        </ol>
+                        <p>要求中间件顺序可配置。</p>
+                        <pre><code class="language-javascript">// 提示：
+// 1. 用 compose 组合中间件
+// 2. ctx 结构: { headers, body, statusCode }
+// 3. 错误捕获中间件要放在最外层（第一个）
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function compose(middlewares) {
+    return (ctx) => {
+        let index = -1;
+        const dispatch = (i) => {
+            if (i <= index) throw new Error("next() called multiple times");
+            index = i;
+            const fn = middlewares[i];
+            if (!fn) return Promise.resolve();
+            return Promise.resolve(fn(ctx, () => dispatch(i + 1)));
+        };
+        return dispatch(0);
+    };
+}
+
+// 错误捕获中间件（放最外层）
+const errorCatch = async (ctx, next) => {
+    try {
+        await next();
+    } catch (err) {
+        ctx.statusCode = 500;
+        ctx.body = { error: err.message };
+        console.error("捕获错误:", err.message);
+    }
+};
+
+// 认证中间件
+const auth = async (ctx, next) => {
+    if (!ctx.headers.token) {
+        throw new Error("未提供认证 token");
+    }
+    console.log("认证通过");
+    await next();
+};
+
+// 计时中间件
+const timer = async (ctx, next) => {
+    const start = Date.now();
+    await next();
+    console.log(`耗时: ${Date.now() - start}ms`);
+};
+
+// 基础处理器
+const handler = async (ctx, next) => {
+    console.log("处理请求:", ctx.body);
+    ctx.statusCode = 200;
+    ctx.body = { msg: "success" };
+    await next();
+};
+
+// 中间件顺序可配置
+const app = compose([errorCatch, auth, timer, handler]);
+
+// 测试
+app({ headers: { token: "abc" }, body: "test" });
+// 认证通过 → 处理请求 → 耗时: Xms
+
+app({ headers: {}, body: "test" });
+// 捕获错误: 未提供认证 token</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：用观察者模式实现一个简单的消息通知系统。支持 subscribe、unsubscribe、notify 三个方法。</p>
+                        <pre><code class="language-javascript">// 提示：维护一个回调数组
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">class Notifier {
+    #subscribers = [];
+    subscribe(fn) {
+        this.#subscribers.push(fn);
+        return () => {
+            this.#subscribers = this.#subscribers.filter(f => f !== fn);
+        };
+    }
+    notify(message) {
+        this.#subscribers.forEach(fn => fn(message));
+    }
+}
+
+const notifier = new Notifier();
+const unsub = notifier.subscribe(msg => console.log(`收到: ${msg}`));
+notifier.notify("系统维护通知"); // 收到: 系统维护通知
+unsub();</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：用策略模式实现一个简单的计算器，支持加减乘除。新增运算方式时不需要修改 calculate 函数。</p>
+                        <pre><code class="language-javascript">// 提示：用对象存策略函数
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">const strategies = {
+    add: (a, b) => a + b,
+    subtract: (a, b) => a - b,
+    multiply: (a, b) => a * b,
+    divide: (a, b) => b !== 0 ? a / b : NaN,
+};
+
+function calculate(op, a, b) {
+    if (!strategies[op]) throw new Error(`未知运算: ${op}`);
+    return strategies[op](a, b);
+}
+
+console.log(calculate("add", 10, 5));      // 15
+console.log(calculate("divide", 10, 2));   // 5
+
+// 新增运算：只需加一行，calculate 不用改
+strategies.modulo = (a, b) => a % b;</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>设计模式为你提供了解决常见架构问题的思路。下一章学习<strong>TypeScript</strong>——给 JavaScript 加上类型系统，让代码更安全。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

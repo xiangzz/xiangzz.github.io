@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第44章 用户认证与授权 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>用户认证与授权</h1>
+            <p>密码哈希、JWT、角色权限——保护你的 API</p>
+        </section>
+
+        <!-- 开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>为什么你登录淘宝之后，刷新页面还是登录状态？别人为什么不能以你的身份买东西？</h4>
+                <p>这背后涉及两个核心概念：<strong>认证</strong>（Authentication）——"你是谁"；<strong>授权</strong>（Authorization）——"你能做什么"。</p>
+                <p>这一章你将学会：用 bcrypt 安全地存储密码、用 JWT 实现无状态认证、用 RBAC 控制角色权限。</p>
+            </div>
+        </section>
+
+        <!-- 认证 vs 授权 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>认证 vs 授权</h3>
+                <h4>两个经常被混淆的概念，但它们完全不同</h4>
+                <table>
+                    <thead><tr><th></th><th>认证 Authentication</th><th>授权 Authorization</th></tr></thead>
+                    <tbody>
+                        <tr><td>回答的问题</td><td>你是谁？</td><td>你能做什么？</td></tr>
+                        <tr><td>常见方式</td><td>密码登录、OAuth</td><td>角色、权限检查</td></tr>
+                        <tr><td>比喻</td><td>检查身份证</td><td>查看门禁权限</td></tr>
+                        <tr><td>HTTP 状态码</td><td>401 Unauthorized</td><td>403 Forbidden</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 1: 密码哈希 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 密码哈希</h2>
+                <h4>用户密码的安全存储</h4>
+                <p>明文存储密码等于把钥匙放在门口的垫子下面，任何能访问数据库的人都能看到所有用户的密码。密码哈希是用户认证的第一道防线，它让即使数据库泄露，攻击者也无法还原出原始密码。bcrypt 是目前 Node.js 生态中最推荐的密码哈希算法，内置盐值和自适应工作因子，能有效抵抗暴力破解和彩虹表攻击。</p>
+            </div>
+        </section>
+
+        <!-- 为什么用 bcrypt -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么用 bcrypt</h3>
+                <h4>不是所有哈希算法都适合存密码</h4>
+                <table>
+                    <thead><tr><th>特性</th><th>bcrypt</th><th>MD5/SHA-256</th></tr></thead>
+                    <tbody>
+                        <tr><td>内置盐值</td><td>是</td><td>否（需手动加盐）</td></tr>
+                        <tr><td>自适应工作因子</td><td>是</td><td>否</td></tr>
+                        <tr><td>计算慢（抗暴力破解）</td><td>是</td><td>否（GPU加速极易）</td></tr>
+                    </tbody>
+                </table>
+                <p>bcrypt 的"慢"是优点。它让攻击者破解一个密码的成本变得极高。工作因子越高，计算越慢，安全性越强。</p>
+            </div>
+        </section>
+
+        <!-- bcrypt 使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>bcrypt 用法</h3>
+                <h4>两个函数：hash 用于注册，compare 用于登录</h4>
+                <pre><code class="language-bash">$ npm install bcryptjs</code></pre>
+                <pre><code class="language-javascript">import bcrypt from 'bcryptjs';
+
+const SALT_ROUNDS = 12; // 推荐值 10-12
+
+// 注册时：哈希密码
+async function hashPassword(plainPassword: string): Promise&lt;string&gt; {
+    const hash = await bcrypt.hash(plainPassword, SALT_ROUNDS);
+    return hash;
+    // 输出类似: $2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
+}
+
+// 登录时：验证密码
+async function verifyPassword(
+    plainPassword: string,
+    hashedPassword: string
+): Promise&lt;boolean&gt; {
+    return bcrypt.compare(plainPassword, hashedPassword);
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 注册登录服务 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>注册/登录服务</h3>
+                <h4>将密码哈希集成到用户注册和登录流程中</h4>
+                <pre><code class="language-javascript">// src/services/auth.service.ts
+import bcrypt from 'bcryptjs';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+const SALT_ROUNDS = 12;
+
+export class AuthService {
+    async register(email: string, password: string, name: string) {
+        const existing = await prisma.user.findUnique({ where: { email } });
+        if (existing) throw new Error('该邮箱已被注册');
+
+        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+        return prisma.user.create({
+            data: { email, name, password: hashedPassword },
+            select: { id: true, email: true, name: true, createdAt: true },
+        });
+    }
+
+    async login(email: string, password: string) {
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user) throw new Error('邮箱或密码错误'); // 不提示"用户不存在"
+
+        const isValid = await bcrypt.compare(password, user.password);
+        if (!isValid) throw new Error('邮箱或密码错误');
+
+        const { password: _, ...safeUser } = user;
+        return safeUser;
+    }
+}</code></pre>
+                <div class="warning">
+                    <strong>登录失败时始终返回相同的错误信息。</strong> 不要分别提示"用户不存在"或"密码错误"，这会让攻击者可以枚举有效邮箱。
+                </div>
+            </div>
+        </section>
+
+        <!-- 认证系统架构图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>认证架构</h3>
+                <h4>注册、登录、Token 管理的完整数据流</h4>
+                <div class="ai-diagram">
+                    <h4>图：基于 JWT 的完整认证系统架构图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：展示一个完整的用户认证系统，包含注册、登录、Token 刷新三个核心流程的数据流
+                    - 布局分为三个水平泳道，从上到下：
+                      - 泳道 1（蓝色，标注"浏览器/客户端"）：包含 React 前端应用图标、登录表单示意、Cookie 存储区域、localStorage 区域
+                      - 泳道 2（绿色，标注"Express 后端"）：包含认证中间件、路由处理器（注册/登录/刷新）、bcrypt 验证模块、JWT 签发模块
+                      - 泳道 3（紫色，标注"数据层"）：包含 PostgreSQL 用户表（字段：id, email, password_hash, refresh_token）和 Redis 黑名单（标注"Token 吊销列表"）
+                    - 三条核心数据流（用不同颜色的箭头）：
+                      - 注册流程（绿色箭头）：前端表单 POST /api/register → 后端 bcrypt.hash → 写入 PostgreSQL → 返回 201
+                      - 登录流程（蓝色箭头）：前端 POST /api/login → 后端 bcrypt.compare → 签发 Access Token（15min）+ Refresh Token（7d）→ Access Token 返回 JSON body，Refresh Token 写入 HttpOnly Cookie → 前端保存 Access Token 到内存/state
+                      - Token 刷新流程（橙色箭头）：前端 Access Token 过期 → 自动 POST /api/refresh（携带 HttpOnly Cookie）→ 后端验证 Refresh Token → 签发新 Access Token + 新 Refresh Token → 旧 Refresh Token 写入 Redis 黑名单
+                    - 在右侧画一个独立的"中间件鉴权流程"：
+                      - 请求 → 提取 Bearer Token → JWT.verify 验证签名和过期时间 → 检查 Redis 黑名单 → 通过/拒绝
+                      - 用分支箭头标注"通过 → next()"和"拒绝 → 401 Unauthorized"
+                    - 在左下角画一个安全注解区域：
+                      - 标注"Access Token：短命（15min），存 JS 内存，不存 localStorage（防 XSS）"
+                      - 标注"Refresh Token：长寿（7d），存 HttpOnly + Secure + SameSite Cookie（防 CSRF）"
+                      - 标注"密码存储：bcrypt 哈希，cost factor 12，永远不存明文"
+                    - 配色建议：浅灰背景，三个泳道分别用浅蓝、浅绿、浅紫底色，注册流用绿色箭头，登录流用蓝色箭头，刷新流用橙色箭头，安全注解用浅黄底色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、箭头交叉混乱、文字过小
+                    - 标注文字用中文，API 路径和代码用等宽字体
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: JWT -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: JWT 认证</h2>
+                <h4>无状态令牌认证方案</h4>
+                <p>用户登录后，服务器需要一个方式来"记住"这个用户。JWT（JSON Web Token）是目前最流行的无状态认证方案，它把用户信息编码成一个带签名的令牌字符串，服务器不需要存储会话数据就能验证用户身份。我们将学习双令牌策略——Access Token 负责短期访问、Refresh Token 负责长期续期，兼顾安全性和用户体验。</p>
+            </div>
+        </section>
+
+        <!-- JWT 结构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>JWT 结构</h3>
+                <h4>三段 Base64 编码的字符串，用点号分隔</h4>
+                <pre><code class="language-plaintext">Header.Payload.Signature
+
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjF9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c</code></pre>
+                <table>
+                    <thead><tr><th>部分</th><th>内容</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td>Header</td><td>算法和类型</td><td><code>{"alg":"HS256","typ":"JWT"}</code></td></tr>
+                        <tr><td>Payload</td><td>用户数据</td><td>userId、email、role 等</td></tr>
+                        <tr><td>Signature</td><td>签名</td><td>防止数据被篡改</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>JWT 的 Payload 只是 Base64 编码，不是加密！</strong> 永远不要在 JWT 中存储密码、身份证号等敏感信息。
+                </div>
+            </div>
+        </section>
+
+        <!-- 双令牌策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>双令牌策略</h3>
+                <h4>Access Token 短命，Refresh Token 长命</h4>
+                <table>
+                    <thead><tr><th>属性</th><th>Access Token</th><th>Refresh Token</th></tr></thead>
+                    <tbody>
+                        <tr><td>有效期</td><td>短（15-30分钟）</td><td>长（7-30天）</td></tr>
+                        <tr><td>用途</td><td>访问受保护的 API</td><td>获取新的 Access Token</td></tr>
+                        <tr><td>存储位置</td><td>内存 / httpOnly Cookie</td><td>httpOnly Cookie / 数据库</td></tr>
+                        <tr><td>泄露风险</td><td>短有效期降低风险</td><td>可被撤销</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- JWT 认证流程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>认证流程</h3>
+                <h4>从登录到访问受保护资源的完整流程</h4>
+                <div class="ai-diagram">
+                    <h4>图：JWT 登录认证与 Token 刷新的完整时序流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术时序图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：客户端与服务器之间的 JWT 认证完整时序交互，包含登录、访问受保护资源、Token 刷新三个阶段
+                    - 三个参与者（从左到右排列的竖线）：客户端（蓝色）、服务器（绿色）、数据库（紫色）
+                    - 阶段一（登录流程，蓝色区域标注）：
+                      - 客户端 → 服务器：实线箭头标注 "POST /login {email, password}"
+                      - 服务器 → 数据库：实线箭头标注 "查找用户 + 验证密码"
+                      - 数据库 → 服务器：虚线箭头标注 "验证通过"
+                      - 服务器 → 客户端：虚线箭头标注 "返回 Access Token + Refresh Token(Cookie)"
+                    - 阶段二（访问受保护资源，绿色区域标注）：
+                      - 客户端 → 服务器：实线箭头标注 "GET /api/me"，旁边小字标注 "带 Authorization: Bearer token"
+                      - 服务器 → 服务器：自环箭头标注 "验证 JWT 签名和有效期"
+                      - 服务器 → 客户端：虚线箭头标注 "200 返回用户数据"
+                    - 阶段三（Token 刷新，橙色区域标注）：
+                      - 在客户端和服务器之间画一条水平注释线，标注 "Access Token 过期后"
+                      - 客户端 → 服务器：实线箭头标注 "POST /refresh"，旁边小字标注 "Cookie 自带 Refresh Token"
+                      - 服务器 → 服务器：自环箭头标注 "验证 Refresh Token"
+                      - 服务器 → 客户端：虚线箭头标注 "返回新的 Access Token"
+                    - 三个阶段用水平分隔线或浅色背景区分，每个阶段左侧加文字标签
+                    - 配色建议：浅灰背景，客户端蓝色竖线，服务器绿色竖线，数据库紫色竖线，登录流蓝色箭头，访问流绿色箭头，刷新流橙色箭头
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、箭头交叉混乱
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- JWT 工具函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>JWT 工具函数</h3>
+                <h4>生成、验证令牌的封装</h4>
+                <pre><code class="language-bash">$ npm install jsonwebtoken
+$ npm install -D @types/jsonwebtoken</code></pre>
+                <pre><code class="language-javascript">// src/utils/jwt.ts
+import jwt from 'jsonwebtoken';
+
+const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'access-secret-dev';
+const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refresh-secret-dev';
+
+interface TokenPayload {
+    userId: string;
+    email: string;
+    role: string;
+}
+
+export function generateAccessToken(payload: TokenPayload): string {
+    return jwt.sign(payload, ACCESS_SECRET, { expiresIn: '15m' });
+}
+
+export function generateRefreshToken(payload: TokenPayload): string {
+    return jwt.sign(payload, REFRESH_SECRET, { expiresIn: '7d' });
+}
+
+export function verifyAccessToken(token: string): TokenPayload {
+    return jwt.verify(token, ACCESS_SECRET) as TokenPayload;
+}
+
+export function generateTokenPair(payload: TokenPayload) {
+    return {
+        accessToken: generateAccessToken(payload),
+        refreshToken: generateRefreshToken(payload),
+    };
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 登录接口 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>登录接口</h3>
+                <h4>验证通过后签发令牌对</h4>
+                <pre><code class="language-javascript">router.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+    const user = await authService.login(email, password);
+    const tokens = generateTokenPair({ userId: user.id, email: user.email, role: user.role });
+
+    // Refresh Token 放 httpOnly Cookie
+    res.cookie('refreshToken', tokens.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/api/auth/refresh',
+    });
+
+    res.json({ user, accessToken: tokens.accessToken });
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- Token 刷新接口 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Token 刷新接口</h3>
+                <h4>Access Token 过期后，用 Refresh Token 无感续期</h4>
+                <p>Access Token 有效期只有 15 分钟，过期后用户不应该被强制重新登录。<code>POST /auth/refresh</code> 接口从 httpOnly Cookie 中取出 Refresh Token，验证通过后签发新的令牌对。为了安全，每次刷新都会<strong>轮换</strong>（Rotate）Refresh Token——旧 Token 立即失效，新 Token 写入 Cookie。</p>
+                <pre><code class="language-javascript">router.post('/refresh', async (req, res) => {
+    const token = req.cookies.refreshToken;
+    if (!token) {
+        res.status(401).json({ error: '缺少 Refresh Token' });
+        return;
+    }
+
+    try {
+        // 1. 验证 Refresh Token
+        const decoded = jwt.verify(token, REFRESH_SECRET) as TokenPayload;
+
+        // 2. 检查是否已被撤销（可选：查 Redis 黑名单）
+        const blacklisted = await redis.get(`bl:${token}`);
+        if (blacklisted) {
+            res.status(401).json({ error: '令牌已被撤销' });
+            return;
+        }
+
+        // 3. 将旧 Refresh Token 加入黑名单
+        const ttl = decoded.exp! - Math.floor(Date.now() / 1000);
+        await redis.set(`bl:${token}`, '1', 'EX', ttl);
+
+        // 4. 签发新令牌对（轮换）
+        const payload = { userId: decoded.userId, email: decoded.email, role: decoded.role };
+        const newTokens = generateTokenPair(payload);
+
+        // 5. 写入新 Cookie
+        res.cookie('refreshToken', newTokens.refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+            path: '/api/auth/refresh',
+        });
+
+        res.json({ accessToken: newTokens.accessToken });
+    } catch {
+        res.status(401).json({ error: 'Refresh Token 无效或已过期' });
+    }
+});</code></pre>
+                <div class="warning">
+                    <strong>Refresh Token 轮换是安全最佳实践。</strong> 如果攻击者窃取了旧的 Refresh Token，它在下次刷新时就会失效，且服务器可以通过"重用检测"发现异常。
+                </div>
+            </div>
+        </section>
+
+        <!-- 登出与令牌撤销 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>登出与令牌撤销</h3>
+                <h4>用户点了"退出登录"，Token 怎么失效？</h4>
+                <p>JWT 是无状态的，一旦签发就无法"取消"。那用户登出怎么办？常见方案有两种：<strong>客户端清除</strong>（删除 Cookie 和内存中的 Token）和<strong>服务端黑名单</strong>（用 Redis 记录已撤销的 Token）。两者结合才能实现真正的登出。</p>
+                <pre><code class="language-javascript">router.post('/logout', requireAuth, async (req, res) => {
+    const refreshToken = req.cookies.refreshToken;
+
+    // 1. 将 Refresh Token 加入 Redis 黑名单
+    if (refreshToken) {
+        try {
+            const decoded = jwt.decode(refreshToken) as any;
+            const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+            if (ttl > 0) await redis.set(`bl:${refreshToken}`, '1', 'EX', ttl);
+        } catch { /* Token 可能已无效，忽略 */ }
+    }
+
+    // 2. 清除 Cookie
+    res.clearCookie('refreshToken', { path: '/api/auth/refresh' });
+
+    // 3. 前端也需清除内存中的 Access Token
+    res.json({ message: '已成功登出' });
+});</code></pre>
+                <p><strong>为什么 JWT 不能被真正"撤销"？</strong> 因为 JWT 的验证只依赖密钥，不需要查数据库。如果要求每次请求都查库验证，那就失去了 JWT 无状态的优势——这时不如直接用 Session 方案。黑名单是一种折中：只在登出/撤销时写 Redis，不影响正常请求的性能。</p>
+            </div>
+        </section>
+
+        <!-- Part 3: 认证中间件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 认证中间件</h2>
+                <h4>在路由中统一校验用户身份</h4>
+                <p>JWT 签发了，但怎么在路由中检查？答案是中间件。Express 中间件可以在请求到达控制器之前自动提取并验证 Token，将解码后的用户信息挂载到 <code>req.user</code> 上，后续的路由处理器就能直接使用。这样每个需要认证的接口只需加一行中间件调用，无需重复编写验证逻辑。</p>
+            </div>
+        </section>
+
+        <!-- requireAuth -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>requireAuth 中间件</h3>
+                <h4>从请求头提取 Token，验证后把用户信息挂到 req 上</h4>
+                <pre><code class="language-javascript">// src/middleware/auth.middleware.ts
+import { Request, Response, NextFunction } from 'express';
+import { verifyAccessToken, TokenPayload } from '../utils/jwt';
+
+declare global {
+    namespace Express {
+        interface Request {
+            user?: TokenPayload;
+        }
+    }
+}
+
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+        res.status(401).json({ error: '未提供认证令牌' });
+        return;
+    }
+
+    const token = authHeader.split(' ')[1];
+    try {
+        req.user = verifyAccessToken(token);
+        next();
+    } catch (error: any) {
+        if (error.name === 'TokenExpiredError') {
+            res.status(401).json({ error: '令牌已过期，请刷新' });
+            return;
+        }
+        res.status(403).json({ error: '无效的认证令牌' });
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 路由中使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>在路由中使用</h3>
+                <h4>一行代码保护任何路由</h4>
+                <pre><code class="language-javascript">// 公开路由
+router.get('/public-profile/:id', userController.getPublicProfile);
+
+// 需要认证
+router.get('/me', requireAuth, userController.getMe);
+router.get('/me/posts', requireAuth, userController.getMyPosts);
+router.patch('/me', requireAuth, userController.updateMe);
+
+// 控制器中使用 req.user
+export function getMe(req: Request, res: Response) {
+    const user = req.user!; // 经过 requireAuth 后一定存在
+    res.json({ id: user.userId, email: user.email, role: user.role });
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 密码重置流程（概念） -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>密码重置流程</h3>
+                <h4>"忘记密码"功能的完整实现</h4>
+                <p>密码重置分两步：先通过 <code>POST /auth/forgot-password</code> 生成一个短期有效的重置令牌并发送到用户邮箱；再通过 <code>POST /auth/reset-password</code> 验证令牌后更新密码。重置令牌应该是一次性的，用过即失效。</p>
+                <div class="ai-diagram">
+                    <h4>图：密码重置流程的完整时序交互</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术时序图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：用户通过邮箱重置密码的完整时序交互，分为"请求重置"和"执行重置"两个阶段
+                    - 五个参与者（从左到右排列的竖线）：用户（黄色）、前端（蓝色）、后端（绿色）、邮件服务（橙色）、数据库（紫色）
+                    - 阶段一（请求重置密码，蓝色背景区域标注"第一步：请求重置"）：
+                      - 用户 → 前端：实线箭头标注 "点击'忘记密码'，输入邮箱"
+                      - 前端 → 后端：实线箭头标注 "POST /auth/forgot-password"
+                      - 后端 → 数据库：实线箭头标注 "查找用户"
+                      - 后端 → 后端：自环箭头标注 "生成随机 Token（crypto.randomBytes）"
+                      - 后端 → 数据库：实线箭头标注 "存储 Token 哈希 + 过期时间"
+                      - 后端 → 邮件服务：实线箭头标注 "发送重置邮件（含明文 Token）"
+                      - 邮件服务 → 用户：虚线箭头标注 "用户收到邮件"
+                    - 阶段二（执行重置密码，绿色背景区域标注"第二步：执行重置"）：
+                      - 用户 → 前端：实线箭头标注 "点击邮件中的链接"
+                      - 前端 → 后端：实线箭头标注 "POST /auth/reset-password {token, newPassword}"
+                      - 后端 → 数据库：实线箭头标注 "查找匹配的 Token 哈希 + 未过期"
+                      - 后端 → 数据库：实线箭头标注 "更新密码哈希，清除 Token"
+                      - 后端 → 前端：虚线箭头标注 "密码重置成功"
+                    - 配色建议：浅灰背景，用户黄色竖线，前端蓝色竖线，后端绿色竖线，邮件服务橙色竖线，数据库紫色竖线，请求箭头深色实线，响应/通知箭头虚线
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、箭头交叉混乱
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 密码重置代码 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>密码重置代码</h3>
+                <h4>用 crypto 生成令牌，用 Prisma 存储验证</h4>
+                <pre><code class="language-javascript">import crypto from 'crypto';
+import { sendEmail } from '../utils/email';
+
+// 第一步：请求重置密码
+router.post('/forgot-password', async (req, res) => {
+    const { email } = req.body;
+    const user = await prisma.user.findUnique({ where: { email } });
+    // 即使用户不存在也返回成功，防止邮箱枚举
+    if (!user) return res.json({ message: '如果该邮箱已注册，你将收到重置邮件' });
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+    await prisma.user.update({
+        where: { id: user.id },
+        data: {
+            resetToken: hashedToken,
+            resetTokenExpiry: new Date(Date.now() + 15 * 60 * 1000),
+        },
+    });
+
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+    await sendEmail(user.email, '密码重置', `点击链接重置密码：${resetUrl}`);
+    res.json({ message: '如果该邮箱已注册，你将收到重置邮件' });
+});
+
+// 第二步：重置密码
+router.post('/reset-password', async (req, res) => {
+    const { token, newPassword } = req.body;
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await prisma.user.findFirst({
+        where: {
+            resetToken: hashedToken,
+            resetTokenExpiry: { gt: new Date() },
+        },
+    });
+    if (!user) { res.status(400).json({ error: '令牌无效或已过期' }); return; }
+
+    await prisma.user.update({
+        where: { id: user.id },
+        data: {
+            password: await bcrypt.hash(newPassword, 12),
+            resetToken: null,
+            resetTokenExpiry: null,
+        },
+    });
+    res.json({ message: '密码重置成功' });
+});</code></pre>
+                <div class="warning">
+                    <strong>重置令牌只存哈希，邮件中发送明文。</strong> 这样即使数据库泄露，攻击者也无法用哈希值构造重置链接。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4: RBAC -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: RBAC</h2>
+                <h4>基于角色的访问控制</h4>
+                <p>不是所有人都能做所有事。RBAC（Role-Based Access Control）通过给用户分配角色、给角色分配权限，实现了灵活的访问控制。比如普通用户只能查看和编辑自己的内容，编辑可以管理所有文章，管理员拥有全部权限。这种模式在企业应用中几乎是标配。</p>
+            </div>
+        </section>
+
+        <!-- 角色权限矩阵 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>权限矩阵</h3>
+                <h4>哪个角色能做什么，一目了然</h4>
+                <table>
+                    <thead><tr><th>操作</th><th>ADMIN</th><th>EDITOR</th><th>USER</th></tr></thead>
+                    <tbody>
+                        <tr><td>查看所有用户</td><td>是</td><td>否</td><td>否</td></tr>
+                        <tr><td>删除任何文章</td><td>是</td><td>是</td><td>否</td></tr>
+                        <tr><td>创建文章</td><td>是</td><td>是</td><td>是</td></tr>
+                        <tr><td>编辑自己的文章</td><td>是</td><td>是</td><td>是</td></tr>
+                        <tr><td>管理用户角色</td><td>是</td><td>否</td><td>否</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 角色检查中间件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>角色检查</h3>
+                <h4>工厂函数生成角色检查中间件</h4>
+                <pre><code class="language-javascript">type Role = 'ADMIN' | 'EDITOR' | 'USER';
+
+const ROLE_HIERARCHY: Record&lt;Role, number&gt; = {
+    USER: 1, EDITOR: 2, ADMIN: 3,
+};
+
+export function requireRole(...allowedRoles: Role[]) {
+    return (req: Request, res: Response, next: NextFunction) => {
+        requireAuth(req, res, () => {
+            const userRole = req.user!.role as Role;
+            if (!allowedRoles.includes(userRole)) {
+                res.status(403).json({ error: '权限不足' });
+                return;
+            }
+            next();
+        });
+    };
+}
+
+// 使用
+router.get('/admin/users', requireRole('ADMIN'), adminController.listUsers);
+router.delete('/posts/:id', requireRole('ADMIN', 'EDITOR'), postController.deletePost);</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 5: OAuth -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: OAuth</h2>
+                <h4>第三方登录集成</h4>
+                <p>"用 GitHub 登录"——OAuth 2.0 让用户不用在你的网站上注册新账号就能登录，极大降低了注册门槛。它的工作原理是把认证过程委托给可信的第三方（GitHub、Google、微信等），你的后端只需要拿到授权码换取用户信息，然后签发自己的 JWT。Passport.js 是 Node.js 生态中最成熟的 OAuth 实现库。</p>
+            </div>
+        </section>
+
+        <!-- OAuth 流程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>OAuth 流程</h3>
+                <h4>用户点击"GitHub 登录"后发生了什么</h4>
+                <div class="ai-diagram">
+                    <h4>图：OAuth 2.0 第三方 GitHub 登录的完整时序流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术时序图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：用户通过 GitHub OAuth 2.0 实现第三方登录的完整时序交互图
+                    - 四个参与者（从左到右排列的竖线）：用户（黄色）、前端（蓝色）、你的后端（绿色）、GitHub（黑色/深灰色，带 GitHub logo 风格）
+                    - 完整流程（从上到下）：
+                      - 用户 → 前端：实线箭头标注 "点击'GitHub 登录'"
+                      - 前端 → GitHub：实线粗箭头标注 "重定向到 GitHub 授权页"（用特殊样式表示浏览器跳转）
+                      - 用户 → GitHub：实线箭头标注 "确认授权"
+                      - GitHub → 后端：实线箭头标注 "回调，附带授权码 code"
+                      - 后端 → GitHub：实线箭头标注 "用 code 换 Access Token"
+                      - GitHub → 后端：虚线箭头标注 "返回 Access Token"
+                      - 后端 → GitHub：实线箭头标注 "用 Token 获取用户信息"
+                      - GitHub → 后端：虚线箭头标注 "返回用户信息"
+                      - 后端 → 后端：自环箭头标注 "查找或创建用户，签发 JWT"
+                      - 后端 → 前端：虚线箭头标注 "返回 JWT Token"
+                    - 关键标注：授权码 code 用橙色高亮，Access Token 用蓝色高亮，JWT 用绿色高亮，清晰区分三种令牌的不同用途
+                    - 在右侧添加简短的文字注释框："授权码模式（Authorization Code Flow）"
+                    - 配色建议：浅灰背景，用户黄色竖线，前端蓝色竖线，后端绿色竖线，GitHub 深灰竖线，浏览器跳转用特殊粗箭头，普通请求实线，响应用虚线
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、箭头交叉混乱
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- OAuth 实现 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Passport.js 实现</h3>
+                <h4>Node.js 生态中最成熟的 OAuth 库</h4>
+                <pre><code class="language-bash">$ npm install passport passport-github2 express-session
+$ npm install -D @types/passport @types/passport-github2</code></pre>
+                <pre><code class="language-javascript">import passport from 'passport';
+import { Strategy as GitHubStrategy } from 'passport-github2';
+
+passport.use(new GitHubStrategy({
+    clientID: process.env.GITHUB_CLIENT_ID!,
+    clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    callbackURL: process.env.GITHUB_CALLBACK_URL!,
+}, async (accessToken, refreshToken, profile, done) => {
+    // 查找或创建用户
+    let user = await prisma.user.findFirst({
+        where: { oauthProvider: 'github', oauthId: profile.id },
+    });
+    if (!user) {
+        user = await prisma.user.create({
+            data: {
+                email: profile.emails?.[0]?.value,
+                name: profile.displayName,
+                password: '', // OAuth 用户没有密码
+            },
+        });
+    }
+    done(null, user);
+}));</code></pre>
+                <div class="warning">
+                    <strong>OAuth Client Secret 绝对不能暴露在前端代码中！</strong> 务必使用环境变量管理。
+                </div>
+            </div>
+        </section>
+
+        <!-- Session vs JWT -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Session 方案</h3>
+                <h4>JWT 不是唯一选择——Session 方案同样经典</h4>
+                <p>Session 方案将用户状态存储在服务器端（通常是 Redis），客户端只持有一个 Session ID Cookie。相比 JWT，Session 可以被服务器立即撤销，但需要额外的存储依赖。下面是两种方案的对比：</p>
+                <table>
+                    <thead><tr><th>对比项</th><th>JWT</th><th>Session</th></tr></thead>
+                    <tbody>
+                        <tr><td>存储位置</td><td>客户端（无状态）</td><td>服务器端（Redis/DB）</td></tr>
+                        <tr><td>可撤销性</td><td>需要黑名单</td><td>直接删除 session</td></tr>
+                        <tr><td>水平扩展</td><td>天然支持</td><td>需要共享存储</td></tr>
+                        <tr><td>适合移动端</td><td>是</td><td>需要额外处理</td></tr>
+                        <tr><td>适用场景</td><td>移动端、微服务、SSO</td><td>传统 Web 应用、管理后台</td></tr>
+                    </tbody>
+                </table>
+                <p><strong>何时选 Session？</strong>如果你的应用只需要浏览器访问、需要即时撤销能力、且不想处理 Token 黑名单的复杂性，Session + Redis 是更简单、更直观的选择。</p>
+            </div>
+        </section>
+
+        <!-- Session 代码实现 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Session 代码实现</h3>
+                <h4>express-session + connect-redis 配置</h4>
+                <pre><code class="language-bash">$ npm install express-session connect-redis ioredis</code></pre>
+                <pre><code class="language-javascript">import session from 'express-session';
+import RedisStore from 'connect-redis';
+import Redis from 'ioredis';
+
+const redis = new Redis(process.env.REDIS_URL);
+
+app.use(session({
+    store: new RedisStore({ client: redis, prefix: 'sess:' }),
+    secret: process.env.SESSION_SECRET!,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 24 * 60 * 60 * 1000, // 1 天
+    },
+}));
+
+// 登录时存储用户信息
+router.post('/login', async (req, res) => {
+    const user = await authService.login(req.body.email, req.body.password);
+    req.session.userId = user.id;
+    req.session.role = user.role;
+    res.json({ user });
+});
+
+// 登出时销毁 session
+router.post('/logout', (req, res) => {
+    req.session.destroy(() => {
+        res.clearCookie('connect.sid');
+        res.json({ message: '已登出' });
+    });
+});
+
+// 受保护路由直接读 session
+router.get('/me', (req, res) => {
+    if (!req.session.userId) {
+        res.status(401).json({ error: '请先登录' });
+        return;
+    }
+    // ...
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- CSRF 概念 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CSRF 防护</h3>
+                <h4>为什么把 JWT 放在 Cookie 里仍然有风险</h4>
+                <p>CSRF（跨站请求伪造）攻击利用浏览器自动携带 Cookie 的特性：用户在银行网站已登录，然后访问了一个恶意页面，恶意页面的 JavaScript 可以向银行发起转账请求——浏览器会自动带上银行的 Cookie。</p>
+                <table>
+                    <thead><tr><th>防护方案</th><th>原理</th><th>优缺点</th></tr></thead>
+                    <tbody>
+                        <tr><td>SameSite Cookie</td><td>Cookie 只在同站请求中发送</td><td>最简单，但旧浏览器不支持</td></tr>
+                        <tr><td>CSRF Token</td><td>服务器签发 Token，表单提交时校验</td><td>最经典，需前后端配合</td></tr>
+                        <tr><td>Double-submit Cookie</td><td>Cookie 和 Header 中都放 Token，比对是否一致</td><td>无需服务器存储</td></tr>
+                        <tr><td>Bearer Token（非 Cookie）</td><td>Token 放 Authorization 头，浏览器不会自动发送</td><td>天然免疫 CSRF</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- CSRF 代码实现 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CSRF 防护代码</h3>
+                <h4>SameSite 属性 + csurf 中间件</h4>
+                <pre><code class="language-javascript">// 方案一：SameSite Cookie（最简单，现代浏览器都支持）
+res.cookie('token', token, {
+    httpOnly: true,
+    sameSite: 'strict',  // 或 'lax'（允许安全的顶级导航）
+    secure: true,
+});
+
+// 方案二：csurf 中间件（Double-submit Cookie）
+import csrf from 'csurf';
+const csrfProtection = csrf({
+    cookie: { httpOnly: false, sameSite: 'strict' },
+});
+
+// 获取 CSRF Token（登录后调用一次）
+router.get('/csrf-token', csrfProtection, (req, res) => {
+    res.json({ csrfToken: req.csrfToken() });
+});
+
+// 需要 CSRF 保护的请求
+router.post('/transfer', csrfProtection, (req, res) => {
+    res.json({ message: '转账成功' });
+});</code></pre>
+                <div class="warning">
+                    <strong>如果用 Bearer Token 放在 Authorization 头中而非 Cookie，天然免疫 CSRF。</strong> 但如果你选择把 JWT 放在 httpOnly Cookie 中以防止 XSS 窃取，就必须同时做 CSRF 防护。安全没有银弹，只有权衡。
+                </div>
+            </div>
+        </section>
+
+        <!-- 输入验证 Schema -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>输入验证 Schema</h3>
+                <h4>用 Zod 为认证接口定义严格的验证规则</h4>
+                <p>认证系统是攻击的首要目标。注册邮箱需要格式验证和归一化、密码需要强度检查、登录参数需要长度限制。Zod 是 TypeScript 生态中最适合做请求验证的库——它既能验证运行时数据，又能自动推导类型。</p>
+                <pre><code class="language-bash">$ npm install zod</code></pre>
+                <pre><code class="language-javascript">import { z } from 'zod';
+
+// 注册验证：邮箱归一化 + 密码强度
+const registerSchema = z.object({
+    email: z.string().email('邮箱格式不正确').toLowerCase().trim(),
+    password: z.string()
+        .min(8, '密码至少 8 位')
+        .max(128, '密码不超过 128 位')
+        .regex(/[A-Z]/, '需要至少一个大写字母')
+        .regex(/[a-z]/, '需要至少一个小写字母')
+        .regex(/[0-9]/, '需要至少一个数字')
+        .regex(/[^A-Za-z0-9]/, '需要至少一个特殊字符'),
+    name: z.string().min(2).max(50).trim(),
+});
+
+// 登录验证：邮箱归一化 + 密码非空
+const loginSchema = z.object({
+    email: z.string().email('邮箱格式不正确').toLowerCase().trim(),
+    password: z.string().min(1, '请输入密码'),
+});
+
+// 密码重置验证
+const resetPasswordSchema = z.object({
+    token: z.string().length(64, '令牌格式无效'), // 32 bytes hex
+    newPassword: z.string().min(8).max(128),
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 验证中间件集成 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>验证中间件集成</h3>
+                <h4>一行代码为路由加上输入验证</h4>
+                <pre><code class="language-javascript">// 统一验证中间件
+function validate(schema: z.ZodSchema) {
+    return (req: Request, res: Response, next: NextFunction) => {
+        const result = schema.safeParse(req.body);
+        if (!result.success) {
+            res.status(400).json({
+                error: '输入验证失败',
+                details: result.error.flatten().fieldErrors,
+            });
+            return;
+        }
+        req.body = result.data; // 使用验证+归一化后的数据
+        next();
+    };
+}
+
+// 路由中使用
+router.post('/register', validate(registerSchema), authController.register);
+router.post('/login', validate(loginSchema), authController.login);
+router.post('/reset-password', validate(resetPasswordSchema), authController.resetPassword);
+
+// 错误响应示例
+// POST /register { email: "abc", password: "123" }
+// 400 {
+//   "error": "输入验证失败",
+//   "details": {
+//     "email": ["邮箱格式不正确"],
+//     "password": ["密码至少 8 位", "需要至少一个大写字母", ...]
+//   }
+// }</code></pre>
+                <div class="warning">
+                    <strong>验证通过后用 <code>result.data</code> 替换 <code>req.body</code>。</strong> 这样后续代码拿到的是经过归一化（如 <code>toLowerCase()</code>、<code>trim()</code>）后的干净数据。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <div class="warning">
+                    <strong>认证问题往往是最难排查的。</strong> 建议先用 console.log 打印 Token 内容，确认签发和验证使用的是同一个密钥。
+                </div>
+
+                <h4>问题一：Token 验证总是返回"无效"</h4>
+                <p><strong>原因</strong>：签发和验证使用的密钥不一致，或环境变量在不同环境下值不同。</p>
+                <p><strong>修复</strong>：确保 <code>JWT_ACCESS_SECRET</code> 在签发和验证时是同一个值。检查 <code>.env</code> 文件。</p>
+
+                <h4>问题二：bcrypt.compare 总返回 false</h4>
+                <p><strong>原因</strong>：注册时哈希的密码可能被截断了（数据库字段太短）。</p>
+                <p><strong>修复</strong>：bcrypt 哈希结果固定 60 字符，确保数据库 password 字段至少 <code>VARCHAR(255)</code>。</p>
+
+                <h4>问题三：OAuth 回调报错"redirect_uri_mismatch"</h4>
+                <p><strong>原因</strong>：GitHub 后台配置的回调 URL 和代码中的不一致。</p>
+                <p><strong>修复</strong>：在 GitHub Settings > Developer settings 中检查回调 URL，确保和 <code>GITHUB_CALLBACK_URL</code> 完全一致。</p>
+
+                <h4>问题四：Refresh Token 刷新后旧 Token 仍可用</h4>
+                <p><strong>原因</strong>：Redis 黑名单未生效，或 TTL 设置为 0 导致 key 立即过期。</p>
+                <p><strong>修复</strong>：确认 <code>ttl = decoded.exp - now</code> 为正数再写入 Redis，并用 <code>redis.get</code> 验证黑名单确实生效。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：写一个注册接口，接收 email 和 password。用 bcrypt 哈希密码后存入数据库。</p>
+                        <pre><code class="language-javascript">// 提示：先查重，再 hash，再 create
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">router.post('/register', asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) throw new AppError(409, '该邮箱已注册');
+
+    const hash = await bcrypt.hash(password, 12);
+    const user = await prisma.user.create({
+        data: { email, password: hash, name: email.split('@')[0] },
+        select: { id: true, email: true },
+    });
+    res.status(201).json(user);
+}));</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：给 <code>DELETE /api/posts/:id</code> 加上认证和权限检查——只有 ADMIN 或文章作者才能删除。</p>
+                        <pre><code class="language-javascript">// 提示：requireAuth + 检查 req.user.role 或 post.authorId
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">router.delete('/posts/:id', requireAuth, asyncHandler(async (req, res) => {
+    const post = await prisma.post.findUnique({ where: { id: req.params.id } });
+    if (!post) throw new AppError(404, '文章不存在');
+    if (req.user!.role !== 'ADMIN' && post.authorId !== req.user!.userId) {
+        throw new AppError(403, '只能删除自己的文章');
+    }
+    await prisma.post.delete({ where: { id: req.params.id } });
+    res.json({ message: '删除成功' });
+}));</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>认证搞定了。下一章学习<strong>文件上传与静态资源</strong>——让用户能上传头像、图片和文档。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

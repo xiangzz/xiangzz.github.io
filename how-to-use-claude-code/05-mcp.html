@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>05 MCP</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔗</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 05 章</div>
+            <h1>MCP</h1>
+            <p>让 Claude Code 的能力扩展到 GitHub、数据库、知识库等外部系统</p>
+            <strong>不用手动复制粘贴 — 在对话中直接访问外部数据</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>手动搬运</h2>
+                <h4>你有没有发现，每次需要外部数据都要在应用间来回切换？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>查 PR 信息</h4>
+                        <p>想看看当前仓库的 open PR 有哪些。你打开浏览器 → 登录 GitHub → 找到 PR → 复制内容 → 粘贴给 Claude。<strong>来回切了三次</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>查数据库</h4>
+                        <p>需要确认线上某个用户的订单状态。你连上数据库 → 跑查询 → 导出结果 → 粘贴给 Claude。<strong>查一次两分钟，查十次二十分钟</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>发通知</h4>
+                        <p>Claude 做完代码审查，你想把结果发到团队频道。手动复制 → 打开 Slack → 粘贴发送。<strong>每次都是纯手工操作</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>MCP 就是为这个设计的：</strong>MCP（Model Context Protocol）让 Claude Code 直接调用外部工具和数据源。查 PR、跑查询、发通知——全在对话中完成，不用切出去。
+                </div>
+            </div>
+        </section>
+
+        <!-- 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>希望让 Claude 接入 GitHub、数据库、内部平台等外部能力的开发者</li>
+                            <li>厌倦了在工具之间手动复制粘贴的人</li>
+                            <li>理解命令和 Skill 的基本用法，想进一步扩展 Claude 的能力边界</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该已经能</h4>
+                        <ul>
+                            <li>说清 MCP 的定位和三层架构</li>
+                            <li>配置和使用一个 MCP server</li>
+                            <li>判断"什么时候用 MCP，什么时候用 Memory 就够了"</li>
+                            <li>掌握最关键的安全注意事项</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 首次设置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>首次设置</h2>
+                <h4>从零开始接入一个 MCP Server，只需五步</h4>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <strong>1. 确认服务</strong>
+                        <p style="font-size: 0.85em;">确定要接入的<br>外部系统</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>2. 选传输</strong>
+                        <p style="font-size: 0.85em;">HTTP（远程）<br>或 Stdio（本地）</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>3. 配认证</strong>
+                        <p style="font-size: 0.85em;">环境变量<br>或 Token</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>4. 添加</strong>
+                        <p style="font-size: 0.85em;">CLI 命令<br>或 .mcp.json</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>5. 验证</strong>
+                        <p style="font-size: 0.85em;">claude mcp list<br>确认可用</p>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>前置条件</h4>
+                        <ul>
+                            <li><strong>Claude Code</strong> — 已安装并可用</li>
+                            <li><strong>MCP Server</strong> — 对应服务的 server 包（如 <code>@modelcontextprotocol/server-github</code>）</li>
+                            <li><strong>认证信息</strong> — API Token、OAuth 凭据或数据库连接字符串</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>快速验证清单</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 1. 添加 server</span>
+$ claude mcp add my-db -- npx @mcp/server-db
+
+<span style="color: var(--text-muted);"># 2. 确认已注册</span>
+$ claude mcp list
+
+<span style="color: var(--text-muted);"># 3. 查看暴露的工具</span>
+$ claude mcp get my-db
+
+<span style="color: var(--text-muted);"># 4. 在对话中试用</span>
+> "用 my-db 查一下用户表有多少行"</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MCP 是什么 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三层架构</h2>
+                <h4>MCP 不是什么神秘的东西——它就是一套标准化的"工具连接方式"</h4>
+                <p><strong>MCP</strong>（Model Context Protocol）是 Claude Code 访问外部工具、服务和 API 的标准协议。</p>
+                <p>说白了，它就是一个<strong>"翻译器"</strong>——Claude 不需要知道每个外部系统怎么调用，MCP 把不同的外部系统统一翻译成同一种"工具"格式。这个比喻只是为了帮你建立直观感受。在技术上，MCP 实际上是一个基于 JSON-RPC 的通信协议，Claude 通过它向 MCP Server 发送请求，Server 再把请求转发给外部系统。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/05-mcp-1.png" alt="图：MCP 三层架构——Claude Code 如何通过 MCP 访问外部系统" class="ai-diagram-img">
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <strong>Claude Code</strong>
+                        <p style="font-size: 0.85em;">调用者<br>发起工具请求</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>MCP Server</strong>
+                        <p style="font-size: 0.85em;">工具提供者<br>翻译请求</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>外部系统</strong>
+                        <p style="font-size: 0.85em;">GitHub / DB /<br>Slack / API</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心价值：</strong>标准化连接方式。你不需要为每个外部系统写不同的集成代码，MCP 提供统一的调用协议。一个 MCP Server 可以暴露多个工具。
+                </div>
+            </div>
+        </section>
+
+        <!-- 核心组成 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三个概念</h2>
+                <h4>Server、Tool、Schema——理解这三个就够了</h4>
+                <table>
+                    <thead><tr><th>概念</th><th>说明</th><th>例子</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>MCP Server</strong></td><td>一个独立服务进程，提供一组工具</td><td>GitHub MCP Server</td></tr>
+                        <tr><td><strong>Tool</strong></td><td>Server 暴露的具体功能</td><td><code>list_prs</code>、<code>create_issue</code></td></tr>
+                        <tr><td><strong>Schema</strong></td><td>工具的参数和返回值定义</td><td><code>{"repo": string, "state": "open"}</code></td></tr>
+                    </tbody>
+                </table>
+                <p>就像一个餐厅——Server 是餐厅本身，Tool 是菜单上的菜品，Schema 是每道菜的配料表（你不能给素食菜加牛肉）。</p>
+                <p>这个比喻只是为了帮你建立直观感受。实际上 Tool 就是一个函数签名，Schema 定义了它接收什么参数、返回什么结构。</p>
+                <div class="info-block">
+                    <strong>MCP Prompts 变成 Slash Commands：</strong>MCP Server 暴露的 Prompt 会自动出现在 <code>/</code> 菜单中，格式是 <code>/mcp__&lt;server&gt;__&lt;prompt&gt;</code>。比如 <code>/mcp__github__list_prs</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 请求/响应模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>请求响应</h2>
+                <h4>每次 MCP 调用都遵循三步模式</h4>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <strong>1. Claude 发起请求</strong>
+                        <p style="font-size: 0.85em;">根据上下文判断需要<br>调用哪个工具，传入参数</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>2. Server 处理</strong>
+                        <p style="font-size: 0.85em;">MCP Server 验证参数<br>转发给外部系统执行</p>
+                    </div>
+                    <div class="flow-step">
+                        <strong>3. 返回结构化结果</strong>
+                        <p style="font-size: 0.85em;">外部系统返回数据<br>Server 按 Schema 格式化后回传</p>
+                    </div>
+                </div>
+                <pre><code><span style="color: var(--text-muted);"># 对话中的实际流程</span>
+用户: "列出仓库 open 的 PR"
+
+Claude → MCP Server:
+  调用 mcp__github__list_prs({ repo: "my-project", state: "open" })
+
+MCP Server → GitHub API → MCP Server → Claude:
+  返回 [{ title: "Fix login bug", number: 42, author: "alice" }, ...]
+
+Claude → 用户:
+  "当前有 3 个 open PR，最新的是 alice 的 #42 Fix login bug"</code></pre>
+                <div class="key-point">
+                    <strong>关键：</strong>整个过程对你透明。你只需要用自然语言描述需求，Claude 自动选择工具、构造参数、解析结果。你看到的是最终答案，不是中间的技术细节。
+                </div>
+            </div>
+        </section>
+
+        <!-- 传输方式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>传输方式</h2>
+                <h4>两种连接 MCP Server 的方式</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>HTTP（推荐远程）</h4>
+                        <p>通过 HTTP 连接远程服务。适合第三方服务和企业内网。</p>
+                        <pre><code><span style="color: var(--text-muted);"># 添加 HTTP MCP server</span>
+$ claude mcp add my-server --transport http \
+  --url https://api.example.com/mcp</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Stdio（本地进程）</h4>
+                        <p>通过标准输入输出连接本地进程。适合本地运行的工具。</p>
+                        <pre><code><span style="color: var(--text-muted);"># 添加本地 MCP server</span>
+$ claude mcp add my-local \
+  -- npx my-mcp-server</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>SSE 已弃用：</strong>旧版本中的 SSE 传输方式已被弃用。新项目请使用 HTTP、Stdio 或 WebSocket。
+                </div>
+                <div class="info-block">
+                    <strong>WebSocket 传输：</strong>在 <code>.mcp.json</code> 中配置 <code>ws://</code> URL 即可连接支持 WebSocket 的 MCP Server。适合需要实时双向通信的场景。
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Windows 注意事项</h4>
+                        <ul>
+                            <li><strong>Shell 差异</strong>：Windows 上 Stdio 模式使用的 shell 与 Unix 不同，<code>command</code> 字段要写完整路径或确保命令在 PATH 中</li>
+                            <li><strong>环境变量</strong>：使用 <code>${VAR}</code> 语法，实际变量在 Windows 系统环境变量中设置</li>
+                            <li><strong>路径写法</strong>：配置文件中路径使用正斜杠 <code>/</code>，或使用转义的反斜杠 <code>\\</code></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>OAuth 2.0 认证</h4>
+                        <ul>
+                            <li>部分 MCP Server 支持 OAuth，Claude 可通过<strong>交互式浏览器流程</strong>完成授权</li>
+                            <li>也可以在配置中<strong>预配置凭据</strong>（Client ID / Secret），跳过交互步骤</li>
+                            <li>适合需要安全接入的企业级服务（如 Google Workspace、Azure DevOps）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 服务器生态 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>服务器生态</h2>
+                <h4>常见的 MCP Server 都能干什么</h4>
+                <table>
+                    <thead><tr><th>MCP Server</th><th>能力</th><th>典型工具</th><th>认证方式</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>GitHub</strong></td><td>仓库管理</td><td>list_prs, create_issue, push</td><td>OAuth / Token</td></tr>
+                        <tr><td><strong>Database</strong></td><td>SQL 查询</td><td>query, insert, update</td><td>连接字符串</td></tr>
+                        <tr><td><strong>Filesystem</strong></td><td>文件操作</td><td>read, write, search</td><td>OS 权限</td></tr>
+                        <tr><td><strong>Slack</strong></td><td>团队通信</td><td>send_message, list_channels</td><td>Token</td></tr>
+                        <tr><td><strong>Google Docs</strong></td><td>文档访问</td><td>read, write, share</td><td>OAuth</td></tr>
+                        <tr><td><strong>Context7</strong></td><td>库文档查询</td><td>latest_docs</td><td>内置</td></tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>组合使用</h4>
+                        <p>一个项目可以同时接入多个 MCP Server。比如"每日报告"工作流：GitHub 拉取 PR 统计 → Database 查询销售数据 → Slack 发送报告——全在对话中完成。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Elicitation</h4>
+                        <p>有些 MCP Server 在运行时需要用户提供额外信息。Claude 会把 Server 的问题转发给你，你回答后 Claude 再把结果传回去——不需要提前配置所有参数。</p>
+                    </div>
+                    <div class="card">
+                        <h4>动态工具更新</h4>
+                        <p>MCP Server 增加或移除工具时，Claude <strong>可以在运行时感知变化</strong>，不需要重启会话。比如你中途更新了 Server 版本，新工具立即可用。</p>
+                    </div>
+                    <div class="card">
+                        <h4>工具自动搜索</h4>
+                        <p>Claude 会根据当前上下文<strong>自动查找</strong>可用的 MCP 工具。你不需要记住工具名——只要描述清楚需求，Claude 自动匹配合适的工具。</p>
+                    </div>
+                    <div class="card">
+                        <h4>@ 提及资源</h4>
+                        <p>除了工具调用，MCP 还提供<strong>资源引用</strong>。你可以在 prompt 中用 <code>@</code> 直接提及某个 MCP 资源（如一份远程文档），Claude 会自动读取其内容。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Subagent 作用域</h4>
+                        <p>你可以限制某些 MCP Server 只允许<strong>特定 subagent</strong> 使用。比如数据库 MCP 只给数据分析 agent 开放，不让代码审查 agent 接触。</p>
+                    </div>
+                    <div class="card">
+                        <h4>插件自带 MCP</h4>
+                        <p>插件可以把 MCP Server <strong>打包分发</strong>。安装一个插件 = 自动获得它提供的所有 MCP 工具，不需要单独配置 server。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 实战：GitHub MCP -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战示例</h2>
+                <h4>配置好 GitHub MCP 后，在对话中直接操作 GitHub</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>能做什么</h4>
+                        <ul>
+                            <li><strong>PR 管理</strong>：列出、查看、审查、合并 PR</li>
+                            <li><strong>Issue 管理</strong>：创建、搜索、更新、关闭 Issue</li>
+                            <li><strong>仓库信息</strong>：查看状态、分支、标签</li>
+                            <li><strong>Commit 操作</strong>：查看提交历史、比较差异</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>实际对话</h4>
+                        <pre><code>用户: "列出这个仓库的 open PR"
+
+Claude: 调用 mcp__github__list_prs
+→ 返回 PR 列表
+
+用户: "审查 PR #42"
+
+Claude: 调用 mcp__github__pr_review(42)
+→ 返回审查结果 + 建议</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 实战示例：数据库 MCP -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>数据库实战</h2>
+                <h4>配置好 Database MCP 后，在对话中直接查询数据库</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>配置方式</h4>
+                        <pre><code><span style="color: var(--text-muted);">// .mcp.json 中添加数据库 server</span>
+{
+  "mcpServers": {
+    "my-db": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL}"
+      }
+    }
+  }
+}</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>实际对话</h4>
+                        <pre><code>用户: "查一下最近 7 天的新增用户数"
+
+Claude: 调用 mcp__my-db__query(
+  "SELECT COUNT(*) FROM users
+   WHERE created_at > NOW() - INTERVAL '7 days'"
+)
+
+→ 返回结果: [{ count: 1284 }]
+
+用户: "按天分组呢？"
+
+Claude: 调用 mcp__my-db__query(
+  "SELECT DATE(created_at) AS day,
+          COUNT(*) AS cnt
+   FROM users
+   WHERE created_at > NOW() - INTERVAL '7 days'
+   GROUP BY day ORDER BY day"
+)
+→ 返回每日数据，Claude 生成趋势分析</code></pre>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>文件系统 MCP 操作：</strong>类似地，文件系统 MCP 可以读写文件、批量整理目录、生成报告或导出查询结果到文件。比如"把刚才的查询结果保存为 <code>report.csv</code>"——Claude 直接调用文件系统工具完成，不需要你手动导出。
+                </div>
+            </div>
+        </section>
+
+        <!-- MCP 输出限制 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>输出限制</h2>
+                <h4>MCP 工具返回数据太大？有办法控制</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>问题场景</h4>
+                        <ul>
+                            <li>数据库查询返回<strong>几千行</strong>结果，撑爆上下文窗口</li>
+                            <li>GitHub API 返回<strong>完整的 diff 内容</strong>，token 消耗暴增</li>
+                            <li>文件系统读取<strong>超大日志文件</strong>，对话卡住</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>控制手段</h4>
+                        <ul>
+                            <li><strong>限制 token 数</strong>：在工具调用中指定返回上限</li>
+                            <li><strong>分页获取</strong>：使用 <code>limit</code> 和 <code>offset</code> 参数分批拉取</li>
+                            <li><strong>增大上限</strong>：需要完整结果时，可增大最大输出到 <strong>50,000 tokens</strong></li>
+                        </ul>
+                        <pre><code><span style="color: var(--text-muted);"># 增大 MCP 输出上限</span>
+$ claude config set mcpMaxOutputTokens 50000</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>性能提醒：</strong>增大上限意味着更多 token 消耗和更长的处理时间。优先考虑<strong>过滤和分页</strong>，只在确实需要完整数据时才放大上限。
+                </div>
+            </div>
+        </section>
+
+        <!-- 安全实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全实践</h2>
+                <h4>MCP 接入外部系统时，安全是第一优先级</h4>
+                <div class="comparison">
+                    <div class="after">
+                        <h4>应该做的</h4>
+                        <ul>
+                            <li>只授权必要的工具</li>
+                            <li>优先使用最小权限</li>
+                            <li>检查输出是否可信</li>
+                            <li>用环境变量存认证信息</li>
+                            <li>把项目级配置版本化</li>
+                        </ul>
+                    </div>
+                    <div class="before">
+                        <h4>不要做的</h4>
+                        <ul>
+                            <li>把 API key 写死在仓库里</li>
+                            <li>默认开放所有工具</li>
+                            <li>忽视网络和认证风险</li>
+                            <li>一次性拉回过多数据</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>权限语法：</strong><code>mcp__github</code>（整个 server）、<code>mcp__github__*</code>（所有工具）、<code>mcp__github__get_issue</code>（特定工具）。<strong>从最具体的开始授权</strong>，不要一上来就给 <code>*</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 用代码执行解决上下文膨胀 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>上下文膨胀</h2>
+                <h4>数据量大时，把 MCP 当代码 API 来用，减少来回传输</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>问题：传统方式</h4>
+                        <ul>
+                            <li>把大量数据<strong>全量塞进上下文</strong> → token 浪费严重</li>
+                            <li>每个 round-trip 都要<strong>重新传输</strong>数据 → 效率低下</li>
+                            <li>两个信息源（上下文 + 外部数据）<strong>同时在耗 token</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>方案：MCP + 代码执行</h4>
+                        <ul>
+                            <li>用 MCP 工具做<strong>实时查询</strong>，只取需要的数据</li>
+                            <li>在代码中<strong>循环处理</strong>，不做 round-trip → 减少 token</li>
+                            <li>只把<strong>最终结果</strong>传回给 Claude 的上下文</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>示例：过滤大数据集</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 不要这样（全量拉取）</span>
+> "查出所有用户给我看"
+→ 返回 10000 行，上下文爆了
+
+<span style="color: var(--text-muted);"># 应该这样（精确查询）</span>
+> "查出活跃度前 10 的用户"
+→ MCP 只返回 10 条，token 可控</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>示例：循环处理</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 不要来回对话（每轮都传数据）</span>
+> "处理第 1 批" → 返回结果
+> "处理第 2 批" → 返回结果（又要传上下文）
+
+<span style="color: var(--text-muted);"># 应该：让 Claude 写代码循环</span>
+> "写个脚本遍历所有批次，
+    用 MCP 查询并汇总"
+→ 一次完成，无 round-trip</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>好处：</strong>更少 token 浪费 + 更清晰的数据边界 + 更适合大规模查询。<strong>取舍：</strong>实现复杂度更高、需要维护 Server，但扩展性更好。
+                </div>
+            </div>
+        </section>
+
+        <!-- MCP vs Memory -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>MCP vs Memory</h2>
+                <h4>什么时候该接外部系统，什么时候写规则就够了</h4>
+                <table>
+                    <thead><tr><th>维度</th><th>Memory</th><th>MCP</th></tr></thead>
+                    <tbody>
+                        <tr><td>数据类型</td><td>长期规则、偏好</td><td>实时数据、外部操作</td></tr>
+                        <tr><td>更新频率</td><td>手动更新</td><td>实时同步</td></tr>
+                        <tr><td>适合场景</td><td>编码规范、项目架构</td><td>GitHub 操作、数据库查询</td></tr>
+                        <tr><td>token 消耗</td><td>每次加载</td><td>按需调用</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>简单判断：</strong>如果信息是"静态规则"用 Memory（写进 <code>CLAUDE.md</code>）。如果需要"实时操作或数据"用 MCP（接入外部系统）。
+                </div>
+            </div>
+        </section>
+
+        <!-- Claude 作为 MCP Server -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Claude 作服务端</h2>
+                <h4>Claude Code 自身也可以作为 MCP Server 运行</h4>
+                <pre><code><span style="color: var(--text-muted);"># 启动 Claude Code 作为 MCP Server（stdio 模式）</span>
+$ claude mcp serve</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>工作方式</h4>
+                        <ul>
+                            <li>运行 <code>claude mcp serve</code> 后，Claude Code 暴露一组 MCP 工具</li>
+                            <li>其他应用（如 Claude Desktop、IDE 插件）可以通过 MCP 协议调用 Claude Code 的能力</li>
+                            <li>适合把 Claude Code 嵌入已有工具链中</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>典型场景</h4>
+                        <ul>
+                            <li><strong>IDE 集成</strong>：让编辑器通过 MCP 直接调用 Claude Code 的文件编辑、代码分析能力</li>
+                            <li><strong>工具链串联</strong>：把 Claude Code 作为"代码智能"节点接入自动化流水线</li>
+                            <li><strong>多 Agent 协作</strong>：其他 Agent 通过 MCP 协议调用 Claude Code 完成编码任务</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>本质：</strong>这是"角色反转"——平时 Claude Code 是 MCP 的客户端（调用外部工具），现在它变成服务端（被其他程序调用）。一个 Claude Code 实例可以同时是客户端和服务端。
+                </div>
+            </div>
+        </section>
+
+        <!-- 配置管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置管理</h2>
+                <h4>两种方式：CLI 命令或直接写配置文件</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>方式 1：CLI 命令</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 添加 MCP server</span>
+$ claude mcp add github --transport http --url https://...
+
+<span style="color: var(--text-muted);"># 列出所有 MCP servers</span>
+$ claude mcp list
+
+<span style="color: var(--text-muted);"># 查看特定 server 详情</span>
+$ claude mcp get github
+
+<span style="color: var(--text-muted);"># 移除 MCP server</span>
+$ claude mcp remove github</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>方式 2：配置文件</h4>
+                        <pre><code><span style="color: var(--text-muted);">// 文件：.mcp.json（项目级）</span>
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "database": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-database"],
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL}"
+      }
+    }
+  }
+}</code></pre>
+                    </div>
+                </div>
+                <table>
+                    <thead><tr><th>作用域</th><th>配置文件</th><th>适合</th></tr></thead>
+                    <tbody>
+                        <tr><td>项目级</td><td><code>.mcp.json</code></td><td>团队共享的 server，随 Git 同步</td></tr>
+                        <tr><td>用户级</td><td><code>~/.claude.json</code></td><td>个人常用 server，不进 Git</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>环境变量语法：</strong>配置中用 <code>${GITHUB_TOKEN}</code> 引用环境变量。实际值在运行时读取，这样同一份配置在不同机器上自动使用各自的凭据——不用把密钥写进文件。
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>更多管理命令</h4>
+                        <pre><code><span style="color: var(--text-muted);"># 重置项目级审批选择（重新询问权限）</span>
+$ claude mcp reset
+
+<span style="color: var(--text-muted);"># 从 Claude Desktop 导入已有配置</span>
+$ claude mcp import</code></pre>
+                        <p>已经在 Claude Desktop 里配好了 MCP？用 <code>import</code> 一键导入到 Claude Code，不用重复配置。</p>
+                    </div>
+                    <div class="card">
+                        <h4>企业受管配置</h4>
+                        <p>企业可以通过<strong>受管设置（Managed Settings）</strong>统一向团队分发 MCP 配置。管理员指定允许的 Server 清单和认证方式，团队成员无需单独配置——开箱即用。</p>
+                        <ul>
+                            <li>统一管控：哪些 Server 可以用、权限边界在哪</li>
+                            <li>集中认证：由管理员统一维护 Token 和凭据</li>
+                            <li>合规审计：所有 MCP 调用可追溯</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>Schema 不匹配</h4>
+                        <p><strong>症状：</strong>工具调用报错，提示参数类型不对。</p>
+                        <p><strong>修复：</strong>检查参数类型定义。工具期望 JSON 对象但你传了字符串？用 <code>claude mcp get &lt;server&gt;</code> 查看工具的完整 Schema。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>权限不足</h4>
+                        <p><strong>症状：</strong>Server 能连接，但工具调用被拒。</p>
+                        <p><strong>修复：</strong>检查 OAuth/Token 配置。确认环境变量中的认证信息有效。试试 <code>claude mcp get &lt;server&gt;</code> 看工具列表。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>网络超时</h4>
+                        <p><strong>症状：</strong>外部服务响应慢，工具调用卡住。</p>
+                        <p><strong>修复：</strong>设置超时和重试策略。检查网络连接和代理配置。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>返回数据过大</h4>
+                        <p><strong>症状：</strong>查询结果太多，上下文被撑爆。</p>
+                        <p><strong>修复：</strong>在工具调用时使用过滤和分页参数。限制返回的条目数。避免 <code>SELECT *</code> 式的全量查询。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>找不到 MCP Server</h4>
+                        <p><strong>症状：</strong><code>claude mcp list</code> 里看不到刚添加的 server，或调用时报"server not found"。</p>
+                        <p><strong>修复：</strong>确认 server 包已安装（<code>npm list -g</code> 检查）、配置文件路径正确、<code>command</code> 字段的命令可以正常执行。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>认证失败</h4>
+                        <p><strong>症状：</strong>Server 能连接，但每次调用都报 401/403。</p>
+                        <p><strong>修复：</strong>检查环境变量是否设置（<code>echo $GITHUB_TOKEN</code>）、确认 Token 权限范围是否足够、重新 <code>export</code> 变量后再启动 Claude Code。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>Server 崩溃</h4>
+                        <p><strong>症状：</strong>调用工具后 Server 无响应或直接退出。</p>
+                        <p><strong>修复：</strong>查看 Server 的 stderr 日志、降低并发请求数、简化参数重试。如果 Server 是 Node.js 进程，检查内存是否足够。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>为一个常见需求设计"工具接口"</h4>
+                <p>不用写代码，只设计接口。重点是想清楚"输入什么、输出什么、出错怎么办"。</p>
+                <div class="key-point">
+                    <strong>题目：</strong>设计"查询项目部署状态"工具的接口。
+                </div>
+                <ol>
+                    <li>定义输入参数（项目名、环境）</li>
+                    <li>定义输出格式（状态、版本、最后部署时间）</li>
+                    <li>定义错误类型（项目不存在、环境无效、连接失败）</li>
+                </ol>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <pre><code>{
+  "name": "get_deployment_status",
+  "description": "查询指定项目在指定环境的部署状态",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "project": {
+        "type": "string",
+        "description": "项目名称"
+      },
+      "environment": {
+        "type": "string",
+        "enum": ["dev", "staging", "production"],
+        "description": "目标环境"
+      }
+    },
+    "required": ["project", "environment"]
+  },
+  "outputSchema": {
+    "status": "deployed | deploying | failed | not_found",
+    "version": "v2.3.1",
+    "lastDeployedAt": "2025-01-15T10:30:00Z",
+    "deployedBy": "ci-pipeline"
+  },
+  "errors": {
+    "PROJECT_NOT_FOUND": "项目不存在",
+    "INVALID_ENVIRONMENT": "环境参数无效",
+    "CONNECTION_FAILED": "无法连接到部署平台"
+  }
+}</code></pre>
+                <div class="key-point">
+                    <strong>设计要点：</strong>输入用 enum 限制可选值（不让调用者乱填），输出有明确的状态枚举，错误类型覆盖了"找不到"、"参数错"、"网络断"三种典型情况。
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>说清 MCP 的定位和三层架构</li>
+                            <li>理解 Server / Tool / Schema 的关系</li>
+                            <li>配置和使用 MCP server</li>
+                            <li>掌握最关键的安全注意事项</li>
+                            <li>判断"何时用 MCP vs Memory"</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>它和前后章节的关系</h4>
+                        <ul>
+                            <li><a href="./04-subagents.html">Subagents</a> — agent 可以通过 MCP 访问外部工具</li>
+                            <li><strong>MCP</strong> — 连接外部系统的桥梁</li>
+                            <li><a href="./06-hooks.html">Hooks</a> — 在 MCP 调用前后自动触发校验</li>
+                            <li><a href="./07-plugins.html">Plugins</a> — 把 MCP server 打包进插件</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>MCP 是 Claude Code 连接外部世界的桥梁。用好 MCP = 实时数据 + 外部操作 + 自动化集成。记得从最小权限开始授权，别一上来就给 <code>*</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./06-hooks.html">下一章：Hooks</a> — 在 MCP 调用前后自动触发校验</li>
+                            <li><a href="./10-cli.html">CLI</a> — 通过命令行管理 MCP 配置</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章源文件 <span style="font-weight:normal;font-size:0.85em;color:var(--text-muted);">（点击查看完整内容）</span></h4>
+                        <ul>
+                            <li><code><a href="#" class="md-link" data-md="README">README.md</a></code> — MCP 完整配置指南</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- README 弹窗 -->
+    <style>
+        .md-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 9999; justify-content: center; align-items: center; }
+        .md-modal-overlay.active { display: flex; }
+        .md-modal { background: var(--surface-color, #fff); border-radius: 12px; width: min(720px, 92vw); max-height: 82vh; display: flex; flex-direction: column; box-shadow: 0 24px 64px rgba(0,0,0,0.25); animation: md-modal-in 0.2s ease-out; }
+        @keyframes md-modal-in { from { opacity: 0; transform: translateY(20px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .md-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-color, #e5e7eb); }
+        .md-modal-header h3 { margin: 0; font-size: 1.05em; font-family: var(--font-mono, monospace); color: var(--accent-color, #8A4A12); }
+        .md-modal-close { background: none; border: none; font-size: 1.6em; line-height: 1; cursor: pointer; color: var(--text-color, #333); padding: 0 4px; border-radius: 4px; }
+        .md-modal-close:hover { background: var(--code-bg-color, #f3f4f6); }
+        .md-modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+        .md-modal-body pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 0.88em; line-height: 1.65; color: var(--text-color, #333); font-family: var(--font-mono, monospace); }
+        .md-modal-body .md-loading { text-align: center; padding: 40px; color: var(--text-muted, #888); }
+        a.md-link { color: var(--code-text-color, #0B598E); text-decoration: none; border-bottom: 1px dashed var(--code-text-color, #0B598E); cursor: pointer; }
+        a.md-link:hover { color: var(--primary-color, #D06519); border-bottom-color: var(--primary-color, #D06519); }
+    </style>
+
+    <div class="md-modal-overlay" id="md-modal-overlay">
+        <div class="md-modal">
+            <div class="md-modal-header">
+                <h3 id="md-modal-title"></h3>
+                <button class="md-modal-close" id="md-modal-close">&times;</button>
+            </div>
+            <div class="md-modal-body">
+                <div class="md-loading" id="md-modal-loading">加载中…</div>
+                <pre id="md-modal-content" style="display:none;"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        var overlay = document.getElementById('md-modal-overlay');
+        var titleEl = document.getElementById('md-modal-title');
+        var contentEl = document.getElementById('md-modal-content');
+        var loadingEl = document.getElementById('md-modal-loading');
+        var closeBtn = document.getElementById('md-modal-close');
+        var cache = {};
+        function openModal(name) {
+            titleEl.textContent = name + '.md';
+            contentEl.style.display = 'none';
+            loadingEl.style.display = 'block';
+            overlay.classList.add('active');
+            if (cache[name]) { showContent(cache[name]); return; }
+            fetch('./05-mcp/' + name + '.md')
+                .then(function(r) { if (!r.ok) throw new Error('Not found'); return r.text(); })
+                .then(function(text) { cache[name] = text; showContent(text); })
+                .catch(function() { loadingEl.textContent = '加载失败，请确认文件存在。'; });
+        }
+        function showContent(text) { contentEl.textContent = text; loadingEl.style.display = 'none'; contentEl.style.display = 'block'; }
+        function closeModal() { overlay.classList.remove('active'); }
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) closeModal(); });
+        document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && overlay.classList.contains('active')) closeModal(); });
+        document.querySelectorAll('a.md-link').forEach(function(link) { link.addEventListener('click', function(e) { e.preventDefault(); openModal(this.getAttribute('data-md')); }); });
+    })();
+    </script>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

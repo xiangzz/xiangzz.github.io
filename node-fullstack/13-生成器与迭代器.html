@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生成器与迭代器 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>生成器与迭代器</h1>
+            <p>能暂停、能恢复的函数，数据流的控制艺术</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>一个普通函数做不到的事</h3>
+                <h4>怎么让函数"说到一半停下来"，稍后再继续？</h4>
+                <pre><code class="language-javascript">// 普通函数：一跑到底，中途停不下来
+function normalLoop() {
+    let result = [];
+    for (let i = 0; i < 1000000; i++) {
+        result.push(i * 2);
+    }
+    return result; // 一次性返回 100 万个元素
+}
+
+// 生成器：按需产出，要一个给一个
+function* lazyLoop() {
+    let i = 0;
+    while (true) {
+        yield i++ * 2; // 每次只产出一个
+    }
+}
+let gen = lazyLoop();
+console.log(gen.next().value); // 0
+console.log(gen.next().value); // 2
+console.log(gen.next().value); // 4</code></pre>
+                <p>普通函数要么一口气跑完，要么不跑。但有时候你需要的是<strong>"按需产出"</strong>——用到多少算多少，不浪费内存。</p>
+                <p>这就是<strong>生成器（Generator）</strong>的能力：能暂停、能恢复、能按需产出数据。</p>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 迭代器</h2>
+                <h4>生成器是迭代器的一种实现，先理解迭代器协议，后面就水到渠成</h4>
+                <p>刚才说生成器能"按需产出"，但这套机制底层靠的是什么？答案是一个叫<strong>迭代器协议</strong>的东西。只要一个对象有 <code>next()</code> 方法、返回 <code>{ value, done }</code>，它就是迭代器——不管是数组、字符串，还是你自己手写的对象。搞懂这套协议，后面学生成器就像拆礼物一样轻松。</p>
+            </div>
+        </section>
+
+        <!-- 迭代协议 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>迭代协议</h3>
+                <h4>只要实现 next()，就是迭代器</h4>
+                <p><strong>可迭代协议</strong>：一个对象如果实现了 <code>[Symbol.iterator]()</code> 方法，它就是"可迭代的"。数组、字符串、Map、Set 都内置了这个方法。</p>
+                <p><strong>迭代器协议</strong>：一个对象如果有 <code>next()</code> 方法，且返回 <code>{ value, done }</code> 格式，它就是迭代器。</p>
+                <pre><code class="language-javascript">// 手动实现一个可迭代对象
+let range = {
+    from: 1,
+    to: 5,
+    [Symbol.iterator]() {
+        let current = this.from;
+        let last = this.to;
+        return {
+            next() {
+                return current <= last
+                    ? { value: current++, done: false }
+                    : { done: true };
+            }
+        };
+    }
+};
+for (let num of range) console.log(num); // 1, 2, 3, 4, 5
+console.log([...range]); // [1, 2, 3, 4, 5]</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 生成器</h2>
+                <h4>手写迭代器太麻烦，生成器是 JS 提供的语法糖</h4>
+                <p>上一节手写的那个 <code>range</code> 迭代器，光是 <code>[Symbol.iterator]</code> 和 <code>next()</code> 就写了一堆样板代码。有没有更简单的方式？有，就是 <code>function*</code> 生成器。只需在函数里写 <code>yield</code>，JS 引擎自动帮你实现迭代器协议。接下来看看生成器怎么声明、怎么暂停恢复、怎么产出无限序列。</p>
+            </div>
+        </section>
+
+        <!-- function* 与 yield -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>function* 与 yield</h3>
+                <h4>星号声明，yield 交出值</h4>
+                <p><strong>生成器函数</strong>用 <code>function*</code> 声明。函数体内用 <code>yield</code> 暂停执行并产出一个值。每次调用 <code>.next()</code> 恢复执行到下一个 <code>yield</code>。</p>
+                <pre><code class="language-javascript">function* greet() {
+    yield "Hello";
+    yield "World";
+    return "Done";
+}
+
+let g = greet();
+console.log(g.next()); // { value: "Hello", done: false }
+console.log(g.next()); // { value: "World", done: false }
+console.log(g.next()); // { value: "Done", done: true }</code></pre>
+                <p>生成器天然是可迭代的，可以直接用于 <code>for...of</code> 和展开运算符：</p>
+                <pre><code class="language-javascript">function* colors() {
+    yield "red"; yield "green"; yield "blue";
+}
+for (let c of colors()) console.log(c); // red, green, blue</code></pre>
+            </div>
+        </section>
+
+        <!-- yield 暂停恢复 Mermaid -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>暂停与恢复</h3>
+                <h4>yield 是一个"断点"</h4>
+                <div class="ai-diagram">
+                    <h4>图：生成器 yield 暂停与恢复执行流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：展示一个生成器函数 greet() 从创建到执行完毕的完整生命周期，包含三次 next() 调用与两次 yield 暂停、一次 return 结束
+                    - 各元素关系：从左到右的水平流程图，共 7 个节点依次用箭头连接——"调用 greet() 创建生成器" → "第 1 次 gen.next()" → "执行到 yield 'Hello'，暂停，返回 {value:'Hello', done:false}" → "第 2 次 gen.next()" → "执行到 yield 'World'，暂停，返回 {value:'World', done:false}" → "第 3 次 gen.next()" → "执行到 return 'Done'，结束，返回 {value:'Done', done:true}"
+                    - 关键标注：三个 gen.next() 调用节点分别用蓝色、橙色、绿色圆形标注；两个 yield 暂停节点用浅灰色圆角矩形标注并在节点下方标注"暂停"字样；最后一个 return 节点用红色圆形标注并标注"结束"；每个暂停节点旁边用小气泡标注返回值 {value, done}
+                    - 配色建议：浅蓝/浅灰背景，深色文字，关键箭头用橙色标注
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>每次 <code>yield</code> 就像按了暂停键。<code>.next()</code> 就是按播放键。函数内部的状态（变量值、执行位置）在暂停期间被完整保留。</p>
+            </div>
+        </section>
+
+        <!-- 无限序列 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>无限序列</h3>
+                <h4>while(true) 不再是死循环</h4>
+                <pre><code class="language-javascript">function* idGenerator() {
+    let id = 1;
+    while (true) {
+        yield id++;
+    }
+}
+
+let gen = idGenerator();
+console.log(gen.next().value); // 1
+console.log(gen.next().value); // 2
+console.log(gen.next().value); // 3
+// 什么时候要，什么时候生成——永远不会溢出</code></pre>
+                <p>用生活场景说：普通函数就像一口大锅，一次把饭全煮好。生成器就像自助餐，你点一道菜，厨师做一道，用多少做多少。</p>
+                <p>这个比喻只是为了帮助理解。生成器实际上是通过协程机制实现的——函数执行上下文在 yield 时被挂起（suspended），不是真的有厨师在等你点菜。</p>
+            </div>
+        </section>
+
+        <!-- yield* 委托 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>yield* 委托</h3>
+                <h4>把产出工作交给另一个生成器</h4>
+                <pre><code class="language-javascript">function* inner() {
+    yield "a";
+    yield "b";
+}
+
+function* outer() {
+    yield 1;
+    yield* inner(); // 委托给 inner
+    yield 3;
+}
+
+console.log([...outer()]); // [1, "a", "b", 3]</code></pre>
+                <p><code>yield*</code> 的含义是：这里所有值由另一个生成器产出，我等它完成后再继续。</p>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 控制生成器</h2>
+                <h4>生成器不只是被动产出值，还能从外部接收值、被提前终止</h4>
+                <p>前面的生成器都是"我给什么你拿什么"的单向输出。但如果我想往生成器里塞数据呢？或者中途叫它别跑了？甚至给它丢个错误进去？<code>.next(value)</code>、<code>.return()</code>、<code>.throw()</code> 就是这三把钥匙。掌握了它们，你就能从外部完全控制生成器的执行流程。</p>
+            </div>
+        </section>
+
+        <!-- next 传值 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>next 传值</h3>
+                <h4>从外部往生成器里"喂"数据</h4>
+                <pre><code class="language-javascript">function* accumulate() {
+    let sum = 0;
+    while (true) {
+        let input = yield sum; // yield 暂停并产出 sum
+        // next(value) 传入的值赋给 input
+        if (input === null) break;
+        sum += input;
+    }
+    return sum;
+}
+
+let acc = accumulate();
+acc.next();       // 启动，返回 { value: 0, done: false }
+acc.next(10);     // input=10, sum=10, 返回 { value: 10, done: false }
+acc.next(20);     // input=20, sum=30, 返回 { value: 30, done: false }
+acc.next(null);   // input=null, break, 返回 { value: 30, done: true }</code></pre>
+                <div class="warning">
+                    <strong>易错点</strong>：第一次 <code>.next()</code> 只是启动生成器，传入的值会被忽略。从第二次 <code>.next(value)</code> 开始，值才会赋给 yield 左边的变量。
+                </div>
+            </div>
+        </section>
+
+        <!-- return 与 throw -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>return 与 throw</h3>
+                <h4>提前结束和注入错误</h4>
+                <pre><code class="language-javascript">// return(value) —— 提前终止生成器
+function* gen() {
+    yield 1; yield 2; yield 3;
+}
+let g = gen();
+g.next();          // { value: 1, done: false }
+g.return("end");   // { value: "end", done: true }
+g.next();          // { value: undefined, done: true }
+
+// throw(error) —— 在 yield 处抛出错误
+function* errorGen() {
+    try {
+        yield 1;
+        yield 2;
+    } catch (e) {
+        console.log("捕获:", e.message);
+    }
+    yield 3;
+}
+let eg = errorGen();
+eg.next();  // { value: 1 }
+eg.throw(new Error("oops")); // "捕获: oops"
+// 返回 { value: 3, done: false }</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 实战应用</h2>
+                <h4>生成器在实际开发中有哪些用武之地？</h4>
+                <p>理论学了一堆，该看看生成器能解决什么实际问题了。斐波那契数列不用预分配数组、树形结构遍历不用手动维护栈、大数据分块处理不会撑爆内存——这些场景用生成器写起来既简洁又高效。接下来逐个击破。</p>
+            </div>
+        </section>
+
+        <!-- 斐波那契 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>斐波那契</h3>
+                <h4>惰性计算无限数列</h4>
+                <pre><code class="language-javascript">function* fibonacci() {
+    let [a, b] = [0, 1];
+    while (true) {
+        yield a;
+        [a, b] = [b, a + b];
+    }
+}
+
+let fib = fibonacci();
+for (let i = 0; i < 10; i++) {
+    console.log(fib.next().value);
+}
+// 0, 1, 1, 2, 3, 5, 8, 13, 21, 34</code></pre>
+                <p>如果用普通函数，你得先算出所有值存到数组里。生成器只算你需要的，内存占用恒定。</p>
+            </div>
+        </section>
+
+        <!-- 树遍历与分块 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>树遍历与分块</h3>
+                <h4>递归结构和大数据的利器</h4>
+                <pre><code class="language-javascript">// 树遍历（前序）
+function* traverseTree(node) {
+    yield node.value;
+    if (node.left) yield* traverseTree(node.left);
+    if (node.right) yield* traverseTree(node.right);
+}
+
+// 分块处理大数据
+function* chunk(array, size) {
+    for (let i = 0; i < array.length; i += size) {
+        yield array.slice(i, i + size);
+    }
+}
+let data = Array.from({length: 100}, (_, i) => i);
+for (let batch of chunk(data, 10)) {
+    console.log(batch); // 每批 10 个
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 5 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 异步生成器</h2>
+                <h4>异步 + 生成器 = 流式处理数据的终极武器</h4>
+                <p>前面处理的都是同步数据。可真实项目里，数据往往来自网络请求、文件读取这些异步操作。能不能让生成器一边等数据、一边产出结果？<code>async function*</code> 就是为此而生——内部用 <code>await</code> 等数据，外部用 <code>for await...of</code> 消费。再加上管道式组合，流式数据处理变得异常优雅。</p>
+            </div>
+        </section>
+
+        <!-- 异步生成器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>异步生成器</h3>
+                <h4>yield + await，双剑合璧</h4>
+                <pre><code class="language-javascript">async function* fetchPages(url) {
+    let page = 1;
+    while (true) {
+        let res = await fetch(`${url}?page=${page}`);
+        let data = await res.json();
+        if (data.items.length === 0) return;
+        yield data.items;
+        page++;
+    }
+}
+
+async function getAllItems() {
+    let all = [];
+    for await (let items of fetchPages("/api/items")) {
+        all.push(...items);
+    }
+    return all;
+}</code></pre>
+                <p>异步生成器用 <code>async function*</code> 声明。内部可以用 <code>await</code>，外部用 <code>for await...of</code> 消费。</p>
+            </div>
+        </section>
+
+        <!-- 流式处理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>流式管道</h3>
+                <h4>组合异步生成器，像管道一样处理数据</h4>
+                <pre><code class="language-javascript">// 过滤
+async function* filterStream(source, predicate) {
+    for await (let item of source) {
+        if (predicate(item)) yield item;
+    }
+}
+
+// 映射
+async function* mapStream(source, mapper) {
+    for await (let item of source) {
+        yield mapper(item);
+    }
+}
+
+// 使用——像 Linux 管道一样
+async function* numbers() {
+    for (let i = 1; i <= 100; i++) {
+        yield i;
+    }
+}
+
+let pipeline = filterStream(
+    mapStream(numbers(), n => n * 2),
+    n => n > 50
+);
+
+for await (let val of pipeline) {
+    console.log(val); // 52, 54, 56, ..., 200
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见生成器错误</h3>
+
+                <div class="warning">
+                    <strong>生成器只会执行到第一个 yield，不会自动跑完。</strong> 必须反复调用 <code>.next()</code> 或用 <code>for...of</code> 来驱动。
+                </div>
+
+                <h4>问题一：忘记驱动生成器</h4>
+                <pre><code class="language-javascript">// 错误：创建了生成器但没有消费
+function* gen() { yield 1; yield 2; }
+gen(); // 什么都不会发生！
+
+// 正确：用 for...of 或手动 next()
+for (let v of gen()) console.log(v);</code></pre>
+
+                <h4>问题二：混淆 return 和 yield 的值</h4>
+                <pre><code class="language-javascript">function* gen() {
+    yield 1;
+    return 2; // return 的值 done=true
+}
+let g = gen();
+g.next(); // { value: 1, done: false }
+g.next(); // { value: 2, done: true }
+// for...of 不会迭代 return 的值！
+for (let v of gen()) console.log(v); // 只输出 1</code></pre>
+            </div>
+        </section>
+
+        <!-- 惰性管道 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>惰性管道</h3>
+                <h4>用生成器组合数据处理管线</h4>
+                <pre><code class="language-javascript">// 惰性 map
+function* lazyMap(iterable, mapper) {
+    for (let item of iterable) {
+        yield mapper(item);
+    }
+}
+
+// 惰性 filter
+function* lazyFilter(iterable, predicate) {
+    for (let item of iterable) {
+        if (predicate(item)) yield item;
+    }
+}
+
+// 惰性 take
+function* lazyTake(iterable, n) {
+    let count = 0;
+    for (let item of iterable) {
+        if (count++ >= n) break;
+        yield item;
+    }
+}</code></pre>
+                <p>把多个生成器串起来，形成<strong>惰性管道</strong>——数据像水流一样逐个通过每个环节：</p>
+                <pre><code class="language-javascript">// 组合管道：取 1~100 中偶数，平方，取前 5 个
+const source = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+
+const pipeline = lazyTake(
+    lazyMap(
+        lazyFilter(source, x => x % 2 === 0),
+        x => x * x
+    ),
+    5
+);
+
+console.log([...pipeline]); // [4, 16, 36, 64, 100]</code></pre>
+                <div class="warning">
+                    <strong>对比数组方法</strong>：<code>[...source].filter(...).map(...).slice(0,5)</code> 会立即处理全部 20 个元素。生成器管道只处理到第 10 个元素就满足了条件（找到 5 个偶数并平方），后续元素根本不会触及。数据量越大，惰性优势越明显。
+                </div>
+            </div>
+        </section>
+
+        <!-- 自定义可迭代 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自定义可迭代</h3>
+                <h4>让任意类支持 for...of 遍历</h4>
+                <pre><code class="language-javascript">class LinkedList {
+    constructor() {
+        this.head = null;
+        this.tail = null;
+    }
+
+    append(value) {
+        let node = { value, next: null };
+        if (!this.head) {
+            this.head = node;
+        } else {
+            this.tail.next = node;
+        }
+        this.tail = node;
+        return this;
+    }
+
+    // 实现 Symbol.iterator，让链表可迭代
+    [Symbol.iterator]() {
+        let current = this.head;
+        return {
+            next() {
+                if (current) {
+                    let value = current.value;
+                    current = current.next;
+                    return { value, done: false };
+                }
+                return { done: true };
+            }
+        };
+    }
+}
+
+let list = new LinkedList();
+list.append("Node.js").append("Python").append("Go");
+
+// 可用于 for...of
+for (let lang of list) {
+    console.log(lang); // Node.js, Python, Go
+}
+
+// 可用于展开运算符和解构赋值
+console.log([...list]);       // ["Node.js", "Python", "Go"]
+let [first, ...rest] = list;
+console.log(first);           // "Node.js"
+console.log(rest);            // ["Python", "Go"]</code></pre>
+                <div class="warning">
+                    <strong>易错点</strong>：迭代器的 <code>[Symbol.iterator]</code> 必须返回一个带有 <code>next()</code> 方法的对象。如果忘记在 <code>next()</code> 中返回 <code>{ done: true }</code>，<code>for...of</code> 会变成无限循环。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：写一个生成器函数 <code>range(start, end)</code>，依次产出从 start 到 end 的整数。</p>
+                        <pre><code class="language-javascript">// for (let n of range(3, 7)) console.log(n);
+// 输出: 3, 4, 5, 6, 7
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function* range(start, end) {
+    for (let i = start; i <= end; i++) {
+        yield i;
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：写一个生成器 <code>take(gen, n)</code>，从另一个生成器中只取前 n 个值。</p>
+                        <pre><code class="language-javascript">// let nums = take(fibonacci(), 5);
+// console.log([...nums]); // [0, 1, 1, 2, 3]
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function* take(gen, n) {
+    for (let i = 0; i < n; i++) {
+        let result = gen.next();
+        if (result.done) break;
+        yield result.value;
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：实现生成器函数 <code>zip(...iterables)</code>，将多个可迭代对象"拉链式"合并。以最短的可迭代对象为准停止产出。</p>
+                        <pre><code class="language-javascript">// let zipped = zip([1, 2, 3], ['a', 'b', 'c']);
+// console.log([...zipped]);
+// [[1, 'a'], [2, 'b'], [3, 'c']]
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function* zip(...iterables) {
+    let iterators = iterables.map(it => it[Symbol.iterator]());
+    while (true) {
+        let results = iterators.map(it => it.next());
+        if (results.some(r => r.done)) break;
+        yield results.map(r => r.value);
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>生成器让我们能精确控制数据流。下一章回到面向对象，学习 <strong>class 与继承</strong>——用更优雅的方式组织代码结构。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

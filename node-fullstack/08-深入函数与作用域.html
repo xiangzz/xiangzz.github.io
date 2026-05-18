@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深入函数与作用域 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>深入函数与作用域</h1>
+            <p>理解 JavaScript 最核心的运行机制</p>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>一个诡异的现象</h3>
+                <h4>为什么这段代码输出三个 3，而不是 0、1、2？</h4>
+                <pre><code class="language-javascript">for (var i = 0; i < 3; i++) {
+    setTimeout(() => console.log(i), 100);
+}
+// 输出: 3, 3, 3（为什么不是 0, 1, 2？）</code></pre>
+                <p>要理解这个问题，你需要搞清楚三件事：<strong>作用域</strong>（变量住在哪里）、<strong>闭包</strong>（函数怎么"记住"变量）、<strong>this</strong>（函数被谁调用）。</p>
+                <p>本章带你从原理层面彻底搞懂它们。</p>
+            </div>
+        </section>
+
+        <!-- Part 1: 作用域 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 作用域</h2>
+                <h4>每个变量都有自己的"领地"</h4>
+                <p>开场那段 <code>for (var i = ...)</code> 输出三个 3 的代码，问题就出在作用域上。<code>var</code> 声明的变量没有块级作用域，导致循环结束后所有回调共享同一个 <code>i</code>。那 <code>let</code> 为什么就能解决？变量到底"住"在哪里？引擎是怎么找到它们的？搞清楚作用域和作用域链，这些疑问就全部解开了。</p>
+            </div>
+        </section>
+
+        <!-- 词法作用域 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>词法作用域</h3>
+                <h4>变量能被访问的范围，在写代码时就确定了</h4>
+                <p><strong>词法作用域</strong>（Lexical Scope）是指变量的可访问范围由代码书写时的嵌套结构决定，而非函数调用时的位置。</p>
+                <p>用人话说：函数能看到哪些变量，取决于它<strong>定义在哪里</strong>，而不是它<strong>在哪里被调用</strong>。</p>
+                <p>这个比喻只是为了帮你建立直观感受。在 JavaScript 引擎内部，作用域是通过词法分析阶段的作用域链来维护的，并不存在什么"领地"。</p>
+                <pre><code class="language-javascript">let value = "global";
+
+function foo() {
+    console.log(value); // "global"
+}
+
+function bar() {
+    let value = "local";
+    foo(); // foo 定义在 bar 外面
+}
+bar(); // 输出 "global"，不是 "local"</code></pre>
+            </div>
+        </section>
+
+        <!-- 块级作用域 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>块级作用域</h3>
+                <h4>let/const 让花括号成为一道墙</h4>
+                <p><strong>块级作用域</strong>是指由 <code>{}</code> 包裹的代码块内部，用 <code>let</code> 或 <code>const</code> 声明的变量只在该块内有效。</p>
+                <pre><code class="language-javascript">function example() {
+    let x = 1;
+    if (true) {
+        let x = 2; // 不同变量，互不干扰
+        console.log(x); // 2
+    }
+    console.log(x); // 1
+}
+
+// var 没有块级作用域
+for (var j = 0; j < 3; j++) {
+    setTimeout(() => console.log(j), 100);
+}
+// 输出: 3, 3, 3（j 泄漏到函数作用域）
+
+// let 有块级作用域
+for (let i = 0; i < 3; i++) {
+    setTimeout(() => console.log(i), 100);
+}
+// 输出: 0, 1, 2（每次循环有独立的 i）</code></pre>
+                <p>回到开场的问题：用 <code>var</code> 时，三个回调共享同一个 <code>j</code>；循环结束时 <code>j</code> 变成 3，所以都输出 3。换成 <code>let</code> 就好了。</p>
+            </div>
+        </section>
+
+        <!-- 作用域链图解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>作用域链</h3>
+                <h4>从内向外逐层查找变量的链条</h4>
+                <p><strong>作用域链</strong>是 JavaScript 引擎查找变量的路径：先在当前作用域找，找不到就向外层找，直到全局作用域。</p>
+                <div class="ai-diagram">
+    <h4>图：作用域链的变量查找过程</h4>
+    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+    - 画面主体：展示 JavaScript 作用域链从内到外的变量查找过程
+    - 图示结构（从上到下的层级）：
+      1. 最顶层矩形"inner() 作用域"，标注 innerVar = 'inner'，浅蓝色
+      2. 向下箭头"找不到"指向"middle() 作用域"，标注 middleVar = 'middle'，浅紫色
+      3. 向下箭头"找不到"指向"outer() 作用域"，标注 outerVar = 'outer'，浅橙色
+      4. 向下箭头"找不到"指向"全局作用域"，标注 global = 'global'，浅绿色
+      5. 向下箭头"找不到"指向红色矩形"undefined / 报错"
+    - 每一层用不同颜色的矩形表示，向下箭头标注"找不到"
+    - 配色建议：浅灰背景，从内到外用渐变色（蓝→紫→橙→绿→红），查找箭头用橙色
+    - 画面比例：9:16（纵向流程）
+    - 避免：过度装饰、3D 效果
+    - 标注文字用中文，变量名用等宽字体
+    </p>
+</div>
+                <pre><code class="language-javascript">let global = "global";
+function outer() {
+    let outerVar = "outer";
+    function middle() {
+        let middleVar = "middle";
+        function inner() {
+            console.log(innerVar);  // "inner"（自身）
+            console.log(middleVar); // "middle"（外层）
+            console.log(outerVar);  // "outer"（更外层）
+            console.log(global);    // "global"（全局）
+        }
+        inner();
+    }
+    middle();
+}
+outer();</code></pre>
+            </div>
+        </section>
+
+        <!-- 变量遮蔽 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>变量遮蔽</h3>
+                <h4>内层变量"挡住"了外层同名变量</h4>
+                <pre><code class="language-javascript">let name = "全局";
+function func() {
+    let name = "局部";
+    console.log(name); // "局部"
+    // 内层 name 遮蔽了外层 name
+}
+func();
+console.log(name); // "全局"</code></pre>
+                <div class="warning">
+                    <strong>症状</strong>：修改了内层变量，外层同名变量却没有变化。<br>
+                    <strong>原因</strong>：它们根本就是两个不同的变量，只是名字一样。<br>
+                    <strong>修复</strong>：避免在不同作用域使用相同变量名，用有区分度的命名。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: 闭包 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 闭包</h2>
+                <h4>函数"记住"了它出生的地方</h4>
+                <p>作用域讲的是"变量能被谁看到"。但如果函数跑到了定义它的作用域外面去执行呢？它居然还能"记住"原来的变量。这个现象就是闭包。防抖、节流、柯里化——日常开发中那些精巧的模式，底层全靠闭包撑着。这一部分我们用四个递进案例，把闭包从原理到实战彻底吃透。</p>
+            </div>
+        </section>
+
+        <!-- 闭包定义 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>什么是闭包</h3>
+                <h4>函数 + 它定义时的词法环境</h4>
+                <p><strong>闭包</strong>（Closure）是指一个函数能够"记住"并访问它定义时所在的词法作用域，即使该函数在那个作用域之外执行。</p>
+                <p>用人话说：内部函数被返回到外部后，依然能访问外部函数里的变量。就像你从家里拿了一个笔记本出门，上面记着家里的 Wi-Fi 密码。</p>
+                <p>这个比喻只是为了帮你建立直观感受。实际机制是引擎在堆内存中保留了外部函数的变量对象（Variable Object），内部函数通过作用域链引用它。</p>
+                <pre><code class="language-javascript">function createCounter() {
+    let count = 0; // 自由变量
+    return {
+        increment() { return ++count; },
+        decrement() { return --count; },
+        getCount()  { return count; }
+    };
+}
+const counter = createCounter();
+counter.increment(); // 1
+counter.increment(); // 2
+counter.getCount();  // 2
+// createCounter 执行完了，但 count 依然活着</code></pre>
+            </div>
+        </section>
+
+        <!-- 闭包原理图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>闭包原理图</h3>
+                <h4>引擎如何让"已结束"的函数的变量继续存活</h4>
+                <div class="ai-diagram">
+    <h4>图：闭包的内存机制</h4>
+    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+    - 画面主体：展示闭包如何让外部函数的变量在函数执行完后仍然存活
+    - 图示结构：
+      1. 左侧大圆角矩形"createCounter 执行上下文"，内部包含变量框"count = 0"和标注"返回的对象"
+      2. 从"返回的对象"向右延伸三条箭头：
+         - "counter.increment()" → 指向"count"，标注"++count"
+         - "counter.decrement()" → 指向"count"，标注"--count"
+         - "counter.getCount()" → 指向"count"，标注"return count"
+      3. 右侧三个调用方法的框，都用箭头指向左侧的同一个 count 变量
+    - 关键标注：用红色虚线圈出"count 变量本应被回收，但被闭包引用而保留"
+    - 配色建议：浅灰背景，执行上下文用浅橙色，count 变量用深橙色高亮，调用方法用浅蓝色
+    - 画面比例：16:9
+    - 避免：过度装饰、3D 效果
+    - 标注文字用中文，代码用等宽字体
+    </p>
+</div>
+                <p>关键：虽然 <code>createCounter</code> 已经执行完毕，但返回的三个方法仍然持有对 <code>count</code> 的引用。引擎不会回收被引用的变量。</p>
+            </div>
+        </section>
+
+        <!-- 闭包递进示例1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>闭包应用：柯里化</h3>
+                <h4>把多参数函数拆成一系列单参数函数</h4>
+                <pre><code class="language-javascript">// 柯里化（Currying）
+function multiply(a) {
+    return function(b) {
+        return a * b; // a 被闭包捕获
+    };
+}
+const double = multiply(2);
+const triple = multiply(3);
+
+console.log(double(5));  // 10
+console.log(triple(5));  // 15</code></pre>
+                <p><code>multiply(2)</code> 返回的函数"记住"了 <code>a = 2</code>。每次调用 <code>double</code>，都用 2 去乘。</p>
+            </div>
+        </section>
+
+        <!-- 闭包递进示例2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>闭包应用：防抖</h3>
+                <h4>用户疯狂点击按钮，只执行最后一次</h4>
+                <pre><code class="language-javascript">function debounce(fn, delay) {
+    let timer; // 被闭包捕获
+    return function(...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            fn.apply(this, args);
+        }, delay);
+    };
+}
+
+// 使用
+const debouncedSearch = debounce(query => {
+    console.log("搜索:", query);
+}, 300);
+
+// 用户连续输入 "a" "ab" "abc"
+// 只有 300ms 后才会执行一次搜索 "abc"</code></pre>
+                <p>每次调用返回的函数，都能访问同一个 <code>timer</code>。前一次的定时器被清除，只有最后一次生效。</p>
+            </div>
+        </section>
+
+        <!-- 闭包递进示例3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>闭包应用：节流</h3>
+                <h4>不管用户点多快，固定间隔只执行一次</h4>
+                <pre><code class="language-javascript">function throttle(fn, interval) {
+    let lastTime = 0;
+    return function(...args) {
+        let now = Date.now();
+        if (now - lastTime >= interval) {
+            lastTime = now;
+            fn.apply(this, args);
+        }
+    };
+}
+
+// 使用：滚动事件每 200ms 最多触发一次
+const handleScroll = throttle(() => {
+    console.log("处理滚动");
+}, 200);</code></pre>
+            </div>
+        </section>
+
+        <!-- 闭包递进示例4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>闭包应用：工厂</h3>
+                <h4>批量生产带不同规则的验证器</h4>
+                <pre><code class="language-javascript">function makeValidator(rules) {
+    // rules 被闭包捕获
+    return function(value) {
+        for (let rule of rules) {
+            if (!rule.test(value)) return false;
+        }
+        return true;
+    };
+}
+
+const isEmail = makeValidator([
+    v => v.length > 0,
+    v => v.includes("@"),
+    v => v.includes(".")
+]);
+
+const isPhone = makeValidator([
+    v => /^\d{11}$/.test(v),
+]);
+
+console.log(isEmail("test@example.com")); // true
+console.log(isPhone("13800138000"));       // true</code></pre>
+            </div>
+        </section>
+
+        <!-- 闭包陷阱 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>闭包内存陷阱</h3>
+                <h4>循环中的经典坑</h4>
+                <pre><code class="language-javascript">function createFunctions() {
+    let funcs = [];
+    for (var i = 0; i < 3; i++) {
+        funcs.push(function() { return i; });
+    }
+    return funcs;
+}
+let fns = createFunctions();
+console.log(fns[0]()); // 3（不是 0！）
+console.log(fns[1]()); // 3
+console.log(fns[2]()); // 3</code></pre>
+                <div class="warning">
+                    <strong>症状</strong>：所有函数返回同一个值 3。<br>
+                    <strong>原因</strong>：<code>var</code> 没有块级作用域，三个闭包共享同一个 <code>i</code>。循环结束后 <code>i = 3</code>。<br>
+                    <strong>修复</strong>：把 <code>var</code> 改成 <code>let</code>，或用 IIFE 创建独立作用域。
+                </div>
+                <pre><code class="language-javascript">// 修复1：使用 let
+for (let i = 0; i < 3; i++) {
+    funcs.push(function() { return i; });
+}
+// 修复2：IIFE
+for (var i = 0; i < 3; i++) {
+    funcs.push((function(j) {
+        return function() { return j; };
+    })(i));
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 3: this -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: this 绑定</h2>
+                <h4>this 的值取决于怎么调用，而非怎么定义</h4>
+                <p>闭包解决了"函数记住变量"的问题，但还有一个让人头疼的关键字：<code>this</code>。同一个函数，用不同方式调用，<code>this</code> 指向完全不同。对象方法、回调、构造函数、箭头函数——每种场景都有各自的规则。接下来我们用一张决策树把五种绑定规则理清楚，以后遇到 <code>this</code> 就不用再猜了。</p>
+            </div>
+        </section>
+
+        <!-- this 五种规则 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>this 五种规则</h3>
+                <h4>判断 this 指向的完整决策树</h4>
+                <div class="ai-diagram">
+    <h4>图：this 绑定的五种规则判断流程</h4>
+    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+    - 画面主体：一个决策树流程图，展示如何判断函数中 this 的指向
+    - 流程结构（从上到下的决策树）：
+      1. 顶部起始框"函数被调用"
+      2. 第一个判断菱形"new 调用？" → 是 → "this = 新创建的对象"（绿色）
+      3. 否 → 第二个判断菱形"call/apply/bind？" → 是 → "this = 指定的对象"（蓝色）
+      4. 否 → 第三个判断菱形"作为对象方法？" → 是 → "this = 调用的对象"（黄色）
+      5. 否 → 第四个判断菱形"箭头函数？" → 是 → "this = 外层的 this"（紫色）
+      6. 否 → "this = window / undefined"（红色）
+    - 每种结果用不同颜色矩形：绿色、蓝色、黄色、紫色、红色
+    - 配色建议：浅灰背景，判断框用浅黄色，结果框用各自对应的颜色
+    - 画面比例：16:9
+    - 避免：过度装饰、3D 效果、文字过小
+    - 标注文字用中文
+    </p>
+</div>
+                <p><strong>优先级</strong>：new > 显式绑定 > 隐式绑定 > 默认绑定。</p>
+            </div>
+        </section>
+
+        <!-- 规则详解：默认绑定 + 隐式绑定 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>默认与隐式绑定</h3>
+                <h4>独立调用 vs 对象方法调用</h4>
+                <pre><code class="language-javascript">// 规则1：默认绑定（独立调用）
+function showThis() {
+    console.log(this);
+}
+showThis(); // window（严格模式下 undefined）
+
+// 规则2：隐式绑定（对象方法）
+let obj = {
+    name: "张三",
+    greet() { console.log(this.name); }
+};
+obj.greet(); // "张三"（this 指向 obj）
+
+// 隐式丢失！
+let fn = obj.greet;
+fn(); // undefined（脱离了 obj，变成默认绑定）</code></pre>
+                <div class="warning">
+                    <strong>症状</strong>：把对象方法赋值给变量后，<code>this</code> 指向丢失。<br>
+                    <strong>原因</strong>：<code>fn = obj.greet</code> 只拷贝了函数引用，调用时前面没有对象。<br>
+                    <strong>修复</strong>：用 <code>bind</code> 绑定，或用箭头函数。
+                </div>
+            </div>
+        </section>
+
+        <!-- 规则详解：显式绑定 + new绑定 + 箭头函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>显式、new 与箭头函数</h3>
+                <h4>三种强制改变 this 的方式</h4>
+                <pre><code class="language-javascript">// 规则3：显式绑定
+function greet(greeting) {
+    console.log(`${greeting}, ${this.name}!`);
+}
+greet.call({ name: "张三" }, "Hello");  // "Hello, 张三!"
+greet.apply({ name: "李四" }, ["Hi"]); // "Hi, 李四!"
+let bound = greet.bind({ name: "王五" });
+bound("Hey"); // "Hey, 王五!"
+
+// 规则4：new 绑定
+function Person(name) {
+    this.name = name; // this 指向新对象
+}
+let p = new Person("张三");
+
+// 规则5：箭头函数（继承外层 this）
+let team = {
+    name: "开发组",
+    members: ["Alice", "Bob"],
+    listMembers() {
+        this.members.forEach(member => {
+            console.log(`${this.name}: ${member}`);
+            // this 继承自 listMembers，指向 team
+        });
+    }
+};
+team.listMembers();</code></pre>
+            </div>
+        </section>
+
+        <!-- call/apply/bind 对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>call/apply/bind</h3>
+                <h4>三个方法，三种改变 this 的方式</h4>
+                <table>
+                    <thead><tr><th>方法</th><th>执行时机</th><th>传参方式</th><th>返回值</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>call</code></td><td>立即执行</td><td>逐个传参</td><td>函数返回值</td></tr>
+                        <tr><td><code>apply</code></td><td>立即执行</td><td>数组传参</td><td>函数返回值</td></tr>
+                        <tr><td><code>bind</code></td><td>返回新函数</td><td>逐个传参</td><td>绑定后的函数</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-javascript">// bind 偏函数：预设部分参数
+function multiply(a, b) { return a * b; }
+let double = multiply.bind(null, 2);
+console.log(double(5)); // 10
+
+// 借用方法
+let arrayLike = { 0: "a", 1: "b", length: 2 };
+let arr = Array.prototype.slice.call(arrayLike);
+// ["a", "b"]</code></pre>
+            </div>
+        </section>
+
+        <!-- 回调函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>回调函数</h3>
+                <h4>把函数当参数传来传去</h4>
+                <p><strong>回调函数</strong>（Callback）是指作为参数传递给另一个函数，并在特定时机被调用的函数。</p>
+                <pre><code class="language-javascript">// 异步回调
+function fetchData(url, callback) {
+    setTimeout(() => {
+        callback({ url, status: "ok" });
+    }, 1000);
+}
+fetchData("/api/users", (data) => {
+    console.log("收到:", data);
+});
+
+// 数组方法中的回调
+let nums = [1, 2, 3, 4, 5];
+nums.filter(n => n % 2 === 0);  // [2, 4]
+nums.map(n => n * 2);           // [2, 4, 6, 8, 10]
+nums.reduce((acc, n) => acc + n, 0); // 15</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见坑与排错</h3>
+
+                <h4>问题一：闭包在循环中共享变量</h4>
+                <p><strong>症状</strong>：<code>for</code> 循环里创建的回调都返回同一个值。</p>
+                <p><strong>原因</strong>：<code>var</code> 声明的变量没有块级作用域。</p>
+                <p><strong>修复</strong>：改用 <code>let</code>。</p>
+
+                <h4>问题二：this 指向丢失</h4>
+                <p><strong>症状</strong>：把对象方法赋给变量后调用，<code>this</code> 变成 <code>undefined</code>。</p>
+                <p><strong>原因</strong>：函数脱离了对象，退化为默认绑定。</p>
+                <p><strong>修复</strong>：用 <code>.bind(obj)</code> 或箭头函数。</p>
+
+                <h4>问题三：闭包导致内存泄漏</h4>
+                <p><strong>症状</strong>：页面越用越卡，内存占用不断增长。</p>
+                <p><strong>原因</strong>：闭包持有的引用未被释放。</p>
+                <p><strong>修复</strong>：不需要时将引用置为 <code>null</code>。</p>
+
+                <div class="warning">
+                    <strong>排错技巧</strong>：遇到 <code>this</code> 问题，先问自己"这个函数是怎么被调用的？"然后按优先级判断：new > 显式 > 隐式 > 默认。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>检查点练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：写一个 <code>makePassword</code> 函数，接收一个密码，返回一个验证函数。验证函数接收一个输入，返回是否匹配。</p>
+                        <pre><code class="language-javascript">// 提示：利用闭包"记住"密码
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function makePassword(password) {
+    return function(input) {
+        return input === password;
+    };
+}
+const check = makePassword("secret");
+console.log(check("secret")); // true
+console.log(check("wrong"));  // false</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：补全代码，让 <code>timer.start()</code> 能正确输出 "Timer A started"。</p>
+                        <pre><code class="language-javascript">let timer = {
+    name: "Timer A",
+    start: function() {
+        // 补全：1秒后输出 this.name + " started"
+    }
+};
+let fn = timer.start;
+fn(); // 这里会出问题，为什么？怎么修复？</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">// start 方法
+start: function() {
+    setTimeout(() => {
+        console.log(this.name + " started");
+    }, 1000);
+}
+// fn() 的 this 丢失，修复：
+let fn = timer.start.bind(timer);
+fn(); // "Timer A started"</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 综合练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>综合练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习三：事件总线</h3>
+                        <p><strong>任务</strong>：用闭包实现一个简单的事件总线（EventEmitter）。它支持注册事件、触发事件、取消注册。</p>
+                        <pre><code class="language-javascript">const bus = createEventBus();
+bus.on("login", (user) => console.log(`${user} 已登录`));
+bus.on("login", (user) => console.log(`记录日志: ${user}`));
+bus.emit("login", "张三");
+// 张三 已登录
+// 记录日志: 张三</code></pre>
+                        <p><strong>提示</strong>：用闭包保存一个 <code>events</code> 对象，每个事件名对应一个回调函数数组。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function createEventBus() {
+    let events = {};
+    return {
+        on(name, fn) {
+            (events[name] = events[name] || []).push(fn);
+        },
+        emit(name, ...args) {
+            (events[name] || []).forEach(fn => fn(...args));
+        },
+        off(name, fn) {
+            events[name] = (events[name] || []).filter(f => f !== fn);
+        }
+    };
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>搞懂了作用域和闭包，接下来进入 JavaScript 的面向对象核心：<strong>原型与继承</strong>。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

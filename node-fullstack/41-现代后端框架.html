@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第41章 现代后端框架 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>现代后端框架</h1>
+            <p>Fastify / Nest.js / Hono——找到最适合你的那把刀</p>
+        </section>
+
+        <!-- 开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么还要学别的</h3>
+                <h4>Express 够用了，为什么还要看其他框架？</h4>
+                <p>Express 是"够用"的，但它有几个短板：没有内置验证、性能一般、TypeScript 支持靠社区补丁。</p>
+                <p>现代框架在这些方面做了显著改进。了解它们的思路，能帮你做出更好的技术选型。即使继续用 Express，也能从中学到更好的架构模式。</p>
+            </div>
+        </section>
+
+        <!-- 框架全景对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>框架全景</h3>
+                <h4>一张表看清四个主流框架的特点</h4>
+                <table>
+                    <thead><tr><th>框架</th><th>性能</th><th>TS 支持</th><th>适用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td>Express</td><td>中</td><td>需 @types</td><td>快速原型、学习</td></tr>
+                        <tr><td>Fastify</td><td>高</td><td>原生支持</td><td>高性能 API</td></tr>
+                        <tr><td>Nest.js</td><td>中</td><td>一流</td><td>大型企业应用</td></tr>
+                        <tr><td>Hono</td><td>极高</td><td>原生支持</td><td>Edge / Serverless</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>选择建议</strong>：学习用 Express，新项目用 Fastify 或 Hono，大型企业应用用 Nest.js。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 1: Fastify -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: Fastify</h2>
+                <h4>高性能 Node.js 框架，内置验证与插件生态</h4>
+                <p>Fastify 的核心卖点是比 Express 快 2-3 倍的吞吐量，同时内置了 JSON Schema 验证和原生的 TypeScript 支持。它的插件系统有明确的作用域和生命周期，适合构建结构清晰的中大型 API 服务。</p>
+            </div>
+        </section>
+
+        <!-- Fastify 路由 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Fastify 路由</h3>
+                <h4>类型安全的路由，参数自动推断</h4>
+                <pre><code class="language-bash">$ npm install fastify</code></pre>
+                <pre><code class="language-javascript">import Fastify from "fastify";
+
+const app = Fastify({ logger: true });
+
+// 类型安全路由——泛型定义参数类型
+app.get&lt;{ Params: { id: string } }&gt;("/users/:id", async (req, reply) => {
+    const { id } = req.params; // 自动推断为 string
+    return { id, name: "张三" };
+});
+
+// 带验证的 POST
+app.post&lt;{ Body: { name: string; email: string } }&gt;("/users", async (req, reply) => {
+    const { name, email } = req.body;
+    return { id: "1", name, email };
+});
+
+app.listen({ port: 3000 });</code></pre>
+            </div>
+        </section>
+
+        <!-- Fastify 插件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>插件系统</h3>
+                <h4>用插件扩展 Fastify 的能力，类似 Express 的中间件</h4>
+                <pre><code class="language-javascript">import fp from "fastify-plugin";
+
+// 定义插件
+export default fp(async (app) => {
+    app.decorate("db", new Database());
+}, { name: "database" });
+
+// 声明插件类型
+declare module "fastify" {
+    interface FastifyInstance {
+        db: Database;
+    }
+}
+
+// 使用：在任意路由中访问 app.db
+app.get("/users", async (req, reply) => {
+    const users = await app.db.findAll(); // 有类型提示
+    return users;
+});</code></pre>
+                <div class="intro-block">
+                    <p>Fastify 的插件系统比 Express 中间件更强大：插件有明确的作用域（可以限制到某个路由前缀），而且支持异步初始化。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Fastify Schema 验证 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Schema 验证</h3>
+                <h4>Fastify 的杀手级特性：用 JSON Schema 同时验证请求和响应</h4>
+                <pre><code class="language-javascript">app.post("/users", {
+    schema: {
+        body: {
+            type: "object",
+            required: ["name", "email"],
+            properties: {
+                name: { type: "string", minLength: 2 },
+                email: { type: "string", format: "email" },
+                age: { type: "integer", minimum: 0 }
+            }
+        },
+        response: {
+            201: {
+                type: "object",
+                properties: {
+                    id: { type: "string" },
+                    name: { type: "string" }
+                }
+            }
+        }
+    }
+}, async (req, reply) => {
+    reply.code(201);
+    return { id: "1", name: req.body.name };
+});</code></pre>
+                <div class="intro-block">
+                    <p>JSON Schema 验证在 Fastify 中是<strong>零成本</strong>的——它直接编译成高性能的验证函数，不仅不会拖慢请求，还能让 Fastify 更快地序列化响应。如果你更喜欢 Zod，可以使用 <code>fastify-type-provider-zod</code> 插件来替换默认的 JSON Schema。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Fastify Hooks -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>请求生命周期 Hooks</h3>
+                <h4>在请求的各个阶段插入自定义逻辑：认证、日志、响应改写</h4>
+                <pre><code class="language-javascript">// 认证 Hook —— 在所有 /api 路由前执行
+app.addHook("onRequest", async (req, reply) => {
+    const token = req.headers.authorization;
+    if (!token) {
+        reply.code(401).send({ error: "未认证" });
+        return; // 阻止请求继续
+    }
+    req.user = verifyToken(token);
+});
+
+// 日志 Hook —— 请求完成后记录耗时
+app.addHook("onResponse", (req, reply, done) => {
+    req.log.info({
+        url: req.url,
+        method: req.method,
+        statusCode: reply.statusCode,
+        responseTime: reply.elapsedTime
+    }, "请求完成");
+    done();
+});
+
+// 响应改写 Hook —— 统一包装返回格式
+app.addHook("preSerialization", async (req, reply, payload) => {
+    return { success: true, data: payload };
+});</code></pre>
+                <div class="intro-block">
+                    <p>Fastify 的 Hook 按生命周期执行：<code>onRequest</code> → <code>preParsing</code> → <code>preValidation</code> → <code>preHandler</code> → <code>preSerialization</code> → <code>onSend</code> → <code>onResponse</code>。你可以精确控制逻辑插入的时机。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: Nest.js -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: Nest.js</h2>
+                <h4>Angular 风格的企业级框架，装饰器 + 依赖注入 + 模块化</h4>
+                <p>Nest.js 采用装饰器和依赖注入来组织代码，天生适合大型团队协作。它强制模块化架构，内置了守卫（Guard）、拦截器（Interceptor）、管道（Pipe）等概念，让权限控制、日志、数据转换等横切关注点有了标准化的写法。</p>
+            </div>
+        </section>
+
+        <!-- Nest.js 架构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Nest 架构</h3>
+                <h4>三大核心概念：模块、控制器、服务</h4>
+                <div class="ai-diagram">
+                    <h4>图：Nest.js 模块化架构层次关系</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术架构图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：Nest.js 的模块化架构层次图，展示 AppModule 根模块下的子模块及其控制器和服务的组织关系，采用从上到下的树状布局
+                    - 各元素关系：顶层是 AppModule 根模块；AppModule 向下连接两个子模块 UserModule 和 PostModule；UserModule 下包含 UserController 和 UserService，其中 UserController 指向 UserService（表示控制器调用服务）；PostModule 下包含 PostController 和 PostService，其中 PostController 指向 PostService
+                    - 关键标注：每个节点标注名称：AppModule、UserModule、PostModule、UserController、UserService、PostController、PostService；Controller 调用 Service 的箭头要清晰可辨
+                    - 配色建议：浅蓝/浅灰背景，AppModule 用深蓝色方框，子模块 UserModule 和 PostModule 用中蓝色方框，Controller 用绿色方框，Service 用紫色方框，模块包含关系用实线，控制器调用服务的箭头用橙色标注
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Nest.js 控制器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>控制器与服务</h3>
+                <h4>装饰器定义路由，服务处理逻辑</h4>
+                <pre><code class="language-bash">$ npm install @nestjs/core @nestjs/common @nestjs/platform-express</code></pre>
+                <pre><code class="language-javascript">// user.controller.ts
+import { Controller, Get, Post, Body, Param } from "@nestjs/common";
+
+@Controller("users")
+export class UserController {
+    constructor(private readonly userService: UserService) {}
+
+    @Get()
+    findAll(): Promise&lt;User[]&gt; {
+        return this.userService.findAll();
+    }
+
+    @Get(":id")
+    findOne(@Param("id") id: string): Promise&lt;User&gt; {
+        return this.userService.findOne(id);
+    }
+
+    @Post()
+    create(@Body() dto: CreateUserDto): Promise&lt;User&gt; {
+        return this.userService.create(dto);
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- DTO 验证 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>DTO 验证</h3>
+                <h4>用装饰器定义验证规则，请求进来时自动校验</h4>
+                <pre><code class="language-javascript">import { IsString, IsEmail, IsOptional, MinLength } from "class-validator";
+
+export class CreateUserDto {
+    @IsString()
+    @MinLength(2)
+    name!: string;
+
+    @IsEmail()
+    email!: string;
+
+    @IsOptional()
+    @MinLength(6)
+    password?: string;
+}
+
+// user.module.ts —— 组装模块
+import { Module } from "@nestjs/common";
+
+@Module({
+    controllers: [UserController],
+    providers: [UserService],
+})
+export class UserModule {}</code></pre>
+            </div>
+        </section>
+
+        <!-- Nest.js 项目结构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>项目结构与 CLI</h3>
+                <h4>Nest CLI 一键生成模块骨架，团队协作更高效</h4>
+                <pre><code class="language-bash"># 安装 CLI 并创建项目
+$ npm install -g @nestjs/cli
+$ nest new my-project
+$ cd my-project</code></pre>
+                <pre><code class="language-text">src/
+├── app.module.ts          # 根模块
+├── main.ts                # 入口文件
+├── common/                # 共享模块
+│   ├── guards/            # 守卫
+│   ├── interceptors/      # 拦截器
+│   └── pipes/             # 管道
+└── modules/
+    ├── user/
+    │   ├── user.module.ts
+    │   ├── user.controller.ts
+    │   ├── user.service.ts
+    │   └── dto/
+    │       └── create-user.dto.ts
+    └── post/
+        ├── post.module.ts
+        ├── post.controller.ts
+        └── post.service.ts</code></pre>
+                <div class="intro-block">
+                    <p>统一的目录结构让团队成员可以快速定位代码。每个模块自包含（controller + service + dto），模块之间通过 <code>exports</code> 显式共享服务，避免隐式依赖。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Nest Guards -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Guards 守卫</h3>
+                <h4>用守卫控制访问权限，比中间件更优雅的权限方案</h4>
+                <pre><code class="language-javascript">// roles.guard.ts
+import { Injectable, CanActivate, ExecutionContext } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+    constructor(private reflector: Reflector) {}
+
+    canActivate(context: ExecutionContext): boolean {
+        // 从装饰器读取所需角色
+        const requiredRoles = this.reflector.get<string[]>(
+            "roles", context.getHandler()
+        );
+        if (!requiredRoles) return true; // 没有标记则放行
+
+        const request = context.switchToHttp().getRequest();
+        const user = request.user;
+        return requiredRoles.some(role => user.roles?.includes(role));
+    }
+}
+
+// 自定义装饰器
+import { SetMetadata } from "@nestjs/common";
+export const Roles = (...roles: string[]) => SetMetadata("roles", roles);
+
+// 使用：只有 admin 角色可以访问
+@Post("admin/users")
+@Roles("admin")
+@UseGuards(RolesGuard)
+createAdmin(@Body() dto: CreateUserDto) { ... }</code></pre>
+            </div>
+        </section>
+
+        <!-- Nest 拦截器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Interceptors 拦截器</h3>
+                <h4>统一处理响应格式和日志，AOP 编程思想的实践</h4>
+                <pre><code class="language-javascript">// 响应格式化拦截器
+import { Injectable, NestInterceptor, CallHandler } from "@nestjs/common";
+import { map } from "rxjs/operators";
+
+@Injectable()
+export class TransformInterceptor<T> implements NestInterceptor<T> {
+    intercept(context: ExecutionContext, next: CallHandler) {
+        return next.handle().pipe(
+            map(data => ({
+                success: true,
+                data,
+                timestamp: new Date().toISOString()
+            }))
+        );
+    }
+}
+
+// 日志拦截器 —— 记录每个请求的耗时
+@Injectable()
+export class LoggingInterceptor implements NestInterceptor {
+    intercept(context: ExecutionContext, next: CallHandler) {
+        const request = context.switchToHttp().getRequest();
+        const now = Date.now();
+        console.log(`[→] ${request.method} ${request.url}`);
+        return next.handle().pipe(
+            tap(() => console.log(`[←] ${Date.now() - now}ms`))
+        );
+    }
+}
+
+// 全局注册
+app.useGlobalInterceptors(
+    new TransformInterceptor(),
+    new LoggingInterceptor()
+);</code></pre>
+            </div>
+        </section>
+
+        <!-- Nest 依赖注入与模块 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>依赖注入与模块化</h3>
+                <h4>Nest 的 DI 容器自动管理实例的创建和注入</h4>
+                <pre><code class="language-javascript">// 1. 定义可注入的服务
+import { Injectable } from "@nestjs/common";
+
+@Injectable()
+export class UserService {
+    private users: User[] = [];
+
+    async findAll(): Promise&lt;User[]&gt; { return this.users; }
+    async create(dto: CreateUserDto): Promise&lt;User&gt; { ... }
+}
+
+// 2. 组装模块 —— 声明依赖关系
+import { Module } from "@nestjs/common";
+
+@Module({
+    controllers: [UserController],   // 处理路由
+    providers: [UserService],         // 提供服务
+    exports: [UserService],           // 允许其他模块使用
+})
+export class UserModule {}
+
+// 3. 根模块引入子模块
+@Module({ imports: [UserModule, PostModule] })
+export class AppModule {}</code></pre>
+                <pre><code class="language-bash"># CLI 快速生成模块、控制器、服务
+$ nest g module user
+$ nest g controller user
+$ nest g service user</code></pre>
+                <div class="intro-block">
+                    <p>Nest 的依赖注入让你不需要手动 <code>new</code> 对象——容器会根据构造函数参数自动注入。模块（Module）则定义了哪些服务对外可见，避免全局状态污染。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3: Hono -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: Hono</h2>
+                <h4>极轻量的跨运行时框架，Edge 优先的 Web 开发</h4>
+                <p>Hono 意为"火焰"，是一个极轻量的跨运行时框架。同一份代码可以在 Node.js、Bun、Deno、Cloudflare Workers 上运行，包体积仅约 14KB。它内置 RPC 类型推断，让你在前端调用后端 API 时获得完整的类型安全，无需手写类型定义。</p>
+            </div>
+        </section>
+
+        <!-- Hono 路由 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Hono 路由</h3>
+                <h4>极简 API，上手只需 5 分钟</h4>
+                <pre><code class="language-bash">$ npm install hono</code></pre>
+                <pre><code class="language-javascript">import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+
+const app = new Hono();
+
+// 中间件
+app.use("*", cors());
+app.use("*", logger());
+
+// 类型安全路由
+app.get("/users/:id", (c) => {
+    const id = c.req.param("id");     // 自动推断 string
+    return c.json({ id, name: "张三" });
+});
+
+export default app;</code></pre>
+            </div>
+        </section>
+
+        <!-- Hono 类型安全 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Hono 类型安全</h3>
+                <h4>通过泛型定义上下文变量，中间件和路由共享类型</h4>
+                <pre><code class="language-javascript">interface Env {
+    Variables: {
+        userId: string;
+    };
+}
+
+const app = new Hono&lt;Env&gt;();
+
+app.use("/api/*", async (c, next) => {
+    const token = c.req.header("Authorization");
+    if (!token) return c.json({ error: "未认证" }, 401);
+    c.set("userId", verifyToken(token));
+    await next();
+});
+
+app.get("/api/me", (c) => {
+    const userId = c.get("userId"); // string —— 有类型提示
+    return c.json({ userId });
+});</code></pre>
+                <div class="intro-block">
+                    <p>Hono 最大的优势是跨运行时。如果你的项目可能部署在 Edge（Cloudflare Workers、Vercel Edge Functions），Hono 是最佳选择。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Hono RPC -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Hono RPC 类型安全</h3>
+                <h4>前后端共享路由类型，调用 API 时自动补全参数和返回值</h4>
+                <pre><code class="language-javascript">// server.ts —— 定义路由并导出类型
+import { Hono } from "hono";
+
+const app = new Hono()
+    .get("/users", (c) => c.json([{ id: "1", name: "张三" }]))
+    .post("/users", async (c) => {
+        const body = await c.req.json();
+        return c.json({ id: "2", ...body }, 201);
+    });
+
+export type AppType = typeof app;  // 导出路由类型
+
+// client.ts —— 前端调用，自动补全
+import { hc } from "hono/client";
+import type { AppType } from "./server";
+
+const client = hc&lt;AppType&gt;("/");
+
+// 完整的类型推断！
+const res = await client.users.$get();
+const users = await res.json();    // { id: string; name: string }[]
+
+const createRes = await client.users.$post({
+    json: { name: "李四", email: "li@test.com" }
+});</code></pre>
+                <div class="intro-block">
+                    <p>Hono RPC 的核心是 <code>hc&lt;&gt;</code> 客户端——它从服务端路由定义自动推断每个 API 的请求参数和响应类型，实现真正的端到端类型安全，类似于 tRPC 的体验但不需要额外协议。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Hono Validator -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Hono 数据验证</h3>
+                <h4>用 Zod 定义 Schema，在中间件层就拦截无效请求</h4>
+                <pre><code class="language-javascript">import { Hono } from "hono";
+import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
+
+const schema = z.object({
+    name: z.string().min(2, "姓名至少2个字符"),
+    email: z.string().email("邮箱格式不正确"),
+    age: z.number().int().min(0).optional()
+});
+
+const app = new Hono()
+    .post("/users", zValidator("json", schema, (result, c) => {
+        // 验证失败的回调
+        if (!result.success) {
+            return c.json({ error: result.error.flatten() }, 400);
+        }
+    }), (c) => {
+        // 验证通过，数据有完整类型
+        const { name, email, age } = c.req.valid("json");
+        return c.json({ id: "1", name, email }, 201);
+    });</code></pre>
+                <div class="intro-block">
+                    <p><code>@hono/zod-validator</code> 支持 <code>json</code>、<code>form</code>、<code>query</code>、<code>param</code> 等多种验证目标。验证通过后，<code>c.req.valid("json")</code> 返回的是已经过 Zod 推断的类型安全数据。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Hono 中间件与部署 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>中间件链与多平台部署</h3>
+                <h4>内置丰富中间件，一行命令部署到 Edge 运行时</h4>
+                <pre><code class="language-javascript">import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+import { prettyJSON } from "hono/pretty-json";
+import { bearerAuth } from "hono/bearer-auth";
+import { cache } from "hono/cache";
+
+const app = new Hono();
+
+// 类型安全的中间件链
+app.use("*", logger());
+app.use("/api/*", cors());
+app.use("/api/*", prettyJSON());
+app.use("/api/admin/*", bearerAuth({ token: "secret" }));
+
+// 缓存策略
+app.get("/api/posts", cache({ cacheName: "posts", cacheControl: "max-age=60" }),
+    (c) => c.json(posts)
+);
+
+export default app;</code></pre>
+                <pre><code class="language-bash"># 部署到不同平台
+$ npx wrangler deploy     # Cloudflare Workers
+$ npx vercel deploy       # Vercel Edge Functions
+$ npx deploy-to-deno      # Deno Deploy</code></pre>
+                <div class="intro-block">
+                    <p>Hono 的中间件用 <code>app.use()</code> 按顺序注册，支持路径匹配和通配符。得益于统一的 Web Standard API，同一份代码可以直接部署到 Cloudflare Workers、Vercel Edge、Deno Deploy 等多种平台。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Fastify 错误处理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>错误处理与超时</h3>
+                <h4>Fastify 的错误处理比 Express 更规范：自定义错误类 + 全局处理器</h4>
+                <pre><code class="language-javascript">// 自定义业务错误
+import { FastifyError } from "fastify";
+
+class NotFoundError extends Error {
+    statusCode = 404;
+    constructor(message: string) {
+        super(message);
+        this.name = "NotFoundError";
+    }
+}
+
+// 全局错误处理器
+app.setErrorHandler((error, req, reply) => {
+    if (error.validation) {
+        // Schema 验证失败
+        reply.code(400).send({
+            success: false,
+            error: "请求参数验证失败",
+            details: error.validation
+        });
+    } else if (error instanceof NotFoundError) {
+        reply.code(404).send({ success: false, error: error.message });
+    } else {
+        req.log.error(error);
+        reply.code(500).send({ success: false, error: "服务器内部错误" });
+    }
+});
+
+// 请求超时保护
+app.get("/slow-route", {
+    config: { timeout: 5000 }  // 5秒超时
+}, async (req, reply) => { ... });</code></pre>
+                <div class="intro-block">
+                    <p>Fastify 自动区分验证错误（<code>error.validation</code>）和其他错误。结合 <code>FST_ERR_CTP_EMPTY_JSON_BODY</code> 等内置错误码，你可以针对每种情况返回精确的响应。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 框架选型指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>框架选型指南</h3>
+                <h4>不同场景该选哪个框架？一张流程图帮你做决定</h4>
+                <div class="ai-diagram" data-prompt="绘制一个框架选型决策流程图：从项目类型开始判断——如果是学习或快速原型选 Express；如果是纯 API 且追求高性能选 Fastify；如果是大型企业应用需要团队规范选 Nest.js；如果是 Edge/Serverless 场景选 Hono；如果不确定从 Fastify 开始。用简洁的中文标注。">
+                    <p>框架选型决策流程图（AI 图表占位符）</p>
+                </div>
+                <table>
+                    <thead><tr><th>场景</th><th>推荐框架</th><th>理由</th></tr></thead>
+                    <tbody>
+                        <tr><td>学习 / 快速原型</td><td>Express</td><td>文档最多，社区最大，踩坑成本最低</td></tr>
+                        <tr><td>高性能 REST API</td><td>Fastify</td><td>吞吐量最高，内置验证，插件生态成熟</td></tr>
+                        <tr><td>大型企业应用</td><td>Nest.js</td><td>强约束架构，DI + 模块化，团队协作规范</td></tr>
+                        <tr><td>Edge / Serverless</td><td>Hono</td><td>体积最小，跨运行时，RPC 类型安全</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>实用建议</strong>：如果你不确定选哪个，从 Fastify 开始。它性能好、学习曲线平缓，绝大多数项目都够用。等团队规模变大、需要更强的架构约束时，再考虑迁移到 Nest.js。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <div class="warning">
+                    <strong>不要在没有明确需求时频繁切换框架。</strong> 框架是工具，不是信仰。选一个用熟比什么都好。
+                </div>
+
+                <h4>问题一：Fastify 插件的加载顺序不对</h4>
+                <p><strong>原因</strong>：Fastify 插件是异步加载的，依赖关系没有正确声明。</p>
+                <p><strong>修复</strong>：在 <code>fp()</code> 中通过 <code>dependencies</code> 参数声明依赖关系。</p>
+
+                <h4>问题二：Nest.js 的 DTO 验证不生效</h4>
+                <p><strong>原因</strong>：忘记在 main.ts 中启用 <code>ValidationPipe</code>。</p>
+                <p><strong>修复</strong>：<code>app.useGlobalPipes(new ValidationPipe({ whitelist: true }));</code></p>
+
+                <h4>问题三：Hono 在 Node.js 中报错</h4>
+                <p><strong>原因</strong>：Hono 默认为 Edge 环境，需要额外安装 <code>@hono/node-server</code>。</p>
+                <p><strong>修复</strong>：<code>npm install @hono/node-server</code>，然后用 <code>serve(app)</code> 启动。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试：Fastify</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：用 Fastify 创建一个 <code>GET /health</code> 接口，返回 <code>{ status: "ok" }</code>。</p>
+                        <pre><code class="language-javascript">// 提示：Fastify 路由直接 return 对象即可
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">import Fastify from "fastify";
+const app = Fastify();
+
+app.get("/health", async (req, reply) => {
+    return { status: "ok" };
+});
+
+app.listen({ port: 3000 });</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习二 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试：Hono + Nest</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：用 Hono 写一个带认证中间件的路由，只有带 <code>Authorization</code> 头的请求才能访问 <code>/api/me</code>。</p>
+                        <pre><code class="language-javascript">// 提示：检查 c.req.header("Authorization")
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">const app = new Hono();
+
+app.use("/api/*", async (c, next) => {
+    const token = c.req.header("Authorization");
+    if (!token) return c.json({ error: "未认证" }, 401);
+    await next();
+});
+
+app.get("/api/me", (c) => {
+    return c.json({ user: "Alice" });
+});</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>框架只是入口，数据才是核心。下一章学习<strong>数据持久化</strong>——用 Prisma 连接数据库，让数据真正"存下来"。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

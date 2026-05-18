@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第36章 状态管理 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>状态管理</h1>
+            <p>当数据需要跨组件共享时，全局状态管理登场</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>购物车的数据在 Header 显示数量、在页面显示列表、在弹窗显示总价——它们怎么保持同步？</h4>
+                <p>如果把购物车数据放在父组件，通过 Props 一层层往下传，传到第五层组件时你已经写了五个 <code>:cart="cart"</code>。这就是 <strong>prop drilling</strong> 问题——层级越深，代码越难维护。</p>
+                <p><strong>状态管理</strong>就是解决这个问题的：把共享数据放到一个"全局仓库"里，任何组件都能直接读写，不需要层层传递。</p>
+            </div>
+        </section>
+
+        <!-- 何时需要状态管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>何时需要</h3>
+                <h4>不是所有状态都需要全局管理</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>需要状态管理</h4>
+                        <ul>
+                            <li>多个组件共享同一份数据</li>
+                            <li>组件层级太深，Props 传递繁琐</li>
+                            <li>需要跨组件协调状态变化</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>不需要状态管理</h4>
+                        <ul>
+                            <li>状态只在单个组件内用——useState / ref</li>
+                            <li>父子组件传递——Props / emit</li>
+                            <li>简单跨层传递——Context / provide-inject</li>
+                        </ul>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>框架</th><th>推荐方案</th><th>过时方案</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>React</td><td>Zustand、Jotai</td><td>Redux（太重）</td></tr>
+                        <tr><td>Vue</td><td>Pinia</td><td>Vuex（已过时）</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: React 状态</h2>
+                <h4>Zustand 轻量简洁，Redux Toolkit 功能完整</h4>
+                <p>React 生态有两大主流方案。Zustand 适合中小项目，上手快；Redux Toolkit 适合大型团队，工具链成熟。两者都是好选择，关键看你的项目规模和团队偏好。</p>
+            </div>
+        </section>
+
+        <!-- Zustand -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Zustand（推荐）</h3>
+                <h4>极简的 React 状态管理库，API 少到你不敢相信</h4>
+                <pre><code class="language-bash">$ npm install zustand</code></pre>
+                <pre><code class="language-tsx">// 定义 store
+import { create } from "zustand";
+
+interface CartItem {
+    id: string;
+    name: string;
+    price: number;
+    quantity: number;
+}
+
+interface CartStore {
+    items: CartItem[];
+    addItem: (item: Omit&lt;CartItem, "quantity"&gt;) =&gt; void;
+    removeItem: (id: string) =&gt; void;
+    clearCart: () =&gt; void;
+    total: () =&gt; number;
+}
+
+const useCartStore = create&lt;CartStore&gt;((set, get) =&gt; ({
+    items: [],
+
+    addItem: (item) =&gt; set((state) =&gt; {
+        const existing = state.items.find(i =&gt; i.id === item.id);
+        if (existing) {
+            return {
+                items: state.items.map(i =&gt;
+                    i.id === item.id
+                        ? { ...i, quantity: i.quantity + 1 }
+                        : i
+                ),
+            };
+        }
+        return { items: [...state.items, { ...item, quantity: 1 }] };
+    }),
+
+    removeItem: (id) =&gt; set((state) =&gt; ({
+        items: state.items.filter(i =&gt; i.id !== id),
+    })),
+
+    clearCart: () =&gt; set({ items: [] }),
+
+    total: () =&gt; get().items.reduce(
+        (sum, i) =&gt; sum + i.price * i.quantity, 0
+    ),
+}));</code></pre>
+            </div>
+        </section>
+
+        <!-- Zustand 使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Zustand 组件中使用</h3>
+                <h4>选择器模式，只订阅需要的数据</h4>
+                <pre><code class="language-tsx">function Cart() {
+    // 用选择器只订阅需要的数据，避免不必要的渲染
+    const items = useCartStore((s) =&gt; s.items);
+    const total = useCartStore((s) =&gt; s.total());
+    const removeItem = useCartStore((s) =&gt; s.removeItem);
+
+    return (
+        &lt;div&gt;
+            {items.map(item =&gt; (
+                &lt;div key={item.id}&gt;
+                    {item.name} x{item.quantity} = ¥{item.price * item.quantity}
+                    &lt;button onClick={() =&gt; removeItem(item.id)}&gt;
+                        删除
+                    &lt;/button&gt;
+                &lt;/div&gt;
+            ))}
+            &lt;p&gt;总计: ¥{total}&lt;/p&gt;
+        &lt;/div&gt;
+    );
+}</code></pre>
+                <div class="intro-block">
+                    <p>Zustand 的核心优势：<strong>没有 Provider 包裹</strong>、<strong>没有 reducer 样板代码</strong>、<strong>组件外也能使用</strong>（比如在 axios 拦截器里）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Redux Toolkit -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Redux Toolkit</h3>
+                <h4>功能更完整，适合大型团队协作</h4>
+                <pre><code class="language-bash">$ npm install @reduxjs/toolkit react-redux</code></pre>
+                <pre><code class="language-tsx">// store/cartSlice.ts
+import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+
+interface CartState { items: CartItem[]; }
+const initialState: CartState = { items: [] };
+
+const cartSlice = createSlice({
+    name: "cart",
+    initialState,
+    reducers: {
+        addItem(state, action: PayloadAction&lt;Omit&lt;CartItem, "quantity"&gt;&gt;) {
+            const existing = state.items.find(
+                i =&gt; i.id === action.payload.id
+            );
+            if (existing) {
+                existing.quantity++;
+            } else {
+                state.items.push({ ...action.payload, quantity: 1 });
+            }
+        },
+        removeItem(state, action: PayloadAction&lt;string&gt;) {
+            state.items = state.items.filter(
+                i =&gt; i.id !== action.payload
+            );
+        },
+    },
+});
+
+export const { addItem, removeItem } = cartSlice.actions;
+export default cartSlice.reducer;</code></pre>
+            </div>
+        </section>
+
+        <!-- Redux Toolkit 使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Redux Toolkit 使用</h3>
+                <h4>useSelector 读取，useDispatch 写入</h4>
+                <pre><code class="language-tsx">import { useSelector, useDispatch } from "react-redux";
+import { addItem } from "./store/cartSlice";
+
+function ProductList() {
+    const items = useSelector((state: RootState) =&gt; state.cart.items);
+    const dispatch = useDispatch();
+
+    return (
+        &lt;button onClick={() =&gt; dispatch(
+            addItem({ id: "1", name: "商品", price: 99 })
+        )}&gt;
+            加入购物车
+        &lt;/button&gt;
+    );
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Zustand vs Redux Toolkit</h4>
+                        <ul>
+                            <li>Zustand：更轻量，API 更简洁，学习成本低</li>
+                            <li>Redux Toolkit：生态更成熟，DevTools 强大，适合大团队</li>
+                            <li>新项目优先选 Zustand，除非团队已有 Redux 经验</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: Vue 状态</h2>
+                <h4>Pinia 是 Vue 3 的官方推荐方案，TS 支持一流</h4>
+                <p>Pinia 用 Composition API 的写法定义 store，天然支持 TypeScript。比 Vuex 更轻量、更直观，是 Vue 3 项目的唯一推荐方案。</p>
+            </div>
+        </section>
+
+        <!-- Pinia 定义 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Pinia 定义 Store</h3>
+                <h4>Setup 语法，TS 支持最完美</h4>
+                <pre><code class="language-bash">$ npm install pinia</code></pre>
+                <pre><code class="language-typescript">// stores/cart.ts
+import { defineStore } from "pinia";
+
+// Setup 语法（推荐）
+export const useCartStore = defineStore("cart", () =&gt; {
+    const items = ref&lt;CartItem[]&gt;([]);
+
+    const total = computed(() =&gt;
+        items.value.reduce((sum, i) =&gt; sum + i.price * i.quantity, 0)
+    );
+
+    const itemCount = computed(() =&gt;
+        items.value.reduce((sum, i) =&gt; sum + i.quantity, 0)
+    );
+
+    function addItem(item: Omit&lt;CartItem, "quantity"&gt;) {
+        const existing = items.value.find(i =&gt; i.id === item.id);
+        if (existing) {
+            existing.quantity++;
+        } else {
+            items.value.push({ ...item, quantity: 1 });
+        }
+    }
+
+    function removeItem(id: string) {
+        items.value = items.value.filter(i =&gt; i.id !== id);
+    }
+
+    function clearCart() {
+        items.value = [];
+    }
+
+    return { items, total, itemCount, addItem, removeItem, clearCart };
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- Pinia 使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Pinia 组件中使用</h3>
+                <h4>直接访问，完全类型推断</h4>
+                <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { useCartStore } from "@/stores/cart";
+import { storeToRefs } from "pinia";
+
+const cart = useCartStore();
+
+// 直接访问 state / getter / action
+cart.items;                              // CartItem[]
+cart.total;                              // number（自动解包）
+cart.addItem({ id: "1", name: "商品", price: 99 });
+
+// 解构时保持响应性
+const { total, itemCount } = storeToRefs(cart);
+const { addItem, removeItem } = cart;    // actions 不需要 storeToRefs
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;div&gt;
+        {{ cart.itemCount }} 件商品，总计 ¥{{ cart.total }}
+    &lt;/div&gt;
+&lt;/template&gt;</code></pre>
+                <div class="warning">
+                    <strong>解构 store 时注意：</strong>state 和 getter 必须用 <code>storeToRefs</code> 解构，否则会丢失响应性。action 可以直接解构，因为它本来就是普通函数。
+                </div>
+            </div>
+        </section>
+
+        <!-- Pinia vs Vuex -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Pinia vs Vuex</h3>
+                <h4>为什么 Pinia 是 Vue 3 的官方推荐</h4>
+                <table>
+                    <thead>
+                        <tr><th>对比项</th><th>Pinia</th><th>Vuex</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>TS 支持</td><td>一流，无需类型体操</td><td>需要大量辅助类型</td></tr>
+                        <tr><td>mutations</td><td>没有，直接修改 state</td><td>必须通过 mutation 修改</td></tr>
+                        <tr><td>打包体积</td><td>约 1KB</td><td>较大</td></tr>
+                        <tr><td>Composition API</td><td>原生支持</td><td>需要额外适配</td></tr>
+                        <tr><td>DevTools</td><td>支持</td><td>支持</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>一句话总结：<strong>新项目用 Pinia，老项目用 Vuex。</strong> Vuex 4 还能用在 Vue 3 项目中，但官方已经不推荐了。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3: 异步操作 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 异步操作</h2>
+                <h4>真实项目离不开 API 调用，异步怎么管？</h4>
+                <p>前面的例子都是同步操作。但真实项目中，数据来自后端 API，你需要处理 loading、error、成功三种状态。每个库处理异步的方式不同，但思路一致：先设 loading，成功写数据，失败存错误。</p>
+            </div>
+        </section>
+
+        <!-- Zustand 异步 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Zustand 异步</h3>
+                <h4>直接写 async action，就这么简单</h4>
+                <pre><code class="language-typescript">interface ItemStore {
+  items: Item[];
+  loading: boolean;
+  error: string | null;
+  fetchItems: () => Promise&lt;void&gt;;
+}
+
+const useItemStore = create&lt;ItemStore&gt;((set) =&gt; ({
+  items: [],
+  loading: false,
+  error: null,
+
+  fetchItems: async () =&gt; {
+    set({ loading: true, error: null });
+    try {
+      const res = await fetch("/api/items");
+      if (!res.ok) throw new Error("请求失败");
+      const data: Item[] = await res.json();
+      set({ items: data, loading: false });
+    } catch (e) {
+      set({ error: (e as Error).message, loading: false });
+    }
+  },
+}));
+
+// 组件中使用
+function ItemList() {
+  const { items, loading, error, fetchItems } = useItemStore();
+
+  useEffect(() =&gt; { fetchItems(); }, []);
+
+  if (loading) return &lt;p&gt;加载中...&lt;/p&gt;;
+  if (error) return &lt;p&gt;出错了: {error}&lt;/p&gt;;
+  return &lt;ul&gt;{items.map(i =&gt; &lt;li key={i.id}&gt;{i.name}&lt;/li&gt;)}&lt;/ul&gt;;
+}</code></pre>
+                <div class="intro-block">
+                    <p>Zustand 的异步最简单：action 本身就是普通 async 函数，不需要额外的中间件或配置。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Redux Toolkit 异步 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>RTK 异步</h3>
+                <h4>createAsyncThunk 处理三种状态</h4>
+                <pre><code class="language-typescript">// store/itemSlice.ts
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+
+export const fetchItems = createAsyncThunk&lt;Item[]&gt;(
+  "items/fetchAll",
+  async () =&gt; {
+    const res = await fetch("/api/items");
+    return res.json();
+  }
+);
+
+const itemSlice = createSlice({
+  name: "items",
+  initialState: {
+    data: [] as Item[],
+    loading: false,
+    error: null as string | null,
+  },
+  reducers: {},
+  extraReducers: (builder) =&gt; {
+    builder
+      .addCase(fetchItems.pending, (state) =&gt; {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchItems.fulfilled, (state, action) =&gt; {
+        state.data = action.payload;
+        state.loading = false;
+      })
+      .addCase(fetchItems.rejected, (state, action) =&gt; {
+        state.error = action.error.message ?? "未知错误";
+        state.loading = false;
+      });
+  },
+});</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong><code>createAsyncThunk</code> 只处理"触发 → 完成/失败"的流程。如果你需要更复杂的场景（轮询、自动重试、乐观更新），建议直接用 TanStack Query。
+                </div>
+            </div>
+        </section>
+
+        <!-- Pinia 异步 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Pinia 异步</h3>
+                <h4>action 里直接写 async，和普通函数一样</h4>
+                <pre><code class="language-typescript">export const useItemStore = defineStore("items", () =&gt; {
+  const items = ref&lt;Item[]&gt;([]);
+  const loading = ref(false);
+  const error = ref&lt;string | null&gt;(null);
+
+  async function fetchItems() {
+    loading.value = true;
+    error.value = null;
+    try {
+      const res = await fetch("/api/items");
+      items.value = await res.json();
+    } catch (e) {
+      error.value = (e as Error).message;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  return { items, loading, error, fetchItems };
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>三种方案对比</h4>
+                        <table>
+                            <thead><tr><th>方案</th><th>复杂度</th><th>特点</th></tr></thead>
+                            <tbody>
+                                <tr><td>Zustand</td><td>最低</td><td>直接写 async action</td></tr>
+                                <tr><td>Pinia</td><td>低</td><td>原生 async，无需额外配置</td></tr>
+                                <tr><td>RTK</td><td>中等</td><td>需 createAsyncThunk + extraReducers</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4: 中间件与持久化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 中间件</h2>
+                <h4>让 store 自动存到 localStorage</h4>
+                <p>用户刷新页面后，购物车数据还在吗？默认不会。持久化中间件帮你自动把 store 数据存到 localStorage，下次打开时自动恢复。这是生产项目最常见的中间件需求。</p>
+            </div>
+        </section>
+
+        <!-- Zustand persist -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Zustand 持久化</h3>
+                <h4>一行代码实现 localStorage 存储</h4>
+                <pre><code class="language-typescript">import { create } from "zustand";
+import { persist } from "zustand/middleware";
+
+const useCartStore = create&lt;CartStore&gt;()(
+  persist(
+    (set, get) =&gt; ({
+      items: [],
+      addItem: (item) =&gt; { /* ... */ },
+      removeItem: (id) =&gt; { /* ... */ },
+      clearCart: () =&gt; set({ items: [] }),
+      total: () =&gt; get().items.reduce(
+        (sum, i) =&gt; sum + i.price * i.quantity, 0
+      ),
+    }),
+    {
+      name: "cart-storage",   // localStorage 的 key
+      partialize: (state) =&gt; ({
+        items: state.items,   // 只存 items，不存 action
+      }),
+    }
+  )
+);</code></pre>
+                <div class="intro-block">
+                    <p><code>partialize</code> 很重要：只持久化数据，不持久化函数。避免把 action 序列化到 localStorage 里。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Redux/Pinia 中间件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>其他中间件</h3>
+                <h4>Redux 用插件，Pinia 用插件</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Redux Toolkit 日志中间件</h4>
+                        <pre><code class="language-typescript">const logger: Middleware = (store) =&gt;
+  (next) =&gt; (action) =&gt; {
+    console.log("dispatching", action);
+    const result = next(action);
+    console.log("next state", store.getState());
+    return result;
+  };
+
+const store = configureStore({
+  reducer: rootReducer,
+  middleware: (getDefault) =&gt;
+    getDefault().concat(logger),
+});</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>Pinia 持久化插件</h4>
+                        <pre><code class="language-typescript">// 安装: npm i pinia-plugin-persistedstate
+import piniaPluginPersistedstate
+  from "pinia-plugin-persistedstate";
+
+const pinia = createPinia();
+pinia.use(piniaPluginPersistedstate);
+
+// 在 store 中启用
+export const useCartStore =
+  defineStore("cart", () =&gt; {
+    const items = ref&lt;CartItem[]&gt;([]);
+    // ...
+    return { items };
+  }, {
+    persist: {
+      key: "cart",
+      pick: ["items"],
+    },
+  });</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>常见问题：</strong>localStorage 容量约 5MB。如果 store 数据量大，考虑用 IndexedDB 或只持久化关键字段。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 5: 服务端状态管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 服务端状态</h2>
+                <h4>API 数据不适合放在全局 store 里</h4>
+                <p>从后端获取的数据（用户列表、商品详情）本质上是服务端状态的"缓存"。它有过期时间、需要重新获取、可能被其他人修改。用 Zustand/Redux 管理这类数据，你需要手写 loading、error、缓存逻辑——太累了。</p>
+            </div>
+        </section>
+
+        <!-- TanStack Query -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>TanStack Query</h3>
+                <h4>专为服务端数据设计的"状态管理器"</h4>
+                <pre><code class="language-tsx">// 安装: npm i @tanstack/react-query
+import { useQuery, useMutation, useQueryClient }
+  from "@tanstack/react-query";
+
+// 查询数据：自动管理 loading / error / data
+function UserList() {
+  const { data, isLoading, error } = useQuery&lt;User[]&gt;({
+    queryKey: ["users"],
+    queryFn: () =&gt; fetch("/api/users").then(r =&gt; r.json()),
+    staleTime: 5 * 60 * 1000,  // 5分钟内不重新请求
+  });
+
+  if (isLoading) return &lt;p&gt;加载中...&lt;/p&gt;;
+  if (error) return &lt;p&gt;出错了&lt;/p&gt;;
+  return &lt;ul&gt;{data!.map(u =&gt; &lt;li key={u.id}&gt;{u.name}&lt;/li&gt;)}&lt;/ul&gt;;
+}
+
+// 修改数据：自动让相关缓存失效
+function AddUser() {
+  const client = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: (name: string) =&gt;
+      fetch("/api/users", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+    onSuccess: () =&gt; {
+      client.invalidateQueries({ queryKey: ["users"] });
+    },
+  });
+
+  return &lt;button onClick={() =&gt; mutation.mutate("新用户")}&gt;添加&lt;/button&gt;;
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 服务端状态 vs 本地状态 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>选哪个？</h3>
+                <h4>服务端状态和本地状态用不同工具</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>用 TanStack Query / SWR</h4>
+                        <ul>
+                            <li>数据来自 API，需要缓存和自动刷新</li>
+                            <li>列表页、详情页、搜索结果</li>
+                            <li>需要乐观更新、分页、无限滚动</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>用 Zustand / Pinia</h4>
+                        <ul>
+                            <li>纯客户端状态：主题、语言、侧边栏开关</li>
+                            <li>购物车、表单草稿、本地设置</li>
+                            <li>跨组件共享，但不涉及 API</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>最佳实践：</strong>两者可以共存。TanStack Query 管 API 数据，Zustand/Pinia 管客户端 UI 状态。很多生产项目就是这么搭配的。</p>
+                </div>
+                <div class="warning">
+                    <strong>常见误区：</strong>不要把 API 数据存到 Zustand 里再手写 loading/error 逻辑。TanStack Query 已经帮你做了，而且做得更好（自动重试、窗口聚焦刷新、请求去重）。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 6: Store 组合与拆分 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: Store 拆分</h2>
+                <h4>一个大 store 还是多个小 store？</h4>
+                <p>项目变大后，把所有状态塞进一个 store 会变得难以维护。合理的拆分能让代码更清晰，也能避免不必要的组件重渲染。但拆太碎又会增加复杂度——需要找到一个平衡点。</p>
+            </div>
+        </section>
+
+        <!-- Store 组合模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组合模式</h3>
+                <h4>三种框架各自的拆分方式</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Zustand：多个 store</h4>
+                        <pre><code class="language-typescript">// 按领域拆分，各自独立
+const useCartStore = create(/* ... */);
+const useUserStore = create(/* ... */);
+const useThemeStore = create(/* ... */);
+
+// 一个 store 也能引用另一个
+const useCartStore = create((set, get) =&gt; ({
+  items: [],
+  userName: () =&gt;
+    useUserStore.getState().name,
+}));</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>Pinia：store 互相引用</h4>
+                        <pre><code class="language-typescript">export const useCartStore =
+  defineStore("cart", () =&gt; {
+    const items = ref&lt;CartItem[]&gt;([]);
+
+    function checkout() {
+      // 直接使用另一个 store
+      const user = useUserStore();
+      api.checkout(user.id, items.value);
+    }
+
+    return { items, checkout };
+  });</code></pre>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>Redux 的方式：</strong>用多个 slice 组合成一个 rootReducer。每个 slice 管一个领域（cart、user、theme），最终通过 <code>configureStore</code> 合并。这也是 Redux "单一 store" 哲学的体现。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 何时拆分 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>拆分原则</h3>
+                <h4>按领域拆分，按团队维护</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>该拆的时候</h4>
+                        <ul>
+                            <li>store 超过 200 行，难以快速定位</li>
+                            <li>不同团队成员负责不同模块</li>
+                            <li>某个 state 频繁更新导致无关组件重渲染</li>
+                            <li>需要按功能模块独立测试</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>不必拆的时候</h4>
+                        <ul>
+                            <li>项目小，state 总共不到 10 个字段</li>
+                            <li>state 之间高度耦合，拆开后互相引用更多</li>
+                            <li>拆分后代码可读性反而下降</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 7: DevTools -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 7: DevTools</h2>
+                <h4>调试状态问题的利器</h4>
+                <p>状态 bug 最难排查：数据不知道什么时候被改了，改成了什么。DevTools 让你能看到每一次 state 变化的历史记录，甚至能"时光倒流"回到之前的状态。</p>
+            </div>
+        </section>
+
+        <!-- DevTools 实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>调试实战</h3>
+                <h4>浏览器扩展帮你追踪每一次变更</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Redux DevTools</h4>
+                        <p>安装浏览器扩展后自动支持 Redux Toolkit。能做<strong>时间旅行调试</strong>：点击任意历史 action，state 回到那一刻。排查"数据怎么变了"的问题非常有效。</p>
+                        <pre><code class="language-typescript">// Zustand 也能接入：
+import { devtools } from "zustand/middleware";
+
+const useStore = create(
+  devtools((set) =&gt; ({
+    count: 0,
+    inc: () =&gt; set(
+      { count: ++n }, { name: "increment" }
+    ),
+  }))
+);</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Pinia DevTools</h4>
+                        <p>安装 Vue DevTools 后，Pinia store 自动出现在面板中。可以直接查看、编辑 state，追踪 action 调用历史。</p>
+                        <pre><code class="language-typescript">// 无需额外配置
+// Vue DevTools 自动识别 Pinia store
+// 在 "Pinia" 面板中可以：
+// - 查看所有 store 的 state
+// - 手动修改 state 测试
+// - 时间旅行回到之前的状态</code></pre>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>调试技巧：</strong>当组件表现异常时，先打开 DevTools 看 state 是不是你预期的值。如果是，问题在渲染层；如果不是，追踪是哪个 action 修改了它。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 8: 状态规范化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 8: 数据规范化</h2>
+                <h4>数据量大时，数组不够用</h4>
+                <p>小型项目用数组存列表数据没问题。但当中等规模的应用需要频繁查找、更新单条数据时，数组的 <code>find</code> 操作是 O(n) 的。规范化（Normalization）把数组变成按 ID 索引的对象，查找变成 O(1)。</p>
+            </div>
+        </section>
+
+        <!-- 规范化实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>规范化存储</h3>
+                <h4>用 Record&lt;string, T&gt; 替代数组</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>之前：数组存储（慢）</h4>
+                        <pre><code class="language-typescript">interface State {
+  items: Item[];
+}
+
+// 更新某个 item：O(n)
+state.items.map(item =&gt;
+  item.id === targetId
+    ? { ...item, done: true }
+    : item
+);
+
+// 查找某个 item：O(n)
+state.items.find(
+  i =&gt; i.id === targetId
+);</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>之后：按 ID 索引（快）</h4>
+                        <pre><code class="language-typescript">interface State {
+  entities: Record&lt;string, Item&gt;;
+  ids: string[];
+}
+
+// 更新某个 item：O(1)
+state.entities[targetId] = {
+  ...state.entities[targetId],
+  done: true,
+};
+
+// 查找某个 item：O(1)
+state.entities[targetId];</code></pre>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>Redux Toolkit 提供 <code>createEntityAdapter</code>：</strong>自动帮你管理 entities + ids 的数据结构，自带 CRUD 方法。适合管理大量同类实体（用户列表、商品列表等）。</p>
+                </div>
+                <div class="warning">
+                    <strong>不必过早优化：</strong>如果列表不超过几百条，数组完全够用。规范化是数据量大到影响性能时的优化手段，不是默认选择。
+                </div>
+            </div>
+        </section>
+
+        <!-- 状态管理选择指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>选型指南</h3>
+                <h4>一个流程图帮你做决定</h4>
+                <pre><code class="language-mermaid">flowchart TD
+    A[需要共享状态？] --&gt;|否| B[用组件内部 state]
+    A --&gt;|是| C[跨几个组件？]
+    C --&gt;|2-3个, 父子关系| D[用 Props / emit]
+    C --&gt;|多个, 同层级| E[用 Context / provide-inject]
+    C --&gt;|大量组件| F[用状态管理库]
+    F --&gt;|React| G[Zustand 或 Redux Toolkit]
+    F --&gt;|Vue| H[Pinia]</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见排错</h3>
+
+                <div class="warning">
+                    <strong>状态管理不是万能药。</strong> 如果只是两个组件之间传数据，用 Props 就够了。过度使用全局状态反而会让代码更难理解。
+                </div>
+
+                <h4>问题一：Zustand store 的值变了，但组件没更新</h4>
+                <p><strong>原因</strong>：直接修改了对象属性，没有创建新引用。</p>
+                <p><strong>修复</strong>：用 <code>set</code> 返回新对象：<code>set({ items: [...state.items, newItem] })</code>。</p>
+
+                <h4>问题二：Pinia 解构后数据不更新</h4>
+                <p><strong>原因</strong>：直接解构 store 丢失了响应性。</p>
+                <p><strong>修复</strong>：用 <code>storeToRefs</code> 解构 state 和 getter。</p>
+
+                <h4>问题三：Redux dispatch 后组件没更新</h4>
+                <p><strong>原因</strong>：reducer 中直接修改了 state（mutation），没有返回新的 state。</p>
+                <p><strong>修复</strong>：Redux Toolkit 内部使用了 Immer，可以直接写"修改"语法，它会自动生成不可变更新。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一（React）</h3>
+                        <p><strong>任务</strong>：用 Zustand 创建一个 <code>useTodoStore</code>，支持添加、删除、切换完成状态三个 action。在组件中展示列表并实现交互。</p>
+                        <pre><code class="language-tsx">// 提示：interface Todo { id: string; title: string; done: boolean }
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-tsx">interface Todo {
+    id: string; title: string; done: boolean;
+}
+
+interface TodoStore {
+    todos: Todo[];
+    add: (title: string) =&gt; void;
+    remove: (id: string) =&gt; void;
+    toggle: (id: string) =&gt; void;
+}
+
+const useTodoStore = create&lt;TodoStore&gt;((set) =&gt; ({
+    todos: [],
+    add: (title) =&gt; set((s) =&gt; ({
+        todos: [...s.todos, { id: Date.now().toString(), title, done: false }],
+    })),
+    remove: (id) =&gt; set((s) =&gt; ({
+        todos: s.todos.filter(t =&gt; t.id !== id),
+    })),
+    toggle: (id) =&gt; set((s) =&gt; ({
+        todos: s.todos.map(t =&gt;
+            t.id === id ? { ...t, done: !t.done } : t
+        ),
+    })),
+}));</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二（Vue）</h3>
+                        <p><strong>任务</strong>：用 Pinia 创建一个 <code>useCounterStore</code>，包含 count（ref）、doubleCount（computed）、increment 和 reset（action）。在组件中展示。</p>
+                        <pre><code class="language-typescript">// 提示：用 Setup 语法写 defineStore
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">export const useCounterStore = defineStore("counter", () =&gt; {
+    const count = ref(0);
+    const doubleCount = computed(() =&gt; count.value * 2);
+
+    function increment() { count.value++; }
+    function reset() { count.value = 0; }
+
+    return { count, doubleCount, increment, reset };
+});</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>状态管理搞定了。下一章学习 <strong>前端测试</strong>——怎么保证你写的代码不出 bug？用测试来守护你的代码质量。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

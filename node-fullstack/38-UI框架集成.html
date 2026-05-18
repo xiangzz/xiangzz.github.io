@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第38章 UI框架集成 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>UI 框架集成</h1>
+            <p>Tailwind CSS、Ant Design、Element Plus——优雅接入 TS 项目</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>为什么别人的界面好看又统一，你的页面样式东拼西凑？</h4>
+                <p>从头写 CSS 太慢，但直接用 UI 框架又怕类型不支持。好消息是：现代 UI 框架都有<strong>完整的 TypeScript 类型定义</strong>，你可以在类型安全的保护下使用它们。</p>
+                <p>本章覆盖三个主题：<strong>Tailwind CSS</strong> 的原子化样式、<strong>Ant Design</strong> 和 <strong>Element Plus</strong> 的组件库集成、<strong>图标库</strong>的类型安全使用。</p>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: Tailwind CSS</h2>
+                <h4>原子化 CSS 框架，用类名代替写样式。</h4>
+                <p>Tailwind 是目前最流行的原子化 CSS 方案。你不需要写 <code>.card { padding: 16px; }</code>，而是直接写 <code>class="p-4"</code>。所有样式都在 HTML 里，改起来一目了然。</p>
+                <p>本部分从安装配置开始，逐步讲到响应式设计、自定义主题和暗黑模式。学完你就能独立配置一个完整的 Tailwind 项目。</p>
+            </div>
+        </section>
+
+        <!-- Tailwind 安装 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Tailwind 安装</h3>
+                <h4>三步接入 Vite + TS 项目</h4>
+                <pre><code class="language-bash">$ npm install -D tailwindcss postcss autoprefixer
+$ npx tailwindcss init -p</code></pre>
+                <p>初始化后会生成 <code>tailwind.config.js</code>。如果你的项目用 TypeScript，可以改用 <code>.ts</code> 格式：</p>
+                <pre><code class="language-typescript">// tailwind.config.ts
+import type { Config } from "tailwindcss";
+
+export default {
+    content: [
+        "./index.html",
+        "./src/**/*.{vue,js,ts,jsx,tsx}",
+    ],
+    theme: {
+        extend: {
+            colors: {
+                primary: "#0f3460",
+                accent: "#e94560",
+            },
+        },
+    },
+} satisfies Config;</code></pre>
+                <pre><code class="language-css">/* src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;</code></pre>
+            </div>
+        </section>
+
+        <!-- Tailwind 在 React 中使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Tailwind + React</h3>
+                <h4>用类名组合出任何样式，不用写一行 CSS</h4>
+                <pre><code class="language-tsx">// 类型安全的 Button 组件
+function Button({
+    children,
+    variant = "primary",
+}: {
+    children: React.ReactNode;
+    variant?: "primary" | "secondary";
+}) {
+    const base = "px-4 py-2 rounded font-medium transition-colors";
+    const variants = {
+        primary: "bg-primary text-white hover:bg-primary/90",
+        secondary: "bg-gray-200 text-gray-800 hover:bg-gray-300",
+    };
+
+    return (
+        &lt;button className={`${base} ${variants[variant]}`}&gt;
+            {children}
+        &lt;/button&gt;
+    );
+}</code></pre>
+                <p>用联合类型约束 variant 属性，编辑器会提示可选的值，传错了立刻标红。</p>
+            </div>
+        </section>
+
+        <!-- Tailwind 在 Vue 中使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Tailwind + Vue</h3>
+                <h4>在模板中直接使用 Tailwind 类名</h4>
+                <pre><code class="language-vue">&lt;template&gt;
+    &lt;button class="px-4 py-2 bg-primary text-white rounded
+        hover:bg-primary/90 transition-colors"&gt;
+        &lt;slot /&gt;
+    &lt;/button&gt;
+&lt;/template&gt;</code></pre>
+                <div class="intro-block">
+                    <p>Tailwind 的核心理念：<strong>用类名描述样式，而不是用 CSS 文件</strong>。好处是改样式不用在 HTML 和 CSS 之间跳来跳去，所有信息都在一个地方。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tailwind 类型扩展 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Tailwind 类型扩展</h3>
+                <h4>自定义 theme 时，让 TS 也认识你的配置</h4>
+                <pre><code class="language-typescript">// tailwind.config.ts —— 使用 satisfies 获得类型检查
+import type { Config } from "tailwindcss";
+
+export default {
+    content: ["./src/**/*.{vue,tsx}"],
+    theme: {
+        extend: {
+            colors: {
+                primary: "#0f3460",
+                accent: "#e94560",
+            },
+        },
+    },
+} satisfies Config;
+
+// 使用 satisfies 而非 as Config 的好处：
+// 编辑器既能自动补全 theme 的所有选项，
+// 又能在你写错配置项时报错</code></pre>
+            </div>
+        </section>
+
+        <!-- Tailwind 响应式设计 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>响应式设计</h3>
+                <h4>一套代码适配手机、平板、桌面</h4>
+                <p>Tailwind 采用<strong>移动优先</strong>策略：裸类名对应手机，加前缀对应更大屏幕。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>断点前缀</h4>
+                        <p><code>sm:</code> 640px</p>
+                        <p><code>md:</code> 768px</p>
+                        <p><code>lg:</code> 1024px</p>
+                        <p><code>xl:</code> 1280px</p>
+                        <p><code>2xl:</code> 1536px</p>
+                    </div>
+                    <div class="card">
+                        <h4>理解方式</h4>
+                        <p><code>p-2</code> → 所有屏幕</p>
+                        <p><code>md:p-4</code> → 768px 以上</p>
+                        <p><code>lg:p-6</code> → 1024px 以上</p>
+                        <p>小屏幕是基础，大屏幕是增强。</p>
+                    </div>
+                </div>
+                <pre><code class="language-tsx">// 响应式卡片网格：手机单列，平板两列，桌面三列
+function CardGrid({ items }: { items: CardData[] }) {
+    return (
+        &lt;div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"&gt;
+            {items.map((item) =&gt; (
+                &lt;div key={item.id} className="p-4 rounded-lg border"&gt;
+                    &lt;h3 className="text-base md:text-lg font-bold"&gt;
+                        {item.title}
+                    &lt;/h3&gt;
+                    &lt;p className="text-sm md:text-base text-gray-600"&gt;
+                        {item.desc}
+                    &lt;/p&gt;
+                &lt;/div&gt;
+            ))}
+        &lt;/div&gt;
+    );
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Tailwind 响应式常用模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>响应式常用模式</h3>
+                <h4>侧边栏折叠、导航切换、容器宽度</h4>
+                <pre><code class="language-tsx">// 模式一：侧边栏在大屏展开，小屏隐藏
+&lt;div className="flex"&gt;
+    &lt;aside className="hidden lg:block w-64 shrink-0"&gt;
+        侧边栏
+    &lt;/aside&gt;
+    &lt;main className="flex-1 p-4"&gt;
+        主内容
+    &lt;/main&gt;
+&lt;/div&gt;
+
+// 模式二：导航栏手机端显示汉堡菜单
+&lt;nav&gt;
+    &lt;div className="flex md:hidden"&gt;汉堡按钮&lt;/div&gt;
+    &lt;div className="hidden md:flex gap-4"&gt;桌面导航&lt;/div&gt;
+&lt;/nav&gt;
+
+// 模式三：container 类自动居中
+&lt;div className="container mx-auto px-4"&gt;
+    内容自动限制宽度并居中
+&lt;/div&gt;</code></pre>
+                <div class="intro-block">
+                    <p>核心思路：<strong>先写手机版样式，再用 <code>md:</code> / <code>lg:</code> 覆盖大屏样式</strong>。不要反过来。这样即使忘了加大屏样式，手机版也能正常显示。</p>
+                </div>
+                <div class="warning">
+                    <strong>常见错误</strong>：把 <code>md:p-4</code> 写成 <code>p-4 md:p-2</code>，结果大屏幕反而更小。记住 Tailwind 后面的类不会覆盖前面的——它们是不同条件下的规则。<code>md:</code> 只在 768px 以上生效。
+                </div>
+            </div>
+        </section>
+
+        <!-- Tailwind 自定义主题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自定义主题</h3>
+                <h4>让 Tailwind 适配你的设计规范</h4>
+                <p>项目有自己的品牌色、字号和间距。通过 <code>tailwind.config.ts</code> 的 <code>theme.extend</code> 把设计规范注入 Tailwind。</p>
+                <pre><code class="language-typescript">// tailwind.config.ts
+import type { Config } from "tailwindcss";
+
+export default {
+    content: ["./src/**/*.{vue,tsx,jsx}"],
+    theme: {
+        extend: {
+            // 自定义颜色
+            colors: {
+                brand: {
+                    50: "#eff6ff",
+                    500: "#3b82f6",
+                    900: "#1e3a5f",
+                },
+            },
+            // 自定义字体
+            fontFamily: {
+                sans: ["Inter", "system-ui", "sans-serif"],
+                mono: ["Fira Code", "monospace"],
+            },
+            // 自定义间距
+            spacing: {
+                18: "4.5rem",   // tailwind 没有的尺寸
+                88: "22rem",
+            },
+        },
+    },
+    plugins: [],
+} satisfies Config;</code></pre>
+            </div>
+        </section>
+
+        <!-- Tailwind 自定义工具类 + Design Tokens -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自定义工具类</h3>
+                <h4>用 plugin 和 CSS 变量建立设计体系</h4>
+                <pre><code class="language-typescript">// tailwind.config.ts —— 添加自定义工具类
+import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
+
+export default {
+    // ...
+    plugins: [
+        plugin(function ({ addUtilities }) {
+            addUtilities({
+                ".text-balance": {
+                    "text-wrap": "balance",
+                },
+                ".glass": {
+                    "background": "rgba(255,255,255,0.1)",
+                    "backdrop-filter": "blur(10px)",
+                    "border": "1px solid rgba(255,255,255,0.2)",
+                },
+            });
+        }),
+    ],
+} satisfies Config;</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>CSS 变量 + Tailwind</h4>
+                        <pre><code class="language-css">/* index.css */
+:root {
+    --color-brand: #3b82f6;
+    --color-surface: #ffffff;
+}</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>在 Tailwind 中引用</h4>
+                        <pre><code class="language-typescript">// tailwind.config.ts
+colors: {
+    brand: "var(--color-brand)",
+    surface: "var(--color-surface)",
+}</code></pre>
+                    </div>
+                </div>
+                <p>用 CSS 变量做 token，Tailwind 做工具类。这样切主题时只需改 CSS 变量，Tailwind 类名不用动。</p>
+            </div>
+        </section>
+
+        <!-- 暗黑模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>暗黑模式</h3>
+                <h4>dark: 前缀让暗色适配变得简单</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>class 策略（推荐）</h4>
+                        <pre><code class="language-typescript">// tailwind.config.ts
+export default {
+    darkMode: "class",
+    // ...
+} satisfies Config;</code></pre>
+                        <p>在 <code>&lt;html&gt;</code> 上加 <code>class="dark"</code> 即可切换。</p>
+                    </div>
+                    <div class="column">
+                        <h4>media 策略</h4>
+                        <pre><code class="language-typescript">// tailwind.config.ts
+export default {
+    darkMode: "media",
+    // ...
+} satisfies Config;</code></pre>
+                        <p>跟随系统偏好，无需 JS。</p>
+                    </div>
+                </div>
+                <pre><code class="language-tsx">// 使用 dark: 前缀
+&lt;div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"&gt;
+    &lt;h2 className="text-xl font-bold text-gray-800 dark:text-white"&gt;
+        标题
+    &lt;/h2&gt;
+    &lt;p className="text-gray-600 dark:text-gray-400"&gt;
+        内容自动适配明暗主题。
+    &lt;/p&gt;
+&lt;/div&gt;</code></pre>
+            </div>
+        </section>
+
+        <!-- 主题切换组件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>主题切换组件</h3>
+                <h4>React 和 Vue 版本的暗色切换按钮</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>React 版</h4>
+                        <pre><code class="language-tsx">function ThemeToggle() {
+    const [dark, setDark] = useState(
+        localStorage.getItem("theme") === "dark"
+    );
+
+    useEffect(() =&gt; {
+        document.documentElement
+            .classList.toggle("dark", dark);
+        localStorage.setItem(
+            "theme", dark ? "dark" : "light"
+        );
+    }, [dark]);
+
+    return (
+        &lt;button onClick={() =&gt; setDark(!dark)}&gt;
+            {dark ? "浅色" : "深色"}
+        &lt;/button&gt;
+    );
+}</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>Vue 版</h4>
+                        <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { ref, watchEffect } from "vue";
+
+const dark = ref(
+    localStorage.getItem("theme") === "dark"
+);
+
+watchEffect(() => {
+    document.documentElement
+        .classList.toggle("dark", dark.value);
+    localStorage.setItem(
+        "theme", dark.value ? "dark" : "light"
+    );
+});
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;button @click="dark = !dark"&gt;
+        {{ dark ? "浅色" : "深色" }}
+    &lt;/button&gt;
+&lt;/template&gt;</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>闪烁问题</strong>：页面加载时如果从 localStorage 读主题是异步的，会出现白屏闪烁。解决方案：在 <code>&lt;head&gt;</code> 中加一段同步脚本，在 DOM 渲染前就读取并设置 <code>dark</code> 类名。
+                </div>
+            </div>
+        </section>
+
+        <!-- Ant Design 暗色主题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组件库暗色适配</h3>
+                <h4>Ant Design 和 Element Plus 的暗色模式</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Ant Design v5</h4>
+                        <pre><code class="language-tsx">import { ConfigProvider,
+    theme } from "antd";
+
+function App() {
+    return (
+        &lt;ConfigProvider
+            theme={{
+                algorithm:
+                    dark
+                    ? theme.darkAlgorithm
+                    : theme.defaultAlgorithm,
+                token: {
+                    colorPrimary: "#3b82f6",
+                },
+            }}
+        &gt;
+            {children}
+        &lt;/ConfigProvider&gt;
+    );
+}</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>Element Plus</h4>
+                        <pre><code class="language-bash">$ npm install darkreader</code></pre>
+                        <pre><code class="language-typescript">// 引入 Element Plus 暗色 CSS
+import "element-plus/theme-chalk/
+    dark/css-vars.css";
+
+// 切换只需在 html 上加 dark 类
+document.documentElement
+    .classList.toggle("dark");
+// Tailwind 和 Element Plus
+// 同时生效</code></pre>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>关键是<strong>统一切换入口</strong>。用 Tailwind 的 <code>dark:</code> 处理自定义样式，用组件库自身的暗色方案处理组件。两个系统通过同一个 <code>dark</code> class 联动。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 组件库集成</h2>
+                <h4>Ant Design（React）和 Element Plus（Vue）的 TypeScript 用法。</h4>
+                <p>组件库提供按钮、表格、表单、弹窗等现成组件，能帮你节省大量开发时间。但直接 <code>npm install</code> 还不够——你还需要了解按需导入、表单验证和主题定制的正确做法。</p>
+                <p>本部分重点讲<strong>类型安全的组件用法</strong>和<strong>生产级配置</strong>，不只是 API 罗列。</p>
+            </div>
+        </section>
+
+        <!-- Ant Design -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Ant Design (React)</h3>
+                <h4>组件自带完整 TS 类型，开箱即用</h4>
+                <pre><code class="language-bash">$ npm install antd @ant-design/icons</code></pre>
+                <pre><code class="language-tsx">import { Button, Table, Form, Input, Modal, message } from "antd";
+import type { ColumnsType } from "antd/es/table";
+
+// Table 列定义——类型安全
+interface User {
+    key: string;
+    name: string;
+    age: number;
+    email: string;
+}
+
+const columns: ColumnsType&lt;User&gt; = [
+    { title: "姓名", dataIndex: "name", key: "name" },
+    { title: "年龄", dataIndex: "age", key: "age" },
+    { title: "邮箱", dataIndex: "email", key: "email" },
+];
+
+const data: User[] = [
+    { key: "1", name: "张三", age: 25, email: "a@b.c" },
+];
+
+// &lt;Table columns={columns} dataSource={data} /&gt;</code></pre>
+                <p><code>ColumnsType&lt;User&gt;</code> 让列定义和数据类型绑定。如果你写了 <code>dataIndex: "phone"</code>，TS 会报错，因为 User 里没有 phone 字段。</p>
+            </div>
+        </section>
+
+        <!-- Ant Design 表单 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Ant Design 表单</h3>
+                <h4>Form 和 message 的类型用法</h4>
+                <pre><code class="language-tsx">// Form 类型安全
+const onFinish = (values: {
+    username: string;
+    password: string;
+}) =&gt; {
+    console.log(values);
+};
+
+// &lt;Form onFinish={onFinish}&gt;
+//   &lt;Form.Item name="username" rules={[{ required: true }]}&gt;
+//     &lt;Input /&gt;
+//   &lt;/Form.Item&gt;
+//   &lt;Form.Item name="password" rules={[{ required: true }]}&gt;
+//     &lt;Input.Password /&gt;
+//   &lt;/Form.Item&gt;
+// &lt;/Form&gt;
+
+// message 的类型
+const [messageApi, contextHolder] = message.useMessage();
+messageApi.success("操作成功");
+messageApi.error("操作失败");</code></pre>
+            </div>
+        </section>
+
+        <!-- Element Plus -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Element Plus (Vue 3)</h3>
+                <h4>两种注册方式：全局注册和按需导入</h4>
+                <pre><code class="language-bash">$ npm install element-plus</code></pre>
+                <pre><code class="language-typescript">// 方式一：全局注册（简单但体积大）
+import ElementPlus from "element-plus";
+import "element-plus/dist/index.css";
+app.use(ElementPlus);</code></pre>
+                <pre><code class="language-bash"># 方式二：按需导入（推荐，体积小）
+$ npm install -D unplugin-vue-components unplugin-auto-import</code></pre>
+                <p>按需导入配置好后，在模板中直接使用 <code>&lt;el-button&gt;</code> 等组件，构建工具会自动导入对应的组件代码和样式。</p>
+                <div class="warning">
+                    <strong>推荐按需导入。</strong> 全局注册会把整个组件库打包进去，即使用了几个组件也会包含全部代码。按需导入只打包你实际用到的组件。
+                </div>
+            </div>
+        </section>
+
+        <!-- Element Plus 使用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Element Plus 使用</h3>
+                <h4>类型自动推断，无需额外配置</h4>
+                <pre><code class="language-vue">&lt;template&gt;
+    &lt;el-table :data="tableData"&gt;
+        &lt;el-table-column prop="name" label="姓名" /&gt;
+        &lt;el-table-column prop="age" label="年龄" /&gt;
+    &lt;/el-table&gt;
+&lt;/template&gt;
+
+&lt;script setup lang="ts"&gt;
+import { ElMessage, ElMessageBox } from "element-plus";
+
+ElMessage.success("操作成功");
+
+// 类型安全的方法
+interface FormRules {
+    username: Array&lt;{
+        required: boolean;
+        message: string;
+        trigger: string;
+    }&gt;;
+}
+&lt;/script&gt;</code></pre>
+            </div>
+        </section>
+
+        <!-- Element Plus 按需导入完整配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>按需导入配置</h3>
+                <h4>vite.config.ts 完整配置，告别手动 import</h4>
+                <pre><code class="language-typescript">// vite.config.ts
+import { defineConfig } from "vite";
+import vue from "@vitejs/plugin-vue";
+import AutoImport from "unplugin-auto-import/vite";
+import Components from "unplugin-vue-components/vite";
+import { ElementPlusResolver } from "unplugin-vue-components/resolvers";
+
+export default defineConfig({
+    plugins: [
+        vue(),
+        // 自动导入 API：ref, computed 等
+        AutoImport({
+            resolvers: [ElementPlusResolver()],
+            dts: "src/auto-imports.d.ts",
+        }),
+        // 自动注册组件：el-button 等
+        Components({
+            resolvers: [ElementPlusResolver()],
+            dts: "src/components.d.ts",
+        }),
+    ],
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>自动生成的类型文件</h4>
+                        <p><code>auto-imports.d.ts</code>：API 的类型声明</p>
+                        <p><code>components.d.ts</code>：组件的类型声明</p>
+                        <p>这两个文件不用手动编辑，加入 <code>.gitignore</code> 即可。</p>
+                    </div>
+                    <div class="card">
+                        <h4>常见问题排查</h4>
+                        <p>组件没样式？检查 resolver 配置。</p>
+                        <p>TS 报错找不到组件？重启 TS 服务。</p>
+                        <p>样式重复引入？确认只配了一处 resolver。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 表单验证深入 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>表单验证深入</h3>
+                <h4>不只是 required，还有自定义规则和异步校验</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Ant Design 自定义验证</h4>
+                        <pre><code class="language-tsx">const rules: Rule[] = [
+    { required: true,
+      message: "请输入用户名" },
+    { min: 3, max: 20,
+      message: "3-20个字符" },
+    {
+        validator: (_, value) =&gt; {
+            if (/[^a-zA-Z0-9]/.test(value)) {
+                return Promise.reject(
+                    "只能包含字母和数字"
+                );
+            }
+            return Promise.resolve();
+        },
+    },
+];</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>Element Plus 自定义验证</h4>
+                        <pre><code class="language-typescript">const rules: FormRules = {
+    username: [
+        { required: true,
+          message: "请输入用户名",
+          trigger: "blur" },
+        { min: 3, max: 20,
+          message: "3-20个字符",
+          trigger: "blur" },
+        {
+            validator: (_rule, value, callback) =&gt; {
+                if (/[^a-zA-Z0-9]/.test(value)) {
+                    callback(new Error(
+                        "只能包含字母和数字"
+                    ));
+                } else {
+                    callback();
+                }
+            },
+            trigger: "blur",
+        },
+    ],
+};</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 表单验证：异步校验 + Zod -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Zod 表单验证</h3>
+                <h4>用 schema 统一前后端验证规则</h4>
+                <pre><code class="language-bash">$ npm install zod</code></pre>
+                <pre><code class="language-typescript">// 1. 定义 schema——前后端共享
+import { z } from "zod";
+
+const registerSchema = z.object({
+    username: z.string()
+        .min(3, "用户名至少3个字符")
+        .max(20, "用户名最多20个字符")
+        .regex(/^[a-zA-Z0-9]+$/, "只能包含字母和数字"),
+    email: z.string().email("邮箱格式不正确"),
+    password: z.string()
+        .min(8, "密码至少8位")
+        .regex(/[A-Z]/, "需要包含大写字母")
+        .regex(/[0-9]/, "需要包含数字"),
+    confirmPassword: z.string(),
+}).refine(
+    (data) =&gt; data.password === data.confirmPassword,
+    { message: "两次密码不一致", path: ["confirmPassword"] }
+);
+
+// 2. 推导 TS 类型
+type RegisterForm = z.infer&lt;typeof registerSchema&gt;;
+
+// 3. 在提交时验证
+function handleSubmit(values: unknown) {
+    const result = registerSchema.safeParse(values);
+    if (!result.success) {
+        // result.error.issues 包含所有错误信息
+        const errors = result.error.flatten().fieldErrors;
+        return;
+    }
+    // result.data 是类型安全的
+    console.log(result.data);
+}</code></pre>
+                <div class="intro-block">
+                    <p>Zod 的优势：<strong>一个 schema 同时用于前端表单验证和后端 API 参数校验</strong>。不用在两个地方各写一遍验证逻辑。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 组件库主题定制 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组件库主题定制</h3>
+                <h4>让组件库融入你的设计系统</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Ant Design v5</h4>
+                        <pre><code class="language-tsx">import { ConfigProvider,
+    theme } from "antd";
+
+function App({ children }) {
+    return (
+        &lt;ConfigProvider
+            theme={{
+                token: {
+                    colorPrimary: "#6366f1",
+                    borderRadius: 8,
+                    fontSize: 14,
+                    fontFamily:
+                        "Inter, system-ui, sans-serif",
+                },
+                components: {
+                    Button: {
+                        controlHeight: 40,
+                    },
+                    Table: {
+                        headerBg: "#f8fafc",
+                    },
+                },
+            }}
+        &gt;
+            {children}
+        &lt;/ConfigProvider&gt;
+    );
+}</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>Element Plus</h4>
+                        <pre><code class="language-css">/* 方式一：CSS 变量覆盖 */
+:root {
+    --el-color-primary: #6366f1;
+    --el-border-radius-base: 8px;
+    --el-font-size-base: 14px;
+}
+
+/* 方式二：SCSS 变量（需配置） */
+// vite.config.ts 加 scss 预处理
+css: {
+    preprocessorOptions: {
+        scss: {
+            additionalData: `
+                $--color-primary: #6366f1;
+                $--border-radius-base: 8px;
+            `,
+        },
+    },
+}</code></pre>
+                    </div>
+                </div>
+                <p>核心思路：<strong>先定好品牌色、圆角、字号三个 token</strong>，然后在 ConfigProvider 或 CSS 变量中统一设置。组件会自动继承这些 token。</p>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 图标库</h2>
+                <h4>在 TS 项目中类型安全地使用图标。</h4>
+                <p>图标看似简单，但在 TypeScript 项目中有很多细节：如何类型安全地传递图标组件？如何动态选择图标？如何封装自定义 SVG？本部分给出实用的模式。</p>
+            </div>
+        </section>
+
+        <!-- React 图标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>React 图标</h3>
+                <h4>lucide-react 和 @ant-design/icons</h4>
+                <pre><code class="language-tsx">import { Home, User, Settings } from "lucide-react";
+
+// 类型安全的导航配置
+interface NavItem {
+    icon: React.ComponentType&lt;{ size?: number }&gt;;
+    label: string;
+    path: string;
+}
+
+const nav: NavItem[] = [
+    { icon: Home, label: "首页", path: "/" },
+    { icon: User, label: "用户", path: "/users" },
+    { icon: Settings, label: "设置", path: "/settings" },
+];
+
+// 图标类型映射——动态选择图标
+type IconName = "home" | "user" | "settings";
+const iconMap: Record&lt;IconName, React.ComponentType&gt; = {
+    home: Home,
+    user: User,
+    settings: Settings,
+};
+
+function DynamicIcon({ name }: { name: IconName }) {
+    const Icon = iconMap[name];
+    return &lt;Icon /&gt;;
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Vue 图标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Vue 图标</h3>
+                <h4>@element-plus/icons-vue</h4>
+                <pre><code class="language-vue">&lt;script setup lang="ts"&gt;
+import { HomeFilled, User, Setting } from "@element-plus/icons-vue";
+import type { Component } from "vue";
+
+interface NavItem {
+    icon: Component;
+    label: string;
+    path: string;
+}
+
+const nav: NavItem[] = [
+    { icon: HomeFilled, label: "首页", path: "/" },
+    { icon: User, label: "用户", path: "/users" },
+    { icon: Setting, label: "设置", path: "/settings" },
+];
+&lt;/script&gt;</code></pre>
+            </div>
+        </section>
+
+        <!-- 自定义 SVG 图标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自定义 SVG 图标</h3>
+                <h4>封装自己的图标组件</h4>
+                <pre><code class="language-tsx">// React 自定义图标组件
+interface IconProps {
+    size?: number;
+    color?: string;
+    className?: string;
+}
+
+function CustomIcon({
+    size = 24,
+    color = "currentColor",
+    className,
+}: IconProps) {
+    return (
+        &lt;svg width={size} height={size} fill={color} className={className}&gt;
+            {/* SVG path */}
+        &lt;/svg&gt;
+    );
+}</code></pre>
+                <div class="intro-block">
+                    <p>自定义图标的 Props 用 interface 定义好类型，其他组件引用时就能获得完整的类型提示。这就是 TypeScript 在 UI 开发中的价值：<strong>每一处输入都有类型保护</strong>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: Headless UI</h2>
+                <h4>当组件库满足不了你的设计需求</h4>
+                <p>Ant Design 和 Element Plus 功能全面，但样式定制有时不够灵活。Headless UI 提供了另一种思路：<strong>只提供行为逻辑，样式完全由你控制</strong>。本部分简要介绍这个方向。</p>
+            </div>
+        </section>
+
+        <!-- Headless UI 概念 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>什么是 Headless</h3>
+                <h4>逻辑和样式分离的组件设计模式</h4>
+                <p>Headless 组件<strong>只提供交互逻辑</strong>（打开/关闭、键盘导航、ARIA 属性），不提供任何默认样式。你用 Tailwind 或自定义 CSS 来决定外观。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Radix UI</h4>
+                        <p>React 生态最流行的 headless 库。提供 Dialog、Popover、Tooltip 等 20+ 组件。Shadcn/ui 就是基于 Radix UI 构建的。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Headless UI</h4>
+                        <p>Tailwind 官方团队维护。同时支持 React 和 Vue。提供 Listbox、Combobox、Switch 等表单增强组件。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Shadcn/ui</h4>
+                        <p>不是npm 包，而是一套可复制的组件代码。基于 Radix UI + Tailwind。你拥有完整源码，可以随意修改。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Headless UI 选型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>何时选择 Headless</h3>
+                <h4>Styled 库 vs Headless 库的取舍</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>选 Styled 组件库</h4>
+                        <p>Ant Design、Element Plus 这类：</p>
+                        <ul>
+                            <li>后台管理系统，追求开发速度</li>
+                            <li>设计规范不严格，默认样式能接受</li>
+                            <li>需要表格、表单等复杂组件</li>
+                            <li>团队成员 UI 经验较少</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>选 Headless 方案</h4>
+                        <p>Radix、Shadcn/ui 这类：</p>
+                        <ul>
+                            <li>面向用户的产品，有严格的设计稿</li>
+                            <li>默认样式无法满足品牌要求</li>
+                            <li>需要极致的包体积优化</li>
+                            <li>团队有专职设计师</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>两者并不冲突</strong>。很多项目用 Ant Design 做后台页面，同时用 Shadcn/ui 做面向用户的前台。按场景选择最合适的工具。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Shadcn/ui 代码示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Shadcn 组件结构</h3>
+                <h4>看看一个 Shadcn Button 长什么样</h4>
+                <pre><code class="language-bash"># 用 CLI 添加组件（不是 npm install）
+$ npx shadcn@latest add button</code></pre>
+                <pre><code class="language-tsx">// src/components/ui/button.tsx
+// 这是复制到你项目里的源码，你可以随意改
+import * as React from "react";
+import { Slot } from "@radix-ui/react-slot";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "@/lib/utils";
+
+const buttonVariants = cva(
+    "inline-flex items-center justify-center rounded-md text-sm font-medium",
+    {
+        variants: {
+            variant: {
+                default: "bg-primary text-white hover:bg-primary/90",
+                destructive: "bg-red-500 text-white hover:bg-red-600",
+                outline: "border border-gray-300 hover:bg-gray-100",
+                ghost: "hover:bg-gray-100",
+            },
+            size: {
+                default: "h-10 px-4 py-2",
+                sm: "h-9 rounded-md px-3",
+                lg: "h-11 rounded-md px-8",
+            },
+        },
+        defaultVariants: {
+            variant: "default",
+            size: "default",
+        },
+    }
+);
+
+interface ButtonProps
+    extends React.ButtonHTMLAttributes&lt;HTMLButtonElement&gt;,
+        VariantProps&lt;typeof buttonVariants&gt; {
+    asChild?: boolean;
+}
+
+const Button = React.forwardRef&lt;HTMLButtonElement, ButtonProps&gt;(
+    ({ className, variant, size, asChild = false, ...props }, ref) =&gt; {
+        const Comp = asChild ? Slot : "button";
+        return (
+            &lt;Comp
+                className={cn(buttonVariants({ variant, size, className }))}
+                ref={ref}
+                {...props}
+            /&gt;
+        );
+    }
+);</code></pre>
+                <p>关键点：<code>cva</code> 管理变体样式，<code>cn</code> 合并类名，<code>VariantProps</code> 自动推导类型。你可以直接修改这段代码来适配设计稿。</p>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见排错</h3>
+
+                <div class="warning">
+                    <strong>UI 框架升级时注意破坏性变更。</strong> Ant Design v4 到 v5、Element Plus 的小版本更新都可能改变 API。升级前先看 changelog。
+                </div>
+
+                <h4>问题一：Tailwind 类名不生效</h4>
+                <p><strong>原因</strong>：<code>tailwind.config.ts</code> 的 <code>content</code> 路径没配对，Tailwind 扫描不到你的组件文件。</p>
+                <p><strong>修复</strong>：确认 <code>content</code> 数组包含了所有使用 Tailwind 类名的文件路径。</p>
+
+                <h4>问题二：Ant Design 组件样式错乱</h4>
+                <p><strong>原因</strong>：CSS 导入顺序不对，或者和全局样式冲突。</p>
+                <p><strong>修复</strong>：确保 <code>import "antd/dist/reset.css"</code> 在全局样式之前导入。</p>
+
+                <h4>问题三：Element Plus 按需导入不工作</h4>
+                <p><strong>原因</strong>：<code>unplugin-vue-components</code> 的 resolver 没有配置。</p>
+                <p><strong>修复</strong>：在 <code>vite.config.ts</code> 中添加 Element Plus resolver 配置。</p>
+
+                <h4>问题四：暗黑模式切换后组件库没反应</h4>
+                <p><strong>原因</strong>：只加了 Tailwind 的 <code>dark</code> class，但没有配置组件库的暗色方案。</p>
+                <p><strong>修复</strong>：Ant Design 需要切换 <code>algorithm</code>，Element Plus 需要引入 <code>dark/css-vars.css</code>。</p>
+
+                <h4>问题五：Shadcn 组件 TS 报类型错误</h4>
+                <p><strong>原因</strong>：缺少 <code>class-variance-authority</code> 或 <code>@radix-ui/*</code> 的类型依赖。</p>
+                <p><strong>修复</strong>：确保 <code>npx shadcn@latest add button</code> 时所有依赖都已自动安装。手动安装可以用 <code>npm install class-variance-authority clsx tailwind-merge</code>。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：在 React + TS 项目中接入 Tailwind CSS，创建一个 Card 组件，支持 <code>title</code>、<code>description</code> 和 <code>variant</code>（"outlined" | "elevated"）三个 Props，用 Tailwind 类名实现不同样式。</p>
+                        <pre><code class="language-tsx">// 提示：用联合类型约束 variant
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-tsx">interface CardProps {
+    title: string;
+    description: string;
+    variant?: "outlined" | "elevated";
+}
+
+function Card({ title, description, variant = "outlined" }: CardProps) {
+    const base = "p-4 rounded-lg";
+    const variants = {
+        outlined: "border border-gray-300",
+        elevated: "shadow-lg",
+    };
+
+    return (
+        &lt;div className={`${base} ${variants[variant]}`}&gt;
+            &lt;h3 className="text-lg font-bold"&gt;{title}&lt;/h3&gt;
+            &lt;p className="text-gray-600"&gt;{description}&lt;/p&gt;
+        &lt;/div&gt;
+    );
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：在 Vue 3 + TS 项目中接入 Element Plus，创建一个用户列表页面，使用 <code>el-table</code> 展示数据，用 <code>ElMessage</code> 在删除时弹出提示。</p>
+                        <pre><code class="language-vue">&lt;!-- 提示：interface User { id: string; name: string; age: number }
+&lt;!-- 你的代码： --&gt;</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-vue">&lt;template&gt;
+    &lt;el-table :data="users"&gt;
+        &lt;el-table-column prop="name" label="姓名" /&gt;
+        &lt;el-table-column prop="age" label="年龄" /&gt;
+        &lt;el-table-column label="操作"&gt;
+            &lt;template #default="{ row }"&gt;
+                &lt;el-button @click="handleDelete(row.id)"&gt;
+                    删除
+                &lt;/el-button&gt;
+            &lt;/template&gt;
+        &lt;/el-table-column&gt;
+    &lt;/el-table&gt;
+&lt;/template&gt;
+
+&lt;script setup lang="ts"&gt;
+import { ref } from "vue";
+import { ElMessage } from "element-plus";
+
+interface User {
+    id: string; name: string; age: number;
+}
+
+const users = ref&lt;User[]&gt;([
+    { id: "1", name: "张三", age: 25 },
+    { id: "2", name: "李四", age: 30 },
+]);
+
+function handleDelete(id: string) {
+    users.value = users.value.filter(u =&gt; u.id !== id);
+    ElMessage.success("删除成功");
+}
+&lt;/script&gt;</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>UI 框架集成搞定了。下一章我们回到后端，学习 <strong>Node.js 与 TypeScript 服务端基础</strong>——把 TS 的类型安全带到服务器端。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第16章 浏览器环境中的JavaScript - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>浏览器环境中的 JavaScript</h1>
+            <p>用代码操控网页，让页面"活"起来</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>网页上的按钮为什么点击后能弹出对话框？购物车里数量变了总价为什么自动更新？</h4>
+                <p>这些交互的背后，都是 <strong>DOM 操作</strong> 在起作用。浏览器把 HTML 解析成一棵"节点树"，JavaScript 通过操作这棵树来改变页面内容、样式和行为。</p>
+                <p>这一章，你将学会：选元素、改内容、绑事件、存数据——掌握浏览器端 JS 的核心能力。</p>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: DOM 树与节点</h2>
+                <h4>浏览器把 HTML 解析成节点树，理解这棵树是操控网页的第一步</h4>
+                <p>想要用代码改变页面上的内容，第一步不是写代码，而是理解浏览器眼里的"页面"长什么样。浏览器把每个 HTML 标签、每段文字、每个注释都变成一个"节点"，串成一棵树。就像家谱一样——谁是谁的父节点、谁是谁的兄弟节点，关系一目了然。搞清楚这棵树的结构，后面选元素、改内容才有方向。</p>
+            </div>
+        </section>
+
+        <!-- DOM 节点类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>DOM 节点类型</h3>
+                <h4>HTML 中的每个标签、每段文字、每个注释，都是一个"节点"</h4>
+                <p><strong>DOM</strong>（Document Object Model）是浏览器提供的一套 API，让你用 JavaScript 操作 HTML 文档。浏览器把 HTML 解析后，会生成一棵由节点组成的树。</p>
+                <table>
+                    <thead><tr><th>节点类型</th><th>nodeType 值</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td>Document</td><td>9</td><td>文档根节点</td></tr>
+                        <tr><td>Element</td><td>1</td><td>HTML 元素（div、p 等）</td></tr>
+                        <tr><td>Text</td><td>3</td><td>标签之间的文字内容</td></tr>
+                        <tr><td>Comment</td><td>8</td><td>HTML 注释</td></tr>
+                    </tbody>
+                </table>
+                <p>用人话说：<strong>DOM 树就像一份家谱</strong>。html 是族长，head 和 body 是他的两个孩子，body 下面又有 div、p、span……每个成员就是一个节点。</p>
+            </div>
+        </section>
+
+        <!-- 节点关系 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>节点关系</h3>
+                <h4>父子、兄弟——和家谱的叫法一模一样</h4>
+                <pre><code class="language-javascript">let el = document.querySelector("div");
+
+// 向上找
+el.parentNode;         // 父节点
+
+// 向下找
+el.childNodes;         // 所有子节点（含文本、注释）
+el.children;           // 只返回元素子节点（推荐）
+el.firstChild;         // 第一个子节点（可能是文本）
+el.firstElementChild;  // 第一个元素子节点（推荐）
+
+// 横向找兄弟
+el.nextSibling;              // 下一个兄弟节点
+el.nextElementSibling;       // 下一个兄弟元素（推荐）
+el.previousSibling;
+el.previousElementSibling;</code></pre>
+                <div class="warning">
+                    <strong>childNodes vs children</strong>：<code>childNodes</code> 会包含文本节点（如换行和空格），而 <code>children</code> 只返回元素。绝大多数情况下用 <code>children</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 选择与遍历</h2>
+                <h4>操作元素的第一步是找到它，CSS 选择器是你的"寻人利器"</h4>
+                <p>知道了 DOM 树的结构，现在要在里面找到目标元素。以前的 <code>getElementById</code>、<code>getElementsByClassName</code> 方法又多又难记。好消息是，现在只需要记住两个：<code>querySelector</code> 找单个，<code>querySelectorAll</code> 找多个。凡是 CSS 能写的选择器，它们都能用。加上 <code>closest</code> 向上找祖先，定位元素不再费劲。</p>
+            </div>
+        </section>
+
+        <!-- 选择元素 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>选择元素</h3>
+                <h4>querySelector 一招鲜，吃遍天</h4>
+                <pre><code class="language-javascript">// 老方法（了解即可）
+document.getElementById("app");          // 单个元素
+document.getElementsByClassName("item"); // HTMLCollection
+document.getElementsByTagName("div");   // HTMLCollection
+
+// 新方法（推荐）
+document.querySelector(".container");    // 第一个匹配
+document.querySelectorAll("li.item");    // NodeList（可用 forEach）
+
+// CSS 选择器都能用
+document.querySelector("#nav > ul > li:first-child");
+document.querySelector('[data-id="123"]');
+document.querySelector("input[type='email']");</code></pre>
+                <p>记住两个就够了：<code>querySelector</code> 找单个，<code>querySelectorAll</code> 找多个。它们接受任何 CSS 选择器。</p>
+            </div>
+        </section>
+
+        <!-- closest 与 matches -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>closest 与 matches</h3>
+                <h4>一个向上找祖先，一个判断是否匹配</h4>
+                <pre><code class="language-javascript">// closest —— 向上查找最近的匹配祖先
+let li = document.querySelector("li");
+let ul = li.closest("ul");   // 离 li 最近的 ul
+let nav = li.closest("nav"); // 离 li 最近的 nav
+
+// matches —— 检查元素是否匹配选择器
+if (el.matches(".active")) {
+    console.log("元素是激活状态");
+}</code></pre>
+                <p><code>closest</code> 就像问"我最近的 <code>&lt;nav&gt;</code> 祖先是谁"。从当前元素开始，逐级向上查找，找到就返回。</p>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 修改内容与样式</h2>
+                <h4>找到元素后，文字、属性、class、样式——全部能改</h4>
+                <p>元素找到了，接下来就是动刀。文字内容用 <code>textContent</code> 安全改写，HTML 片段用 <code>innerHTML</code> 灵活替换（但要警惕 XSS）。属性读写有 <code>getAttribute/setAttribute</code>，自定义数据用 <code>dataset</code>。样式控制首选 <code>classList</code> 切换类名，而不是直接写 <code>style</code>。这一节覆盖日常开发中最频繁的 DOM 操作。</p>
+            </div>
+        </section>
+
+        <!-- 内容操作 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>内容操作</h3>
+                <h4>textContent 安全，innerHTML 灵活但小心 XSS</h4>
+                <pre><code class="language-javascript">let el = document.querySelector("#app");
+
+// 纯文本（推荐，安全）
+el.textContent = "纯文本内容";
+
+// HTML 内容（灵活，但要注意安全）
+el.innerHTML = "&lt;strong&gt;加粗&lt;/strong&gt;";
+
+// 包含自身的完整 HTML
+el.outerHTML;
+
+// 可见文本（考虑 CSS 样式）
+el.innerText;</code></pre>
+                <div class="warning">
+                    <strong>永远不要用 innerHTML 插入用户输入的内容。</strong> 这会导致 XSS 攻击。用户输入的内容应该用 <code>textContent</code> 设置，或者先做转义。
+                </div>
+            </div>
+        </section>
+
+        <!-- 属性操作 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>属性与 data-*</h3>
+                <h4>getAttribute 读，setAttribute 写，dataset 管自定义数据</h4>
+                <pre><code class="language-javascript">// 通用属性方法
+el.getAttribute("href");
+el.setAttribute("href", "/new");
+el.removeAttribute("disabled");
+el.hasAttribute("href");
+
+// DOM 属性（推荐，更简洁）
+let img = document.querySelector("img");
+img.src = "new.jpg";
+img.alt = "描述";
+let input = document.querySelector("input");
+input.value = "新值";
+input.disabled = true;
+
+// data-* 自定义属性
+el.dataset.userId = "123";     // HTML: data-user-id="123"
+console.log(el.dataset.userId); // "123"</code></pre>
+                <p>简单规则：<strong>标准属性用点语法</strong>（<code>img.src</code>），自定义属性用 <code>dataset</code>。</p>
+            </div>
+        </section>
+
+        <!-- class 与 style -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>class 与 style</h3>
+                <h4>classList 是操作类名的最佳方式</h4>
+                <pre><code class="language-javascript">// class 操作
+el.classList.add("active");
+el.classList.remove("hidden");
+el.classList.toggle("dark");         // 有则移除，无则添加
+el.classList.contains("active");     // 是否包含
+el.classList.replace("old", "new");  // 替换
+
+// 行内样式
+el.style.color = "red";
+el.style.fontSize = "16px";         // 驼峰写法
+el.style.cssText = "color: red; font-size: 16px;";
+
+// 获取计算后的样式
+let computed = getComputedStyle(el);
+console.log(computed.height);</code></pre>
+                <p>实际开发中，<strong>样式尽量用 CSS class 控制</strong>，而不是直接写 <code>style.xxx</code>。这样更好维护。</p>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 事件系统</h2>
+                <h4>没有事件页面就是"死的"，事件让用户操作和代码逻辑连接起来</h4>
+                <p>前面的 DOM 操作都是"主动出击"——代码去改页面。但网页不是静态海报，用户会点击、输入、滚动。怎么让代码"听到"这些操作？答案就是事件系统。点击一个按钮，事件从 window 一路向下（捕获），到达目标，再一路向上冒回来（冒泡）。理解这个传播机制，你就掌握了事件委托、阻止冒泡这些高频技巧。</p>
+            </div>
+        </section>
+
+        <!-- 事件流 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>事件流与监听</h3>
+                <h4>捕获→目标→冒泡，三阶段传播</h4>
+                <p>当用户点击一个按钮，事件传播分为三个阶段：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>捕获阶段</h4>
+                        <p>从 window 一路向下到目标元素。用 <code>addEventListener(event, fn, true)</code> 监听。</p>
+                    </div>
+                    <div class="card">
+                        <h4>目标阶段</h4>
+                        <p>到达实际被点击的元素。</p>
+                    </div>
+                    <div class="card">
+                        <h4>冒泡阶段</h4>
+                        <p>从目标元素一路向上冒回 window。这是默认监听阶段。</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">el.addEventListener("click", handler);
+el.addEventListener("click", handler, { once: true }); // 只触发一次
+el.removeEventListener("click", handler);</code></pre>
+            </div>
+        </section>
+
+        <!-- Event 对象 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Event 对象</h3>
+                <h4>事件处理函数收到的那个参数，藏着所有信息</h4>
+                <pre><code class="language-javascript">function handler(event) {
+    console.log(event.type);            // "click"
+    console.log(event.target);          // 实际触发的元素
+    console.log(event.currentTarget);   // 绑定事件的元素
+    event.preventDefault();             // 阻止默认行为
+    event.stopPropagation();            // 阻止冒泡
+    event.stopImmediatePropagation();   // 阻止同元素其他监听器
+}</code></pre>
+                <p><code>event.target</code> 是"谁触发的"，<code>event.currentTarget</code> 是"谁在监听"。在事件委托中，两者往往不同。</p>
+            </div>
+        </section>
+
+        <!-- 事件委托 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>事件委托</h3>
+                <h4>在父元素上监听，代理子元素的事件</h4>
+                <p>事件委托利用冒泡机制：子元素的事件会冒泡到父元素。所以你不需要给每个子元素单独绑定，只需在父元素上监听即可。</p>
+                <pre><code class="language-javascript">// 在 ul 上监听所有 li 的点击
+document.querySelector("ul").addEventListener("click", (e) => {
+    let li = e.target.closest("li");
+    if (!li) return; // 点的不是 li，忽略
+    console.log("点击了:", li.textContent);
+});</code></pre>
+                <div class="intro-block">
+                    <p>事件委托的好处：1) 动态添加的子元素也能响应事件；2) 减少监听器数量，性能更好。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 常见事件类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见事件类型</h3>
+                <h4>鼠标、键盘、表单、滚动——掌握这些够用了</h4>
+                <table>
+                    <thead><tr><th>类别</th><th>事件</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td>鼠标</td><td>click, dblclick, mouseenter, mousemove</td><td>mouseenter 不冒泡，mouseover 冒泡</td></tr>
+                        <tr><td>键盘</td><td>keydown, keyup</td><td>e.key 返回字符，e.code 返回物理键</td></tr>
+                        <tr><td>表单</td><td>input, change, submit</td><td>input 实时触发，change 失焦后触发</td></tr>
+                        <tr><td>页面</td><td>DOMContentLoaded, load, scroll, resize</td><td>DOMContentLoaded 在 DOM 就绪时触发</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 5 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 表单与存储</h2>
+                <h4>表单是用户输入的入口，Web Storage 是浏览器端的持久化方案</h4>
+                <p>用户在登录框输入账号密码、在搜索框打字——这些交互都要通过表单收集。手动一个个取值太麻烦，<code>FormData</code> 一行搞定。取到值后还得验证，浏览器内置的验证 API 省去大量手写校验。数据存哪？<code>localStorage</code> 关了浏览器还在，<code>sessionStorage</code> 关标签页就清。三者配合，表单处理的完整链路就通了。</p>
+            </div>
+        </section>
+
+        <!-- 表单操作 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>表单操作</h3>
+                <h4>FormData 一行代码拿到所有字段</h4>
+                <pre><code class="language-javascript">let form = document.querySelector("form");
+form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    let formData = new FormData(form);
+    for (let [key, value] of formData) {
+        console.log(key, value);
+    }
+    // 转为普通对象
+    let data = Object.fromEntries(formData);
+});</code></pre>
+                <p><code>FormData</code> 自动收集表单中所有带 <code>name</code> 属性的字段，不用一个个手动取值。</p>
+            </div>
+        </section>
+
+        <!-- 表单验证 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>HTML5 验证 API</h3>
+                <h4>浏览器内置验证，省去大量手写校验</h4>
+                <pre><code class="language-javascript">let input = document.querySelector("input");
+input.setCustomValidity("请输入有效邮箱");
+input.checkValidity();           // 触发验证，返回布尔值
+input.reportValidity();          // 验证并显示浏览器错误提示
+input.validity.valid;            // 是否通过验证
+input.validity.valueMissing;     // 必填字段是否为空
+input.validity.typeMismatch;     // 类型是否不匹配
+input.validity.tooShort;         // 是否太短
+input.validity.patternMismatch;  // 是否不匹配正则</code></pre>
+            </div>
+        </section>
+
+        <!-- Web Storage -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Web Storage</h3>
+                <h4>localStorage 持久保存，sessionStorage 关标签清</h4>
+                <pre><code class="language-javascript">// localStorage —— 持久存储（关闭浏览器还在）
+localStorage.setItem("name", "张三");
+localStorage.getItem("name");     // "张三"
+localStorage.removeItem("name");
+localStorage.clear();
+
+// sessionStorage —— 会话存储（关闭标签页清除）
+sessionStorage.setItem("token", "abc123");
+
+// 只能存字符串！对象需要序列化
+let user = { name: "张三", age: 25 };
+localStorage.setItem("user", JSON.stringify(user));
+let saved = JSON.parse(localStorage.getItem("user"));</code></pre>
+                <div class="warning">
+                    <strong>localStorage 只能存字符串。</strong> 存对象前必须 <code>JSON.stringify</code>，取出来后 <code>JSON.parse</code>。忘了一步就会拿到 <code>"[object Object]"</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 跨标签页通信 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Storage 事件</h3>
+                <h4>一个标签页改了 localStorage，另一个标签页能收到通知</h4>
+                <pre><code class="language-javascript">// 在标签页 A 中监听
+window.addEventListener("storage", (e) => {
+    console.log(e.key);       // 变化的键名
+    console.log(e.oldValue);  // 旧值
+    console.log(e.newValue);  // 新值
+});
+
+// 在标签页 B 中修改
+localStorage.setItem("theme", "dark");
+// 标签页 A 会自动触发 storage 事件</code></pre>
+                <p>这是实现跨标签页同步（比如暗色模式切换）最简单的方式。</p>
+            </div>
+        </section>
+
+        <!-- Part 6 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: 常用 Web API</h2>
+                <h4>fetch 发请求、定时器做延时、URL 解析地址——日常开发的高频 API</h4>
+                <p>DOM 和事件是基础能力，但真实项目还需要和网络打交道、和时间打交道、和地址栏打交道。<code>fetch</code> 取代了古老的 XMLHttpRequest，语法清爽还支持 async/await。定时器做延时和周期任务，但用完必须清掉否则内存泄漏。URL API 让你告别手动拼字符串。这三个 API 覆盖了日常开发的大部分需求。</p>
+            </div>
+        </section>
+
+        <!-- fetch API -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>fetch 请求</h3>
+                <h4>取代 XMLHttpRequest 的现代网络 API</h4>
+                <pre><code class="language-javascript">// GET 请求
+async function getData() {
+    let res = await fetch("/api/users");
+    let data = await res.json();
+    return data;
+}
+
+// POST 请求
+async function postData() {
+    await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "张三" })
+    });
+}</code></pre>
+                <p>fetch 默认不会把 HTTP 4xx/5xx 当作错误。需要手动检查 <code>res.ok</code> 或 <code>res.status</code>。</p>
+            </div>
+        </section>
+
+        <!-- 定时器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>定时器</h3>
+                <h4>延时执行和周期执行，别忘了清除</h4>
+                <pre><code class="language-javascript">// 延时执行
+let id1 = setTimeout(() => console.log("1秒后"), 1000);
+clearTimeout(id1);  // 取消
+
+// 周期执行
+let id2 = setInterval(() => console.log("每秒"), 1000);
+clearInterval(id2); // 取消
+
+// 动画帧（比 setInterval 更流畅）
+let id3 = requestAnimationFrame(() => console.log("下一帧"));
+cancelAnimationFrame(id3);</code></pre>
+                <div class="warning">
+                    <strong>用完定时器一定要清除！</strong> 否则组件销毁后定时器还在跑，会导致内存泄漏和错误。React 中要在 <code>useEffect</code> 的清理函数里 <code>clearInterval</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- URL API -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>URL API</h3>
+                <h4>解析和构造 URL，告别手动拼字符串</h4>
+                <pre><code class="language-javascript">let url = new URL("https://example.com/path?name=张三&page=1");
+console.log(url.hostname);                    // "example.com"
+console.log(url.searchParams.get("name"));    // "张三"
+url.searchParams.set("page", "2");
+console.log(url.toString());
+// "https://example.com/path?name=%E5%BC%A0%E4%B8%89&page=2"</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <div class="warning">
+                    <strong>遇到 "Cannot read property of null" 先检查选择器。</strong> 这说明 querySelector 没找到元素。
+                </div>
+
+                <h4>问题一：<code>querySelector</code> 返回 null</h4>
+                <p><strong>原因</strong>：选择器写错了，或者 JS 执行时 DOM 还没加载。</p>
+                <p><strong>修复</strong>：检查选择器是否正确，确保 script 放在 body 底部或使用 <code>DOMContentLoaded</code> 事件。</p>
+
+                <h4>问题二：事件绑上了但没反应</h4>
+                <p><strong>原因</strong>：JS 执行时元素还不存在，<code>querySelector</code> 返回 null，对 null 调 <code>addEventListener</code> 会报错。</p>
+                <p><strong>修复</strong>：把 JS 放在 <code>&lt;/body&gt;</code> 之前，或用 <code>defer</code> 属性。</p>
+
+                <h4>问题三：localStorage 存对象后取出来是 <code>"[object Object]"</code></h4>
+                <p><strong>原因</strong>：忘了 <code>JSON.stringify</code>，直接存了对象。</p>
+                <p><strong>修复</strong>：存之前 <code>JSON.stringify(obj)</code>，取之后 <code>JSON.parse(str)</code>。</p>
+            </div>
+        </section>
+
+        <!-- IntersectionObserver -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>交叉观察器</h3>
+                <h4>IntersectionObserver —— 高性能监听元素是否进入视口</h4>
+                <p>传统做法是监听 <code>scroll</code> 事件不断计算元素位置，但 scroll 事件触发极其频繁，容易造成卡顿。<code>IntersectionObserver</code> 由浏览器内部优化，只在元素进出视口时才触发回调，性能好得多。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>图片懒加载</h4>
+                        <pre><code class="language-javascript">const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            const img = entry.target;
+            img.src = img.dataset.src;
+            observer.unobserve(img);
+        }
+    });
+});
+
+document.querySelectorAll('img[data-src]')
+    .forEach(img => observer.observe(img));</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>无限滚动</h4>
+                        <pre><code class="language-javascript">const sentinel = document.querySelector('#sentinel');
+const io = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting) {
+        loadMoreItems(); // 加载下一页数据
+    }
+});
+io.observe(sentinel);</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>为什么比 scroll 事件更好？</strong> scroll 事件每秒触发几十次，需要手动节流；IntersectionObserver 由浏览器在内部优化，只在真正需要时触发回调，不阻塞主线程。
+                </div>
+            </div>
+        </section>
+
+        <!-- 自定义事件与 BroadcastChannel -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>跨组件通信</h3>
+                <h4>CustomEvent 派发自定义事件，BroadcastChannel 跨标签页通信</h4>
+                <p><code>CustomEvent</code> 让你在组件之间传递自定义消息，<code>BroadcastChannel</code> 则让不同标签页之间直接对话——比 <code>storage</code> 事件更优雅、更通用。</p>
+                <pre><code class="language-javascript">// CustomEvent —— 创建并派发自定义事件
+const event = new CustomEvent("userLogin", {
+    detail: { userId: 42, name: "张三" }
+});
+document.dispatchEvent(event);
+
+// 监听自定义事件
+document.addEventListener("userLogin", (e) => {
+    console.log(e.detail.userId); // 42
+    console.log(e.detail.name);   // "张三"
+});
+
+// BroadcastChannel —— 跨标签页通信
+const channel = new BroadcastChannel("theme_channel");
+channel.postMessage({ theme: "dark" });        // 发送
+
+channel.onmessage = (e) => {
+    document.body.className = e.data.theme;    // 接收
+};</code></pre>
+                <div class="warning">
+                    <strong>CustomEvent 的数据必须放在 <code>detail</code> 属性里。</strong> 直接在构造函数里传的第二个参数是配置对象，<code>detail</code> 才是携带数据的字段。BroadcastChannel 只在同源的标签页之间生效。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：写一个页面，包含一个按钮和一个 <code>&lt;div&gt;</code>。点击按钮时，div 的背景色在红色和蓝色之间切换。</p>
+                        <pre><code class="language-javascript">// 提示：用 classList.toggle
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-html">&lt;div id="box" style="width:100px;height:100px"&gt;&lt;/div&gt;
+&lt;button id="btn"&gt;切换颜色&lt;/button&gt;
+&lt;script&gt;
+  const box = document.getElementById("box");
+  document.getElementById("btn").addEventListener("click", () =&gt; {
+    box.style.backgroundColor =
+      box.style.backgroundColor === "red" ? "blue" : "red";
+  });
+&lt;/script&gt;</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：用 localStorage 实现一个"记住我"功能——输入名字后保存，下次打开页面自动显示欢迎语。</p>
+                        <pre><code class="language-javascript">// 提示：页面加载时检查 localStorage
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">window.addEventListener("DOMContentLoaded", () => {
+    const saved = localStorage.getItem("username");
+    if (saved) {
+        document.getElementById("greeting").textContent = `欢迎回来, ${saved}!`;
+    }
+});
+document.getElementById("saveBtn").addEventListener("click", () => {
+    const name = document.getElementById("nameInput").value;
+    localStorage.setItem("username", name);
+});</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：实现图片懒加载。页面中有多个 <code>&lt;img data-src="xxx.jpg"&gt;</code> 元素（没有 src 属性）。当图片进入视口时，把 data-src 的值赋给 src，实现懒加载。要求使用 IntersectionObserver。</p>
+                        <pre><code class="language-javascript">// 提示：观察所有 img[data-src]，进入视口时赋值 src
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-html">&lt;img data-src="photo1.jpg" alt="图片1"&gt;
+&lt;img data-src="photo2.jpg" alt="图片2"&gt;
+&lt;img data-src="photo3.jpg" alt="图片3"&gt;
+&lt;script&gt;
+  const observer = new IntersectionObserver((entries) =&gt; {
+    entries.forEach(entry =&gt; {
+      if (entry.isIntersecting) {
+        const img = entry.target;
+        img.src = img.dataset.src;
+        observer.unobserve(img);
+      }
+    });
+  });
+  document.querySelectorAll("img[data-src]").forEach(img =&gt; {
+    observer.observe(img);
+  });
+&lt;/script&gt;</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>你已经能操控网页了。下一章学习<strong>错误处理与调试</strong>——让代码更健壮，让 bug 无处遁形。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

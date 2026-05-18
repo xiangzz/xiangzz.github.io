@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第31章 TypeScript中的类 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>TypeScript 中的类</h1>
+            <p>给面向对象编程加上类型保护</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>先看一个问题</h3>
+                <h4>JavaScript 的 class 没有类型检查，属性可以随便加、随便改。如何让 class 也享受类型安全？</h4>
+                <pre><code class="language-javascript">// JavaScript：一切都很自由，自由到危险
+class User {
+    constructor(name, age) {
+        this.name = name;
+        // 忘记赋值 this.age？不会报错
+    }
+}
+
+const user = new User("张三", 25);
+user.namme = "李四"; // 拼写错误，不会报错
+user.age = "二十六"; // 类型错误，不会报错</code></pre>
+                <p>TypeScript 为 class 添加了完整的类型注解能力：属性必须声明、方法有返回类型、访问修饰符控制可见性。</p>
+            </div>
+        </section>
+
+        <!-- Part 1: 属性与构造器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 属性类型</h2>
+                <h4>属性必须先声明类型，才能在构造器中赋值</h4>
+                <p>JavaScript 的 class 随便加属性，拼写错了也不报错。TypeScript 要求你在类体中先声明每个属性的类型——漏了就报错。这看似麻烦，实则帮你在编译期挡住了大量低级错误。我们从最基础的属性声明和构造器开始。</p>
+            </div>
+        </section>
+
+        <!-- 属性声明 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>属性声明</h3>
+                <h4>在类体中声明，构造器中初始化</h4>
+                <pre><code class="language-typescript">class Person {
+    name: string;      // 必须声明类型
+    age: number;       // 必须声明类型
+
+    constructor(name: string, age: number) {
+        this.name = name;
+        this.age = age;
+    }
+
+    greet(): string {
+        return `你好，我是${this.name}，今年${this.age}岁`;
+    }
+}
+
+const p = new Person("张三", 25);</code></pre>
+                <pre><code class="language-typescript">// strictPropertyInitialization 开启后
+// 属性必须在构造器中初始化，或者声明为可选
+class Config {
+    host: string;       // 必须在 constructor 中赋值
+    port?: number;      // 可选属性，可以不初始化
+    timeout: number;
+
+    constructor(host: string, timeout: number) {
+        this.host = host;
+        this.timeout = timeout;
+    }
+}
+
+// 确定赋值断言（当你知道属性会在外部初始化）
+class App {
+    private instance!: HTMLElement; // ! 告诉 TS 一定会被赋值
+    mount() {
+        this.instance = document.getElementById("app")!;
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 2: 访问修饰符 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 访问控制</h2>
+                <h4>public、private、protected、readonly——控制谁能访问什么</h4>
+                <p>属性声明好了，但谁有权访问？密码字段不该暴露给外部，角色信息子类要用但外部不该碰。四个访问修饰符让你精确控制每个属性和方法的可见性。再加上 getter/setter 和参数属性的简写，类的设计既安全又简洁。</p>
+            </div>
+        </section>
+
+        <!-- 访问修饰符 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>四个修饰符</h3>
+                <h4>控制属性和方法的可见性</h4>
+                <pre><code class="language-typescript">class User {
+    public name: string;           // 公开（默认）
+    private password: string;      // 仅类内部
+    protected role: string;        // 类内部 + 子类
+    readonly id: string;           // 只读
+
+    constructor(name: string, password: string, role: string) {
+        this.id = crypto.randomUUID();
+        this.name = name;
+        this.password = password;
+        this.role = role;
+    }
+}
+
+const user = new User("张三", "secret", "admin");
+console.log(user.name);       // OK
+// console.log(user.password); // 报错！private
+// console.log(user.role);     // 报错！protected</code></pre>
+                <table>
+                    <thead><tr><th>修饰符</th><th>类内部</th><th>子类</th><th>外部</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>public</code></td><td>可以</td><td>可以</td><td>可以</td></tr>
+                        <tr><td><code>protected</code></td><td>可以</td><td>可以</td><td>不可以</td></tr>
+                        <tr><td><code>private</code></td><td>可以</td><td>不可以</td><td>不可以</td></tr>
+                    </tbody>
+                </table>
+                <div class="ai-diagram">
+                  <h4>图：四种访问修饰符的可见性范围</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 同心圆靶心图：内圈类自身(深蓝)→中圈子类(蓝)→外圈外部(浅蓝)
+                  - 每圈标注：public✓✓✓ | protected✓✓✗ | private✓✗✗ | #✓✗✗
+                  - 底部："#是ECMAScript标准，private是TS编译时检查"
+                  - 配色：从内到外深蓝→浅蓝渐变，不可访问红色叉号，16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- getter / setter -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>getter 与 setter</h3>
+                <h4>用属性的方式访问，用方法的方式控制</h4>
+                <pre><code class="language-typescript">class User {
+    private _name: string;
+
+    constructor(name: string) {
+        this._name = name;
+    }
+
+    // getter——读取时自动调用
+    get displayName(): string {
+        return `@${this._name}`;
+    }
+
+    // setter——赋值时自动调用
+    set displayName(val: string) {
+        this._name = val.replace("@", "");
+    }
+}
+
+const user = new User("张三");
+console.log(user.displayName);  // "@张三"（调用 getter）
+user.displayName = "@李四";      // 调用 setter
+console.log(user.displayName);  // "@李四"</code></pre>
+                <div class="intro-block">
+                    <p>getter/setter 看起来像属性访问，实际是方法调用。适合在读写时加入验证逻辑或计算逻辑。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 参数属性 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>参数属性</h3>
+                <h4>在构造器参数前加修饰符，自动创建属性</h4>
+                <pre><code class="language-typescript">// 参数属性——构造器参数前加修饰符
+class User {
+    constructor(
+        public name: string,          // 自动创建 public name
+        private password: string,     // 自动创建 private password
+        protected role: string,       // 自动创建 protected role
+        readonly id: string = crypto.randomUUID(),
+    ) {
+        // 无需手动 this.name = name 等
+    }
+}
+
+// 等同于手写版本（但更简洁）
+class UserVerbose {
+    public name: string;
+    private password: string;
+    protected role: string;
+    readonly id: string;
+
+    constructor(name: string, password: string, role: string) {
+        this.name = name;
+        this.password = password;
+        this.role = role;
+        this.id = crypto.randomUUID();
+    }
+}</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>参数属性虽然简洁，但可读性较低。团队协作时，确认大家都习惯这种写法再使用。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3: static 静态成员 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 静态成员</h2>
+                <h4>static 让属性和方法属于类本身，而不是实例</h4>
+                <p>有些东西不该属于某个实例，而应该属于类本身——比如工具方法、版本号、单例实例。static 修饰的成员不需要 new 就能访问，直接通过类名调用。单例模式、工厂方法、静态初始化块都依赖它。</p>
+            </div>
+        </section>
+
+        <!-- static 属性和方法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>static 基础</h3>
+                <h4>属于类本身，不属于实例</h4>
+                <pre><code class="language-typescript">class MathUtils {
+    static PI = 3.14159;
+    static readonly VERSION = "1.0"; // static + readonly = 常量
+
+    static circleArea(radius: number): number {
+        return MathUtils.PI * radius * radius;
+    }
+}
+
+// 通过类名访问，不需要 new
+console.log(MathUtils.PI);           // 3.14159
+console.log(MathUtils.circleArea(5)); // 78.53975
+
+// const m = new MathUtils();
+// m.PI; // 报错！static 成员不在实例上</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>static 成员属于类本身，不会被实例继承。子类可以通过 <code>ChildClass.staticMethod()</code> 访问父类的 static 成员，但它们挂载在类（构造函数）对象上，不在 <code>prototype</code> 链中。
+                </div>
+            </div>
+        </section>
+
+        <!-- static 进阶：单例模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>static 进阶</h3>
+                <h4>单例模式与 static 初始化块</h4>
+                <pre><code class="language-typescript">// 单例模式——private constructor + static getInstance
+class UserService {
+    private static instance: UserService | null = null;
+    static readonly serviceName = "UserService";
+
+    private constructor() {} // 禁止外部 new
+
+    static getInstance(): UserService {
+        if (!UserService.instance) {
+            UserService.instance = new UserService();
+        }
+        return UserService.instance;
+    }
+}
+
+const svc1 = UserService.getInstance();
+const svc2 = UserService.getInstance();
+console.log(svc1 === svc2); // true——永远是同一个实例</code></pre>
+                <pre><code class="language-typescript">// static + 泛型——工厂方法
+class Entity {
+    static create&lt;T extends Entity&gt;(this: new () => T): T {
+        return new this();
+    }
+}
+
+// static 初始化块（ES2022+）——复杂静态逻辑
+class Config {
+    static readonly DB_URL: string;
+    static readonly PORT: number;
+
+    static {
+        // 类加载时执行一次
+        Config.DB_URL = process.env.DB_URL ?? "localhost:5432";
+        Config.PORT = parseInt(process.env.PORT ?? "3000");
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 4: 抽象类与 implements -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 抽象与实现</h2>
+                <h4>abstract class 和 implements——类的设计模式</h4>
+                <p>多个子类共享同一段逻辑，但又各有各的实现细节——怎么设计？抽象类定义通用行为，子类负责填充具体实现。配合 override 关键字，方法重写更安全；配合 implements，类可以同时满足多个接口的约束。这是面向对象设计的核心工具。</p>
+            </div>
+        </section>
+
+        <!-- 抽象类 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>抽象类</h3>
+                <h4>不能实例化，只能被继承的基类</h4>
+                <pre><code class="language-typescript">// 抽象类——定义通用行为，强制子类实现细节
+abstract class Animal {
+    constructor(public name: string) {}
+
+    // 抽象方法——子类必须实现
+    abstract makeSound(): string;
+
+    // 具体方法——子类直接继承
+    describe(): string {
+        return `${this.name}说: ${this.makeSound()}`;
+    }
+}
+
+// const a = new Animal("动物"); // 报错！不能实例化抽象类
+
+class Dog extends Animal {
+    makeSound(): string { return "汪汪！"; }
+}
+
+class Cat extends Animal {
+    makeSound(): string { return "喵~"; }
+}
+
+const dog = new Dog("旺财");
+console.log(dog.describe()); // "旺财说: 汪汪！"</code></pre>
+            </div>
+        </section>
+
+        <!-- 抽象属性 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>抽象属性</h3>
+                <h4>抽象类不仅能约束方法，还能约束属性</h4>
+                <pre><code class="language-typescript">interface User { id: string; name: string; email: string; }
+
+abstract class Repository&lt;T&gt; {
+    abstract tableName: string;   // 子类必须声明表名
+    abstract primaryKey: string;  // 子类必须声明主键
+
+    abstract findById(id: string): Promise&lt;T&gt;;
+
+    // 具体方法可以使用抽象属性
+    async query(sql: string): Promise&lt;T[]&gt; {
+        console.log(`Querying ${this.tableName}...`);
+        return [] as T[];
+    }
+}
+
+class UserRepository extends Repository&lt;User&gt; {
+    tableName = "users";
+    primaryKey = "id";
+
+    async findById(id: string): Promise&lt;User&gt; {
+        return this.query(
+            `SELECT * FROM ${this.tableName} WHERE ${this.primaryKey} = '${id}'`
+        ).then(rows => rows[0]);
+    }
+}</code></pre>
+                <div class="intro-block">
+                    <p>抽象属性强制子类提供配置信息，配合具体方法实现"模板方法"模式——基类定流程，子类填细节。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- override 关键字 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>override 关键字</h3>
+                <h4>TS 4.3+ 显式标记方法重写</h4>
+                <pre><code class="language-typescript">class Animal {
+    move(): void { console.log("moving"); }
+    eat(): void { console.log("eating"); }
+}
+
+class Dog extends Animal {
+    override move(): void {  // OK——move 存在于基类
+        console.log("running");
+    }
+
+    override bark(): void { // 报错！bark 不存在于 Animal
+        console.log("woof");
+    }
+}</code></pre>
+                <pre><code class="language-typescript">// tsconfig.json 中开启 noImplicitOverride
+// {
+//   "compilerOptions": {
+//     "noImplicitOverride": true
+//   }
+// }
+// 开启后，所有重写父类的方法都必须加 override
+
+// 为什么用 override？
+// 1. 防止拼写错误：wriet() 不会静默创建新方法
+// 2. 基类改名/删除方法时，子类立刻报错
+// 3. 代码意图更清晰——一眼就知道这是重写</code></pre>
+                <div class="warning">
+                    <strong>最佳实践：</strong>始终为子类重写的方法添加 <code>override</code>。配合 <code>noImplicitOverride</code> 可以完全杜绝"方法名拼写错误"导致的隐蔽 bug。
+                </div>
+            </div>
+        </section>
+
+        <!-- implements -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>implements 实现</h3>
+                <h4>类承诺满足接口的形状</h4>
+                <pre><code class="language-typescript">// implements——类实现接口
+interface Serializable {
+    serialize(): string;
+}
+
+interface Loggable {
+    log(): void;
+}
+
+// 一个类可以实现多个接口
+class UserEntity implements Serializable, Loggable {
+    constructor(public name: string, public age: number) {}
+
+    serialize(): string {
+        return JSON.stringify({ name: this.name, age: this.age });
+    }
+
+    log(): void {
+        console.log(this.serialize());
+    }
+}</code></pre>
+                <table>
+                    <thead><tr><th>关键词</th><th>作用</th><th>是否获得实现</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>extends</code></td><td>继承另一个类</td><td>是（获得代码复用）</td></tr>
+                        <tr><td><code>implements</code></td><td>实现接口</td><td>否（纯类型约束）</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 5: 泛型类 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 泛型类</h2>
+                <h4>让类也能参数化类型，适配不同数据</h4>
+                <p>第28章学了泛型函数和泛型接口，泛型类是拼图的最后一块。数据容器、Repository 模式、Mixin 组合——这些都离不开泛型类。它让类像函数一样可以"传类型参数"，一个 DataStore 类就能同时服务 User、Post、Order。</p>
+            </div>
+        </section>
+
+        <!-- 泛型类 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型数据容器</h3>
+                <h4>一个类适配多种数据类型</h4>
+                <pre><code class="language-typescript">// 泛型数据容器
+class DataStore&lt;T&gt; {
+    private items: T[] = [];
+
+    add(item: T): void { this.items.push(item); }
+    get(index: number): T | undefined { return this.items[index]; }
+    getAll(): T[] { return [...this.items]; }
+    find(predicate: (item: T) => boolean): T | undefined {
+        return this.items.find(predicate);
+    }
+    get count(): number { return this.items.length; }
+}
+
+const userStore = new DataStore&lt;{ name: string; age: number }&gt;();
+userStore.add({ name: "张三", age: 25 });
+userStore.add({ name: "李四", age: 30 });
+userStore.find(u => u.name === "张三"); // 找到了</code></pre>
+            </div>
+        </section>
+
+        <!-- 泛型类 + 接口约束 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型类 + 约束</h3>
+                <h4>限制泛型参数必须满足某个接口</h4>
+                <pre><code class="language-typescript">// 泛型类 + 接口约束
+interface Identifiable { id: string; }
+
+class Repository&lt;T extends Identifiable&gt; {
+    private items = new Map&lt;string, T&gt;();
+
+    add(item: T): void {
+        this.items.set(item.id, item);
+    }
+
+    findById(id: string): T | undefined {
+        return this.items.get(id);
+    }
+
+    remove(id: string): boolean {
+        return this.items.delete(id);
+    }
+}
+
+interface Post extends Identifiable {
+    id: string;
+    title: string;
+    content: string;
+}
+
+const postRepo = new Repository&lt;Post&gt;();
+postRepo.add({ id: "p1", title: "第一篇", content: "Hello" });
+postRepo.findById("p1"); // Post | undefined</code></pre>
+            </div>
+        </section>
+
+        <!-- Mixin 模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Mixin 模式</h3>
+                <h4>用函数组合类的功能，替代多继承</h4>
+                <pre><code class="language-typescript">// TypeScript 不支持多继承（extends 只能一个）
+// Mixin 模式：用函数给类"混入"额外功能
+
+// 时间戳 Mixin
+function Timestamped&lt;T extends new (...args: any[]) =&gt; {}&gt;(Base: T) {
+    return class extends Base {
+        createdAt = new Date();
+        updatedAt = new Date();
+    };
+}
+
+// 软删除 Mixin
+function SoftDeletable&lt;T extends new (...args: any[]) =&gt; {}&gt;(Base: T) {
+    return class extends Base {
+        deletedAt: Date | null = null;
+        softDelete(): void { this.deletedAt = new Date(); }
+        get isDeleted(): boolean { return this.deletedAt !== null; }
+    };
+}
+
+// 组合使用——比继承更灵活
+class Article {
+    constructor(public title: string, public content: string) {}
+}
+
+const EnhancedArticle = SoftDeletable(Timestamped(Article));
+const article = new EnhancedArticle("标题", "内容");
+article.softDelete();
+console.log(article.createdAt);    // Date
+console.log(article.isDeleted);    // true</code></pre>
+                <div class="intro-block">
+                    <p>Mixin 的核心思想：每个 Mixin 是一个高阶函数，接收一个类，返回一个扩展后的新类。组合顺序不影响功能，但影响类型推断。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- extends vs implements 图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>继承与实现</h3>
+                <h4>extends 和 implements 有什么本质区别？</h4>
+                <div class="ai-diagram">
+                    <h4>图：extends 与 implements 的区别</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：左右对比布局
+                    - 左侧 extends（类继承）：父类 Animal 有属性 name 和方法 makeSound()，子类 Dog extends Animal 自动获得 name 和 makeSound() 的实现，绿色箭头标注"获得实现代码"
+                    - 右侧 implements（接口实现）：接口 Serializable 声明了 serialize() 方法签名（只有声明没有实现），类 UserEntity implements Serializable 必须自己实现 serialize() 方法，橙色箭头标注"只获得类型约束"
+                    - 底部对比："extends = 拿代码 | implements = 拿契约"
+                    - 配色建议：浅灰背景，extends 绿色系，implements 橙色系
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>简单记忆：<code>extends</code> 拿到的是代码（实现），<code>implements</code> 拿到的是契约（约束）。一个类只能 extends 一个父类，但可以 implements 多个接口。</p>
+            </div>
+        </section>
+
+        <!-- 类表达式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类表达式</h3>
+                <h4>class 不只能声明，还能当值用</h4>
+                <pre><code class="language-typescript">// 匿名类赋值给变量
+const MyComponent = class {
+    render(): string { return "&lt;div&gt;Hello&lt;/div&gt;"; }
+};
+
+const comp = new MyComponent();
+console.log(comp.render()); // "&lt;div&gt;Hello&lt;/div&gt;"
+
+// 类表达式配合接口
+interface StorageLike&lt;T&gt; {
+    get(): T;
+    set(value: T): void;
+}
+
+// 工厂函数返回类
+const createStorage = &lt;T&gt;(initial: T): StorageLike&lt;T&gt; =&gt; {
+    return class {
+        private data: T = initial;
+        get(): T { return this.data; }
+        set(value: T): void { this.data = value; }
+    };
+};
+
+const numStorage = createStorage(42);
+numStorage.set(100);
+console.log(numStorage.get()); // 100</code></pre>
+                <div class="intro-block">
+                    <p>类表达式常见于工厂模式——根据参数动态创建不同配置的类。也常用于 Mixin 模式的返回值（前面讲的 Timestamped 就是类表达式）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 装饰器基础 Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: 装饰器</h2>
+                <h4>用函数"装饰"类和方法——Angular/NestJS 的核心机制</h4>
+                <p>如果你用过 Angular 或 NestJS，一定见过 @Component、@Get 这样的写法。装饰器就是在不修改原有代码的情况下，给类和方法"加料"。它是 JavaScript TC39 Stage 3 提案，属于进阶内容，但在框架开发中几乎绕不开。</p>
+            </div>
+        </section>
+
+        <!-- 装饰器：类装饰器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类装饰器</h3>
+                <h4>用一个函数包装整个类</h4>
+                <pre><code class="language-typescript">// 类装饰器——接收类的构造函数
+function Log(target: Function) {
+    console.log(`类已创建: ${target.name}`);
+}
+
+@Log
+class MyClass {}
+
+// 实例化时不会触发，类定义时触发
+// 控制台输出: "类已创建: MyClass"
+
+// 带参数的装饰器——装饰器工厂
+function Version(version: string) {
+    return function (target: Function) {
+        (target as any).version = version;
+    };
+}
+
+@Version("2.0.0")
+class API {}
+console.log((API as any).version); // "2.0.0"</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>使用装饰器需要在 <code>tsconfig.json</code> 中开启 <code>"experimentalDecorators": true</code>。TC39 Stage 3 新提案的语法有所不同，但目前主流框架（Angular、NestJS）仍在使用"实验性装饰器"。
+                </div>
+            </div>
+        </section>
+
+        <!-- 装饰器：方法装饰器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>方法装饰器</h3>
+                <h4>增强或拦截类的方法</h4>
+                <pre><code class="language-typescript">// 方法装饰器——拦截方法调用
+function Deprecated(message: string) {
+    return function (
+        target: any,
+        key: string,
+        descriptor: PropertyDescriptor
+    ) {
+        const original = descriptor.value;
+        descriptor.value = function (...args: any[]) {
+            console.warn(`警告: ${key} 已弃用。${message}`);
+            return original.apply(this, args);
+        };
+    };
+}
+
+// 只读装饰器——防止方法被覆盖
+function readonly(
+    target: any,
+    key: string,
+    descriptor: PropertyDescriptor
+) {
+    descriptor.writable = false;
+}
+
+class APIService {
+    @Deprecated("请使用 fetchUsers 替代")
+    getUsers(): string[] { return ["张三", "李四"]; }
+
+    @readonly
+    getConfig(): object { return { version: "1.0" }; }
+}
+
+const api = new APIService();
+api.getUsers(); // 控制台警告: "getUsers 已弃用。请使用 fetchUsers 替代"</code></pre>
+            </div>
+        </section>
+
+        <!-- 属性装饰器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>属性装饰器</h3>
+                <h4>拦截属性的声明，添加元数据</h4>
+                <pre><code class="language-typescript">// 属性装饰器——监听属性声明
+function Range(min: number, max: number) {
+    return function (target: any, key: string) {
+        // 将验证规则存入元数据
+        const metaKey = `__range_${key}__`;
+        Object.defineProperty(target, metaKey, {
+            value: { min, max },
+            enumerable: false,
+        });
+    };
+}
+
+function Required(target: any, key: string) {
+    const metaKey = `__required__`;
+    const existing: string[] = Reflect.getMetadata
+        ? Reflect.getMetadata(metaKey, target) || []
+        : (target[metaKey] || []);
+    existing.push(key);
+}
+
+class UserForm {
+    @Range(0, 150)
+    age: number = 0;
+
+    @Required
+    name: string = "";
+}
+
+// 装饰器在类定义时执行，不是实例化时
+// 常用于表单验证、ORM 映射、依赖注入</code></pre>
+                <div class="intro-block">
+                    <p>属性装饰器无法直接修改属性值，但可以通过 <code>Object.defineProperty</code> 或元数据（<code>Reflect.metadata</code>）记录信息，供运行时框架读取。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 装饰器实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>装饰器实战</h3>
+                <h4>Angular / NestJS / TypeORM 中的装饰器</h4>
+                <pre><code class="language-typescript">// Angular——组件装饰器
+@Component({
+    selector: "app-root",
+    template: "&lt;h1&gt;{{ title }}&lt;/h1&gt;",
+})
+class AppComponent {
+    @Input() title = "";
+}
+
+// NestJS——路由 + 依赖注入
+@Controller("users")
+class UserController {
+    @Get(":id")
+    findOne(@Param("id") id: string) { /* ... */ }
+}
+
+// TypeORM——实体映射
+@Entity("users")
+class User {
+    @PrimaryGeneratedColumn()
+    id: number;
+
+    @Column({ length: 100 })
+    name: string;
+
+    @CreateDateColumn()
+    createdAt: Date;
+}</code></pre>
+                <table>
+                    <thead><tr><th>框架</th><th>装饰器类型</th><th>核心用途</th></tr></thead>
+                    <tbody>
+                        <tr><td>Angular</td><td>@Component, @Input, @Output</td><td>组件元数据与绑定</td></tr>
+                        <tr><td>NestJS</td><td>@Controller, @Get, @Injectable</td><td>路由与依赖注入</td></tr>
+                        <tr><td>TypeORM</td><td>@Entity, @Column, @OneToOne</td><td>数据库表映射</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>前提：</strong>使用装饰器需在 <code>tsconfig.json</code> 开启 <code>"experimentalDecorators": true</code> 和 <code>"emitDecoratorMetadata": true</code>（后者用于 NestJS 依赖注入的类型推断）。
+                </div>
+            </div>
+        </section>
+
+        <!-- 类 vs 函数式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类 vs 函数式</h3>
+                <h4>何时用 class，何时用普通函数？</h4>
+                <pre><code class="language-typescript">// 函数式风格——简单、组合方便
+type User = { id: string; name: string; age: number };
+const createUser = (name: string, age: number): User =&gt; ({
+    id: crypto.randomUUID(), name, age,
+});
+const greet = (user: User): string =&gt; `你好，${user.name}`;
+
+// OOP 风格——封装状态、行为与数据绑定
+class UserService {
+    private users = new Map&lt;string, User&gt;();
+    add(user: User): void { this.users.set(user.id, user); }
+    find(id: string): User | undefined { return this.users.get(id); }
+}</code></pre>
+                <table>
+                    <thead><tr><th>场景</th><th>推荐</th><th>原因</th></tr></thead>
+                    <tbody>
+                        <tr><td>纯数据变换</td><td>函数</td><td>输入 → 输出，无副作用</td></tr>
+                        <tr><td>有状态的服务</td><td>class</td><td>封装内部状态，方法操作数据</td></tr>
+                        <tr><td>React 组件</td><td>函数</td><td>Hooks 时代，函数组件为主</td></tr>
+                        <tr><td>Node.js 后端</td><td>看情况</td><td>Service 用 class，工具用函数</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 练习：链表 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>链表练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习</h3>
+                        <p><strong>任务</strong>：实现一个类型安全的链表类 <code>LinkedList&lt;T&gt;</code>，包含 add、remove、find、toArray 方法。</p>
+                        <pre><code class="language-typescript">// 提示：需要一个内部 Node 类
+class ListNode&lt;T&gt; {
+    constructor(
+        public value: T,
+        public next: ListNode&lt;T&gt; | null = null
+    ) {}
+}
+
+// 你的代码：
+class LinkedList&lt;T&gt; {
+    private head: ListNode&lt;T&gt; | null = null;
+    private _size = 0;
+
+    // add(item: T): void
+    // remove(item: T): boolean
+    // find(predicate: (item: T) =&gt; boolean): T | undefined
+    // toArray(): T[]
+    // get size(): number
+}</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">class LinkedList&lt;T&gt; {
+    private head: ListNode&lt;T&gt; | null = null;
+    private _size = 0;
+
+    add(item: T): void {
+        const node = new ListNode(item);
+        if (!this.head) { this.head = node; }
+        else {
+            let curr = this.head;
+            while (curr.next) curr = curr.next;
+            curr.next = node;
+        }
+        this._size++;
+    }
+
+    remove(item: T): boolean {
+        if (!this.head) return false;
+        if (this.head.value === item) {
+            this.head = this.head.next;
+            this._size--; return true;
+        }
+        let curr = this.head;
+        while (curr.next) {
+            if (curr.next.value === item) {
+                curr.next = curr.next.next;
+                this._size--; return true;
+            }
+            curr = curr.next;
+        }
+        return false;
+    }
+
+    find(predicate: (item: T) =&gt; boolean): T | undefined {
+        let curr = this.head;
+        while (curr) {
+            if (predicate(curr.value)) return curr.value;
+            curr = curr.next;
+        }
+        return undefined;
+    }
+
+    toArray(): T[] {
+        const result: T[] = [];
+        let curr = this.head;
+        while (curr) { result.push(curr.value); curr = curr.next; }
+        return result;
+    }
+
+    get size(): number { return this._size; }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <h4>问题一：属性未初始化报错</h4>
+                <pre><code class="language-typescript">class App {
+    name: string; // 报错！属性没有初始化
+}
+
+// 解决方案（三选一）
+class App1 { name: string = ""; }          // 默认值
+class App2 { name!: string; }              // 确定赋值断言
+class App3 { name?: string; }              // 可选属性</code></pre>
+
+                <h4>问题二：private 和 # 的区别</h4>
+                <pre><code class="language-typescript">class A {
+    private x = 1;   // TS 编译期的 private，编译后有 _x
+    #y = 2;          // ES 真正的 private，运行时也安全
+}
+
+// private 只是编译期检查，编译后通过 _x 仍可访问
+// # 是 ECMAScript 标准，运行时也完全不可访问</code></pre>
+                <p><strong>建议</strong>：新项目优先使用 <code>#</code> 真正的私有字段。</p>
+            </div>
+        </section>
+
+        <!-- this 绑定 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>this 绑定</h3>
+                <h4>类方法中的 this 丢失问题</h4>
+                <pre><code class="language-typescript">class Timer {
+    private seconds = 0;
+
+    // 问题：普通函数中 this 指向不正确
+    startBad() {
+        setInterval(function () {
+            this.seconds++; // 报错！this 不是 Timer
+        }, 1000);
+    }
+
+    // 修复 1：箭头函数自动绑定外层 this
+    startGood() {
+        setInterval(() => {
+            this.seconds++; // OK——箭头函数没有自己的 this
+        }, 1000);
+    }
+
+    // 修复 2：箭头函数属性（class field）——永久绑定
+    tick = () => {
+        this.seconds++;
+    };
+}
+
+const timer = new Timer();
+// 回调场景：方法作为参数传递时 this 可能丢失
+setTimeout(timer.tick, 1000); // OK——tick 是箭头函数，已绑定</code></pre>
+                <div class="warning">
+                    <strong>常见坑：</strong>事件监听、定时器、Promise 回调中直接传方法名会导致 <code>this</code> 丢失。解决方式：<strong>箭头函数属性</strong>（推荐）、<code>.bind(this)</code>、或在回调中使用箭头函数包裹。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：定义一个 <code>BankAccount</code> 类，有 <code>owner</code>（公开）、<code>balance</code>（私有）属性，以及 <code>deposit</code> 和 <code>withdraw</code> 方法。</p>
+                        <pre><code class="language-typescript">// owner: string（公开）
+// balance: number（私有，初始为 0）
+// deposit(amount: number): void
+// withdraw(amount: number): boolean
+// getBalance(): number
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">class BankAccount {
+    constructor(public owner: string) {}
+    private balance: number = 0;
+
+    deposit(amount: number): void {
+        if (amount &lt;= 0) throw new Error("金额必须大于0");
+        this.balance += amount;
+    }
+
+    withdraw(amount: number): boolean {
+        if (amount > this.balance) return false;
+        this.balance -= amount;
+        return true;
+    }
+
+    getBalance(): number {
+        return this.balance;
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：用参数属性重写上面的 <code>BankAccount</code>，同时定义一个抽象类 <code>Account</code>，让 <code>BankAccount</code> 继承它。</p>
+                        <pre><code class="language-typescript">// abstract class Account { ... }
+// class BankAccount extends Account { ... }
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">abstract class Account {
+    abstract getBalance(): number;
+    abstract deposit(amount: number): void;
+}
+
+class BankAccount extends Account {
+    constructor(public owner: string, private balance: number = 0) {
+        super();
+    }
+
+    getBalance(): number { return this.balance; }
+    deposit(amount: number): void { this.balance += amount; }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>TypeScript 的类让 OOP 更安全。下一章我们学习<strong>模块与声明文件</strong>——让类型在项目之间传递。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

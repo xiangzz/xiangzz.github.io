@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第28章 泛型 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>泛型</h1>
+            <p>让类型也能"传参数"，一份代码适配多种类型</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>先看一个问题</h3>
+                <h4>如何写一个函数，既能处理 string，又能处理 number，还能保留类型信息？</h4>
+                <pre><code class="language-typescript">// 方案1：any —— 能用，但丢失了类型信息
+function identity(val: any): any {
+    return val;
+}
+const result = identity("hello"); // any —— 不知道返回的是 string
+
+// 方案2：写多个函数 —— 太重复
+function identityString(val: string): string { return val; }
+function identityNumber(val: number): number { return val; }
+
+// 方案3：泛型 —— 完美解决
+function identity&lt;T&gt;(val: T): T {
+    return val;
+}
+const r1 = identity("hello");   // 自动推断 T = string
+const r2 = identity(42);        // 自动推断 T = number</code></pre>
+                <p>泛型让函数、接口、类可以<strong>参数化类型</strong>，实现类型级别的复用。</p>
+            </div>
+        </section>
+
+        <!-- 泛型是什么 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型是什么</h3>
+                <h4>类型的"占位符"，使用时再填入具体类型</h4>
+                <p><strong>泛型</strong>（Generics）是一种在定义时不指定具体类型，而在使用时才确定类型的机制。就像函数的参数是"值的占位符"，泛型的 <code>&lt;T&gt;</code> 就是"类型的占位符"。</p>
+                <p>打个比方：泛型就像一个<strong>模板</strong>——定义好格式，用的时候再填入具体内容。</p>
+                <pre><code class="language-typescript">// T 是类型参数，调用时自动推断或手动指定
+function identity&lt;T&gt;(val: T): T {
+    return val;
+}
+
+identity("hello");           // T = string，返回 string
+identity(42);                // T = number，返回 number
+identity&lt;string&gt;("hi");      // 显式指定 T = string</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 1: 泛型函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 泛型函数</h2>
+                <h4>最常见的泛型使用场景，掌握它就掌握了泛型的核心思想</h4>
+                <p>写一个函数，既能处理字符串数组，又能处理数字数组，还要保留类型信息——怎么做？泛型函数就是答案。接下来我们从最简单的 <code>identity</code> 函数开始，逐步掌握泛型函数的定义、推断和约束。学完这一节，你就能用泛型改写日常开发中几乎所有的工具函数。</p>
+            </div>
+        </section>
+
+        <!-- 常用泛型函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常用泛型函数</h3>
+                <h4>从简单到实用的递进示例</h4>
+                <pre><code class="language-typescript">// 获取数组第一个元素
+function first&lt;T&gt;(arr: T[]): T | undefined {
+    return arr[0];
+}
+first([1, 2, 3]);       // number | undefined
+first(["a", "b"]);      // string | undefined</code></pre>
+                <pre><code class="language-typescript">// 安全地读取对象属性
+function pluck&lt;T, K extends keyof T&gt;(obj: T, key: K): T[K] {
+    return obj[key];
+}
+const user = { name: "张三", age: 25 };
+pluck(user, "name");  // string
+pluck(user, "age");   // number
+// pluck(user, "email"); // 报错！"email" 不是 user 的属性</code></pre>
+                <pre><code class="language-typescript">// 合并两个对象
+function merge&lt;A, B&gt;(a: A, b: B): A &amp; B {
+    return { ...a, ...b };
+}
+const merged = merge({ name: "张三" }, { age: 25 });
+// { name: string; age: number }</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 2: 泛型接口 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 泛型接口</h2>
+                <h4>API 响应、数据仓库等场景的标准模式</h4>
+                <p>前后端对接时，API 响应的结构是固定的——有 code、message、data。但 data 的类型每个接口都不一样。用泛型接口 <code>ApiResponse&lt;T&gt;</code> 就能一套结构适配所有接口。数据仓库的 CRUD 模板也是同样的思路。来看具体写法。</p>
+            </div>
+        </section>
+
+        <!-- 泛型接口 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型接口</h3>
+                <h4>让接口适配不同的数据类型</h4>
+                <pre><code class="language-typescript">// API 响应——最经典的泛型接口
+interface ApiResponse&lt;T&gt; {
+    code: number;
+    message: string;
+    data: T;
+}
+
+interface User { name: string; age: number; }
+
+// 使用时指定 T 的具体类型
+const userRes: ApiResponse&lt;User&gt; = {
+    code: 200,
+    message: "ok",
+    data: { name: "张三", age: 25 },
+};
+
+const listRes: ApiResponse&lt;User[]&gt; = {
+    code: 200,
+    message: "ok",
+    data: [{ name: "张三", age: 25 }],
+};</code></pre>
+                <pre><code class="language-typescript">// 分页响应
+interface PaginatedResponse&lt;T&gt; {
+    data: T[];
+    total: number;
+    page: number;
+    pageSize: number;
+}
+
+// 泛型仓库接口——CRUD 的类型安全模板
+interface Repository&lt;T&gt; {
+    findById(id: string): Promise&lt;T | null&gt;;
+    findAll(): Promise&lt;T[]&gt;;
+    create(data: Omit&lt;T, "id"&gt;): Promise&lt;T&gt;;
+    update(id: string, data: Partial&lt;T&gt;): Promise&lt;T&gt;;
+    delete(id: string): Promise&lt;void&gt;;
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 3: 泛型类 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 泛型类</h2>
+                <h4>数据结构、事件系统等核心模式的基础</h4>
+                <p>栈、队列、事件发射器——这些数据结构和工具类有个共同特点：它们不关心存储的是什么类型的数据，只关心操作逻辑。泛型类让一个 Stack 既能装数字又能装字符串，而且类型信息全程保留。写一次，到处复用。</p>
+            </div>
+        </section>
+
+        <!-- 泛型类 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型类</h3>
+                <h4>让类也能参数化类型</h4>
+                <pre><code class="language-typescript">// 泛型栈
+class Stack&lt;T&gt; {
+    private items: T[] = [];
+
+    push(item: T): void { this.items.push(item); }
+    pop(): T | undefined { return this.items.pop(); }
+    peek(): T | undefined { return this.items[this.items.length - 1]; }
+    get size(): number { return this.items.length; }
+}
+
+const numberStack = new Stack&lt;number&gt;();
+numberStack.push(1);
+numberStack.push(2);
+numberStack.pop(); // 2
+
+const stringStack = new Stack&lt;string&gt;();
+stringStack.push("hello");
+// stringStack.push(42); // 报错！</code></pre>
+                <pre><code class="language-typescript">// 泛型事件发射器
+class EventEmitter&lt;T extends string&gt; {
+    private listeners = new Map&lt;T, Set&lt;Function&gt;&gt;();
+    on(event: T, fn: Function): () => void {
+        if (!this.listeners.has(event))
+            this.listeners.set(event, new Set());
+        this.listeners.get(event)!.add(fn);
+        return () => this.listeners.get(event)?.delete(fn);
+    }
+    emit(event: T, ...args: unknown[]): void {
+        this.listeners.get(event)?.forEach(fn => fn(...args));
+    }
+}
+
+type AppEvents = "login" | "logout" | "error";
+const emitter = new EventEmitter&lt;AppEvents&gt;();
+emitter.on("login", (user: string) => console.log(user));
+// emitter.on("unknown", () => {}); // 报错！不是 AppEvents</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 4: 泛型约束 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 泛型约束</h2>
+                <h4>T 太宽泛？用 extends 给它加限制</h4>
+                <p>泛型的 T 可以是任何类型——但有时候你并不想"来者不拒"。比如写 <code>logLength</code> 函数，T 得有 <code>.length</code> 属性才行。用 <code>extends</code> 给 T 加约束，既保留泛型的灵活性，又确保类型安全。keyof 约束还能让属性名访问绝对安全。</p>
+            </div>
+        </section>
+
+        <!-- 泛型约束 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>extends 约束</h3>
+                <h4>让泛型参数满足特定条件</h4>
+                <pre><code class="language-typescript">// 问题：T 太宽泛，无法使用特定属性
+function logLength&lt;T&gt;(val: T): void {
+    // console.log(val.length); // 报错！T 不一定有 length
+}
+
+// 解决：用 extends 约束 T 必须有 length 属性
+interface HasLength {
+    length: number;
+}
+
+function logLength&lt;T extends HasLength&gt;(val: T): void {
+    console.log(val.length); // OK！T 保证有 length
+}
+
+logLength("hello");        // OK，string 有 length
+logLength([1, 2, 3]);      // OK，数组有 length
+logLength({ length: 10 }); // OK，对象有 length 属性
+// logLength(42);           // 报错！number 没有 length</code></pre>
+            </div>
+        </section>
+
+        <!-- keyof 约束 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>keyof 约束</h3>
+                <h4>限制参数必须是对象的某个键</h4>
+                <pre><code class="language-typescript">// 约束 K 必须是 T 的属性名
+function getProperty&lt;T, K extends keyof T&gt;(obj: T, key: K): T[K] {
+    return obj[key];
+}
+
+const user = { name: "张三", age: 25 };
+getProperty(user, "name");  // string
+// getProperty(user, "email"); // 报错！"email" 不是 user 的属性
+
+// 约束为对象类型
+function merge&lt;T extends object, U extends object&gt;(a: T, b: U): T &amp; U {
+    return { ...a, ...b };
+}
+
+// new 类型约束——T 必须可以 new
+function createInstance&lt;T&gt;(Ctor: new () => T): T {
+    return new Ctor();
+}
+class Person { name = "张三"; }
+const p = createInstance(Person); // Person</code></pre>
+            </div>
+        </section>
+
+        <!-- 默认泛型参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>默认泛型参数</h3>
+                <h4>泛型参数可以有默认值，像函数参数一样</h4>
+                <pre><code class="language-typescript">// 泛型参数可以有默认值
+interface ApiResponse&lt;T = unknown, E = string&gt; {
+    data: T;
+    error?: E;
+}
+
+const res1: ApiResponse = { data: "hello" };
+// T = unknown, E = string（都使用默认值）
+
+const res2: ApiResponse&lt;User&gt; = { data: { name: "张三", age: 25 } };
+// T = User, E = string
+
+const res3: ApiResponse&lt;User, number&gt; = { data: { name: "张三", age: 25 } };
+// T = User, E = number</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 5: 多泛型参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 多泛型参数</h2>
+                <h4>一个泛型不够用？那就用两个、三个</h4>
+                <p>map 函数的输入和输出类型不同，需要两个泛型；zip 函数合并两个数组，需要三个。多泛型参数并不复杂——每个泛型各管各的类型流动，TypeScript 会自动推断。这一节看完，你就能理解那些看似复杂的工具函数签名了。</p>
+            </div>
+        </section>
+
+        <!-- 多泛型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>多泛型参数</h3>
+                <h4>处理不同类型之间的转换关系</h4>
+                <pre><code class="language-typescript">// 两个泛型参数：map 转换
+function map&lt;T, U&gt;(arr: T[], fn: (item: T) => U): U[] {
+    return arr.map(fn);
+}
+map([1, 2, 3], n => n.toString()); // string[]
+map(["a", "bb"], s => s.length);    // number[]
+
+// 三个泛型参数：zip 合并
+function zip&lt;A, B, C&gt;(a: A[], b: B[], fn: (x: A, y: B) => C): C[] {
+    return a.map((item, i) => fn(item, b[i]));
+}
+zip([1, 2, 3], ["a", "b", "c"], (n, s) => ({ n, s }));
+// [{ n: 1, s: "a" }, { n: 2, s: "b" }, { n: 3, s: "c" }]</code></pre>
+            </div>
+        </section>
+
+        <!-- 类型安全 EventEmitter -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>综合实战</h3>
+                <h4>类型安全的事件系统</h4>
+                <pre><code class="language-typescript">// 泛型 + 条件类型：类型安全的 EventEmitter
+type EventMap = {
+    login: { userId: string };
+    logout: undefined;
+    error: { message: string; code: number };
+};
+
+class TypedEmitter&lt;T extends Record&lt;string, any&gt;&gt; {
+    on&lt;K extends keyof T&gt;(event: K, fn: (data: T[K]) => void): void {}
+    emit&lt;K extends keyof T&gt;(event: K, data: T[K]): void {}
+}
+
+const typed = new TypedEmitter&lt;EventMap&gt;();
+typed.on("login", (data) => {
+    console.log(data.userId); // 自动推断为 string
+});
+typed.emit("error", { message: "crash", code: 500 });
+// typed.emit("error", { message: "crash" }); // 报错！缺少 code</code></pre>
+                <div class="intro-block">
+                    <p><strong>泛型命名惯例</strong>：<code>T</code>（Type）、<code>K</code>（Key）、<code>V</code>（Value）、<code>E</code>（Element）、<code>R</code>（Return）。多个类型参数用有意义的名称：<code>TInput</code>、<code>TOutput</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- any vs unknown vs 泛型 对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三种方式对比</h3>
+                <h4>any、unknown 和泛型各有所长</h4>
+                <table>
+                    <thead>
+                        <tr><th>方式</th><th>类型安全</th><th>类型保留</th><th>适用场景</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>any</code></td><td>无</td><td>丢失</td><td>快速原型、老代码迁移</td></tr>
+                        <tr><td><code>unknown</code></td><td>需收窄</td><td>保留为 unknown</td><td>不确定类型时</td></tr>
+                        <tr><td>泛型 <code>&lt;T&gt;</code></td><td>完整</td><td>保留具体类型</td><td>函数/接口/类的类型复用</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-typescript">// 对比：同样的函数，三种写法
+function idAny(val: any): any { return val; }
+function idUnknown(val: unknown): unknown { return val; }
+function idGeneric&lt;T&gt;(val: T): T { return val; }
+
+const a = idAny("hi");       // any —— 什么都能做，但不安全
+const b = idUnknown("hi");   // unknown —— 必须先收窄才能用
+const c = idGeneric("hi");   // string —— 完整保留类型信息</code></pre>
+            </div>
+        </section>
+
+        <!-- infer 关键字 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>infer 揭秘</h3>
+                <h4>在条件类型中"捕获"子类型</h4>
+                <p><code>infer</code> 就像类型世界里的解构赋值。你在模式匹配的位置放一个 <code>infer R</code>，TypeScript 会帮你把匹配到的类型提取到 R 里。</p>
+                <pre><code class="language-typescript">// 提取函数返回类型——ReturnType 的实现原理
+type MyReturn&lt;T&gt; = T extends (...args: any[]) => infer R ? R : never;
+
+type A = MyReturn&lt;() => string&gt;;              // string
+type B = MyReturn&lt;(x: number) => boolean&gt;;    // boolean
+type C = MyReturn&lt;string&gt;;                    // never（不是函数）</code></pre>
+                <pre><code class="language-typescript">// 提取 Promise 内部类型
+type Unwrap&lt;T&gt; = T extends Promise&lt;infer U&gt; ? Unwrap&lt;U&gt; : T;
+
+type P1 = Unwrap&lt;Promise&lt;string&gt;&gt;;                    // string
+type P2 = Unwrap&lt;Promise&lt;Promise&lt;number&gt;&gt;&gt;;           // number
+type P3 = Unwrap&lt;Promise&lt;Promise&lt;Promise&lt;boolean&gt;&gt;&gt;&gt;; // boolean
+
+// 提取数组第一个元素类型
+type Head&lt;T&gt; = T extends [infer F, ...any[]] ? F : never;
+type H = Head&lt;[string, number, boolean]&gt;; // string</code></pre>
+                <div class="intro-block">
+                    <p>infer 只能在 <code>extends</code> 条件类型的右侧使用。把它想象成正则的捕获组——在匹配的过程中"顺手"把需要的类型拎出来。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 泛型工作原理图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类型如何传播</h3>
+                <h4>从调用处推断类型参数到函数内部的传播过程</h4>
+                <p>理解泛型的关键是搞清楚"类型是怎么流动的"。来看一个完整的过程：</p>
+                <pre><code class="language-typescript">function first&lt;T&gt;(arr: T[]): T | undefined {
+    return arr[0];
+}
+
+// 调用处：传入 string[]
+const result = first(["hello", "world"]);
+// 1. TS 看到 ["hello", "world"]，推断为 string[]
+// 2. 参数 arr: T[] 匹配 string[]，所以 T = string
+// 3. 返回值 T | undefined 变成 string | undefined
+// 4. result 的类型：string | undefined</code></pre>
+                <div class="ai-diagram">
+                    <h4>图：泛型类型推断的传播流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从左到右的传播流程，共 4 个节点
+                    - 节点 1：调用处传入参数（例如 first(["hello", "world"])）
+                    - 节点 2：TS 推断 T 的具体类型（T = string，用橙色高亮）
+                    - 节点 3：T 传播到函数体内所有使用处（T[] → string[]，T | undefined → string | undefined）
+                    - 节点 4：返回值类型确定（string | undefined）
+                    - 底部标注："类型从调用处流入，经过函数体，再从返回值流出"
+                    - 配色建议：浅灰背景，推断过程用橙色箭头，类型标注用蓝色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>核心原则：<strong>类型从调用处流入，经过函数体，再从返回值流出</strong>。整个过程由 TypeScript 编译器自动完成。</p>
+            </div>
+        </section>
+
+        <!-- 泛型工厂模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型工厂</h3>
+                <h4>用泛型创建类型安全的工厂函数</h4>
+                <p>工厂模式 + 泛型 = 类型安全的对象创建。在写库和框架的时候特别有用。</p>
+                <pre><code class="language-typescript">// 类型安全的工厂函数
+function createFactory&lt;T&gt;(defaults: T) {
+    return (overrides: Partial&lt;T&gt; = {}): T => {
+        return { ...defaults, ...overrides };
+    };
+}
+
+interface User {
+    name: string;
+    age: number;
+    role: "admin" | "user";
+}
+
+const createUser = createFactory&lt;User&gt;({
+    name: "匿名",
+    age: 0,
+    role: "user",
+});
+
+const u1 = createUser({ name: "张三" });
+// { name: "张三", age: 0, role: "user" }
+
+const u2 = createUser({ name: "李四", age: 25, role: "admin" });
+// createUser({ role: "super" }); // 报错！"super" 不是合法值</code></pre>
+                <pre><code class="language-typescript">// 泛型 + 约束：带验证的工厂
+function createValidated&lt;T extends object&gt;(
+    schema: { [K in keyof T]: (val: unknown) => T[K] },
+) {
+    return (input: Record&lt;string, unknown&gt;): T => {
+        const result = {} as T;
+        for (const key in schema) {
+            result[key] = schema[key](input[key]);
+        }
+        return result;
+    };
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 泛型函数重载 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型函数重载</h3>
+                <h4>泛型与函数重载结合，实现类型级别的条件分支</h4>
+                <p>有时候我们希望函数的行为根据输入类型<strong>动态变化</strong>——传入 string 返回 number，传入 number 返回 string。泛型 + 条件类型 + 函数重载可以优雅地实现这一点。</p>
+                <pre><code class="language-typescript">// 泛型 + 条件类型 = 返回值类型随输入变化
+function convert&lt;T extends string | number&gt;(value: T): T extends string ? number : string;
+function convert(value: string | number): string | number {
+    if (typeof value === "string") return Number(value);
+    return String(value);
+}
+
+const a = convert("42");    // number —— TS 知道返回的是数字
+const b = convert(42);      // string —— TS 知道返回的是字符串
+// const c: number = convert(42); // 报错！convert(42) 返回 string</code></pre>
+                <pre><code class="language-typescript">// 实战：类型安全的 JSON 解析器
+function parseJSON&lt;T&gt;(input: string, validator: (data: unknown) => data is T): T;
+function parseJSON&lt;T&gt;(input: string, validator?: Function): unknown;
+function parseJSON&lt;T&gt;(input: string, validator?: Function): T | unknown {
+    const data = JSON.parse(input);
+    if (validator &amp;&amp; validator(data)) return data as T;
+    return data;
+}
+
+// 有 validator 时返回具体类型，没有时返回 unknown
+const safe = parseJSON('{"name":"张三"}', (d: any): d is User => typeof d.name === "string");
+// safe: User</code></pre>
+                <div class="warning">
+                    <p><strong>注意</strong>：重载签名必须和实现签名兼容。实现签名是 <code>string | number</code>，重载签名返回的条件类型必须是这个联合的子集，否则会报错。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- keyof + 泛型深层安全 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>深层属性安全</h3>
+                <h4>用 keyof + 泛型构建类型安全的多层属性访问</h4>
+                <p>前面我们学过 <code>getProperty</code>，但实际开发中经常需要访问嵌套属性。让 keyof 和泛型结合起来，实现深层类型安全。</p>
+                <pre><code class="language-typescript">// 基础版：单层属性访问
+function getProperty&lt;T, K extends keyof T&gt;(obj: T, key: K): T[K] {
+    return obj[key];
+}
+
+const user = { name: "张三", age: 25, address: { city: "北京" } };
+getProperty(user, "name");    // string
+getProperty(user, "age");     // number
+// getProperty(user, "phone"); // 报错！"phone" 不是 user 的属性</code></pre>
+                <pre><code class="language-typescript">// 进阶版：类型安全的链式 get
+type PathImpl&lt;T, K extends keyof T&gt; =
+    K extends string
+    ? T[K] extends object
+        ? `${K}.${keyof T[K] &amp; string}` | K
+        : K
+    : never;
+
+type Path&lt;T&gt; = PathImpl&lt;T, keyof T&gt;;
+
+// 使用示例
+type UserPath = Path&lt;{ name: string; address: { city: string; zip: number } }&gt;;
+// "name" | "address" | "address.city" | "address.zip"</code></pre>
+                <div class="intro-block">
+                    <p><strong>设计思路</strong>：<code>keyof T</code> 告诉你"对象有哪些属性"，<code>T[K]</code> 告诉你"这个属性的类型是什么"。两者组合就能在编译期保证属性访问的绝对安全——拼错属性名直接报错，而不是运行时 undefined。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 构造函数签名实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>构造函数签名</h3>
+                <h4>用泛型抽象"可以 new 的东西"</h4>
+                <p>在写依赖注入、工厂模式、ORM 这类框架级代码时，你经常需要把<strong>类本身</strong>当作参数传递。这时就需要构造函数签名。</p>
+                <pre><code class="language-typescript">// 核心类型：描述"可以用 new 调用、返回 T 的构造函数"
+type Constructor&lt;T&gt; = new (...args: any[]) => T;
+
+// 用泛型工厂创建实例
+function createInstance&lt;T&gt;(Ctor: Constructor&lt;T&gt;, ...args: any[]): T {
+    return new Ctor(...args);
+}
+
+class Person {
+    constructor(public name: string, public age: number) {}
+}
+const p = createInstance(Person, "张三", 25);
+// p: Person —— 类型完整保留</code></pre>
+                <pre><code class="language-typescript">// 实战：依赖注入容器
+class Container {
+    private registry = new Map&lt;string, Constructor&lt;any&gt;&gt;();
+    private instances = new Map&lt;string, any&gt;();
+
+    register&lt;T&gt;(key: string, Ctor: Constructor&lt;T&gt;): void {
+        this.registry.set(key, Ctor);
+    }
+
+    resolve&lt;T&gt;(key: string): T {
+        if (this.instances.has(key)) return this.instances.get(key);
+        const Ctor = this.registry.get(key);
+        if (!Ctor) throw new Error(`未注册: ${key}`);
+        const instance = new Ctor();
+        this.instances.set(key, instance);
+        return instance as T;
+    }
+}
+
+const container = new Container();
+container.register("logger", ConsoleLogger);
+const logger = container.resolve&lt;ConsoleLogger&gt;("logger");</code></pre>
+                <div class="warning">
+                    <p><strong>常见陷阱</strong>：<code>new (...args: any[]) => T</code> 和 <code>() => T</code> 是不同的。前者是构造函数签名（用 <code>new</code> 调用），后者是普通工厂函数（直接调用）。传 class 时必须用构造函数签名。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 泛型设计原则 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型设计原则</h3>
+                <h4>写出优雅、可维护的泛型代码的四条原则</h4>
+                <p>泛型很强大，但滥用会让代码变成"类型天书"。这里总结四条经过实战验证的设计原则。</p>
+
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h4>原则一：不要过度泛化</h4>
+                        <pre><code class="language-typescript">// 过度泛化：明明只有两种情况，非要搞泛型
+function format&lt;T extends string | number&gt;(val: T): string {
+    return String(val);
+}
+
+// 更好的做法：直接写联合类型，简单明了
+function format(val: string | number): string {
+    return String(val);
+}</code></pre>
+                        <p><strong>经验法则</strong>：如果泛型只用到一个地方，而且类型数量有限（≤3），联合类型往往更清晰。</p>
+                    </div>
+                    <div class="practice-step">
+                        <h4>原则二：优先让 TS 自动推断</h4>
+                        <pre><code class="language-typescript">// 不好的写法：到处手动指定
+const r1 = identity&lt;string&gt;("hello");
+const r2 = first&lt;number&gt;([1, 2, 3]);
+
+// 好的写法：让 TS 自己推断
+const r1 = identity("hello");   // 自动推断 T = string
+const r2 = first([1, 2, 3]);    // 自动推断 T = number</code></pre>
+                        <p><strong>什么时候手动指定</strong>：当推断不出来（如无参函数 <code>create&lt;User&gt;()</code>）或推断结果不够精确时。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>约束设计技巧</h3>
+                <h4>原则三和原则四：约束要恰到好处</h4>
+
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h4>原则三：约束粒度要合适</h4>
+                        <pre><code class="language-typescript">// 太松：T 可以是 anything，等于没约束
+function getProperty&lt;T&gt;(obj: T, key: string): any {
+    return (obj as any)[key]; // 完全丢失类型安全
+}
+
+// 太严：限制死了只能是特定接口
+function getUserName&lt;T extends { name: string; age: number }&gt;(obj: T): string {
+    return obj.name;
+}
+
+// 刚好：只约束需要的属性
+function getName&lt;T extends { name: string }&gt;(obj: T): string {
+    return obj.name;
+}</code></pre>
+                    </div>
+                    <div class="practice-step">
+                        <h4>原则四：泛型参数越少越好</h4>
+                        <pre><code class="language-typescript">// 过多泛型：阅读者需要理解 4 个类型参数
+function transform&lt;A, B, C, D&gt;(input: A, ab: (a: A) => B,
+    bc: (b: B) => C, cd: (c: C) => D): D {
+    return cd(bc(ab(input)));
+}
+
+// 更好的做法：减少显式泛型，让推断工作
+function pipe&lt;T&gt;(input: T, ...fns: Function[]): any {
+    return fns.reduce((acc, fn) => fn(acc), input);
+}</code></pre>
+                        <div class="warning">
+                            <p><strong>总结</strong>：能用 1 个泛型参数解决的，不要用 2 个。能推断的，不要手写。约束要恰好覆盖你的需求——不多不少。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 泛型与异步模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>泛型与异步</h3>
+                <h4>泛型在异步编程中的经典应用模式</h4>
+                <p>前端开发中，异步操作无处不在。泛型让异步代码的类型安全达到和同步代码一样的水平。</p>
+                <pre><code class="language-typescript">// 最常见的模式：泛型 + async/await
+async function fetchJson&lt;T&gt;(url: string): Promise&lt;T&gt; {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json() as Promise&lt;T&gt;;
+}
+
+// 使用时获得完整的类型推断
+interface Todo { id: number; title: string; completed: boolean }
+const todo = await fetchJson&lt;Todo&gt;("/api/todos/1");
+console.log(todo.title); // 类型安全！</code></pre>
+                <pre><code class="language-typescript">// 进阶：带缓存的异步函数
+function cachedFetch&lt;T&gt;() {
+    const cache = new Map&lt;string, Promise&lt;T&gt;&gt;();
+    return async (url: string): Promise&lt;T&gt; => {
+        if (cache.has(url)) return cache.get(url)!;
+        const promise = fetchJson&lt;T&gt;(url);
+        cache.set(url, promise);
+        return promise;
+    };
+}
+
+const fetchUser = cachedFetch&lt;User&gt;();
+await fetchUser("/api/user/1"); // 网络请求
+await fetchUser("/api/user/1"); // 命中缓存</code></pre>
+                <div class="warning">
+                    <p><strong>注意</strong>：<code>response.json()</code> 返回的是 <code>Promise&lt;any&gt;</code>，用 <code>as Promise&lt;T&gt;</code> 断言不会做运行时校验。在生产代码中，建议搭配运行时验证库（如 zod）做双重保障。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习：类型安全的 EventEmitter -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>事件系统实战</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习</h3>
+                        <p><strong>任务</strong>：实现一个类型安全的 EventEmitter。用泛型 + 映射类型定义事件名和事件数据的对应关系，支持 <code>on</code>、<code>emit</code>、<code>off</code> 三个方法。</p>
+                        <pre><code class="language-typescript">// 目标效果：
+// 1. on("login", (data) => {}) 中 data 自动推断
+// 2. emit("login", { userId: "1" }) 参数类型校验
+// 3. off("login", handler) 移除监听
+// 4. on("unknown", ...) 报错！不在事件映射中
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">// 事件映射：事件名 → 数据类型
+type EventMap = {
+    login: { userId: string };
+    logout: undefined;
+    error: { message: string; code: number };
+};
+
+type Handler&lt;T&gt; = T extends undefined ? () => void : (data: T) => void;
+
+class TypedEmitter&lt;T extends Record&lt;string, any&gt;&gt; {
+    private listeners = new Map&lt;keyof T, Set&lt;Handler&lt;any&gt;&gt;&gt;();
+
+    on&lt;K extends keyof T&gt;(event: K, fn: Handler&lt;T[K]&gt;): () => void {
+        if (!this.listeners.has(event))
+            this.listeners.set(event, new Set());
+        this.listeners.get(event)!.add(fn);
+        return () => this.off(event, fn);
+    }
+
+    off&lt;K extends keyof T&gt;(event: K, fn: Handler&lt;T[K]&gt;): void {
+        this.listeners.get(event)?.delete(fn);
+    }
+
+    emit&lt;K extends keyof T&gt;(event: K, ...args: T[K] extends undefined ? [] : [T[K]]): void {
+        this.listeners.get(event)?.forEach(fn => fn(...args as any));
+    }
+}
+
+const emitter = new TypedEmitter&lt;EventMap&gt;();
+emitter.on("login", (data) => console.log(data.userId));
+emitter.emit("login", { userId: "123" });
+// emitter.emit("login", {}); // 报错！缺少 userId</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <h4>问题一：泛型推断不出来</h4>
+                <pre><code class="language-typescript">// 泛型推断依赖参数，没有参数就推断不出
+function create&lt;T&gt;(): T { return {} as T; }
+const obj = create(); // T = unknown，丢失了</code></pre>
+                <p><strong>解决</strong>：显式指定泛型参数 <code>create&lt;User&gt;()</code>。</p>
+
+                <h4>问题二：约束太严或太松</h4>
+                <pre><code class="language-typescript">// 太松：T 可以是任何东西
+function print&lt;T&gt;(val: T) { console.log(val); } // OK 但不够精确
+
+// 太严：只接受 string
+function print&lt;T extends string&gt;(val: T) { } // number 就进不来</code></pre>
+                <p><strong>解决</strong>：根据实际需要选择约束程度，优先让 TS 自动推断。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：写一个泛型函数 <code>wrapper</code>，接受任意值并返回包含该值的数组。</p>
+                        <pre><code class="language-typescript">// wrapper("hello") 应返回 ["hello"]
+// wrapper(42) 应返回 [42]
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">function wrapper&lt;T&gt;(val: T): T[] {
+    return [val];
+}
+wrapper("hello"); // string[]
+wrapper(42);      // number[]</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：写一个泛型函数 <code>pluck</code>，从对象数组中提取某个属性的所有值。</p>
+                        <pre><code class="language-typescript">// pluck([{name:"A",age:1},{name:"B",age:2}], "name")
+// 应返回 ["A", "B"]
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">function pluck&lt;T, K extends keyof T&gt;(arr: T[], key: K): T[K][] {
+    return arr.map(item => item[key]);
+}
+pluck([{name:"A",age:1},{name:"B",age:2}], "name");
+// string[]</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>泛型让类型也能传参数。下一章我们学习<strong>高级类型操作</strong>——用类型编程，让类型系统为你工作。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

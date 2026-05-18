@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>认识 LangGraph</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🕸️</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 01 章</div>
+            <h1>认识 LangGraph</h1>
+            <p>用状态图构建可靠、可调试、可暂停恢复的 AI 智能体</p>
+            <strong>从"裸调 LLM"到"工程化智能体"的第一步</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你有没有试过直接写代码调 LLM 来做复杂任务？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>裸调 LLM 的困境</h4>
+                        <ul>
+                            <li>多轮对话的上下文散落在各处，<strong>没有统一的状态管理</strong></li>
+                            <li>流程中途崩了？从头再来——<strong>没有持久化</strong></li>
+                            <li>想让人审一下中间结果？只能复制粘贴——<strong>没有内置的人机交互</strong></li>
+                            <li>出 bug 了只能 console.log 猜——<strong>没有可视化调试</strong></li>
+                            <li>LLM 调用、工具调用、条件分支全缠在一起，<strong>代码变成意大利面条</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>LangGraph 的解法</h4>
+                        <ul>
+                            <li>所有节点共享一个 <strong>State 对象</strong>，状态一目了然</li>
+                            <li>每一步自动存快照，崩了从上次位置继续</li>
+                            <li>随时 <code>interrupt()</code> 暂停，等人工确认后恢复</li>
+                            <li>LangSmith 可视化追踪每一次调用和状态变更</li>
+                            <li>节点 + 边 + 条件路由，<strong>流程即代码</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>裸调 LLM 写 demo 够用，但一旦你的智能体需要"记住状态、处理异常、等人确认、中途恢复"，你就会发现自己正在重新发明一个框架。LangGraph 就是那个你已经快发明出来的东西。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Prerequisites ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你需要会什么</h4>
+                        <ul>
+                            <li>TypeScript / JavaScript 基础（函数、类型、async/await）</li>
+                            <li>了解 LLM 的基本概念（prompt、token、tool calling）</li>
+                            <li>会用 npm 初始化项目、安装依赖</li>
+                            <li>接触过至少一个 LLM API（OpenAI、Anthropic 都行）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该能</h4>
+                        <ul>
+                            <li>说清 LangGraph 是什么、解决什么问题</li>
+                            <li>写出第一个能跑的 StateGraph Hello World</li>
+                            <li>理解节点、边、状态这三大核心概念</li>
+                            <li>掌握"五步法"来设计一个完整智能体</li>
+                            <li>知道什么时候该用 LangGraph，什么时候不该用</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章不会深入</h4>
+                        <ul>
+                            <li>具体的工作流模式（链式、并行、路由等）</li>
+                            <li>持久化与 checkpointer 的实现细节</li>
+                            <li>流式处理、中断、时间旅行等进阶功能</li>
+                            <li>生产环境部署方案</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>环境准备：</strong>确保你有一个 Node.js 项目。安装命令：<code>$ npm install @langchain/langgraph @langchain/core</code>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: What is LangGraph ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>LangGraph 是什么</h2>
+                <h4>一个低级编排框架和运行时，用于构建长时间运行的、有状态的智能体</h4>
+                <p>说白了，LangGraph 帮你把一个复杂的 AI 任务拆成<strong>一个个节点</strong>（函数），用<strong>边</strong>（条件分支）连起来，再给它们一个共享的<strong>状态笔记本</strong>。整个执行过程可追踪、可暂停、可恢复。已被 Klarna、Uber、J.P. Morgan 等公司投入生产使用。</p>
+                <pre><code><span style="color: var(--text-muted);">// 安装依赖</span>
+$ npm install @langchain/langgraph @langchain/core
+
+<span style="color: var(--text-muted);">// Hello World —— 最简 StateGraph</span>
+<span style="color: var(--primary-color);">import</span> { StateSchema, MessagesValue, GraphNode, StateGraph, START, END } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+
+<span style="color: var(--primary-color);">const</span> State = <span style="color: var(--primary-color);">new</span> StateSchema({
+  messages: MessagesValue,
+});
+
+<span style="color: var(--text-muted);">// 定义一个节点：接收状态，返回更新</span>
+<span style="color: var(--primary-color);">const</span> mockLlm: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> State&gt; = (state) =&gt; {
+  <span style="color: var(--primary-color);">return</span> { messages: [{ role: <span style="color: var(--success-color);">"ai"</span>, content: <span style="color: var(--success-color);">"hello world"</span> }] };
+};
+
+<span style="color: var(--text-muted);">// 构建图：起点 → 节点 → 终点</span>
+<span style="color: var(--primary-color);">const</span> graph = <span style="color: var(--primary-color);">new</span> StateGraph(State)
+  .addNode(<span style="color: var(--success-color);">"mock_llm"</span>, mockLlm)
+  .addEdge(START, <span style="color: var(--success-color);">"mock_llm"</span>)
+  .addEdge(<span style="color: var(--success-color);">"mock_llm"</span>, END)
+  .compile();
+
+<span style="color: var(--text-muted);">// 运行</span>
+<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> graph.invoke({
+  messages: [{ role: <span style="color: var(--success-color);">"user"</span>, content: <span style="color: var(--success-color);">"hi!"</span> }]
+});
+<span style="color: var(--text-muted);">// result.messages 最后一条: { role: "ai", content: "hello world" }</span></code></pre>
+                <div class="warning">
+                    <strong>如果看到报错：</strong>
+                    <ul>
+                        <li><code>ERR_MODULE_NOT_FOUND</code> → 先安装依赖：<code>$ npm install @langchain/langgraph @langchain/core</code></li>
+                        <li><code>TypeError: StateSchema is not a constructor</code> → 检查是否使用 ESM（<code>"type": "module"</code> in <code>package.json</code>）或用 <code>.mjs</code> 后缀</li>
+                    </ul>
+                </div>
+                <div class="key-point">
+                    <strong>三个关键字：</strong><code>StateSchema</code>（定义共享状态）、<code>addNode</code>（添加节点函数）、<code>addEdge</code>（连线）。这就是 LangGraph 的最小知识集。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Core advantages ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>核心优势</h2>
+                <h4>LangGraph 不抽象你的提示词或架构，它提供的是底层基础设施</h4>
+                <table>
+                    <thead>
+                        <tr><th>优势</th><th>说明</th><th>什么时候需要</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>持久化执行</strong></td>
+                            <td>每步自动存快照，任务崩了能从上次位置恢复</td>
+                            <td>长时间运行的任务、LLM 调用可能超时的场景</td>
+                        </tr>
+                        <tr>
+                            <td><strong>人机交互</strong></td>
+                            <td>在任意节点暂停执行，等人审批或修改后再继续</td>
+                            <td>高风险操作（发邮件、改数据）需要人工确认时</td>
+                        </tr>
+                        <tr>
+                            <td><strong>全面记忆</strong></td>
+                            <td>短期记忆（线程内）+ 长期记忆（跨会话）</td>
+                            <td>多轮对话、记住用户偏好</td>
+                        </tr>
+                        <tr>
+                            <td><strong>LangSmith 调试</strong></td>
+                            <td>可视化追踪执行路径、状态变化、token 消耗</td>
+                            <td>调试复杂智能体行为、评估输出质量</td>
+                        </tr>
+                        <tr>
+                            <td><strong>生产部署</strong></td>
+                            <td>专为有状态、长时间运行工作流设计的扩展基础设施</td>
+                            <td>从原型走向生产、需要稳定性和可观测性时</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>灵感来源</h4>
+                        <p>LangGraph 受 <strong>Pregel</strong>（Google 图计算模型）、<strong>Apache Beam</strong>（大数据处理）、<strong>NetworkX</strong>（图网络库）启发，由 LangChain Inc. 构建，但<strong>可以不依赖 LangChain</strong> 使用。</p>
+                    </div>
+                    <div class="card">
+                        <h4>产品生态</h4>
+                        <table>
+                            <thead><tr><th>产品</th><th>做什么</th></tr></thead>
+                            <tbody>
+                                <tr><td><strong>LangSmith Observability</strong></td><td>追踪请求、评估输出、监控部署——一个地方看清全貌</td></tr>
+                                <tr><td><strong>LangSmith Deployment</strong></td><td>专为长时间运行、有状态工作流构建的部署和扩展平台</td></tr>
+                                <tr><td><strong>LangChain</strong></td><td>模型和工具集成层，包含基于 LangGraph 构建的预置智能体</td></tr>
+                            </tbody>
+                        </table>
+                        <p>三者都是可选的——LangGraph 本身完全独立，可以单独使用。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: The 5-step process ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>五个步骤</h2>
+                <h4>用 LangGraph 构建智能体的通用方法论</h4>
+                <div class="ai-diagram">
+                    <h4>图：LangGraph 五步构建法——从需求到可运行智能体</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一条从左到右的横向流水线，共 5 个大节点，用粗箭头依次连接，每个节点内部有简短说明文字
+                    - 节点 1（圆角矩形，橙色边框）：拆步骤——把工作流映射为离散的节点，每个节点只做一件事
+                    - 节点 2（圆角矩形，橙色边框）：分类型——判断每个节点是 LLM 调用、数据获取、外部操作还是用户输入
+                    - 节点 3（圆角矩形，橙色边框）：设计状态——定义共享的 State 对象，存储原始数据而非格式化文本
+                    - 节点 4（圆角矩形，橙色边框）：写节点——将每个步骤实现为接收状态、返回更新的函数
+                    - 节点 5（圆角矩形，橙色边框）：连线——用边和条件边把节点连成完整的图
+                    - 在流水线下方标注：所有节点共享同一个 State 对象（用虚线连接到每个节点）
+                    - 各元素关系：五个节点是线性串联关系，前一步的输出是后一步的输入；每个节点都与底部共享 State 对象连接（虚线表示读写关系）
+                    - 关键标注：每个节点内标注序号和一句话说明，底部 State 标注"所有节点共享读写"
+                    - 配色建议：浅米色背景，节点使用白色圆角矩形配橙色（#D06519）边框，箭头使用深橙色，说明文字用深灰色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色、小到看不清的文字
+                    </p>
+                </div>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. 拆步骤</h4>
+                        <p>把工作流映射为离散节点</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. 分类型</h4>
+                        <p>LLM / 数据 / 操作 / 用户</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. 设计状态</h4>
+                        <p>定义共享 State 对象</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>4. 写节点</h4>
+                        <p>实现为函数 + 错误处理</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>5. 连线</h4>
+                        <p>边 + 条件边 + Command</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>这五步是通用的：</strong>不管你做邮件处理、代码审查还是客服机器人，流程都一样。后面的章节会反复用到这个方法论。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Step 1 - Break into steps ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>第一步：拆步骤</h2>
+                <h4>把工作流映射为离散步骤——每个节点只做一件事</h4>
+                <p>假设你要构建一个<strong>邮件处理智能体</strong>，需求如下：</p>
+                <pre><code><span style="color: var(--text-muted);">智能体应该：</span>
+<span style="color: var(--text-muted);">- 阅读收到的客户邮件</span>
+<span style="color: var(--text-muted);">- 按紧急程度和主题进行分类</span>
+<span style="color: var(--text-muted);">- 搜索相关文档以回答问题</span>
+<span style="color: var(--text-muted);">- 起草适当的回复</span>
+<span style="color: var(--text-muted);">- 将复杂问题升级给人工处理</span></code></pre>
+                <p>拆成节点之后，每个节点就是一个<strong>只做一件事的函数</strong>：</p>
+                <table>
+                    <thead>
+                        <tr><th>节点</th><th>职责</th><th>下一步</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>Read Email</code></td><td>提取并解析邮件内容</td><td>→ Classify Intent（固定）</td></tr>
+                        <tr><td><code>Classify Intent</code></td><td>用 LLM 分类紧急程度和主题</td><td>→ 视情况路由（条件）</td></tr>
+                        <tr><td><code>Doc Search</code></td><td>在知识库查询相关信息</td><td>→ Draft Reply（固定）</td></tr>
+                        <tr><td><code>Bug Track</code></td><td>在跟踪系统中创建或更新 Bug</td><td>→ Draft Reply（固定）</td></tr>
+                        <tr><td><code>Draft Reply</code></td><td>生成适当的回复</td><td>→ 视情况路由（条件）</td></tr>
+                        <tr><td><code>Human Review</code></td><td>升级给人工审批或处理</td><td>→ 视情况路由（条件）</td></tr>
+                        <tr><td><code>Send Reply</code></td><td>发送邮件回复</td><td>→ END</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>常见误区：</strong>不要一个节点做太多事。"分类 + 搜索 + 起草"塞进一个函数，看起来省事，但后面加条件分支、错误处理、人工审核时会很痛苦。每个节点只做一件事。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Step 2 - Categorize step types ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>第二步：分类型</h2>
+                <h4>判断每个节点属于哪种类型——决定了实现方式</h4>
+                <p>拆完步骤之后，你需要搞清楚每个节点<strong>到底在做什么</strong>。不同的类型，实现方式完全不同。</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>LLM 步骤</h4>
+                        <p>需要理解、分析、生成文本或做推理决策。</p>
+                        <p><strong>示例：</strong>Classify Intent、Draft Reply</p>
+                        <p><span class="tag tag-primary">调用 LLM API</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>数据步骤</h4>
+                        <p>需要从外部源检索信息。</p>
+                        <p><strong>示例：</strong>Document Search、Customer History Lookup</p>
+                        <p><span class="tag tag-info">调用数据库 / API</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>操作步骤</h4>
+                        <p>需要执行外部操作（发邮件、建 Bug）。</p>
+                        <p><strong>示例：</strong>Send Reply、Bug Track</p>
+                        <p><span class="tag tag-success">执行副作用</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>用户输入步骤</h4>
+                        <p>需要人工干预或确认。</p>
+                        <p><strong>示例：</strong>Human Review</p>
+                        <p><span class="tag tag-warning">调用 interrupt()</span></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>为什么要分类型？</strong>因为不同类型节点的<strong>错误处理策略</strong>不同。LLM 步骤可能需要重试或调整提示词；数据步骤需要处理网络超时；操作步骤需要确保幂等性；用户输入步骤需要暂停等待。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Step 3 - Design state ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>第三步：设计状态</h2>
+                <h4>状态是所有节点共享的笔记本——存储原始数据，不存格式化文本</h4>
+                <p>说白了，State 就是一个对象，每个节点都能读它、往里写东西。设计状态的<strong>核心原则</strong>是：</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>应该放入状态</h4>
+                        <ul>
+                            <li>需要在步骤间持久化的数据</li>
+                            <li>多个下游节点都需要的信息</li>
+                            <li>重新获取代价高的数据</li>
+                            <li>调试时需要查看的中间结果</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>不应该放入状态</h4>
+                        <ul>
+                            <li>可以从其他数据推导出来的（需要时再算）</li>
+                            <li>格式化后的提示词文本（在节点内按需格式化）</li>
+                            <li>临时变量（节点函数内部处理）</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code><span style="color: var(--primary-color);">import</span> { StateSchema } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+<span style="color: var(--primary-color);">import</span> * <span style="color: var(--primary-color);">as</span> z <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"zod"</span>;
+
+<span style="color: var(--text-muted);">// 定义邮件分类结构</span>
+<span style="color: var(--primary-color);">const</span> EmailClassificationSchema = z.object({
+  intent: z.enum([<span style="color: var(--success-color);">"question"</span>, <span style="color: var(--success-color);">"bug"</span>, <span style="color: var(--success-color);">"billing"</span>, <span style="color: var(--success-color);">"feature"</span>, <span style="color: var(--success-color);">"complex"</span>]),
+  urgency: z.enum([<span style="color: var(--success-color);">"low"</span>, <span style="color: var(--success-color);">"medium"</span>, <span style="color: var(--success-color);">"high"</span>, <span style="color: var(--success-color);">"critical"</span>]),
+  topic: z.string(),
+  summary: z.string(),
+});
+
+<span style="color: var(--text-muted);">// 邮件智能体的状态——存原始数据，不存格式化后的提示词</span>
+<span style="color: var(--primary-color);">const</span> EmailAgentState = <span style="color: var(--primary-color);">new</span> StateSchema({
+  <span style="color: var(--text-muted);">// 原始邮件数据</span>
+  emailContent: z.string(),
+  senderEmail: z.string(),
+  emailId: z.string(),
+  <span style="color: var(--text-muted);">// 分类结果（下游多个节点需要）</span>
+  classification: EmailClassificationSchema.optional(),
+  <span style="color: var(--text-muted);">// 原始搜索/API 结果（重新获取代价高）</span>
+  searchResults: z.array(z.string()).optional(),
+  <span style="color: var(--text-muted);">// 生成的内容</span>
+  responseText: z.string().optional(),
+});</code></pre>
+                <div class="key-point">
+                    <strong>为什么存原始数据：</strong>不同节点可以用不同方式格式化同一份数据。你改提示词模板时不用改状态结构，调试也更清晰——每个节点接收的就是纯数据，不是掺了格式的文本。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Step 4 - Build nodes ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>第四步：写节点</h2>
+                <h4>节点就是一个函数——接收当前状态，返回对状态的更新</h4>
+                <p>说白了，每个节点就是 <code>(state) =&gt; { return { key: newValue } }</code>。返回值会<strong>合并</strong>到状态里，传给下一个节点。</p>
+                <pre><code><span style="color: var(--text-muted);">// 分类节点：调用 LLM 分析邮件意图</span>
+<span style="color: var(--primary-color);">const</span> classifyIntent: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> EmailAgentState&gt; = <span style="color: var(--primary-color);">async</span> (state) =&gt; {
+  <span style="color: var(--primary-color);">const</span> prompt = <span style="color: var(--success-color);">`请分析以下邮件的意图和紧急程度：
+邮件内容：${state.emailContent}
+发件人：${state.senderEmail}`</span>;
+
+  <span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> llm.invoke(prompt);
+  <span style="color: var(--primary-color);">return</span> { classification: result };
+};
+
+<span style="color: var(--text-muted);">// 文档搜索节点：从知识库查询</span>
+<span style="color: var(--primary-color);">const</span> searchDocs: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> EmailAgentState&gt; = <span style="color: var(--primary-color);">async</span> (state) =&gt; {
+  <span style="color: var(--primary-color);">const</span> results = <span style="color: var(--primary-color);">await</span> knowledgeBase.search(state.classification?.topic);
+  <span style="color: var(--primary-color);">return</span> { searchResults: results };
+};</code></pre>
+                <h4>错误处理策略——不同错误，不同解法</h4>
+                <table>
+                    <thead>
+                        <tr><th>错误类型</th><th>谁来修</th><th>策略</th><th>LangGraph 怎么做</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>瞬态错误</strong>（网络抖动、限流）</td>
+                            <td>系统自动</td>
+                            <td>自动重试</td>
+                            <td><code>retryPolicy: { maxAttempts: 3 }</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>LLM 可恢复</strong>（工具失败、解析出错）</td>
+                            <td>LLM</td>
+                            <td>把错误写进状态，LLM 自行调整</td>
+                            <td>循环回 LLM 节点重试</td>
+                        </tr>
+                        <tr>
+                            <td><strong>用户可修复</strong>（信息缺失、指令不清）</td>
+                            <td>人类</td>
+                            <td>暂停，等人输入</td>
+                            <td><code>interrupt()</code> 暂停等待</td>
+                        </tr>
+                        <tr>
+                            <td><strong>意外错误</strong></td>
+                            <td>开发者</td>
+                            <td>向上冒泡</td>
+                            <td>让错误抛出，检查日志</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <pre><code><span style="color: var(--text-muted);">// 给容易出网络问题的节点加重试策略</span>
+workflow.addNode(
+  <span style="color: var(--success-color);">"searchDocumentation"</span>,
+  searchDocumentation,
+  { retryPolicy: { maxAttempts: <span style="color: var(--primary-color);">3</span>, initialInterval: <span style="color: var(--primary-color);">1.0</span> } }
+);</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Step 5 - Connect everything ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>第五步：连线</h2>
+                <h4>用边、条件边和 Command 对象把节点连成完整的图</h4>
+                <p>最后一步，把所有节点连起来。LangGraph 提供三种连线方式：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>普通边 <code>addEdge</code></h4>
+                        <p>A 执行完一定到 B，没有分支。</p>
+                        <p><code>addEdge(START, "readEmail")</code></p>
+                    </div>
+                    <div class="card">
+                        <h4>条件边 <code>addConditionalEdges</code></h4>
+                        <p>A 执行完后，根据状态决定去哪个节点。</p>
+                        <p><code>addConditionalEdges("classify", router)</code></p>
+                    </div>
+                    <div class="card">
+                        <h4>Command 对象</h4>
+                        <p>节点内部直接指定下一个节点 + 状态更新。路由逻辑在节点内完成。</p>
+                        <p><code>return new Command({ goto: "nodeX" })</code></p>
+                    </div>
+                </div>
+                <pre><code><span style="color: var(--primary-color);">import</span> { MemorySaver, StateGraph, START, END } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+
+<span style="color: var(--text-muted);">// 创建图并连线</span>
+<span style="color: var(--primary-color);">const</span> workflow = <span style="color: var(--primary-color);">new</span> StateGraph(EmailAgentState)
+  <span style="color: var(--text-muted);">// 添加节点</span>
+  .addNode(<span style="color: var(--success-color);">"readEmail"</span>, readEmail)
+  .addNode(<span style="color: var(--success-color);">"classifyIntent"</span>, classifyIntent)
+  .addNode(<span style="color: var(--success-color);">"searchDocumentation"</span>, searchDocumentation, {
+    retryPolicy: { maxAttempts: <span style="color: var(--primary-color);">3</span> }  <span style="color: var(--text-muted);">// 瞬态故障自动重试</span>
+  })
+  .addNode(<span style="color: var(--success-color);">"draftResponse"</span>, draftResponse)
+  .addNode(<span style="color: var(--success-color);">"humanReview"</span>, humanReview)
+  .addNode(<span style="color: var(--success-color);">"sendReply"</span>, sendReply)
+  <span style="color: var(--text-muted);">// 连线——只连必要的边</span>
+  .addEdge(START, <span style="color: var(--success-color);">"readEmail"</span>)
+  .addEdge(<span style="color: var(--success-color);">"readEmail"</span>, <span style="color: var(--success-color);">"classifyIntent"</span>)
+  .addEdge(<span style="color: var(--success-color);">"sendReply"</span>, END);
+
+<span style="color: var(--text-muted);">// 用 checkpointer 编译，启用持久化</span>
+<span style="color: var(--primary-color);">const</span> memory = <span style="color: var(--primary-color);">new</span> MemorySaver();
+<span style="color: var(--primary-color);">const</span> app = workflow.compile({ checkpointer: memory });</code></pre>
+                <div class="key-point">
+                    <strong>图结构非常精简：</strong>因为路由逻辑通过条件边和 Command 对象在节点内部完成。你只需要连"必要的边"，其余的由节点自己决定去哪。这让控制流显式且可追踪。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Exercise ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>设计一个简单的文档处理智能体</h4>
+                <p>现在轮到你了。停下来，用刚学的五步法设计一个<strong>文档处理智能体</strong>。需求如下：</p>
+                <pre><code><span style="color: var(--text-muted);">智能体应该：</span>
+<span style="color: var(--text-muted);">1. 接收用户上传的文档（纯文本）</span>
+<span style="color: var(--text-muted);">2. 分析文档类型（合同、报告、邮件、其他）</span>
+<span style="color: var(--text-muted);">3. 提取关键信息（日期、金额、人名等）</span>
+<span style="color: var(--text-muted);">4. 生成结构化摘要</span>
+<span style="color: var(--text-muted);">5. 如果信息不确定，暂停询问用户</span>
+<span style="color: var(--text-muted);">6. 输出最终的 JSON 结果</span></code></pre>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>任务 1：拆节点</h3>
+                        <ul>
+                            <li>这个流程需要几个节点？</li>
+                            <li>每个节点的职责是什么？</li>
+                            <li>哪些是 LLM 步骤？哪些是用户输入步骤？</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 2：设计状态</h3>
+                        <ul>
+                            <li>State 里需要哪些字段？</li>
+                            <li>哪些字段用 <code>.optional()</code>？</li>
+                            <li>想想"原始数据 vs 格式化文本"原则</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 3：画连线</h3>
+                        <ul>
+                            <li>哪些边是固定的？</li>
+                            <li>哪些需要条件边？</li>
+                            <li>在哪里需要 interrupt？</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>先在纸上或文本编辑器里画出节点图和状态字段，不要急着写代码。想清楚了再动键盘，会快得多。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Reference answer ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <h4>一种可行的设计方案——不是唯一答案，但逻辑合理</h4>
+                <table>
+                    <thead>
+                        <tr><th>节点</th><th>类型</th><th>职责</th><th>下一步</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>receiveDoc</code></td><td>数据</td><td>接收并预处理文档文本</td><td>→ classifyDoc（固定）</td></tr>
+                        <tr><td><code>classifyDoc</code></td><td>LLM</td><td>分析文档类型</td><td>→ extractInfo（固定）</td></tr>
+                        <tr><td><code>extractInfo</code></td><td>LLM</td><td>提取关键信息</td><td>→ 视置信度（条件）</td></tr>
+                        <tr><td><code>confirmInfo</code></td><td>用户输入</td><td>不确定时询问用户</td><td>→ generateSummary（固定）</td></tr>
+                        <tr><td><code>generateSummary</code></td><td>LLM</td><td>生成结构化摘要</td><td>→ END</td></tr>
+                    </tbody>
+                </table>
+                <pre><code><span style="color: var(--primary-color);">import</span> { StateSchema, StateGraph, START, END, MemorySaver } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+<span style="color: var(--primary-color);">import</span> * <span style="color: var(--primary-color);">as</span> z <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"zod"</span>;
+
+<span style="color: var(--text-muted);">// 状态设计——只存原始数据</span>
+<span style="color: var(--primary-color);">const</span> DocState = <span style="color: var(--primary-color);">new</span> StateSchema({
+  rawText: z.string(),                         <span style="color: var(--text-muted);">// 原始文档文本</span>
+  docType: z.string().optional(),              <span style="color: var(--text-muted);">// 文档类型</span>
+  extractedInfo: z.record(z.any()).optional(),  <span style="color: var(--text-muted);">// 提取的关键信息</span>
+  needsConfirmation: z.boolean().optional(),    <span style="color: var(--text-muted);">// 是否需要用户确认</span>
+  finalJson: z.string().optional(),            <span style="color: var(--text-muted);">// 最终 JSON 输出</span>
+});
+
+<span style="color: var(--text-muted);">// 构建图</span>
+<span style="color: var(--primary-color);">const</span> docAgent = <span style="color: var(--primary-color);">new</span> StateGraph(DocState)
+  .addNode(<span style="color: var(--success-color);">"receiveDoc"</span>, receiveDoc)
+  .addNode(<span style="color: var(--success-color);">"classifyDoc"</span>, classifyDoc)
+  .addNode(<span style="color: var(--success-color);">"extractInfo"</span>, extractInfo)
+  .addNode(<span style="color: var(--success-color);">"confirmInfo"</span>, confirmInfo)
+  .addNode(<span style="color: var(--success-color);">"generateSummary"</span>, generateSummary)
+  .addEdge(START, <span style="color: var(--success-color);">"receiveDoc"</span>)
+  .addEdge(<span style="color: var(--success-color);">"receiveDoc"</span>, <span style="color: var(--success-color);">"classifyDoc"</span>)
+  .addEdge(<span style="color: var(--success-color);">"classifyDoc"</span>, <span style="color: var(--success-color);">"extractInfo"</span>)
+  .addConditionalEdges(<span style="color: var(--success-color);">"extractInfo"</span>, (state) =&gt; {
+    <span style="color: var(--primary-color);">return</span> state.needsConfirmation ? <span style="color: var(--success-color);">"confirmInfo"</span> : <span style="color: var(--success-color);">"generateSummary"</span>;
+  })
+  .addEdge(<span style="color: var(--success-color);">"confirmInfo"</span>, <span style="color: var(--success-color);">"generateSummary"</span>)
+  .addEdge(<span style="color: var(--success-color);">"generateSummary"</span>, END)
+  .compile({ checkpointer: <span style="color: var(--primary-color);">new</span> MemorySaver() });</code></pre>
+                <div class="key-point">
+                    <strong>你的方案可能不一样——这很正常。</strong>关键不是"答案是否一致"，而是你能不能解释清楚：为什么这么拆节点、为什么状态里放这些字段、为什么这里用条件边。五步法是一种思维方式，不是唯一标准答案。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了 LangGraph 的全貌</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>LangGraph 是一个<strong>低级编排框架</strong>，用于构建有状态的智能体</li>
+                            <li>三大核心概念：<strong>节点</strong>（函数）、<strong>边</strong>（流程）、<strong>状态</strong>（共享记忆）</li>
+                            <li>五步构建法：拆步骤 → 分类型 → 设计状态 → 写节点 → 连线</li>
+                            <li>状态存<strong>原始数据</strong>，提示词在节点内按需格式化</li>
+                            <li>四种错误处理策略：自动重试 / LLM 自愈 / 人工介入 / 向上冒泡</li>
+                            <li>图结构精简，路由逻辑在节点内完成</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>基础模式</strong>：提示词链、并行化、路由、编排者-工作者、评估者-优化者</li>
+                            <li><strong>快速上手</strong>：完整实现一个带工具调用的计算器智能体</li>
+                            <li><strong>持久化</strong>：checkpointer、线程、检查点的深入理解</li>
+                            <li><strong>流式处理</strong>：token 级流式输出、自定义数据流</li>
+                            <li><strong>中断与人机交互</strong>：interrupt 和 Command 的完整用法</li>
+                            <li><strong>记忆管理</strong>：短期记忆 + 长期记忆 + 语义搜索</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>LangGraph 不是让你"写得更快"的工具，而是让你<strong>"写得可控"</strong>的框架。当你的智能体需要记住上下文、处理异常、等人确认、中途恢复时，LangGraph 提供的就是这些"工程化"能力的底层支撑。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./02-patterns-basic.html">下一章：基础工作流模式</a> — 提示词链、并行化、路由等经典模式</li>
+                            <li><a href="./04-quickstart.html">快速上手</a> — 完整实现一个带工具调用的智能体</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 官方文档</a> — 完整的 API 参考和教程</li>
+                            <li><a href="https://smith.langchain.com/">LangSmith</a> — 可视化调试和部署平台</li>
+                            <li><a href="https://github.com/langchain-ai/langgraphjs">GitHub 仓库</a> — 源码和示例</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>背景知识</h4>
+                        <ul>
+                            <li><a href="https://research.google/pubs/pub41827/">Pregel 论文</a> — Google 图计算模型，LangGraph 的灵感来源</li>
+                            <li><a href="https://networkx.org/">NetworkX</a> — Python 图网络库，LangGraph 公共接口的设计参考</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

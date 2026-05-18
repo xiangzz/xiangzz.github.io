@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>04 快速上手</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 04 章</div>
+            <h1>快速上手</h1>
+            <p>从零构建一个能算术的智能体</p>
+            <strong>工具 + 状态 + 图 = 完整的 AI 智能体</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>光说不练</h2>
+                <h4>前三章学了概念和模式，但还没有真正跑过一行代码。是时候动手了。</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>前几章</h4>
+                        <ul>
+                            <li>知道了节点、边、状态这些概念</li>
+                            <li>看了六种工作流模式的示意图</li>
+                            <li>但没有写过完整的可运行代码</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>这一章</h4>
+                        <ul>
+                            <li>从 npm init 开始，搭一个完整项目</li>
+                            <li>定义工具、状态、节点、边</li>
+                            <li>跑起来一个能做加减乘除的智能体</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>目标：</strong>用最少的代码，跑通一个完整的 LangGraph 智能体。每个步骤都有可运行的代码。
+                </div>
+            </div>
+        </section>
+
+        <!-- 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你需要有</h4>
+                        <ul>
+                            <li>Node.js 18+ 和 npm</li>
+                            <li>一个 Anthropic API Key</li>
+                            <li>读过前三章（至少了解节点、边、状态的概念）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>学完后你应该能</h4>
+                        <ul>
+                            <li>用 tool() 定义自定义工具</li>
+                            <li>用 StateSchema 定义图状态</li>
+                            <li>组装节点和边，编译成可运行的图</li>
+                            <li>理解 MessagesValue 和 ReducedValue 的区别</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 项目初始化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>项目初始化</h2>
+                <h4>三步创建项目并安装依赖</h4>
+                <pre><code><span style="color: var(--text-muted);"># 创建项目目录</span>
+$ mkdir calculator-agent && cd calculator-agent
+$ npm init -y
+
+<span style="color: var(--text-muted);"># 安装核心依赖</span>
+$ npm install @langchain/langgraph @langchain/core @langchain/anthropic zod
+
+<span style="color: var(--text-muted);"># 安装 TypeScript（如果还没装）</span>
+$ npm install -D typescript tsx</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>@langchain/langgraph</h4>
+                        <p>图编排框架：StateGraph、StateSchema、MessagesValue 等</p>
+                    </div>
+                    <div class="card">
+                        <h4>@langchain/anthropic</h4>
+                        <p>Claude 模型集成：ChatAnthropic</p>
+                    </div>
+                    <div class="card">
+                        <h4>zod</h4>
+                        <p>参数校验：为工具定义输入 Schema</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>API Key：</strong>运行前设置环境变量。<code>export ANTHROPIC_API_KEY=sk-ant-...</code>，或者创建 <code>.env</code> 文件。别把 Key 硬编码在代码里。
+                </div>
+            </div>
+        </section>
+
+        <!-- 定义工具 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>定义工具</h2>
+                <h4>用 tool() + zod 创建三个数学工具</h4>
+                <pre><code><span style="color: var(--primary-color);">import</span> { ChatAnthropic } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/anthropic"</span>;
+<span style="color: var(--primary-color);">import</span> { tool } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/tools"</span>;
+<span style="color: var(--primary-color);">import</span> * <span style="color: var(--primary-color);">as</span> z <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"zod"</span>;
+
+<span style="color: var(--primary-color);">const</span> model = <span style="color: var(--primary-color);">new</span> ChatAnthropic({
+  model: <span style="color: var(--success-color);">"claude-sonnet-4-6"</span>,
+  temperature: <span style="color: var(--primary-color);">0</span>,
+});
+
+<span style="color: var(--text-muted);">// 加法工具</span>
+<span style="color: var(--primary-color);">const</span> add = tool(({ a, b }) => a + b, {
+  name: <span style="color: var(--success-color);">"add"</span>,
+  description: <span style="color: var(--success-color);">"Add two numbers"</span>,
+  schema: z.object({
+    a: z.number().describe(<span style="color: var(--success-color);">"First number"</span>),
+    b: z.number().describe(<span style="color: var(--success-color);">"Second number"</span>),
+  }),
+});
+
+<span style="color: var(--text-muted);">// 乘法工具</span>
+<span style="color: var(--primary-color);">const</span> multiply = tool(({ a, b }) => a * b, {
+  name: <span style="color: var(--success-color);">"multiply"</span>,
+  description: <span style="color: var(--success-color);">"Multiply two numbers"</span>,
+  schema: z.object({
+    a: z.number().describe(<span style="color: var(--success-color);">"First number"</span>),
+    b: z.number().describe(<span style="color: var(--success-color);">"Second number"</span>),
+  }),
+});
+
+<span style="color: var(--text-muted);">// 除法工具</span>
+<span style="color: var(--primary-color);">const</span> divide = tool(({ a, b }) => a / b, {
+  name: <span style="color: var(--success-color);">"divide"</span>,
+  description: <span style="color: var(--success-color);">"Divide two numbers"</span>,
+  schema: z.object({
+    a: z.number().describe(<span style="color: var(--success-color);">"First number"</span>),
+    b: z.number().describe(<span style="color: var(--success-color);">"Second number"</span>),
+  }),
+});
+
+<span style="color: var(--text-muted);">// 按名称索引工具，绑定到模型</span>
+<span style="color: var(--primary-color);">const</span> toolsByName = { [add.name]: add, [multiply.name]: multiply, [divide.name]: divide };
+<span style="color: var(--primary-color);">const</span> tools = Object.values(toolsByName);
+<span style="color: var(--primary-color);">const</span> modelWithTools = model.bindTools(tools);</code></pre>
+                <div class="warning">
+                    <strong>如果你看到报错：</strong>
+                    <ul>
+                        <li><code>AuthenticationError</code> 或 <code>Could not find API key</code> → 确认已设置 <code>ANTHROPIC_API_KEY</code> 环境变量：<code>$ export ANTHROPIC_API_KEY=sk-ant-...</code></li>
+                        <li><code>NotFoundError: model "xxx" not found</code> → 检查模型名称拼写是否正确，或尝试换一个可用模型</li>
+                    </ul>
+                </div>
+                <div class="key-point">
+                    <strong>tool() 做了什么：</strong>把一个普通函数包装成 LLM 可调用的工具。zod schema 告诉模型这个工具接受什么参数——模型自己决定什么时候调用。
+                </div>
+            </div>
+        </section>
+
+        <!-- 定义状态 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>定义状态</h2>
+                <h4>MessagesValue 追踪对话，ReducedValue 追踪调用次数</h4>
+                <div class="ai-diagram">
+                    <h4>图：状态在节点间的流转</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个横向流程图，从左到右展示 4 个节点
+                    - 节点 1："START"（灰色圆角矩形）
+                    - 节点 2："llmCall"（蓝色圆角矩形）——标注："读取 messages，调用模型，追加 AI 回复"
+                    - 菱形判断："有 tool_calls?"——是→节点 3，否→节点 4
+                    - 节点 3："toolNode"（绿色圆角矩形）——标注："执行工具，追加 ToolMessage"
+                    - 节点 4："END"（灰色圆角矩形）
+                    - 节点 3 有一条回边回到节点 2，标注"循环"
+                    - 底部一条横线，下方展示 State 结构："messages: MessagesValue（自动追加）| llmCalls: ReducedValue（累加计数）"
+                    - 各元素关系：节点之间是线性串联（START→llmCall→判断），判断有条件分支（有tool_calls→toolNode，无→END），toolNode 回到 llmCall 形成循环
+                    - 关键标注：每个节点旁标注它在 State 上的读写操作，回边标注"循环"，底部 State 标注"所有节点共享"
+                    - 配色建议：浅灰背景，节点用柔和蓝/绿色，判断用橙色，回边用红色虚线
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果
+                    </p>
+                </div>
+                <pre><code><span style="color: var(--primary-color);">import</span> {
+  StateGraph, StateSchema, MessagesValue, ReducedValue,
+  GraphNode, ConditionalEdgeRouter, START, END,
+} <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+
+<span style="color: var(--primary-color);">const</span> MessagesState = <span style="color: var(--primary-color);">new</span> StateSchema({
+  <span style="color: var(--text-muted);">// 消息历史 — 内置追加 reducer，新消息自动拼到末尾</span>
+  messages: MessagesValue,
+  <span style="color: var(--text-muted);">// LLM 调用计数 — 自定义 reducer，每次 +1</span>
+  llmCalls: <span style="color: var(--primary-color);">new</span> ReducedValue(
+    z.number().default(<span style="color: var(--primary-color);">0</span>),
+    { reducer: (x, y) => x + y }
+  ),
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>MessagesValue</h4>
+                        <p>内置的消息追加器。节点返回 <code>{ messages: [newMsg] }</code>，新消息自动拼到已有消息列表末尾。</p>
+                    </div>
+                    <div class="card">
+                        <h4>ReducedValue</h4>
+                        <p>自定义 reducer 的字段。这里每次返回 <code>{ llmCalls: 1 }</code>，reducer 把它加到已有值上。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 模型节点 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模型节点</h2>
+                <h4>调用 LLM，把回复追加到消息历史</h4>
+                <pre><code><span style="color: var(--primary-color);">import</span> { SystemMessage } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/messages"</span>;
+
+<span style="color: var(--primary-color);">const</span> llmCall: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> MessagesState&gt; = <span style="color: var(--primary-color);">async</span> (state) => {
+  <span style="color: var(--primary-color);">const</span> response = <span style="color: var(--primary-color);">await</span> modelWithTools.invoke([
+    <span style="color: var(--primary-color);">new</span> SystemMessage(
+      <span style="color: var(--success-color);">"You are a helpful assistant tasked with performing arithmetic on a set of inputs."</span>
+    ),
+    ...state.messages,
+  ]);
+  <span style="color: var(--primary-color);">return</span> {
+    messages: [response],  <span style="color: var(--text-muted);">// MessagesValue 自动追加</span>
+    llmCalls: <span style="color: var(--primary-color);">1</span>,            <span style="color: var(--text-muted);">// ReducedValue 累加 +1</span>
+  };
+};</code></pre>
+                <div class="key-point">
+                    <strong>节点就是函数：</strong>接收当前状态，返回状态更新。你不需要手动操作整个状态——只需要返回你想修改的字段，LangGraph 的 reducer 会处理合并。
+                </div>
+            </div>
+        </section>
+
+        <!-- 工具节点 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工具节点</h2>
+                <h4>执行模型请求的工具调用，把结果追加到消息历史</h4>
+                <pre><code><span style="color: var(--primary-color);">import</span> { AIMessage, ToolMessage } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/messages"</span>;
+
+<span style="color: var(--primary-color);">const</span> toolNode: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> MessagesState&gt; = <span style="color: var(--primary-color);">async</span> (state) => {
+  <span style="color: var(--primary-color);">const</span> lastMessage = state.messages.at(-<span style="color: var(--primary-color);">1</span>);
+
+  <span style="color: var(--text-muted);">// 安全检查：最后一条必须是 AI 消息</span>
+  <span style="color: var(--primary-color);">if</span> (lastMessage == <span style="color: var(--primary-color);">null</span> || !AIMessage.isInstance(lastMessage)) {
+    <span style="color: var(--primary-color);">return</span> { messages: [] };
+  }
+
+  <span style="color: var(--text-muted);">// 逐个执行工具调用</span>
+  <span style="color: var(--primary-color);">const</span> result: ToolMessage[] = [];
+  <span style="color: var(--primary-color);">for</span> (<span style="color: var(--primary-color);">const</span> toolCall <span style="color: var(--primary-color);">of</span> lastMessage.tool_calls ?? []) {
+    <span style="color: var(--primary-color);">const</span> tool = toolsByName[toolCall.name];
+    <span style="color: var(--primary-color);">const</span> observation = <span style="color: var(--primary-color);">await</span> tool.invoke(toolCall);
+    result.push(observation);
+  }
+
+  <span style="color: var(--primary-color);">return</span> { messages: result };
+};</code></pre>
+                <div class="info-block">
+                    <strong>流程：</strong>模型说"我要调用 add(3, 4)"→ toolNode 执行 add → 返回结果 7 → 追加为 ToolMessage → 模型看到结果后决定下一步。
+                </div>
+            </div>
+        </section>
+
+        <!-- 结束判断 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>结束判断</h2>
+                <h4>条件边：模型还要调工具吗？</h4>
+                <pre><code><span style="color: var(--primary-color);">const</span> shouldContinue: ConditionalEdgeRouter&lt;
+  <span style="color: var(--primary-color);">typeof</span> MessagesState, <span style="color: var(--success-color);">"toolNode"</span>
+&gt; = (state) => {
+  <span style="color: var(--primary-color);">const</span> lastMessage = state.messages.at(-<span style="color: var(--primary-color);">1</span>);
+
+  <span style="color: var(--text-muted);">// 不是 AI 消息 → 结束</span>
+  <span style="color: var(--primary-color);">if</span> (!lastMessage || !AIMessage.isInstance(lastMessage)) {
+    <span style="color: var(--primary-color);">return</span> END;
+  }
+
+  <span style="color: var(--text-muted);">// AI 请求了工具调用 → 去执行工具</span>
+  <span style="color: var(--primary-color);">if</span> (lastMessage.tool_calls?.length) {
+    <span style="color: var(--primary-color);">return</span> <span style="color: var(--success-color);">"toolNode"</span>;
+  }
+
+  <span style="color: var(--text-muted);">// AI 没有请求工具 → 回复用户，结束</span>
+  <span style="color: var(--primary-color);">return</span> END;
+};</code></pre>
+                <div class="key-point">
+                    <strong>条件边的逻辑：</strong>看完最后一条消息。如果 AI 说了"我要调工具"，就去 toolNode；如果 AI 直接给了答案，就结束。
+                </div>
+            </div>
+        </section>
+
+        <!-- 组装智能体 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>组装智能体</h2>
+                <h4>把所有零件拼成一个完整的图</h4>
+                <pre><code><span style="color: var(--primary-color);">const</span> agent = <span style="color: var(--primary-color);">new</span> StateGraph(MessagesState)
+  .addNode(<span style="color: var(--success-color);">"llmCall"</span>, llmCall)
+  .addNode(<span style="color: var(--success-color);">"toolNode"</span>, toolNode)
+  .addEdge(START, <span style="color: var(--success-color);">"llmCall"</span>)
+  .addConditionalEdges(<span style="color: var(--success-color);">"llmCall"</span>, shouldContinue, [<span style="color: var(--success-color);">"toolNode"</span>, END])
+  .addEdge(<span style="color: var(--success-color);">"toolNode"</span>, <span style="color: var(--success-color);">"llmCall"</span>)
+  .compile();</code></pre>
+                <div class="ai-diagram">
+                    <h4>图：完整的智能体执行流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个循环流程图
+                    - 节点 1："START"（灰色圆形）
+                    - 箭头→节点 2："llmCall 模型调用"（蓝色圆角矩形）
+                    - 箭头→菱形判断："有 tool_calls?"（橙色菱形）
+                    - 判断"是"→节点 3："toolNode 工具执行"（绿色圆角矩形）
+                    - 节点 3 有一条回边回到节点 2，标注"返回结果，继续对话"
+                    - 判断"否"→节点 4："END"（灰色圆形）
+                    - 底部标注完整调用示例："用户: Add 3 and 4 → AI: 调用 add(3,4) → 工具: 7 → AI: The answer is 7"
+                    - 各元素关系：START→llmCall 是线性连接，llmCall 到菱形判断是条件分支（有tool_calls→toolNode→回到llmCall循环，无→END结束）
+                    - 关键标注：llmCall 标注"调用模型"，toolNode 标注"执行工具并返回结果"，回边标注"shouldContinue 判断"，底部示例展示完整调用链
+                    - 配色建议：浅灰背景，节点用柔和色，回边用红色虚线
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <div class="key-point">
+                    <strong>关键连线：</strong><code>toolNode → llmCall</code> 形成循环。工具执行完后，模型需要看到结果才能决定下一步——继续调工具，还是给用户最终答案。
+                </div>
+            </div>
+        </section>
+
+        <!-- 运行测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行测试</h2>
+                <h4>用一句话启动智能体</h4>
+                <pre><code><span style="color: var(--primary-color);">import</span> { HumanMessage } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/messages"</span>;
+
+<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> agent.invoke({
+  messages: [<span style="color: var(--primary-color);">new</span> HumanMessage(<span style="color: var(--success-color);">"Add 3 and 4."</span>)],
+});
+
+<span style="color: var(--text-muted);">// 打印完整的消息历史</span>
+<span style="color: var(--primary-color);">for</span> (<span style="color: var(--primary-color);">const</span> message <span style="color: var(--primary-color);">of</span> result.messages) {
+  console.log(<span style="color: var(--success-color);">`[${message.type}]: ${message.text}`</span>);
+}</code></pre>
+                <pre><code><span style="color: var(--text-muted);"># 预期输出：</span>
+[human]: Add 3 and 4.
+[ai]: [调用 add 工具, a=3, b=4]
+[tool]: 7
+[ai]: The answer is 7.
+<span style="color: var(--text-muted);"># llmCalls: 2（模型被调用了两次）</span></code></pre>
+                <div class="info-block">
+                    <strong>发生了什么：</strong>用户说"Add 3 and 4"→ 模型决定调用 add(3,4) → 工具返回 7 → 模型看到结果，回答"The answer is 7"。模型被调用了两次（第一次决定调工具，第二次生成最终答案）。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>API Key 报错</h4>
+                        <p><strong>症状：</strong><code>AuthenticationError: Invalid API Key</code></p>
+                        <p><strong>修复：</strong>检查环境变量 <code>ANTHROPIC_API_KEY</code> 是否设置正确。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>工具名找不到</h4>
+                        <p><strong>症状：</strong><code>Tool not found: add</code></p>
+                        <p><strong>修复：</strong>确认 <code>toolsByName</code> 的 key 和工具的 <code>name</code> 属性一致。注意大小写。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>消息类型错误</h4>
+                        <p><strong>症状：</strong><code>lastMessage.tool_calls is not a function</code></p>
+                        <p><strong>修复：</strong>先检查 <code>AIMessage.isInstance(lastMessage)</code>，不是所有消息都有 <code>tool_calls</code>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>无限循环</h4>
+                        <p><strong>症状：</strong>智能体一直调工具，不停止。</p>
+                        <p><strong>修复：</strong>检查 <code>shouldContinue</code> 逻辑——确保模型不调工具时返回 END，而不是继续循环。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 动手练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>给计算器智能体加上减法和乘方</h4>
+                <div class="key-point">
+                    <strong>任务：</strong>在现有代码基础上，做三件事。
+                </div>
+                <ul>
+                    <li>添加 <code>subtract</code> 工具（a - b）和 <code>power</code> 工具（a ^ b）</li>
+                    <li>把它们注册到 <code>toolsByName</code> 并绑定到模型</li>
+                    <li>测试 <code>"What is 2 to the power of 10?"</code>，确认智能体能正确调用 power 工具</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <pre><code><span style="color: var(--text-muted);">// 减法工具</span>
+<span style="color: var(--primary-color);">const</span> subtract = tool(({ a, b }) => a - b, {
+  name: <span style="color: var(--success-color);">"subtract"</span>,
+  description: <span style="color: var(--success-color);">"Subtract b from a"</span>,
+  schema: z.object({
+    a: z.number().describe(<span style="color: var(--success-color);">"First number"</span>),
+    b: z.number().describe(<span style="color: var(--success-color);">"Second number"</span>),
+  }),
+});
+
+<span style="color: var(--text-muted);">// 乘方工具</span>
+<span style="color: var(--primary-color);">const</span> power = tool(({ a, b }) => Math.pow(a, b), {
+  name: <span style="color: var(--success-color);">"power"</span>,
+  description: <span style="color: var(--success-color);">"Raise a to the power of b"</span>,
+  schema: z.object({
+    a: z.number().describe(<span style="color: var(--success-color);">"Base"</span>),
+    b: z.number().describe(<span style="color: var(--success-color);">"Exponent"</span>),
+  }),
+});
+
+<span style="color: var(--text-muted);">// 更新工具注册</span>
+<span style="color: var(--primary-color);">const</span> toolsByName = {
+  [add.name]: add,
+  [multiply.name]: multiply,
+  [divide.name]: divide,
+  [subtract.name]: subtract,
+  [power.name]: power,
+};
+<span style="color: var(--primary-color);">const</span> modelWithTools = model.bindTools(Object.values(toolsByName));</code></pre>
+                <div class="key-point">
+                    <strong>关键点：</strong>只需要添加工具定义并重新绑定。图的拓扑结构完全不变——llmCall 和 toolNode 的代码一行都不用改。
+                </div>
+            </div>
+        </section>
+
+        <!-- 本章回顾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>用 tool() + zod 定义自定义工具</li>
+                            <li>用 StateSchema + MessagesValue 定义图状态</li>
+                            <li>编写模型节点和工具节点</li>
+                            <li>用条件边控制循环和终止</li>
+                            <li>组装、编译并运行完整的智能体</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>它和前后章节的关系</h4>
+                        <ul>
+                            <li><a href="./01-overview.html">概述</a> — 本章用到的所有概念</li>
+                            <li><a href="./02-patterns-basic.html">模式（上）</a> — 本章实现了"智能体"模式</li>
+                            <li><strong>快速上手</strong> — 第一个可运行的智能体</li>
+                            <li><a href="./05-persistence.html">持久化</a> — 让智能体拥有记忆</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>一个 LangGraph 智能体 = 工具定义 + 状态定义 + 两个节点（模型/工具）+ 一个条件边。零件很少，但组合起来很强大。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./05-persistence.html">下一章：持久化</a> — 让智能体记住对话历史</li>
+                            <li><a href="./07-streaming.html">流式处理</a> — 让智能体实时输出中间结果</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方资源</h4>
+                        <ul>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 文档</a></li>
+                            <li><a href="https://smith.langchain.com/">LangSmith 调试平台</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

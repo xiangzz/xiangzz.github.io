@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第18章 正则表达式基础 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>正则表达式基础</h1>
+            <p>用一段"暗号"精准匹配你想要的文本</p>
+        </section>
+
+        <!-- 开场：问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有想过</h3>
+                <h4>怎么在一大段文字里找出所有手机号？怎么验证用户输入的邮箱格式对不对？怎么把 "2024-01-15" 变成 "01/15/2024"？</h4>
+                <p>如果用字符串方法逐个判断，代码又长又容易漏情况。<strong>正则表达式</strong>（Regular Expression，简称 regex）就是解决这类问题的利器——用一段简短的模式描述你要匹配的文本规则。</p>
+                <p>用人话说：<strong>正则就是你写给计算机的一句"暗号"，告诉它"我要找长这样的字符串"</strong>。</p>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 语法基础</h2>
+                <h4>正则看起来像乱码，但拆开看每个符号都有明确含义</h4>
+                <p><code>/^\d{3}-\d{4}$/</code> 这种"外星文"让人头大。但别慌，把它拆成零件：<code>\d</code> 是数字、<code>{3}</code> 是三个、<code>^</code> 是开头、<code>$</code> 是结尾。每个符号都有唯一的意思。这节学三类核心语法——字符类匹配"什么"，量词匹配"几个"，锚点定位"在哪"。拼起来就能描述任何文本规则。</p>
+            </div>
+        </section>
+
+        <!-- 创建正则 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>创建正则</h3>
+                <h4>两种方式：斜杠字面量和 RegExp 构造函数</h4>
+                <pre><code class="language-javascript">// 方式一：字面量（推荐，简洁）
+let re1 = /hello/i;
+
+// 方式二：构造函数（适合动态拼接模式）
+let pattern = "hello";
+let re2 = new RegExp(pattern, "i");</code></pre>
+                <p>如果模式是固定的，用字面量 <code>/pattern/flags</code>。如果模式需要动态生成（比如来自用户输入），用 <code>new RegExp()</code>。</p>
+            </div>
+        </section>
+
+        <!-- 字符类 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>字符类</h3>
+                <h4>用简写匹配某一类字符</h4>
+                <table>
+                    <thead><tr><th>写法</th><th>含义</th><th>等价于</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>.</code></td><td>任意字符（除换行）</td><td>—</td></tr>
+                        <tr><td><code>\d</code></td><td>数字</td><td><code>[0-9]</code></td></tr>
+                        <tr><td><code>\D</code></td><td>非数字</td><td><code>[^0-9]</code></td></tr>
+                        <tr><td><code>\w</code></td><td>字母数字下划线</td><td><code>[a-zA-Z0-9_]</code></td></tr>
+                        <tr><td><code>\s</code></td><td>空白字符</td><td>空格、制表、换行</td></tr>
+                        <tr><td><code>[abc]</code></td><td>字符集</td><td>匹配 a 或 b 或 c</td></tr>
+                        <tr><td><code>[^abc]</code></td><td>排除字符集</td><td>除了 a、b、c</td></tr>
+                    </tbody>
+                </table>
+                <p>大写是小写的"反面"：<code>\d</code> 是数字，<code>\D</code> 是非数字。</p>
+            </div>
+        </section>
+
+        <!-- 量词 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>量词</h3>
+                <h4>控制前面的元素出现几次</h4>
+                <table>
+                    <thead><tr><th>量词</th><th>含义</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>*</code></td><td>0 次或多次</td><td><code>\d*</code> 匹配 ""、"123"</td></tr>
+                        <tr><td><code>+</code></td><td>1 次或多次</td><td><code>\d+</code> 匹配 "123"，不匹配 ""</td></tr>
+                        <tr><td><code>?</code></td><td>0 次或 1 次</td><td><code>https?</code> 匹配 "http" 或 "https"</td></tr>
+                        <tr><td><code>{n}</code></td><td>恰好 n 次</td><td><code>\d{3}</code> 匹配 "123"</td></tr>
+                        <tr><td><code>{n,}</code></td><td>至少 n 次</td><td><code>\d{2,}</code> 匹配 "12"、"123"</td></tr>
+                        <tr><td><code>{n,m}</code></td><td>n 到 m 次</td><td><code>\d{2,4}</code> 匹配 "12"、"1234"</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 锚点与修饰符 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>锚点与修饰符</h3>
+                <h4>锚点定位位置，修饰符改变匹配行为</h4>
+                <pre><code class="language-javascript">// 锚点——不匹配字符，匹配位置
+// ^  字符串开头    $  字符串结尾
+// \b 单词边界
+console.log(/^\d+$/.test("123"));  // true（全数字）
+console.log(/^hello/.test("hello world")); // true（以hello开头）
+
+// 修饰符——写在正则最后
+// i  忽略大小写
+// g  全局匹配（找所有，不是找第一个就停）
+// m  多行模式（^$ 匹配每行开头结尾）
+// s  dotAll（. 也能匹配换行符）
+// u  Unicode 模式</code></pre>
+                <p>最常用的组合：<code>/pattern/gi</code>（全局 + 忽略大小写）。</p>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 分组与方法</h2>
+                <h4>分组让你提取匹配的"片段"，方法让你用正则做实际操作</h4>
+                <p>光知道一段文本"匹不匹配"还不够，你还要知道"匹配到的具体内容是什么"。用括号把正则的一部分包起来就成了"分组"，可以单独提取。<code>"2024-01-15".match(re)</code> 能把年月日分别拿出来。再配合 <code>test</code>、<code>replace</code>、<code>split</code> 这些方法，正则从"能判断"升级到"能干活"。</p>
+            </div>
+        </section>
+
+        <!-- 分组与引用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>分组与引用</h3>
+                <h4>括号包起来的是"组"，可以单独提取</h4>
+                <pre><code class="language-javascript">// 普通分组
+let re = /(\d{4})-(\d{2})-(\d{2})/;
+let match = "2024-01-15".match(re);
+console.log(match[0]); // "2024-01-15"（完整匹配）
+console.log(match[1]); // "2024"（第一组）
+console.log(match[2]); // "01"（第二组）
+console.log(match[3]); // "15"（第三组）
+
+// 命名捕获组（ES2018，推荐）
+let re2 = /(?&lt;year&gt;\d{4})-(?&lt;month&gt;\d{2})-(?&lt;day&gt;\d{2})/;
+let { year, month, day } = re2.exec("2024-01-15").groups;
+console.log(year, month, day); // "2024" "01" "15"</code></pre>
+                <p>命名捕获组给每个分组起了名字，代码可读性大幅提升。</p>
+            </div>
+        </section>
+
+        <!-- test 与 exec -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>test 与 exec</h3>
+                <h4>test 判断有没有，exec 提取匹配详情</h4>
+                <pre><code class="language-javascript">// test —— 返回 true/false
+console.log(/\d+/.test("abc123")); // true
+console.log(/^\d+$/.test("123"));  // true
+console.log(/^\d+$/.test("12a"));  // false
+
+// exec —— 返回匹配结果对象（配合 g 修饰符循环）
+let re = /(\w+)@(\w+)\.(\w+)/g;
+let result;
+while ((result = re.exec("a@b.com x@y.org")) !== null) {
+    console.log(result[0], result[1], result[2]);
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 字符串方法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>字符串正则方法</h3>
+                <h4>match、matchAll、replace、search、split</h4>
+                <pre><code class="language-javascript">// match —— 提取匹配
+"abc123def456".match(/\d+/g); // ["123", "456"]
+
+// matchAll —— 迭代所有匹配（ES2020）
+let str = "2024-01-15 and 2024-12-25";
+for (let m of str.matchAll(/(\d{4})-(\d{2})-(\d{2})/g)) {
+    console.log(m[1], m[2], m[3]);
+}
+
+// replace —— 替换
+"hello world".replace(/world/, "JS"); // "hello JS"
+// 用 $1 $2 引用分组
+"2024-01-15".replace(/(\d{4})-(\d{2})-(\d{2})/, "$2/$3/$1");
+// "01/15/2024"
+
+// search —— 返回位置
+"hello".search(/l/);  // 2
+"hello".search(/z/);  // -1
+
+// split —— 用正则分割
+"a,b;c".split(/[,;]/); // ["a", "b", "c"]</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 实战场景</h2>
+                <h4>正则用得最多的场景：验证格式、提取信息、替换文本</h4>
+                <p>语法和方法都学了，现在来干正事。邮箱格式对不对？手机号是不是 11 位？密码够不够强？这些验证用正则写最干净。日志里提取时间戳、批量替换日期格式、千分位格式化数字——也是正则的拿手好戏。最后再学一个"零宽断言"的高级技巧，让你的正则功力再上一层。</p>
+            </div>
+        </section>
+
+        <!-- 验证场景 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>格式验证</h3>
+                <h4>邮箱、手机号、身份证——项目中的高频需求</h4>
+                <pre><code class="language-javascript">// 邮箱验证
+const emailReg = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+emailReg.test("user@example.com"); // true
+
+// 手机号（中国大陆）
+const phoneReg = /^1[3-9]\d{9}$/;
+phoneReg.test("13812345678"); // true
+
+// 身份证号（18位）
+const idCardReg = /^\d{17}[\dXx]$/;
+
+// 密码强度（至少8位，含大小写字母和数字）
+const strongPwd = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+strongPwd.test("Abc12345"); // true</code></pre>
+                <div class="warning">
+                    <strong>正则验证邮箱只能做基础过滤。</strong> 真正严格的邮箱验证需要发确认邮件。不要试图写一个"完美"的邮箱正则，它比你想象的复杂得多。
+                </div>
+            </div>
+        </section>
+
+        <!-- 提取与替换 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>提取与替换</h3>
+                <h4>从文本中抽信息、批量改格式</h4>
+                <pre><code class="language-javascript">// 去除首尾空格
+"  hello  ".replace(/^\s+|\s+$/g, ""); // "hello"
+
+// 千分位格式化
+function formatNumber(num) {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+formatNumber(1234567); // "1,234,567"
+
+// 提取 HTML 标签内容
+let html = '&lt;h1&gt;标题&lt;/h1&gt;&lt;p&gt;段落&lt;/p&gt;';
+let tags = html.match(/&lt;(\w+)&gt;.*?&lt;\/\1&gt;/g);</code></pre>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <div class="warning">
+                    <strong>正则写错了不会报错，只是匹配不到。</strong> 这是正则最难调试的地方。推荐用 regex101.com 在线测试。
+                </div>
+
+                <h4>问题一：正则匹配了不该匹配的内容</h4>
+                <p><strong>原因</strong>：量词默认是"贪婪"的，会尽量多匹配。</p>
+                <p><strong>修复</strong>：在量词后加 <code>?</code> 变成"非贪婪"模式。如 <code>.*?</code> 只匹配尽可能少的字符。</p>
+
+                <h4>问题二：忘记加 ^ 和 $ 导致部分匹配</h4>
+                <p><strong>原因</strong>：<code>/\d+/</code> 能匹配 "abc123def" 中的 "123"。</p>
+                <p><strong>修复</strong>：验证时加 <code>^</code> 和 <code>$</code>，如 <code>/^\d+$/</code> 确保整个字符串都是数字。</p>
+
+                <h4>问题三：特殊字符没转义</h4>
+                <p><strong>原因</strong>：<code>.</code>、<code>*</code>、<code>?</code> 等在正则中有特殊含义。</p>
+                <p><strong>修复</strong>：用 <code>\</code> 转义。如匹配 "C:\Users" 要写成 <code>/C:\\Users/</code>。</p>
+            </div>
+        </section>
+
+        <!-- 零宽断言 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>零宽断言</h3>
+                <h4>只判断"旁边是什么"，不消耗字符</h4>
+                <table>
+                    <thead><tr><th>写法</th><th>名称</th><th>含义</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>(?=...)</code></td><td>正向预查</td><td>右边必须匹配</td></tr>
+                        <tr><td><code>(?!...)</code></td><td>负向预查</td><td>右边不能匹配</td></tr>
+                        <tr><td><code>(?&lt;=...)</code></td><td>正向后行断言</td><td>左边必须匹配（ES2018）</td></tr>
+                        <tr><td><code>(?&lt;!...)</code></td><td>负向后行断言</td><td>左边不能匹配（ES2018）</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-javascript">// 匹配 HTML 标签内的文字（不含标签本身）
+let html = "&lt;h1&gt;标题&lt;/h1&gt;&lt;p&gt;段落&lt;/p&gt;";
+let texts = html.match(/(?&lt;=&lt;\w+&gt;)[^&lt;]+/g);
+console.log(texts); // ["标题", "段落"]
+
+// 密码强度：至少包含大写、小写、数字
+const strongPwd = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+console.log(strongPwd.test("Abc12345"));  // true
+console.log(strongPwd.test("abcdefgh")); // false
+
+// 负向后行断言：匹配不在 $ 后面的数字
+let price = "价格 $100 和 200 元";
+console.log(price.match(/(?&lt;!\$)\d+/g)); // ["200"]</code></pre>
+                <div class="warning">
+                    <strong>零宽断言不消耗字符。</strong> 断言匹配的是一个"位置"，匹配后指针不会移动。这意味着你可以连续叠加多个断言来组合条件。
+                </div>
+            </div>
+        </section>
+
+        <!-- Unicode 正则 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Unicode 正则</h3>
+                <h4>用 u 修饰符处理中文、emoji 等多字节字符</h4>
+                <pre><code class="language-javascript">// 没有 u 修饰符时，. 无法正确匹配 emoji
+let emoji = "你好🌍世界";
+console.log(emoji.match(/./g).length);   // 6（emoji 被拆成两个码元）
+console.log(emoji.match(/./gu).length);  // 4（正确）
+
+// Unicode 属性转义 —— 匹配中文字符
+let str = "Hello 世界 123";
+console.log(str.match(/\p{Script=Han}/gu));   // ["世", "界"]
+console.log(str.match(/\p{L}/gu));            // 所有字母和汉字
+console.log(str.match(/\p{N}/gu));            // ["1", "2", "3"]
+
+// 匹配 emoji
+let msg = "开心😊难过😢加油💪";
+let emojis = msg.match(/\p{Emoji_Presentation}/gu);
+console.log(emojis); // ["😊", "😢", "💪"]</code></pre>
+                <div class="warning">
+                    <strong>Unicode 属性转义必须配合 u 修饰符。</strong> 单独写 <code>\p{L}</code> 不加 <code>u</code> 会报语法错误。Node.js 10+ 和现代浏览器均已支持。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：写一个正则，验证密码强度——至少 8 位，必须包含字母和数字。</p>
+                        <pre><code class="language-javascript">// 提示：用 (?=...) 正向预查
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">const pwdReg = /^(?=.*[a-zA-Z])(?=.*\d).{8,}$/;
+console.log(pwdReg.test("abc12345"));  // true
+console.log(pwdReg.test("abcdefgh")); // false（没有数字）
+console.log(pwdReg.test("12345678")); // false（没有字母）
+console.log(pwdReg.test("ab1"));      // false（太短）</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：用正则把字符串中的所有连续空格替换成单个空格。</p>
+                        <pre><code class="language-javascript">// 提示：用 \s+ 匹配连续空白
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">let text = "hello    world   foo    bar";
+let result = text.replace(/\s+/g, " ");
+console.log(result); // "hello world foo bar"</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：写一个正则函数 <code>parseTemplate(tpl, data)</code>，把模板字符串中的 <code>{{key}}</code> 替换为 data 对象中对应的值。支持嵌套属性 <code>{{user.name}}</code>，如果属性不存在则替换为空字符串。</p>
+                        <pre><code class="language-javascript">// 提示：用 /\{\{([^}]+)\}\}/g 匹配占位符
+// 然后用 replace 的回调函数替换
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">function parseTemplate(tpl, data) {
+    return tpl.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+        let value = key.trim().split(".").reduce(
+            (obj, k) => (obj != null ? obj[k] : undefined), data
+        );
+        return value != null ? String(value) : "";
+    });
+}
+
+let tpl = "你好，{{user.name}}！你有{{count}}条新消息。";
+let data = { user: { name: "小明" }, count: 3 };
+console.log(parseTemplate(tpl, data));
+// "你好，小明！你有3条新消息。"
+
+console.log(parseTemplate("{{missing}}", {}));
+// ""（属性不存在，替换为空字符串）</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>正则基础已经就绪。下一章学习<strong>工具与代码质量</strong>——用 ESLint、Prettier、测试框架让代码更专业。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

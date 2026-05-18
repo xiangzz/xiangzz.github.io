@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>09 时间旅行</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏰</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 09 章</div>
+            <h1>时间旅行</h1>
+            <p>重放与分叉——回到过去，改写历史</p>
+            <strong>从任意检查点重新执行，或修改状态后创建平行时间线</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>走错路了</h2>
+                <h4>智能体三步前做了一个错误决定，现在想回到那个岔路口试试另一条路。</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>想重来一次</h4>
+                        <p>智能体把"笑话"分类成了"诗歌"，导致走了错误的分支。你看到了结果才发现。<strong>但代码已经跑完了，回不去了</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>想换个参数</h4>
+                        <p>让模型生成关于"猫"的笑话。跑完之后想看看换成"鸡"会怎样。<strong>得从头改输入、重新跑整个图</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>想调试某一步</h4>
+                        <p>第三步的输出明显不对，想看看那个时候的状态是什么样的。<strong>但只留下了最终结果，中间状态全丢了</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>时间旅行就是为这个设计的：</strong>基于检查点，你可以回到任意历史节点——重新执行（重放），或修改状态后执行（分叉）。不需要从头跑。
+                </div>
+            </div>
+        </section>
+
+        <!-- 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>前置知识</h4>
+                        <ul>
+                            <li><a href="./05-persistence.html">持久化</a> — 检查点和线程的概念</li>
+                            <li><a href="./08-interrupts.html">中断</a> — interrupt() 的用法</li>
+                            <li>理解 StateSnapshot 和 getStateHistory</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>学完后你应该能</h4>
+                        <ul>
+                            <li>区分重放（Replay）和分叉（Fork）</li>
+                            <li>从任意检查点重新执行图</li>
+                            <li>修改历史状态并创建新分支</li>
+                            <li>理解中断在时间旅行中的行为</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 两种模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>两种模式</h2>
+                <h4>重放和分叉——回到过去的不同方式</h4>
+                <div class="ai-diagram">
+                    <h4>图：重放 vs 分叉——两种时间旅行模式</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一条从左到右的时间线，中间有 4 个检查点节点
+                    - 节点从左到右：CP1（蓝色）→ CP2（蓝色）→ CP3（蓝色）→ CP4（蓝色，当前状态）
+                    - 上方分叉：从 CP2 向右上延伸一条新路径，经过 CP2'（绿色）→ CP3'（绿色），标注"分叉：修改状态后继续"
+                    - 下方循环：从 CP4 画一条回退虚线到 CP2，标注"重放：原样重新执行"
+                    - 时间线底部标注箭头"时间"
+                    - 右侧一个方框对比："重放 = 回放录像 | 分叉 = 改写剧本"
+                    - 各元素关系：原时间线 CP1→CP2→CP3→CP4 是线性串联；分叉从 CP2 向上分出新路径（修改状态后继续）；重放从 CP4 回退到 CP2（原样重新执行），两种操作不改变原时间线
+                    - 关键标注：原时间线标注"已完成的执行"，分叉路径标注"updateState 修改后继续"，重放回退标注"原样重新执行"
+                    - 配色建议：浅灰背景，原路径用蓝色，分叉路径用绿色，回退用红色虚线
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <div class="comparison">
+                    <div class="after">
+                        <h4>重放（Replay）</h4>
+                        <ul>
+                            <li>从历史检查点重新执行</li>
+                            <li>不修改状态，原样重来</li>
+                            <li>适合调试、观察中间行为</li>
+                        </ul>
+                    </div>
+                    <div class="before">
+                        <h4>分叉（Fork）</h4>
+                        <ul>
+                            <li>修改历史检查点的状态</li>
+                            <li>从修改后的状态继续执行</li>
+                            <li>适合探索"如果……会怎样"</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 重放 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>重放</h2>
+                <h4>找到目标检查点，原样重新执行</h4>
+                <pre><code><span style="color: var(--text-muted);">// 先运行一次图</span>
+<span style="color: var(--primary-color);">const</span> config = { configurable: { thread_id: <span style="color: var(--success-color);">"thread-1"</span> } };
+<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> graph.invoke({}, config);
+
+<span style="color: var(--text-muted);">// 收集所有检查点</span>
+<span style="color: var(--primary-color);">const</span> states = [];
+<span style="color: var(--primary-color);">for await</span> (<span style="color: var(--primary-color);">const</span> state <span style="color: var(--primary-color);">of</span> graph.getStateHistory(config)) {
+  states.push(state);
+}
+
+<span style="color: var(--text-muted);">// 找到 writeJoke 执行前的检查点</span>
+<span style="color: var(--primary-color);">const</span> beforeJoke = states.find((s) => s.next.includes(<span style="color: var(--success-color);">"writeJoke"</span>));
+
+<span style="color: var(--text-muted);">// 从那个检查点重新执行</span>
+<span style="color: var(--primary-color);">const</span> replayResult = <span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">null</span>, beforeJoke.config);</code></pre>
+                <div class="key-point">
+                    <strong>关键 API：</strong><code>graph.getStateHistory(config)</code> 返回所有历史检查点。用 <code>invoke(null, checkpointConfig)</code> 从指定检查点重新执行。<code>null</code> 表示不提供新输入。
+                </div>
+            </div>
+        </section>
+
+        <!-- 重放的注意点 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>重放注意点</h2>
+                <h4>重放不是"读缓存"——是真的重新执行</h4>
+                <div class="warning">
+                    <strong>重要：</strong>重放会重新执行节点。LLM 调用、API 请求、中断都会重新触发，可能产生不同结果。
+                </div>
+                <table>
+                    <thead><tr><th>操作</th><th>重放时会怎样</th></tr></thead>
+                    <tbody>
+                        <tr><td>LLM 调用</td><td>重新调用，可能返回不同内容（除非 temperature=0）</td></tr>
+                        <tr><td>API 请求</td><td>重新发送请求</td></tr>
+                        <tr><td>interrupt()</td><td>重新触发中断，等待新的 resume</td></tr>
+                        <tr><td>随机数</td><td>生成新的随机值</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>为什么这样设计：</strong>检查点保存的是状态快照，不是执行录像。重放是从快照点开始重新走一遍流程，确保所有副作用都被正确执行。
+                </div>
+            </div>
+        </section>
+
+        <!-- 分叉 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>分叉</h2>
+                <h4>修改历史状态，创建一条平行时间线</h4>
+                <div class="ai-diagram">
+                    <h4>图：分叉模式——从检查点创建平行时间线</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一条主时间线 + 一条分叉时间线
+                    - 主时间线（蓝色）：CP1 → CP2(topic="cats") → CP3 → CP4(joke about cats)
+                    - 分叉时间线（绿色）：从 CP2 分出 → CP2'(topic="chickens") → CP3'(joke about chickens)
+                    - 分叉点标注："updateState 修改 topic"
+                    - 右侧对比框："原时间线：猫的笑话 | 分叉时间线：鸡的笑话"
+                    - 各元素关系：主时间线与分叉时间线共享 CP1、CP2 的历史，从 CP2 开始分叉——主线继续原 topic，分叉线修改 topic 后产生新的检查点序列，两条时间线互不影响
+                    - 关键标注：分叉点标注"updateState({ topic: 'chickens' })"，分叉时间线的每个检查点标注"'号区分"，对比框突出两条线的最终结果差异
+                    - 配色建议：浅灰背景，主线蓝色，分叉绿色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <pre><code><span style="color: var(--text-muted);">// 找到目标检查点</span>
+<span style="color: var(--primary-color);">const</span> beforeJoke = states.find((s) => s.next.includes(<span style="color: var(--success-color);">"writeJoke"</span>));
+
+<span style="color: var(--text-muted);">// 分叉：在那个检查点修改 topic</span>
+<span style="color: var(--primary-color);">const</span> forkConfig = <span style="color: var(--primary-color);">await</span> graph.updateState(
+  beforeJoke.config,
+  { topic: <span style="color: var(--success-color);">"chickens"</span> },  <span style="color: var(--text-muted);">// 修改状态</span>
+);
+
+<span style="color: var(--text-muted);">// 从分叉点继续执行</span>
+<span style="color: var(--primary-color);">const</span> forkResult = <span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">null</span>, forkConfig);
+console.log(forkResult.joke); <span style="color: var(--text-muted);">// 关于 chickens 的笑话</span></code></pre>
+                <div class="key-point">
+                    <strong>分叉 = updateState + invoke：</strong>先用 <code>updateState</code> 在目标检查点修改状态，这会创建一个新的检查点。然后用 <code>invoke(null, forkConfig)</code> 从新检查点继续执行。
+                </div>
+            </div>
+        </section>
+
+        <!-- 指定节点 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>指定节点</h2>
+                <h4>用 asNode 控制分叉后的执行起点</h4>
+                <pre><code><span style="color: var(--text-muted);">// 将更新视为 generateTopic 产生的</span>
+<span style="color: var(--text-muted);">// 执行从 writeJoke（generateTopic 的后继）恢复</span>
+<span style="color: var(--primary-color);">const</span> forkConfig = <span style="color: var(--primary-color);">await</span> graph.updateState(
+  beforeJoke.config,
+  { topic: <span style="color: var(--success-color);">"chickens"</span> },
+  { asNode: <span style="color: var(--success-color);">"generateTopic"</span> },
+);</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>不指定 asNode</h4>
+                        <p>LangGraph 自动推断——通常是目标检查点的 <code>next</code> 中列出的节点。</p>
+                    </div>
+                    <div class="card">
+                        <h4>指定 asNode</h4>
+                        <p>明确告诉 LangGraph "这次修改是哪个节点产生的"。执行从该节点的后继开始。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 中断与时间旅行 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>中断与回溯</h2>
+                <h4>中断在时间旅行中总是重新触发</h4>
+                <pre><code><span style="color: var(--text-muted);">// 首次运行：遇到中断</span>
+<span style="color: var(--primary-color);">await</span> graph.invoke({ value: [] }, config);
+<span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--success-color);">"Alice"</span> }), config);
+
+<span style="color: var(--text-muted);">// 从中断前重放 → 中断再次触发</span>
+<span style="color: var(--primary-color);">const</span> beforeAsk = states.filter((s) => s.next.includes(<span style="color: var(--success-color);">"askHuman"</span>)).pop();
+<span style="color: var(--primary-color);">const</span> replayResult = <span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">null</span>, beforeAsk.config);
+<span style="color: var(--text-muted);">// 图再次暂停在中断处，等待新的 resume</span>
+
+<span style="color: var(--text-muted);">// 从中断前分叉</span>
+<span style="color: var(--primary-color);">const</span> forkConfig = <span style="color: var(--primary-color);">await</span> graph.updateState(beforeAsk.config, { value: [<span style="color: var(--success-color);">"forked"</span>] });
+<span style="color: var(--primary-color);">const</span> forkResult = <span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">null</span>, forkConfig);
+<span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--success-color);">"Bob"</span> }), forkConfig);
+<span style="color: var(--text-muted);">// 结果: { value: ["forked", "Hello, Bob!", "Done"] }</span></code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>重放/分叉时遇到 interrupt 会暂停——你需要提供新的 resume 值。旧的中断值不会自动回放。
+                </div>
+            </div>
+        </section>
+
+        <!-- 子图的时间旅行 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子图与回溯</h2>
+                <h4>子图的时间旅行取决于它的 checkpointer 配置</h4>
+                <table>
+                    <thead><tr><th>模式</th><th>checkpointer</th><th>行为</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>继承（默认）</strong></td><td>不单独指定</td><td>父图将整个子图视为一个超步，只能从父级时间旅行</td></tr>
+                        <tr><td><strong>子图独立</strong></td><td>子图单独指定</td><td>可以时间旅行到子图内部节点之间</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>推荐做法：</strong>大多数情况用继承模式就够了。只有当子图内部有复杂的多步逻辑需要独立调试时，才给它单独的 checkpointer。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>找不到检查点</h4>
+                        <p><strong>症状：</strong><code>states.find(...)</code> 返回 undefined。</p>
+                        <p><strong>修复：</strong>打印所有检查点的 <code>next</code> 字段，确认节点名称拼写正确。注意区分大小写。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>重放结果不同</h4>
+                        <p><strong>症状：</strong>重放后输出和第一次不一样。</p>
+                        <p><strong>修复：</strong>正常现象。LLM 调用、随机数都会重新执行。如果需要确定性结果，设置 <code>temperature: 0</code>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>分叉后不执行</h4>
+                        <p><strong>症状：</strong>updateState 后 invoke 没有触发新节点。</p>
+                        <p><strong>修复：</strong>检查 asNode 是否正确。分叉后的执行起点取决于 asNode 的后继。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 动手练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>重放笑话生成器，分叉换主题</h4>
+                <div class="key-point">
+                    <strong>任务：</strong>用 Ch02 的笑话链式工作流，执行一次后做两件事。
+                </div>
+                <ul>
+                    <li>运行一次笑话链（topic = "cats"）</li>
+                    <li>从 generateJoke 节点前重放，观察结果是否不同</li>
+                    <li>从同一个检查点分叉，把 topic 改成 "chickens"，观察新结果</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <pre><code><span style="color: var(--text-muted);">// 1. 运行一次</span>
+<span style="color: var(--primary-color);">const</span> config = { configurable: { thread_id: <span style="color: var(--success-color);">"tt-1"</span> } };
+<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> chain.invoke({ topic: <span style="color: var(--success-color);">"cats"</span> }, config);
+
+<span style="color: var(--text-muted);">// 2. 收集检查点</span>
+<span style="color: var(--primary-color);">const</span> states = [];
+<span style="color: var(--primary-color);">for await</span> (<span style="color: var(--primary-color);">const</span> s <span style="color: var(--primary-color);">of</span> chain.getStateHistory(config)) states.push(s);
+
+<span style="color: var(--primary-color);">const</span> beforeJoke = states.find((s) => s.next.includes(<span style="color: var(--success-color);">"generateJoke"</span>));
+
+<span style="color: var(--text-muted);">// 3. 重放</span>
+<span style="color: var(--primary-color);">const</span> replay = <span style="color: var(--primary-color);">await</span> chain.invoke(<span style="color: var(--primary-color);">null</span>, beforeJoke.config);
+console.log(<span style="color: var(--success-color);">"重放结果:"</span>, replay.joke);
+
+<span style="color: var(--text-muted);">// 4. 分叉</span>
+<span style="color: var(--primary-color);">const</span> forkConfig = <span style="color: var(--primary-color);">await</span> chain.updateState(beforeJoke.config, { topic: <span style="color: var(--success-color);">"chickens"</span> });
+<span style="color: var(--primary-color);">const</span> fork = <span style="color: var(--primary-color);">await</span> chain.invoke(<span style="color: var(--primary-color);">null</span>, forkConfig);
+console.log(<span style="color: var(--success-color);">"分叉结果:"</span>, fork.joke);</code></pre>
+                <div class="key-point">
+                    <strong>核心模式：</strong>getStateHistory 找检查点 → invoke(null, config) 重放 → updateState + invoke 分叉。三个 API 就能完成所有时间旅行操作。
+                </div>
+            </div>
+        </section>
+
+        <!-- 本章回顾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>区分重放和分叉两种时间旅行模式</li>
+                            <li>从任意检查点重新执行图</li>
+                            <li>修改历史状态并创建新分支</li>
+                            <li>用 asNode 控制执行起点</li>
+                            <li>理解中断在时间旅行中的行为</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>它和前后章节的关系</h4>
+                        <ul>
+                            <li><a href="./05-persistence.html">持久化</a> — 检查点机制的基础</li>
+                            <li><a href="./08-interrupts.html">中断</a> — 中断 + 时间旅行的组合</li>
+                            <li><strong>时间旅行</strong> — 重放与分叉</li>
+                            <li><a href="./10-memory.html">下一章：记忆管理</a> — 跨会话的记忆系统</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>时间旅行让你不怕犯错。基于检查点，你可以回到任意历史节点重新尝试。重放用于调试，分叉用于探索不同的可能性。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./10-memory.html">下一章：记忆管理</a> — 短期记忆 + 长期记忆</li>
+                            <li><a href="./11-subgraphs.html">子图</a> — 子图中的时间旅行</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关章节</h4>
+                        <ul>
+                            <li><a href="./05-persistence.html">持久化</a> — 检查点和线程</li>
+                            <li><a href="./08-interrupts.html">中断</a> — interrupt() 详解</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

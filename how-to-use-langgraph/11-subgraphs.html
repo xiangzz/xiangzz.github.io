@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>11 子图</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔧</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 11 章</div>
+            <h1>子图</h1>
+            <p>图中嵌图——用模块化方式构建复杂智能体系统</p>
+            <strong>一个节点 = 一个完整的图，组合拼装成更大的系统</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>图越来越复杂</h2>
+                <h4>单个图有 30 个节点、20 条边——没人能看懂，也没人敢改。</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>维护困难</h4>
+                        <p>一个巨大的图里塞了研究、写作、审核、发布四个流程。<strong>改审核逻辑时误伤了写作流程</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>无法复用</h4>
+                        <p>团队 A 写了一个"代码审查"图，团队 B 也需要一个。<strong>只能复制粘贴，各自维护</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>协作冲突</h4>
+                        <p>三个团队在同一个图文件上开发。<strong>每天都在解决合并冲突</strong>，Git 状态一团糟。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>子图就是为这个设计的：</strong>把大图拆成小图，每个小图独立开发、独立测试、独立部署。然后在父图里像拼积木一样组合起来。
+                </div>
+            </div>
+        </section>
+
+        <!-- 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>前置知识</h4>
+                        <ul>
+                            <li>Ch04-10 的所有核心概念</li>
+                            <li>特别是 <a href="./05-persistence.html">持久化</a>（checkpointer 传播）</li>
+                            <li>理解 StateSchema 和状态共享</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>学完后你应该能</h4>
+                        <ul>
+                            <li>区分两种子图通信方式</li>
+                            <li>在节点内调用子图（状态不同）</li>
+                            <li>将子图直接作为节点添加（状态共享）</li>
+                            <li>理解子图的持久化模式</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 什么是子图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>什么是子图</h2>
+                <h4>子图就是作为另一个图中节点使用的图</h4>
+                <div class="ai-diagram">
+                    <h4>图：父图与子图的关系</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个大圆角矩形代表"父图"，内部包含 3 个节点
+                    - 节点 1："研究子图"（蓝色，内部可见 2-3 个小节点）
+                    - 节点 2："写作子图"（绿色，内部可见 2-3 个小节点）
+                    - 节点 3："审核节点"（橙色，普通节点无内部结构）
+                    - 节点之间有箭头连接：研究→写作→审核
+                    - 左侧箭头进入父图，标注"输入"
+                    - 右侧箭头离开父图，标注"输出"
+                    - 右下角注释框："子图 = 一个完整的图，可以有自己的节点和边"
+                    - 各元素关系：父图包含子图作为节点（组合关系），子图内部有独立的节点和边；父图的边连接到子图节点，子图执行完毕后将结果返回给父图
+                    - 关键标注：父图边框标注"父图"，子图内标注各自的内部节点名称，右侧注释说明子图的定义
+                    - 配色建议：浅灰背景，父图浅色边框，子图各有不同柔和色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li><strong>多智能体系统</strong>：不同团队各负责一个子图</li>
+                            <li><strong>复用组件</strong>：一组节点在多个图中重复使用</li>
+                            <li><strong>分布式开发</strong>：不同团队独立开发、独立测试</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 两种通信方式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>两种通信</h2>
+                <h4>关键决策：父子图的状态是否共享？</h4>
+                <table>
+                    <thead><tr><th>模式</th><th>适用场景</th><th>做法</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>在节点内调用</strong></td><td>父子图有不同状态（无共享键）</td><td>写包装函数映射状态</td></tr>
+                        <tr><td><strong>直接作为节点</strong></td><td>父子图共享状态键</td><td>直接传入编译后的子图</td></tr>
+                    </tbody>
+                </table>
+                <div class="ai-diagram">
+                    <h4>图：两种子图通信方式对比</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面分为左右两部分，用虚线分隔
+                    - 左侧标题"节点内调用"（蓝色）：
+                      - 父图状态 {foo: "..."} → 包装函数 {bar: state.foo} → 子图执行 → 结果 {bar: "hi! ..."} → 映射回 {foo: "hi! ..."}
+                      - 标注："状态不同，需要手动转换"
+                    - 右侧标题"直接作为节点"（绿色）：
+                      - 父图状态 {foo: "..."} → 直接传入子图 → 子图返回 {foo: "hi! ..."} → 自动合并
+                      - 标注："状态共享，无需转换"
+                    - 各元素关系：左侧"节点内调用"需要包装函数做状态映射（父状态→子状态→结果→父状态）；右侧"直接作为节点"状态自动传递，无需映射
+                    - 关键标注：左侧每步标注转换逻辑（{foo}→{bar}→{bar:result}→{foo:result}），右侧标注"共享状态键 foo，自动合并"
+                    - 配色建议：浅灰背景，左侧蓝色调，右侧绿色调
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <div class="key-point">
+                    <strong>判断标准：</strong>如果子图有自己独特的状态字段（和父图不同），用节点内调用。如果子图用的状态字段父图也有，直接作为节点。
+                </div>
+            </div>
+        </section>
+
+        <!-- 节点内调用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>节点内调用</h2>
+                <h4>父子图状态不同时，在节点函数内调用子图并转换状态</h4>
+                <pre><code><span style="color: var(--text-muted);">// 子图 — 有自己的状态 { bar }</span>
+<span style="color: var(--primary-color);">const</span> SubgraphState = <span style="color: var(--primary-color);">new</span> StateSchema({ bar: z.string() });
+
+<span style="color: var(--primary-color);">const</span> subgraph = <span style="color: var(--primary-color);">new</span> StateGraph(SubgraphState)
+  .addNode(<span style="color: var(--success-color);">"subgraphNode1"</span>, (state) => {
+    <span style="color: var(--primary-color);">return</span> { bar: <span style="color: var(--success-color);">"hi! "</span> + state.bar };
+  })
+  .addEdge(START, <span style="color: var(--success-color);">"subgraphNode1"</span>)
+  .compile();
+
+<span style="color: var(--text-muted);">// 父图 — 状态是 { foo }，和子图的 { bar } 不同</span>
+<span style="color: var(--primary-color);">const</span> State = <span style="color: var(--primary-color);">new</span> StateSchema({ foo: z.string() });
+
+<span style="color: var(--primary-color);">const</span> graph = <span style="color: var(--primary-color);">new</span> StateGraph(State)
+  .addNode(<span style="color: var(--success-color);">"node1"</span>, <span style="color: var(--primary-color);">async</span> (state) => {
+    <span style="color: var(--text-muted);">// 手动映射：foo → bar</span>
+    <span style="color: var(--primary-color);">const</span> output = <span style="color: var(--primary-color);">await</span> subgraph.invoke({ bar: state.foo });
+    <span style="color: var(--text-muted);">// 手动映射回：bar → foo</span>
+    <span style="color: var(--primary-color);">return</span> { foo: output.bar };
+  })
+  .addEdge(START, <span style="color: var(--success-color);">"node1"</span>)
+  .compile();</code></pre>
+                <div class="info-block">
+                    <strong>模式：</strong>在节点函数内手动完成 foo → bar 的输入映射，调用子图，再把 bar → foo 映射回来。两个图完全独立，各自维护自己的状态结构。
+                </div>
+            </div>
+        </section>
+
+        <!-- 直接作为节点 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>直接作为节点</h2>
+                <h4>父子图共享状态键时，直接传入编译后的子图</h4>
+                <pre><code><span style="color: var(--text-muted);">// 父子图共享 { foo } 状态</span>
+<span style="color: var(--primary-color);">const</span> State = <span style="color: var(--primary-color);">new</span> StateSchema({ foo: z.string() });
+
+<span style="color: var(--primary-color);">const</span> subgraph = <span style="color: var(--primary-color);">new</span> StateGraph(State)
+  .addNode(<span style="color: var(--success-color);">"subgraphNode1"</span>, (state) => {
+    <span style="color: var(--primary-color);">return</span> { foo: <span style="color: var(--success-color);">"hi! "</span> + state.foo };
+  })
+  .addEdge(START, <span style="color: var(--success-color);">"subgraphNode1"</span>)
+  .compile();
+
+<span style="color: var(--text-muted);">// 直接传入子图作为节点 — 无需包装函数</span>
+<span style="color: var(--primary-color);">const</span> graph = <span style="color: var(--primary-color);">new</span> StateGraph(State)
+  .addNode(<span style="color: var(--success-color);">"node1"</span>, subgraph)  <span style="color: var(--text-muted);">// 直接传！</span>
+  .addEdge(START, <span style="color: var(--success-color);">"node1"</span>)
+  .compile();</code></pre>
+                <div class="key-point">
+                    <strong>简洁很多：</strong>不需要包装函数，不需要状态映射。子图直接读取和更新父图的状态。只要两边的 StateSchema 有相同的键就行。
+                </div>
+            </div>
+        </section>
+
+        <!-- 子图持久化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子图持久化</h2>
+                <h4>子图的检查点行为取决于它的 checkpointer 配置</h4>
+                <table>
+                    <thead><tr><th>模式</th><th>checkpointer</th><th>行为</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>每次调用（默认）</strong></td><td>不指定</td><td>每次调用从新开始，继承父 checkpointer 支持中断</td></tr>
+                        <tr><td><strong>每线程</strong></td><td>指定</td><td>状态在同一线程的多次调用间累积</td></tr>
+                        <tr><td><strong>无状态</strong></td><td>false</td><td>无检查点，像普通函数调用</td></tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>功能对比</h4>
+                        <table>
+                            <thead><tr><th>功能</th><th>每次调用</th><th>每线程</th><th>无状态</th></tr></thead>
+                            <tbody>
+                                <tr><td>中断 (HITL)</td><td>✅</td><td>✅</td><td>❌</td></tr>
+                                <tr><td>多轮记忆</td><td>❌</td><td>✅</td><td>❌</td></tr>
+                                <tr><td>多次调用（不同子图）</td><td>✅</td><td>⚠️</td><td>✅</td></tr>
+                                <tr><td>状态检查</td><td>⚠️</td><td>✅</td><td>❌</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 查看子图状态 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>查看子图状态</h2>
+                <h4>用 subgraphs: true 选项查看子图内部状态</h4>
+                <pre><code><span style="color: var(--text-muted);">// 查看当前调用的子图状态</span>
+<span style="color: var(--primary-color);">const</span> subgraphState = (<span style="color: var(--primary-color);">await</span> graph.getState(config, { subgraphs: <span style="color: var(--primary-color);">true</span> }))
+  .tasks[<span style="color: var(--primary-color);">0</span>].state;</code></pre>
+                <pre><code><span style="color: var(--text-muted);">// 流式输出子图结果</span>
+<span style="color: var(--primary-color);">for await</span> (<span style="color: var(--primary-color);">const</span> chunk <span style="color: var(--primary-color);">of await</span> graph.stream(
+  { foo: <span style="color: var(--success-color);">"foo"</span> },
+  { subgraphs: <span style="color: var(--primary-color);">true</span>, streamMode: <span style="color: var(--success-color);">"updates"</span> }
+)) {
+  console.log(chunk);
+}</code></pre>
+                <div class="info-block">
+                    <strong>默认行为：</strong>父图把子图视为一个黑盒节点。加上 <code>subgraphs: true</code> 后，可以查看子图内部的执行细节——包括中间节点的状态和输出。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>状态键不匹配</h4>
+                        <p><strong>症状：</strong>子图读不到父图的数据，或返回的数据父图不认识。</p>
+                        <p><strong>修复：</strong>检查父子图的 StateSchema。使用"直接作为节点"时，两者的键名必须完全一致。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>checkpointer 没传播</h4>
+                        <p><strong>症状：</strong>子图中的 interrupt 不暂停。</p>
+                        <p><strong>修复：</strong>确认在父图编译时传入了 checkpointer。默认情况下子图自动继承父图的 checkpointer。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>忘记 compile</h4>
+                        <p><strong>症状：</strong>传入子图时报类型错误。</p>
+                        <p><strong>修复：</strong>子图必须先 <code>.compile()</code> 才能作为节点使用。未编译的 StateGraph 不是可执行图。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 动手练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>构建一个包含两个子图的父图</h4>
+                <div class="key-point">
+                    <strong>任务：</strong>构建"研究 + 写作"两阶段的文档生成系统。
+                </div>
+                <ul>
+                    <li>子图 A（研究）：状态为 <code>{ topic, findings }</code>，包含"搜索"和"整理"两个节点</li>
+                    <li>子图 B（写作）：状态为 <code>{ findings, article }</code>，包含"起草"和"润色"两个节点</li>
+                    <li>父图状态为 <code>{ topic, findings, article }</code></li>
+                    <li>用节点内调用模式连接两个子图</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <pre><code><span style="color: var(--text-muted);">// 子图 A：研究</span>
+<span style="color: var(--primary-color);">const</span> ResearchState = <span style="color: var(--primary-color);">new</span> StateSchema({
+  topic: z.string(),
+  findings: z.array(z.string()).optional(),
+});
+
+<span style="color: var(--primary-color);">const</span> researchGraph = <span style="color: var(--primary-color);">new</span> StateGraph(ResearchState)
+  .addNode(<span style="color: var(--success-color);">"search"</span>, <span style="color: var(--primary-color);">async</span> (state) => {
+    <span style="color: var(--text-muted);">// 模拟搜索</span>
+    <span style="color: var(--primary-color);">return</span> { findings: [<span style="color: var(--success-color);">`Found info about ${state.topic}`</span>] };
+  })
+  .addNode(<span style="color: var(--success-color);">"organize"</span>, (state) => {
+    <span style="color: var(--primary-color);">return</span> { findings: state.findings?.map(f => <span style="color: var(--success-color);">`Organized: ${f}`</span>) };
+  })
+  .addEdge(START, <span style="color: var(--success-color);">"search"</span>)
+  .addEdge(<span style="color: var(--success-color);">"search"</span>, <span style="color: var(--success-color);">"organize"</span>)
+  .compile();
+
+<span style="color: var(--text-muted);">// 子图 B：写作</span>
+<span style="color: var(--primary-color);">const</span> WritingState = <span style="color: var(--primary-color);">new</span> StateSchema({
+  findings: z.array(z.string()).optional(),
+  article: z.string().optional(),
+});
+
+<span style="color: var(--primary-color);">const</span> writingGraph = <span style="color: var(--primary-color);">new</span> StateGraph(WritingState)
+  .addNode(<span style="color: var(--success-color);">"draft"</span>, (state) => {
+    <span style="color: var(--primary-color);">return</span> { article: <span style="color: var(--success-color);">`Draft based on ${state.findings?.join(", ")}`</span> };
+  })
+  .addNode(<span style="color: var(--success-color);">"polish"</span>, (state) => {
+    <span style="color: var(--primary-color);">return</span> { article: <span style="color: var(--success-color);">`Polished: ${state.article}`</span> };
+  })
+  .addEdge(START, <span style="color: var(--success-color);">"draft"</span>)
+  .addEdge(<span style="color: var(--success-color);">"draft"</span>, <span style="color: var(--success-color);">"polish"</span>)
+  .compile();
+
+<span style="color: var(--text-muted);">// 父图 — 用节点内调用连接</span>
+<span style="color: var(--primary-color);">const</span> ParentState = <span style="color: var(--primary-color);">new</span> StateSchema({
+  topic: z.string(),
+  findings: z.array(z.string()).optional(),
+  article: z.string().optional(),
+});
+
+<span style="color: var(--primary-color);">const</span> parentGraph = <span style="color: var(--primary-color);">new</span> StateGraph(ParentState)
+  .addNode(<span style="color: var(--success-color);">"research"</span>, <span style="color: var(--primary-color);">async</span> (state) => {
+    <span style="color: var(--primary-color);">const</span> out = <span style="color: var(--primary-color);">await</span> researchGraph.invoke({ topic: state.topic });
+    <span style="color: var(--primary-color);">return</span> { findings: out.findings };
+  })
+  .addNode(<span style="color: var(--success-color);">"write"</span>, <span style="color: var(--primary-color);">async</span> (state) => {
+    <span style="color: var(--primary-color);">const</span> out = <span style="color: var(--primary-color);">await</span> writingGraph.invoke({ findings: state.findings });
+    <span style="color: var(--primary-color);">return</span> { article: out.article };
+  })
+  .addEdge(START, <span style="color: var(--success-color);">"research"</span>)
+  .addEdge(<span style="color: var(--success-color);">"research"</span>, <span style="color: var(--success-color);">"write"</span>)
+  .addEdge(<span style="color: var(--success-color);">"write"</span>, END)
+  .compile();</code></pre>
+                <div class="key-point">
+                    <strong>模式：</strong>每个子图有独立的状态（ResearchState vs WritingState）。父图在节点函数内做状态映射——把 topic 传给研究子图，把 findings 传给写作子图。
+                </div>
+            </div>
+        </section>
+
+        <!-- 本章回顾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>区分两种子图通信方式</li>
+                            <li>在节点内调用子图（状态不同时）</li>
+                            <li>将子图直接作为节点（状态共享时）</li>
+                            <li>理解子图的三种持久化模式</li>
+                            <li>查看和流式输出子图内部状态</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>全部课程回顾</h4>
+                        <ul>
+                            <li><a href="./01-overview.html">Ch01 认识 LangGraph</a></li>
+                            <li><a href="./02-patterns-basic.html">Ch02 模式（上）</a></li>
+                            <li><a href="./03-patterns-advanced.html">Ch03 模式（下）</a></li>
+                            <li><a href="./04-quickstart.html">Ch04 快速上手</a></li>
+                            <li><a href="./05-persistence.html">Ch05 持久化</a></li>
+                            <li><a href="./06-durable-execution.html">Ch06 持久化执行</a></li>
+                            <li><a href="./07-streaming.html">Ch07 流式处理</a></li>
+                            <li><a href="./08-interrupts.html">Ch08 中断</a></li>
+                            <li><a href="./09-time-travel.html">Ch09 时间旅行</a></li>
+                            <li><a href="./10-memory.html">Ch10 记忆管理</a></li>
+                            <li><strong>Ch11 子图</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>子图是构建复杂智能体系统的模块化方案。小图独立开发、独立测试，大图负责组合和编排。判断标准很简单——状态相同就直接传，状态不同就包装一下。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>进阶方向</h4>
+                        <ul>
+                            <li><strong>LangSmith 调试</strong> — 可视化追踪子图执行</li>
+                            <li><strong>工具集成</strong> — 网页搜索、数据库查询、API 调用</li>
+                            <li><strong>重试逻辑</strong> — 指数退避实现失败重试</li>
+                            <li><strong>测试策略</strong> — 单元测试和集成测试</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方资源</h4>
+                        <ul>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 文档</a></li>
+                            <li><a href="https://smith.langchain.com/">LangSmith Studio</a> — 可视化原型开发</li>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/deployment/">LangGraph 部署</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第29章 高级类型操作 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>高级类型操作</h1>
+            <p>用类型编程，让类型系统为你工作</p>
+        </section>
+
+        <!-- 问题驱动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>先看一个问题</h3>
+                <h4>如何从一个接口中提取所有属性名？如何让所有属性变成可选？如何自动推导 getter 的命名？</h4>
+                <pre><code class="language-typescript">interface User {
+    name: string;
+    age: number;
+    email: string;
+}
+
+// 想要：提取属性名 → "name" | "age" | "email"
+// 想要：全部变可选 → { name?: string; age?: number; email?: string }
+// 想要：自动生成 getter → { getName: () => string; getAge: () => number }</code></pre>
+                <p>这些需求用"值"的编程思维很难实现。TypeScript 提供了一套类型级别的操作工具：keyof、映射类型、条件类型、模板字面量类型。它们组合起来，就是"类型编程"。</p>
+            </div>
+        </section>
+
+        <!-- Part 1: keyof -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: keyof</h2>
+                <h4>获取类型的所有属性名，生成联合类型</h4>
+                <p>第25章我们用 keyof 做过简单的属性访问。现在来正式认识它——keyof T 能把一个接口的所有属性名提取成联合类型。配合索引访问 T[K]，你就能在编译期保证属性名不会拼错。这是整个"类型编程"的起点。</p>
+            </div>
+        </section>
+
+        <!-- keyof 基础 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>keyof 索引查询</h3>
+                <h4>把类型的属性名提取出来</h4>
+                <pre><code class="language-typescript">interface User {
+    name: string;
+    age: number;
+    email: string;
+}
+
+type UserKeys = keyof User; // "name" | "age" | "email"
+
+// 索引访问类型 T[K] —— 获取某个属性的类型
+type UserName = User["name"];  // string
+type UserAge = User["age"];    // number
+
+// 获取所有值的类型
+type UserValues = User[keyof User]; // string | number</code></pre>
+                <pre><code class="language-typescript">// 实际应用：安全的属性访问函数
+function getProp&lt;T, K extends keyof T&gt;(obj: T, key: K): T[K] {
+    return obj[key];
+}
+
+const user: User = { name: "张三", age: 25, email: "a@b.c" };
+const name = getProp(user, "name"); // string
+const age = getProp(user, "age");   // number
+// getProp(user, "phone");          // 报错！"phone" 不存在</code></pre>
+            </div>
+        </section>
+
+        <!-- 嵌套索引访问 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>嵌套索引访问</h3>
+                <h4>深层属性类型也能提取</h4>
+                <pre><code class="language-typescript">// 数组的索引访问
+type StringArray = string[];
+type Item = StringArray[number]; // string
+
+// 嵌套索引访问
+interface Config {
+    database: {
+        host: string;
+        port: number;
+    };
+    cache: {
+        ttl: number;
+        maxSize: number;
+    };
+}
+
+type DbHost = Config["database"]["host"]; // string
+type CacheConfig = Config["cache"];
+// { ttl: number; maxSize: number }</code></pre>
+                <p>就像 JS 中用 <code>obj["a"]["b"]</code> 访问嵌套属性一样，类型中也可以链式索引访问。</p>
+            </div>
+        </section>
+
+        <!-- Part 2: 映射类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 映射类型</h2>
+                <h4>基于旧类型生成新类型——对每个属性做变换</h4>
+                <p>有了 keyof，你已经能拿到属性名了。映射类型更进一步——它像 for 循环一样遍历每个属性，对值类型做变换。想让所有属性变可选？变只读？变 string？一行映射类型搞定。前面第25章用过的 Partial、Readonly，其实就是映射类型的语法糖。</p>
+            </div>
+        </section>
+
+        <!-- 映射类型基础 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>映射类型基础</h3>
+                <h4>遍历所有属性，逐一变换</h4>
+                <pre><code class="language-typescript">// 让所有属性可选
+type MyPartial&lt;T&gt; = {
+    [K in keyof T]?: T[K];
+};
+
+// 让所有属性只读
+type MyReadonly&lt;T&gt; = {
+    readonly [K in keyof T]: T[K];
+};
+
+// 让所有属性可空
+type Nullable&lt;T&gt; = {
+    [K in keyof T]: T[K] | null;
+};
+
+interface User { name: string; age: number; }
+
+type PartialUser = MyPartial&lt;User&gt;;
+// { name?: string; age?: number }
+
+type ReadonlyUser = MyReadonly&lt;User&gt;;
+// { readonly name: string; readonly age: number }</code></pre>
+            </div>
+        </section>
+
+        <!-- 映射类型进阶 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>映射类型进阶</h3>
+                <h4>变换值类型和从联合生成对象</h4>
+                <pre><code class="language-typescript">// 变换值类型：所有属性都变成 string
+type Stringify&lt;T&gt; = {
+    [K in keyof T]: string;
+};
+
+interface User { name: string; age: number; }
+type StringUser = Stringify&lt;User&gt;;
+// { name: string; age: string }</code></pre>
+                <pre><code class="language-typescript">// 从联合类型生成对象
+type Flags = "hot" | "new" | "sale";
+type FeatureFlags = {
+    [K in Flags]: boolean;
+};
+// { hot: boolean; new: boolean; sale: boolean }</code></pre>
+                <div class="intro-block">
+                    <p>映射类型的语法 <code>[K in keyof T]</code> 可以理解为一个 for 循环——遍历 T 的每个属性 K，然后对值类型 <code>T[K]</code> 做变换。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3: 条件类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 条件类型</h2>
+                <h4>类型层面的 if-else，根据条件选择类型</h4>
+                <p>映射类型能遍历属性，但它没法做判断——"如果这个属性是函数，就保留，否则去掉"这种逻辑怎么办？条件类型就是类型层面的 if-else。配合 infer 关键字，还能在匹配的过程中"顺手"提取子类型，像正则的捕获组一样。</p>
+            </div>
+        </section>
+
+        <!-- 条件类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>条件类型</h3>
+                <h4>T extends U ? X : Y —— 类型的 if-else</h4>
+                <pre><code class="language-typescript">// 基本条件类型
+type IsString&lt;T&gt; = T extends string ? "yes" : "no";
+
+type A = IsString&lt;"hello"&gt;;  // "yes"
+type B = IsString&lt;42&gt;;        // "no"
+type C = IsString&lt;string | number&gt;; // "yes" | "no"（分布式）</code></pre>
+                <pre><code class="language-typescript">// 实际应用：类型守卫
+type TypeName&lt;T&gt; =
+    T extends string ? "string" :
+    T extends number ? "number" :
+    T extends boolean ? "boolean" :
+    T extends undefined ? "undefined" :
+    T extends Function ? "function" :
+    "object";
+
+type T1 = TypeName&lt;"hello"&gt;;  // "string"
+type T2 = TypeName&lt;42&gt;;       // "number"
+type T3 = TypeName&lt;() => void&gt;; // "function"</code></pre>
+            </div>
+        </section>
+
+        <!-- infer -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>infer 推断</h3>
+                <h4>在条件类型中"捕获"子类型</h4>
+                <pre><code class="language-typescript">// 提取函数返回类型
+type MyReturnType&lt;T&gt; = T extends (...args: any[]) => infer R ? R : never;
+type FnReturn = MyReturnType&lt;() => string&gt;;       // string
+type FnReturn2 = MyReturnType&lt;(x: number) => boolean&gt;; // boolean
+
+// 提取函数参数类型
+type MyParameters&lt;T&gt; = T extends (...args: infer P) => any ? P : never;
+type FnParams = MyParameters&lt;(x: string, y: number) => void&gt;;
+// [x: string, y: number]</code></pre>
+                <pre><code class="language-typescript">// 提取 Promise 内部类型
+type UnwrapPromise&lt;T&gt; = T extends Promise&lt;infer U&gt; ? U : T;
+type P1 = UnwrapPromise&lt;Promise&lt;string&gt;&gt;; // string
+type P2 = UnwrapPromise&lt;number&gt;;           // number
+
+// 提取数组元素类型
+type ElementOf&lt;T&gt; = T extends (infer E)[] ? E : never;
+type Items = ElementOf&lt;string[]&gt;; // string</code></pre>
+                <p>infer 就像正则表达式的"捕获组"——在匹配过程中把某个部分提取出来。</p>
+            </div>
+        </section>
+
+        <!-- 分布式条件类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>分布式条件类型</h3>
+                <h4>联合类型会自动"展开"</h4>
+                <pre><code class="language-typescript">// 当 T 是联合类型时，条件类型会自动分发
+type ToArray&lt;T&gt; = T extends any ? T[] : never;
+
+type Result = ToArray&lt;string | number&gt;;
+// 等价于 ToArray&lt;string&gt; | ToArray&lt;number&gt;
+// 结果: string[] | number[]
+
+// 阻止分发：用 [T] 包裹
+type ToArrayNoDistribute&lt;T&gt; = [T] extends [any] ? T[] : never;
+
+type Result2 = ToArrayNoDistribute&lt;string | number&gt;;
+// 结果: (string | number)[]</code></pre>
+                <div class="warning">
+                    <strong>注意区别：</strong><code>string[] | number[]</code> 是"字符串数组或数字数组"，<code>(string | number)[]</code> 是"元素可以是字符串或数字的数组"。分布式行为会影响结果类型。
+                </div>
+                <div class="ai-diagram">
+                    <h4>图：分布式条件类型的展开过程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 上方路径（分布式）：ToArray&lt;string|number&gt; → 拆分 → string[]|number[]
+                    - 下方路径（非分布式）：ToArray&lt;string|number&gt; → 整体 → (string|number)[]
+                    - 标注："裸类型参数→自动分发 | 包在[]中→禁止分发"
+                    - 配色：分布式绿色系，非分布式橙色系，16:9
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- never 过滤 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>never 类型过滤</h3>
+                <h4>分布式条件类型 + never = 强力过滤器</h4>
+                <pre><code class="language-typescript">// 从联合类型中过滤掉不需要的成员
+type OnlyStrings&lt;T&gt; = T extends string ? T : never;
+
+type Result = OnlyStrings&lt;"hello" | 42 | "world" | true&gt;;
+// "hello" | "world" —— 数字和布尔值被 never 过滤掉了</code></pre>
+                <pre><code class="language-typescript">// 手写 Extract 和 Exclude
+type MyExtract&lt;T, U&gt; = T extends U ? T : never;
+type MyExclude&lt;T, U&gt; = T extends U ? never : T;
+
+type T1 = MyExtract&lt;"a" | "b" | 1 | 2, string&gt;;  // "a" | "b"
+type T2 = MyExclude&lt;"a" | "b" | 1 | 2, string&gt;;  // 1 | 2</code></pre>
+                <div class="intro-block">
+                    <p>原理：分布式条件类型把联合类型逐个检查，不满足条件的变成 <code>never</code>。而 <code>never</code> 在联合类型中会被自动消除，就像 <code>0</code> 在加法中被忽略一样——不过这个类比只适用于联合类型，在元组和对象中 <code>never</code> 不会自动消失。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- never 过滤实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>提取方法名</h3>
+                <h4>用 never 过滤出对象中所有的方法</h4>
+                <pre><code class="language-typescript">// 提取 T 中所有方法名
+type GetMethods&lt;T&gt; = {
+    [K in keyof T]: T[K] extends (...args: any[]) => any ? K : never
+}[keyof T];
+
+interface UserService {
+    name: string;
+    version: number;
+    getUser(): { id: string };
+    updateUser(id: string): void;
+    deleteUser(id: string): boolean;
+}
+
+type Methods = GetMethods&lt;UserService&gt;;
+// "getUser" | "updateUser" | "deleteUser"</code></pre>
+                <pre><code class="language-typescript">// 同理：提取所有非函数属性名
+type GetDataProps&lt;T&gt; = {
+    [K in keyof T]: T[K] extends (...args: any[]) => any ? never : K
+}[keyof T];
+
+type DataProps = GetDataProps&lt;UserService&gt;;
+// "name" | "version"</code></pre>
+                <div class="warning">
+                    <strong>常见错误：</strong>忘记 <code>[keyof T]</code> 后缀。映射类型产生的是对象类型 <code>{ name: never; getUser: "getUser"; ... }</code>，需要用索引访问 <code>[keyof T]</code> 把值提取出来，<code>never</code> 才会被自动过滤。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4: 模板字面量 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 模板字面量</h2>
+                <h4>在类型层面拼接字符串，自动生成命名模式</h4>
+                <p>你写 React 时有没有想过，onClick、onFocus 这些事件名能不能自动推导？模板字面量类型就能做到。它可以在类型层面拼接字符串，配合 Capitalize 等内置工具，自动生成 getName、onClick 这样的命名模式。</p>
+            </div>
+        </section>
+
+        <!-- 模板字面量类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>模板字面量类型</h3>
+                <h4>类型层面的字符串拼接</h4>
+                <pre><code class="language-typescript">// 自动生成事件处理器命名
+type EventName = "click" | "focus" | "blur";
+type HandlerName = `on${Capitalize&lt;EventName&gt;}`;
+// "onClick" | "onFocus" | "onBlur"
+
+// 内置字符串操作类型
+type Upper = Uppercase&lt;"hello"&gt;;    // "HELLO"
+type Lower = Lowercase&lt;"HELLO"&gt;;    // "hello"
+type Cap = Capitalize&lt;"hello"&gt;;      // "Hello"
+type Uncap = Uncapitalize&lt;"Hello"&gt;;  // "hello"</code></pre>
+                <pre><code class="language-typescript">// CSS 属性类型
+type CSSProperty = "margin" | "padding";
+type CSSDirection = "top" | "right" | "bottom" | "left";
+type CSSRule = `${CSSProperty}-${CSSDirection}`;
+// "margin-top" | "margin-right" | ... | "padding-left"
+
+// 动态事件类型
+type DomainEvent&lt;T extends string&gt; = `${T}Changed` | `${T}Deleted`;
+type UserEvent = DomainEvent&lt;"user"&gt;; // "userChanged" | "userDeleted"</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 5: 键重映射 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 键重映射</h2>
+                <h4>用 as 重命名或过滤映射类型的键</h4>
+                <p>映射类型能变换属性值，但属性名本身呢？键重映射用 <code>as</code> 关键字实现了这个能力——你可以给属性加前缀、改命名，甚至把不需要的属性过滤掉。前几节学的映射类型加上键重映射，就是完整的"类型编程工具箱"了。</p>
+            </div>
+        </section>
+
+        <!-- 键重映射 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>as 键重映射</h3>
+                <h4>重命名键或过滤掉不需要的属性</h4>
+                <pre><code class="language-typescript">// 重命名键：给所有属性加前缀
+type Prefixed&lt;T, P extends string&gt; = {
+    [K in keyof T as `${P}${Capitalize&lt;string &amp; K&gt;}`]: T[K];
+};
+
+interface Config { host: string; port: number; }
+type DbConfig = Prefixed&lt;Config, "db"&gt;;
+// { dbHost: string; dbPort: number }</code></pre>
+                <pre><code class="language-typescript">// 过滤键：只保留函数类型的属性
+type FunctionProperties&lt;T&gt; = {
+    [K in keyof T as T[K] extends Function ? K : never]: T[K];
+};
+
+interface Mix {
+    name: string;
+    greet(): void;
+    age: number;
+    calc(x: number): number;
+}
+type OnlyFns = FunctionProperties&lt;Mix&gt;;
+// { greet: () => void; calc: (x: number) => number }</code></pre>
+            </div>
+        </section>
+
+        <!-- 综合实战：Getters -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>综合实战</h3>
+                <h4>自动生成 Getter 类型</h4>
+                <pre><code class="language-typescript">// 映射类型 + 模板字面量 + 键重映射
+type Getters&lt;T&gt; = {
+    [K in keyof T as `get${Capitalize&lt;string &amp; K&gt;}`]: () => T[K];
+};
+
+interface Person {
+    name: string;
+    age: number;
+}
+
+type PersonGetters = Getters&lt;Person&gt;;
+// { getName: () => string; getAge: () => number }
+
+// 事件处理器映射
+type EventHandlers&lt;T extends Record&lt;string, any&gt;&gt; = {
+    [K in keyof T as `on${Capitalize&lt;string &amp; K&gt;}`]: (data: T[K]) => void;
+};
+
+type Events = {
+    click: { x: number; y: number };
+    keypress: { key: string };
+};
+
+type Handlers = EventHandlers&lt;Events&gt;;
+// { onClick: (data: { x: number; y: number }) => void;
+//   onKeypress: (data: { key: string }) => void }</code></pre>
+                <div class="intro-block">
+                    <p>高级类型操作不必一次全部掌握。从实际需求出发，遇到问题再查对应的工具类型即可。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 模板字面量解析模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>字符串解析模式</h3>
+                <h4>用模板字面量 + infer 解析字符串结构</h4>
+                <pre><code class="language-typescript">// 从路由字符串中提取参数名
+type ParseRoute&lt;S extends string&gt; =
+    S extends `${string}:${infer Param}/${infer Rest}`
+        ? Param | ParseRoute&lt;Rest&gt;
+        : S extends `${string}:${infer Param}`
+            ? Param
+            : never;
+
+type Params = ParseRoute&lt;"/users/:userId/posts/:postId"&gt;;
+// "userId" | "postId"
+
+// 类型安全的路由定义
+type RouteParams&lt;T extends string&gt; = ParseRoute&lt;T&gt;;
+
+function createRoute&lt;T extends string&gt;(path: T) {
+    return {
+        path,
+        build: (params: Record&lt;RouteParams&lt;T&gt;, string&gt;) => {
+            /* ... */
+        }
+    };
+}
+
+const userPostRoute = createRoute("/users/:userId/posts/:postId");
+// build 的参数类型: Record&lt;"userId" | "postId", string&gt;</code></pre>
+                <div class="intro-block">
+                    <p>模板字面量类型 + <code>infer</code> 就像类型层面的正则表达式。你可以在 <code>extends</code> 的右侧写模式串，用 <code>infer</code> 捕获"捕获组"。不过它不支持量词和复杂语法，只适合结构简单的字符串。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 模板字面量更多模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>更多解析模式</h3>
+                <h4>CSS 属性名变换、事件名提取</h4>
+                <pre><code class="language-typescript">// CSS 属性名转换：kebab-case → camelCase
+type KebabToCamel&lt;S extends string&gt; =
+    S extends `${infer Head}-${infer Tail}`
+        ? `${Head}${Capitalize&lt;KebabToCamel&lt;Tail&gt;&gt;}`
+        : S;
+
+type CSS = KebabToCamel&lt;"background-color"&gt;;    // "backgroundColor"
+type CSS2 = KebabToCamel&lt;"border-top-left-radius"&gt;; // "borderTopLeftRadius"</code></pre>
+                <pre><code class="language-typescript">// 提取事件处理器中的事件名
+type ExtractEventName&lt;T extends string&gt; =
+    T extends `on${infer Event}` ? Uncapitalize&lt;Event&gt; : never;
+
+type Click = ExtractEventName&lt;"onClick"&gt;;    // "click"
+type Focus = ExtractEventName&lt;"onFocus"&gt;;    // "focus"
+type NotEvent = ExtractEventName&lt;"onClickHandler"&gt;; // "clickHandler"</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>模板字面量中的 <code>infer</code> 是"贪婪匹配"还是"非贪婪匹配"取决于位置。在上面的 <code>on${infer Event}</code> 中，<code>Event</code> 会匹配到字符串末尾（贪婪）。如果需要精确匹配，要在模式中写清楚边界。
+                </div>
+            </div>
+        </section>
+
+        <!-- 五大操作对比表 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>五大操作对比</h3>
+                <h4>一张表总结高级类型操作</h4>
+                <table>
+                    <thead>
+                        <tr><th>操作</th><th>语法</th><th>作用</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>keyof</td><td><code>keyof T</code></td><td>提取所有属性名为联合类型</td></tr>
+                        <tr><td>索引访问</td><td><code>T[K]</code></td><td>获取某个属性的类型</td></tr>
+                        <tr><td>映射类型</td><td><code>[K in keyof T]</code></td><td>遍历属性生成新类型</td></tr>
+                        <tr><td>条件类型</td><td><code>T extends U ? X : Y</code></td><td>根据条件选择类型</td></tr>
+                        <tr><td>模板字面量</td><td><code>`${A}${B}`</code></td><td>拼接字符串类型</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 递归类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>递归类型</h3>
+                <h4>DeepPartial、DeepReadonly——类型也能递归</h4>
+                <p>内置的 <code>Partial&lt;T&gt;</code> 只做一层。嵌套对象呢？需要自己写递归类型。</p>
+                <pre><code class="language-typescript">// 内置 Partial 只处理第一层
+interface Config {
+    db: { host: string; port: number };
+    cache: { ttl: number };
+}
+type P = Partial&lt;Config&gt;;
+// { db?: { host: string; port: number }; cache?: { ttl: number } }
+// db 里面的属性并没有变可选！</code></pre>
+                <pre><code class="language-typescript">// DeepPartial：递归地把所有属性变可选
+type DeepPartial&lt;T&gt; = {
+    [K in keyof T]?: T[K] extends object
+        ? DeepPartial&lt;T[K]&gt;
+        : T[K];
+};
+
+type DP = DeepPartial&lt;Config&gt;;
+// { db?: { host?: string; port?: number }; cache?: { ttl?: number } }
+
+// DeepReadonly：递归地把所有属性变只读
+type DeepReadonly&lt;T&gt; = {
+    readonly [K in keyof T]: T[K] extends object
+        ? DeepReadonly&lt;T[K]&gt;
+        : T[K];
+};</code></pre>
+                <div class="intro-block">
+                    <p>递归类型的套路是固定的：用条件类型判断属性值是否是对象，如果是就递归处理，否则直接返回。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 映射类型变换过程图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>映射变换全景</h3>
+                <h4>原接口 → 遍历属性 → 变换 → 新接口</h4>
+                <p>映射类型本质上就是一个"类型的 for 循环"。让我们用 Partial 举例，看看变换的每一步：</p>
+                <pre><code class="language-typescript">interface User { name: string; age: number; email: string; }
+
+// MyPartial 的变换过程：
+// 第1步：keyof User → "name" | "age" | "email"
+// 第2步：遍历每个属性 K
+//   K = "name" → name?: string
+//   K = "age"  → age?: number
+//   K = "email" → email?: string
+// 第3步：合并成新类型
+type Result = { name?: string; age?: number; email?: string; }</code></pre>
+                <div class="ai-diagram">
+                    <h4>图：映射类型的变换流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从左到右的变换管道
+                    - 左侧：原始接口 User { name: string, age: number, email: string }（蓝色实线边框卡片）
+                    - 中间变换管道（三个步骤）：
+                      - keyof 提取属性名 → "name" | "age" | "email"
+                      - 遍历每个属性名
+                      - 应用 ? 修饰符（属性变为可选）
+                    - 右侧：结果类型 { name?: string, age?: number, email?: string }（绿色虚线边框卡片）
+                    - 底部标注："映射类型是纯函数——输入类型，输出新类型，原类型不变"
+                    - 配色建议：浅灰背景，输入蓝色系，变换橙色箭头，输出绿色系
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>映射类型的强大之处在于它是一个<strong>纯函数</strong>——输入一个类型，输出一个新类型，原类型不变。</p>
+            </div>
+        </section>
+
+        <!-- 协变与逆变 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>协变与逆变</h3>
+                <h4>函数参数类型的兼容性规则</h4>
+                <p>这个问题在写泛型回调时经常碰到。先看一个"反直觉"的例子：</p>
+                <pre><code class="language-typescript">// 疑问：下面的赋值安全吗？
+type AnimalHandler = (animal: Animal) => void;
+type DogHandler = (dog: Dog) => void;
+
+let handler: AnimalHandler = (a) => console.log(a.name);
+// 把 AnimalHandler 赋给 DogHandler？
+let dogHandler: DogHandler = handler; // 严格模式下报错！</code></pre>
+                <pre><code class="language-typescript">// 协变（Covariance）：方向一致
+// Dog 是 Animal 的子类型 → Dog[] 也是 Animal[] 的子类型
+// 返回值类型是协变的
+
+// 逆变（Contravariance）：方向相反
+// 函数参数类型是逆变的：
+// (animal: Animal) => void 是 (dog: Dog) => void 的子类型
+// 因为能处理所有 Animal 的函数，一定能处理 Dog</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>协变（同方向）</h4>
+                        <p>子类型关系保持一致。Dog extends Animal，所以 Promise&lt;Dog&gt; 可以赋给 Promise&lt;Animal&gt;。</p>
+                    </div>
+                    <div class="card">
+                        <h4>逆变（反方向）</h4>
+                        <p>子类型关系反转。(x: Animal) => void 可以赋给 (x: Dog) => void。参数越宽泛，函数越通用。</p>
+                    </div>
+                </div>
+                <p>日常开发中不用深究，但遇到泛型回调的类型报错时，想想协变和逆变就能找到原因。</p>
+                <div class="ai-diagram">
+                    <h4>图：协变与逆变的方向性</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 上下两行：上行协变 Array&lt;Dog&gt;→Array&lt;Animal&gt;（同向箭头）标注"生产者"
+                    - 下行逆变 Handler&lt;Animal&gt;→Handler&lt;Dog&gt;（反向箭头）标注"消费者"
+                    - 右侧口诀："子类型关系在容器中保持同向，在函数参数中反转"
+                    - 配色：协变绿色箭头，逆变橙色箭头，类型层级蓝色，16:9
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 协变实用指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>协变实战指南</h3>
+                <h4>生产者场景：子类型关系保持一致</h4>
+                <pre><code class="language-typescript">class Animal { name = "动物"; }
+class Dog extends Animal { bark() { return "汪"; } }
+class Cat extends Animal { meow() { return "喵"; } }
+
+// 协变：Dog[] 可以赋给 Animal[]
+const dogs: Dog[] = [new Dog()];
+const animals: Animal[] = dogs; // OK — 数组是协变的
+// 因为数组是"生产者"——你从中取出元素，元素至少是 Animal
+
+// 反过来就不行
+const mixedAnimals: Animal[] = [new Dog(), new Cat()];
+// const dogList: Dog[] = mixedAnimals; // 报错！可能有 Cat</code></pre>
+                <pre><code class="language-typescript">// Promise 也是协变的
+async function getDog(): Promise&lt;Dog&gt; { return new Dog(); }
+
+async function useAnimal(): Promise&lt;Animal&gt; {
+    return getDog(); // OK — Promise&lt;Dog&gt; 赋给 Promise&lt;Animal&gt;
+}
+
+// 返回值也是协变：返回 Dog 的函数可以代替返回 Animal 的函数
+type AnimalFactory = () => Animal;
+type DogFactory = () => Dog;
+
+const makeDog: DogFactory = () => new Dog();
+const makeAnimal: AnimalFactory = makeDog; // OK</code></pre>
+                <div class="intro-block">
+                    <p>类比记忆：<strong>"生产者协变"</strong>——如果某类型是"往外产出"数据的（数组元素、Promise 值、函数返回值），子类型关系保持一致方向。但这个类比不完美——TypeScript 中数组的 <code>push</code> 方法其实是"消费者"，所以严格来说数组并不纯粹是生产者。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 逆变实用指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>逆变实战指南</h3>
+                <h4>消费者场景：子类型关系反转</h4>
+                <pre><code class="language-typescript">type Handler&lt;T&gt; = (event: T) => void;
+
+// 能处理 Animal 的函数，一定能处理 Dog
+const animalHandler: Handler&lt;Animal&gt; = (a) => {
+    console.log(a.name); // 只用了 Animal 的属性
+};
+
+const dogHandler: Handler&lt;Dog&gt; = animalHandler; // OK (strictFunctionTypes)
+// 把 Dog 传给 animalHandler，只访问 name —— 安全！
+
+// 反过来就危险了：
+// const badHandler: Handler&lt;Animal&gt; = (d: Dog) => d.bark();
+// badHandler(new Cat()); // 运行时崩溃！Cat 没有 bark()</code></pre>
+                <div class="warning">
+                    <strong>strictFunctionTypes 配置：</strong>只有在 <code>tsconfig.json</code> 中开启 <code>"strictFunctionTypes": true</code>（包含在 <code>strict</code> 模式中），函数参数才会正确地做逆变检查。关闭此选项时，函数参数会做双向协变——方便但不安全。
+                </div>
+            </div>
+        </section>
+
+        <!-- 协变逆变事件系统 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>事件系统实战</h3>
+                <h4>协变 + 逆变在真实项目中的应用</h4>
+                <pre><code class="language-typescript">// 类型安全的事件系统
+interface EventMap {
+    click: { x: number; y: number };
+    keypress: { key: string; ctrl: boolean };
+    resize: { width: number; height: number };
+}
+
+class TypeSafeEventEmitter&lt;T extends Record&lt;string, any&gt;&gt; {
+    // Handler&lt;T[K]&gt; 是逆变的 —— 需要"宽泛"的处理器
+    private handlers: { [K in keyof T]?: Array&lt;(data: T[K]) => void&gt; } = {};
+
+    on&lt;K extends keyof T&gt;(event: K, handler: (data: T[K]) => void) {
+        (this.handlers[event] ??= []).push(handler);
+    }
+
+    emit&lt;K extends keyof T&gt;(event: K, data: T[K]) {
+        this.handlers[event]?.forEach(h => h(data));
+    }
+}
+
+const emitter = new TypeSafeEventEmitter&lt;EventMap&gt;();
+emitter.on("click", (data) => {
+    console.log(data.x, data.y); // data 自动推导为 { x: number; y: number }
+});
+// emitter.on("click", (data) => data.key); // 报错！click 没有 key
+// emitter.emit("keypress", { x: 1, y: 2 }); // 报错！数据类型不匹配</code></pre>
+                <p>协变逆变的核心原则：<strong>"生产者协变，消费者逆变"</strong>。记住这句话，遇到泛型回调的类型报错就不慌了。</p>
+            </div>
+        </section>
+
+        <!-- 练习：DeepOmit -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>递归 Omit</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习</h3>
+                        <p><strong>任务</strong>：实现一个 <code>DeepOmit&lt;T, K&gt;</code> 类型，递归地从嵌套对象中排除所有名为 K 的属性。</p>
+                        <pre><code class="language-typescript">interface Config {
+    id: string;
+    db: { id: string; host: string; port: number };
+    cache: { id: string; ttl: number };
+}
+
+type Clean = DeepOmit&lt;Config, "id"&gt;;
+// 期望结果：
+// { db: { host: string; port: number }; cache: { ttl: number } }
+// 所有层级的 id 都被移除
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">type DeepOmit&lt;T, K extends string&gt; = {
+    [P in keyof T as P extends K ? never : P]:
+        T[P] extends object
+            ? DeepOmit&lt;T[P], K&gt;
+            : T[P];
+};
+
+// 验证
+interface Config {
+    id: string;
+    db: { id: string; host: string; port: number };
+    cache: { id: string; ttl: number };
+}
+
+type Clean = DeepOmit&lt;Config, "id"&gt;;
+// { db: { host: string; port: number }; cache: { ttl: number } }</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <h4>问题一：映射类型中 keyof 报错</h4>
+                <pre><code class="language-typescript">// 映射类型只能用于类型，不能用于值
+type Bad = { [K in keyof obj] }; // 报错！obj 是值不是类型
+type Good = { [K in keyof User] }; // OK，User 是类型</code></pre>
+
+                <h4>问题二：infer 只能在条件类型中使用</h4>
+                <pre><code class="language-typescript">// 报错：infer 不能出现在条件类型之外
+type Bad&lt;T&gt; = infer R; // 报错！
+
+// 正确：infer 在 extends 右侧
+type Good&lt;T&gt; = T extends Promise&lt;infer R&gt; ? R : T;</code></pre>
+
+                <h4>问题三：Capitalize 对非 string 类型报错</h4>
+                <pre><code class="language-typescript">// 需要用 string &amp; K 做类型收窄
+type Safe&lt;K&gt; = Capitalize&lt;string &amp; K&gt;; // OK
+type Unsafe&lt;K&gt; = Capitalize&lt;K&gt;;         // 可能报错</code></pre>
+            </div>
+        </section>
+
+        <!-- in 操作符收窄 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>in 操作符收窄</h3>
+                <h4>运行时判断 + 类型层面的属性检测</h4>
+                <pre><code class="language-typescript">// 运行时：in 操作符收窄联合类型
+function processContact(contact: { email: string } | { phone: string }) {
+    if ("email" in contact) {
+        // TypeScript 自动收窄为 { email: string }
+        console.log(contact.email); // OK
+        // console.log(contact.phone); // 报错
+    } else {
+        // 自动收窄为 { phone: string }
+        console.log(contact.phone); // OK
+    }
+}</code></pre>
+                <pre><code class="language-typescript">// 类型层面：检测是否拥有某属性
+type HasEmail&lt;T&gt; = T extends { email: string } ? true : false;
+
+type A = HasEmail&lt;{ name: string; email: string }&gt;;  // true
+type B = HasEmail&lt;{ name: string; phone: string }&gt;;  // false
+
+// 检测可选属性（配合 &amp; {} 技巧）
+type IsOptional&lt;T, K extends keyof T&gt; =
+    {} extends Pick&lt;T, K&gt; ? true : false;
+
+interface User { name: string; age?: number; email: string; }
+type OptAge = IsOptional&lt;User, "age"&gt;;    // true
+type OptName = IsOptional&lt;User, "name"&gt;;  // false</code></pre>
+                <div class="intro-block">
+                    <p><code>in</code> 和 <code>keyof</code> 的区别：<code>keyof T</code> 在类型层面提取所有属性名（编译时），<code>"x" in obj</code> 在运行时检查对象是否有某个属性。两者常配合使用：<code>keyof</code> 设计类型，<code>in</code> 做运行时守卫。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 类型体操实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类型体操实战</h3>
+                <h4>组合 keyof + 条件 + 映射，手撕工具类型</h4>
+                <pre><code class="language-typescript">// 挑战 1：DeepReadonly —— 递归只读
+type DeepReadonly&lt;T&gt; = {
+    readonly [K in keyof T]: T[K] extends object
+        ? T[K] extends Function   // 函数不递归
+            ? T[K]
+            : DeepReadonly&lt;T[K]&gt;
+        : T[K];
+};
+
+interface Config {
+    db: { host: string; pool: { max: number } };
+    log: () => void;
+}
+type Frozen = DeepReadonly&lt;Config&gt;;
+// { readonly db: { readonly host: string; readonly pool: { readonly max: number } };
+//   readonly log: () => void; }</code></pre>
+                <pre><code class="language-typescript">// 挑战 2：RequiredKeys —— 提取所有必填属性的 key
+type RequiredKeys&lt;T&gt; = {
+    [K in keyof T]-?: {} extends Pick&lt;T, K&gt; ? never : K
+}[keyof T];
+
+interface User { id: string; name?: string; age: number; bio?: string; }
+type RKeys = RequiredKeys&lt;User&gt;; // "id" | "age"
+
+// 原理拆解：
+// 1. [K in keyof T]-? 遍历所有属性并去掉 ?（不影响判断）
+// 2. {} extends Pick&lt;T, K&gt; 检查空对象能否赋给只含 K 的类型
+//    ——如果 K 是可选的，{} 就能赋过去，返回 never
+//    ——如果 K 是必填的，赋不过去，返回 K
+// 3. [keyof T] 把值取出来，never 被过滤</code></pre>
+                <div class="intro-block">
+                    <p>类型体操的解题套路：(1) 用 <code>keyof</code> 拿属性名；(2) 用映射类型遍历；(3) 用条件类型判断；(4) 用 <code>never</code> 过滤。掌握了这四步，大部分工具类型都能手写。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：手写一个 <code>MyOmit&lt;T, K&gt;</code> 类型，从 T 中排除 K 指定的属性。</p>
+                        <pre><code class="language-typescript">// 提示：结合映射类型和 as 过滤
+type MyOmit&lt;T, K extends keyof T&gt; = ???
+
+interface User { id: string; name: string; password: string; }
+type SafeUser = MyOmit&lt;User, "password"&gt;;
+// 期望：{ id: string; name: string }</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">type MyOmit&lt;T, K extends keyof T&gt; = {
+    [P in keyof T as P extends K ? never : P]: T[P];
+};</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：写一个 <code>UnwrapPromise&lt;T&gt;</code> 类型，递归解包嵌套的 Promise。</p>
+                        <pre><code class="language-typescript">// UnwrapPromise&lt;Promise&lt;Promise&lt;number&gt;&gt;&gt;
+// 应该得到 number
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">type DeepUnwrap&lt;T&gt; =
+    T extends Promise&lt;infer U&gt; ? DeepUnwrap&lt;U&gt; : T;
+
+type Test = DeepUnwrap&lt;Promise&lt;Promise&lt;Promise&lt;number&gt;&gt;&gt;&gt;;
+// number</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>你已经掌握了类型编程的基础工具。下一章我们学习<strong>内置工具类型</strong>——TypeScript 自带的类型变换利器。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第43章 API设计与验证 - Node.js全栈开发教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>API 设计与验证</h1>
+            <p>RESTful 规范 + Zod 验证——让接口既好用又安全</p>
+        </section>
+
+        <!-- 开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你有没有遇到过</h3>
+                <h4>前端同事说"你这个接口返回的数据格式怎么又变了"？</h4>
+                <p>这就是 API 设计不规范导致的。好的 API 应该像公共厕所的标识一样——不需要解释，看一眼就知道怎么用。</p>
+                <p>这一章你将学会：RESTful 设计规范、用 Zod 做请求验证、分页排序过滤、统一响应格式。</p>
+            </div>
+        </section>
+
+        <!-- Part 1: RESTful -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: RESTful</h2>
+                <h4>用 URL 表示资源，用 HTTP 方法表示操作</h4>
+                <p>REST 不是框架，而是一套 API 设计的理念。它的核心思想：<strong>用 URL 表示资源，用 HTTP 方法表示操作</strong>。遵循 REST 规范的 API 天然具备可预测性——前端开发者看到 URL 就能猜到返回什么数据。这一部分将学习 HTTP 语义、状态码选择以及请求处理的完整流程。</p>
+            </div>
+        </section>
+
+        <!-- REST 核心 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>REST 核心规则</h3>
+                <h4>资源 + HTTP 方法 = 语义清晰的接口</h4>
+                <table>
+                    <thead><tr><th>HTTP 方法</th><th>路径</th><th>含义</th></tr></thead>
+                    <tbody>
+                        <tr><td>GET</td><td>/api/users</td><td>获取用户列表</td></tr>
+                        <tr><td>GET</td><td>/api/users/:id</td><td>获取单个用户</td></tr>
+                        <tr><td>POST</td><td>/api/users</td><td>创建用户</td></tr>
+                        <tr><td>PUT</td><td>/api/users/:id</td><td>全量更新用户</td></tr>
+                        <tr><td>PATCH</td><td>/api/users/:id</td><td>部分更新用户</td></tr>
+                        <tr><td>DELETE</td><td>/api/users/:id</td><td>删除用户</td></tr>
+                    </tbody>
+                </table>
+                <p>嵌套资源：<code>GET /api/users/:id/posts</code> 获取用户的文章，<code>DELETE /api/posts/:id/comments/:cid</code> 删除评论。</p>
+            </div>
+        </section>
+
+        <!-- HTTP 状态码 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>HTTP 状态码</h3>
+                <h4>用数字告诉客户端"发生了什么"</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>2xx 成功</h4>
+                        <ul>
+                            <li><strong>200</strong> OK —— 成功</li>
+                            <li><strong>201</strong> Created —— 创建成功</li>
+                            <li><strong>204</strong> No Content —— 删除成功</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>4xx 客户端错误</h4>
+                        <ul>
+                            <li><strong>400</strong> Bad Request —— 参数错误</li>
+                            <li><strong>401</strong> Unauthorized —— 未认证</li>
+                            <li><strong>403</strong> Forbidden —— 无权限</li>
+                            <li><strong>404</strong> Not Found —— 资源不存在</li>
+                            <li><strong>409</strong> Conflict —— 冲突</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>5xx 服务端错误</h4>
+                        <ul>
+                            <li><strong>500</strong> Internal Error —— 服务器错误</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 请求响应流程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>请求处理流程</h3>
+                <h4>一个 API 请求从进入到响应的完整路径</h4>
+                <div class="ai-diagram">
+                    <h4>图：API 请求验证与处理的完整时序流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术时序图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：客户端发起 POST 请求后，经过 Zod 验证、路由处理、数据库操作的完整时序交互图
+                    - 四个参与者（从左到右排列的竖线）：客户端（蓝色）、Zod 验证层（橙色）、路由处理器（绿色）、数据库（紫色）
+                    - 主流程（验证失败分支）：客户端 → Zod 验证层：实线箭头标注 "POST /api/users {body}"，Zod 验证层 → 客户端：虚线箭头标注 "400 {error: 验证失败}"，此分支用红色虚线框标注"验证失败"
+                    - 主流程（验证通过分支）：客户端 → Zod 验证层：实线箭头标注 "POST /api/users {body}"，Zod 验证层 → 路由处理器：实线箭头标注 "转发已验证数据"，路由处理器 → 数据库：实线箭头标注 "插入数据"，数据库 → 路由处理器：虚线箭头标注 "返回结果"，路由处理器 → 客户端：虚线箭头标注 "201 {success, data}"，此分支用绿色虚线框标注"验证通过"
+                    - 两个分支用 alt/else 结构的矩形框分组显示，左侧用括号标注 "alt 验证失败" 和 "else 验证通过"
+                    - 关键标注：请求方法 POST、路径 /api/users、状态码 400 和 201、响应字段 error/success/data
+                    - 配色建议：浅灰背景，客户端竖线蓝色，Zod 验证层橙色，路由处理器绿色，数据库紫色，失败分支用浅红底色，成功分支用浅绿底色，请求箭头用深色实线，响应箭头用虚线
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2: Zod 验证 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: Zod 验证</h2>
+                <h4>永远不要信任客户端发来的数据</h4>
+                <p>永远不要信任客户端发来的数据——用户可能绕过前端直接调用 API。Zod 是 TypeScript 生态中最好的验证库，它的核心理念是"先定义 Schema，再从 Schema 推断类型"，让验证规则和类型定义永远保持同步。这一部分将学习 Schema 定义、验证中间件封装以及路径参数和查询参数的验证技巧。</p>
+            </div>
+        </section>
+
+        <!-- Zod Schema -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>定义 Schema</h3>
+                <h4>一个 Schema 同时完成验证和类型推断</h4>
+                <pre><code class="language-bash">$ npm install zod</code></pre>
+                <pre><code class="language-javascript">import { z } from "zod";
+
+const createUserSchema = z.object({
+    name: z.string().min(2, "姓名至少2个字符").max(50),
+    email: z.string().email("邮箱格式不正确"),
+    password: z.string().min(6, "密码至少6个字符"),
+    role: z.enum(["user", "admin"]).default("user"),
+});
+
+// 从 Schema 推断 TS 类型——不需要手写 interface
+type CreateUserInput = z.infer&lt;typeof createUserSchema&gt;;
+// { name: string; email: string; password: string; role: "user" | "admin" }</code></pre>
+                <p>Zod 的核心理念：<strong>Schema 是唯一的真相来源</strong>。类型从 Schema 自动推断，不会出现类型和验证规则不一致的问题。</p>
+            </div>
+        </section>
+
+        <!-- 验证中间件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>验证中间件</h3>
+                <h4>把验证逻辑封装成中间件，任何路由都能复用</h4>
+                <pre><code class="language-javascript">function validate&lt;T&gt;(schema: z.ZodSchema&lt;T&gt;) {
+    return (req: Request, res: Response, next: NextFunction) => {
+        const result = schema.safeParse(req.body);
+        if (!result.success) {
+            res.status(400).json({
+                error: "验证失败",
+                details: result.error.flatten().fieldErrors,
+            });
+            return;
+        }
+        req.body = result.data; // 替换为验证后的数据
+        next();
+    };
+}
+
+// 使用——简洁清晰
+app.post("/api/users",
+    validate(createUserSchema),
+    asyncHandler(async (req, res) => {
+        // req.body 已经被 Zod 验证过，类型安全
+        const user = await userService.create(req.body);
+        res.status(201).json(user);
+    })
+);</code></pre>
+            </div>
+        </section>
+
+        <!-- 更多 Schema 用法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>更多 Schema</h3>
+                <h4>路径参数、查询参数、部分更新都能验证</h4>
+                <pre><code class="language-javascript">// 部分更新——所有字段变可选
+const updateUserSchema = createUserSchema.partial();
+
+// 路径参数验证
+const idParam = z.object({ id: z.string().uuid() });
+
+// 查询参数验证（coerce 把字符串转数字）
+const paginationQuery = z.object({
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().positive().max(100).default(10),
+    sort: z.enum(["createdAt", "name"]).default("createdAt"),
+    order: z.enum(["asc", "desc"]).default("desc"),
+});</code></pre>
+                <div class="intro-block">
+                    <p><code>z.coerce.number()</code> 会自动把 URL 查询参数中的字符串转成数字。因为 URL 上所有值都是字符串，这个转换是必须的。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- OpenAPI 概述 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>OpenAPI / Swagger 文档</h3>
+                <h4>好的 API 不需要口头解释，文档本身就是最好的说明</h4>
+                <p>API 文档是前后端协作的桥梁。没有文档的 API 就像一个没有说明书的遥控器——按键都在，但你不知道哪个是开机。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么需要文档？</h4>
+                        <ul>
+                            <li>前后端并行开发，不必等接口写完</li>
+                            <li>新成员快速上手，降低沟通成本</li>
+                            <li>自动校验：请求/响应是否符合定义</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>工具链</h4>
+                        <ul>
+                            <li><strong>swagger-jsdoc</strong> —— 用 JSDoc 注释生成 OpenAPI 规范</li>
+                            <li><strong>swagger-ui-express</strong> —— 提供可交互的 API 文档界面</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- OpenAPI 配置与注解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Swagger 配置</h3>
+                <h4>在 Express 中集成自动生成的 API 文档</h4>
+                <pre><code class="language-bash">$ npm install swagger-jsdoc swagger-ui-express</code></pre>
+                <pre><code class="language-javascript">import swaggerJSDoc from "swagger-jsdoc";
+import swaggerUI from "swagger-ui-express";
+
+const swaggerSpec = swaggerJSDoc({
+    definition: {
+        openapi: "3.0.0",
+        info: { title: "My API", version: "1.0.0" },
+    },
+    apis: ["./src/routes/*.js"], // 扫描路由文件中的 JSDoc 注释
+});
+
+app.use("/api-docs", swaggerUI.serve, swaggerUI.setup(swaggerSpec));</code></pre>
+                <div class="intro-block">
+                    <p>访问 <code>http://localhost:3000/api-docs</code> 即可看到自动生成的交互式文档页面。你可以在页面上直接发送请求测试接口。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- OpenAPI 注解示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>注解示例</h3>
+                <h4>用 JSDoc 注释为 CRUD 端点生成文档</h4>
+                <pre><code class="language-javascript">/**
+ * @openapi
+ * /api/users:
+ *   post:
+ *     summary: 创建用户
+ *     tags: [Users]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email, password]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: 张三
+ *               email:
+ *                 type: string
+ *                 example: zhang@example.com
+ *               password:
+ *                 type: string
+ *                 example: "123456"
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ *       400:
+ *         description: 验证失败
+ */
+app.post("/api/users", validate(createUserSchema), handler);</code></pre>
+                <p>注释写在路由上方，<code>swagger-jsdoc</code> 自动提取并生成 OpenAPI 规范，<strong>路由代码和文档永远在同一处</strong>，不会出现文档和代码不同步的问题。</p>
+            </div>
+        </section>
+
+        <!-- API 版本策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>API 版本策略</h3>
+                <h4>接口改了，旧客户端不能崩</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>URL 版本（推荐）</h4>
+                        <pre><code class="language-javascript">// 最直观、最常用
+app.use("/api/v1", v1Router);
+app.use("/api/v2", v2Router);</code></pre>
+                        <p>优点：一眼能看出版本，缓存友好。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Header 版本</h4>
+                        <pre><code class="language-javascript">// 通过请求头指定版本
+app.use((req, res, next) => {
+    const ver = req.headers["api-version"]
+        || "v1";
+    req.apiVersion = ver;
+    next();
+});</code></pre>
+                        <p>优点：URL 不变。缺点：不直观，调试麻烦。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 版本化实现 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>何时该版本化？</h3>
+                <h4>只有破坏性变更才需要新版本</h4>
+                <table>
+                    <thead><tr><th>变更类型</th><th>示例</th><th>需要版本化？</th></tr></thead>
+                    <tbody>
+                        <tr><td>新增字段</td><td>响应加了个 <code>avatar</code></td><td style="color:green">不需要</td></tr>
+                        <tr><td>新增可选参数</td><td>查询加了个 <code>?search</code></td><td style="color:green">不需要</td></tr>
+                        <tr><td>删除字段</td><td>响应去掉了 <code>nickname</code></td><td style="color:red">需要</td></tr>
+                        <tr><td>改字段名</td><td><code>name</code> 改成 <code>fullName</code></td><td style="color:red">需要</td></tr>
+                        <tr><td>改行为逻辑</td><td>排序默认从 desc 改成 asc</td><td style="color:red">需要</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>经验法则</strong>：新加的东西永远向后兼容，删改的东西才需要版本化。如果不确定，就先加版本——回头看是安全的，但回头改是危险的。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3: 分页排序 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 分页与排序</h2>
+                <h4>数据量大的时候，不可能一次返回全部</h4>
+                <p>数据量大的时候，不可能一次返回全部数据。分页是 API 设计的标配功能，它既减少了网络传输量，也降低了数据库查询压力。这一部分将学习基于偏移量的通用分页、过滤与搜索、游标分页以及字段选择——让你的列表 API 既灵活又高效。</p>
+            </div>
+        </section>
+
+        <!-- 通用分页 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>通用分页</h3>
+                <h4>一个函数搞定所有模型的分页查询</h4>
+                <pre><code class="language-javascript">interface PaginatedResponse&lt;T&gt; {
+    data: T[];
+    pagination: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+    };
+}
+
+async function paginate&lt;T&gt;(
+    model: any, // Prisma Model
+    options: { page: number; pageSize: number; where?: any; orderBy?: any }
+): Promise&lt;PaginatedResponse&lt;T&gt;&gt; {
+    const { page, pageSize, where, orderBy } = options;
+    const [data, total] = await Promise.all([
+        model.findMany({ where, orderBy, skip: (page - 1) * pageSize, take: pageSize }),
+        model.count({ where }),
+    ]);
+    return { data, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
+}</code></pre>
+                <pre><code class="language-javascript">// 使用
+app.get("/api/posts", asyncHandler(async (req, res) => {
+    const query = paginationQuery.parse(req.query);
+    const result = await paginate(prisma.post, {
+        page: query.page,
+        pageSize: query.pageSize,
+        where: { published: true },
+        orderBy: { [query.sort]: query.order },
+    });
+    res.json(result);
+}));</code></pre>
+            </div>
+        </section>
+
+        <!-- 过滤与搜索 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>过滤与搜索</h3>
+                <h4>让客户端精确拿到想要的数据</h4>
+                <p>列表 API 不应该只能返回全部数据。通过查询参数过滤，客户端可以精确获取所需数据：<code>GET /api/users?status=active&role=admin</code>。</p>
+                <pre><code class="language-javascript">// 过滤参数的 Zod Schema
+const filterQuery = z.object({
+    status: z.enum(["active", "inactive"]).optional(),
+    role: z.enum(["user", "admin"]).optional(),
+    search: z.string().optional(),  // 模糊搜索关键词
+});</code></pre>
+                <p>用 Zod 定义过滤参数有两个好处：<strong>类型安全</strong>——不会拼错字段名；<strong>白名单</strong>——只允许预定义的过滤条件，防止用户传入数据库中不该查的字段。</p>
+            </div>
+        </section>
+
+        <!-- 动态 where 子句 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>动态 Prisma where 子句</h3>
+                <h4>把查询参数安全地转成数据库查询条件</h4>
+                <pre><code class="language-javascript">function buildWhere&lt;T&gt;(filters: Record&lt;string, any&gt;) {
+    const where: Record&lt;string, any&gt; = {};
+
+    // 精确匹配
+    if (filters.status) where.status = filters.status;
+    if (filters.role)   where.role = filters.role;
+
+    // 模糊搜索
+    if (filters.search) {
+        where.OR = [
+            { name:  { contains: filters.search } },
+            { email: { contains: filters.search } },
+        ];
+    }
+    return where;
+}
+
+// 结合分页使用
+app.get("/api/users", asyncHandler(async (req, res) => {
+    const query  = paginationQuery.merge(filterQuery).parse(req.query);
+    const result = await paginate(prisma.user, {
+        page: query.page,
+        pageSize: query.pageSize,
+        where: buildWhere(query),
+    });
+    res.json(result);
+}));</code></pre>
+                <div class="intro-block">
+                    <p><code>paginationQuery.merge(filterQuery)</code> 可以合并多个 Zod Schema，让分页参数和过滤参数统一验证。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 游标分页 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>游标分页</h3>
+                <h4>offset 分页在数据量大时会变慢——游标分页解决这个问题</h4>
+                <p>offset 分页的原理是 <code>SKIP 10000 TAKE 10</code>，数据库需要先跳过 10000 行才能返回结果。数据量越大越慢。游标分页用"上一页最后一条的 ID"作为起点，避免跳过操作。</p>
+                <pre><code class="language-javascript">// 请求：GET /api/posts?cursor=abc123&limit=10
+async function cursorPaginate(model: any, options: {
+    cursor?: string; limit: number; where?: any;
+}) {
+    const { cursor, limit, where = {} } = options;
+    const data = await model.findMany({
+        where,
+        take: limit + 1,            // 多取一条判断是否还有下一页
+        ...(cursor ? {
+            cursor: { id: cursor },
+            skip: 1,                 // 跳过 cursor 本身
+        } : {}),
+        orderBy: { id: "asc" },
+    });
+    const hasNextPage = data.length > limit;
+    const items = hasNextPage ? data.slice(0, -1) : data;
+    return {
+        data: items,
+        nextCursor: hasNextPage ? items[items.length - 1].id : null,
+    };
+}</code></pre>
+                <div class="warning">
+                    <strong>适用场景</strong>：无限滚动列表、实时更新的 Feed 流。如果需要跳转到指定页码，仍用 offset 分页。
+                </div>
+            </div>
+        </section>
+
+        <!-- 字段选择 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>字段选择</h3>
+                <h4>客户端不需要的字段，就不应该传过去</h4>
+                <p>移动端网络慢，<code>SELECT *</code> 浪费带宽。用 <code>?fields=name,email</code> 让客户端指定需要的字段。</p>
+                <pre><code class="language-javascript">// 安全的字段选择——白名单机制
+const ALLOWED_FIELDS = ["id", "name", "email", "role", "createdAt"] as const;
+
+function buildSelect(fieldsParam?: string) {
+    if (!fieldsParam) return undefined; // 不传则返回全部字段
+    const requested = fieldsParam.split(",");
+    // 只保留白名单内的字段，防止泄露敏感数据
+    const safe = requested.filter(f =>
+        ALLOWED_FIELDS.includes(f as any)
+    );
+    return safe.length
+        ? Object.fromEntries(safe.map(f => [f, true]))
+        : undefined;
+}
+
+// 使用
+app.get("/api/users/:id", asyncHandler(async (req, res) => {
+    const user = await prisma.user.findUnique({
+        where: { id: req.params.id },
+        select: buildSelect(req.query.fields as string),
+    });
+    res.json(success(user));
+}));</code></pre>
+                <div class="warning">
+                    <strong>安全提醒</strong>：永远用白名单过滤字段，不要直接把用户输入传给 Prisma 的 <code>select</code>。否则攻击者可能通过 <code>?fields=password</code> 泄露敏感数据。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4: 统一响应 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 统一响应与 CORS</h2>
+                <h4>前端不应该去猜"这次返回的是 data 还是 result"</h4>
+                <p>每个接口返回的数据格式应该一致。前端不应该去猜"这次返回的是 data 还是 result"。统一响应格式让前端的错误处理变得简单可靠，全局错误中间件确保没有任何异常会以裸堆栈的形式暴露给用户。此外，跨域配置（CORS）是 API 对外提供服务的基础设置，这一部分也会一并讲解。</p>
+            </div>
+        </section>
+
+        <!-- 响应封装 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>响应封装</h3>
+                <h4>成功、分页、错误——三种场景统一格式</h4>
+                <pre><code class="language-javascript">function success&lt;T&gt;(data: T, message = "ok") {
+    return { success: true, data, message, timestamp: new Date().toISOString() };
+}
+
+function paginated&lt;T&gt;(data: T[], pagination: object) {
+    return { success: true, data, pagination, timestamp: new Date().toISOString() };
+}
+
+function error(message: string, statusCode: number, details?: unknown) {
+    return { success: false, error: message, statusCode, details, timestamp: new Date().toISOString() };
+}
+
+// 使用
+app.get("/api/users/:id", asyncHandler(async (req, res) => {
+    const user = await userService.findById(req.params.id);
+    if (!user) return res.status(404).json(error("用户不存在", 404));
+    res.json(success(user));
+}));</code></pre>
+            </div>
+        </section>
+
+        <!-- 全局错误处理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>全局错误处理</h3>
+                <h4>Zod 验证错误也能被统一捕获</h4>
+                <pre><code class="language-javascript">app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+    if (err instanceof AppError) {
+        return res.status(err.statusCode).json(error(err.message, err.statusCode));
+    }
+    if (err instanceof z.ZodError) {
+        return res.status(400).json(error("验证失败", 400, err.flatten().fieldErrors));
+    }
+    console.error(err);
+    res.status(500).json(error("服务器内部错误", 500));
+});</code></pre>
+                <div class="warning">
+                    <strong>生产环境不要在 500 响应中暴露错误堆栈。</strong> 内部错误信息可能包含数据库结构、文件路径等敏感信息。
+                </div>
+            </div>
+        </section>
+
+        <!-- CORS 配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CORS 配置</h3>
+                <h4>让浏览器允许跨域请求你的 API</h4>
+                <p>前端 <code>localhost:5173</code> 调用后端 <code>localhost:3000</code>，浏览器会拦截——这就是跨域问题。CORS（跨域资源共享）告诉浏览器"这个源是安全的"。</p>
+                <pre><code class="language-javascript">import cors from "cors";
+
+app.use(cors({
+    origin: [
+        "http://localhost:5173",   // 开发环境前端
+        "https://myapp.com",       // 生产环境
+    ],
+    credentials: true,  // 允许携带 Cookie / Authorization
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+}));</code></pre>
+                <div class="intro-block">
+                    <p><code>credentials: true</code> 允许浏览器发送 Cookie 和 Authorization 头。如果不需要可以省略。<strong>生产环境不要用 <code>origin: "*"</code></strong>，这等于对所有网站开放你的 API。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题</h3>
+
+                <div class="warning">
+                    <strong>API 设计一旦发布就不要随便改。</strong> 不兼容的修改应该用新的版本号（如 /api/v2/users）。
+                </div>
+
+                <h4>问题一：Zod 验证总是失败</h4>
+                <p><strong>原因</strong>：前端发送的数据格式和 Schema 定义不一致。比如前端发了 <code>"page": "1"</code>，但 Schema 期望 number。</p>
+                <p><strong>修复</strong>：查询参数用 <code>z.coerce.number()</code> 自动转换，Body 数据确保前端 Content-Type 是 <code>application/json</code>。</p>
+
+                <h4>问题二：分页查询返回 totalPages 为 0</h4>
+                <p><strong>原因</strong>：where 条件太严格，查不到数据。</p>
+                <p><strong>修复</strong>：先检查 where 条件，或用数据库工具直接查询确认数据存在。</p>
+
+                <h4>问题三：验证中间件不生效</h4>
+                <p><strong>原因</strong>：忘记调用 <code>next()</code>，或中间件注册顺序不对。</p>
+                <p><strong>修复</strong>：确认验证中间件在路由处理器之前注册，且内部调用了 <code>next()</code>。</p>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>试一试</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习一</h3>
+                        <p><strong>任务</strong>：定义一个 Zod Schema 验证文章创建请求：title（最少1个字符）、content（最少10个字符）、tags（可选的字符串数组）。</p>
+                        <pre><code class="language-javascript">// 提示：z.array(z.string()) 定义字符串数组
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">const createPostSchema = z.object({
+    title: z.string().min(1, "标题不能为空"),
+    content: z.string().min(10, "内容至少10个字符"),
+    tags: z.array(z.string()).optional(),
+});</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：写一个 <code>GET /api/posts</code> 接口，支持分页查询。URL 参数：<code>?page=1&pageSize=10</code>。</p>
+                        <pre><code class="language-javascript">// 提示：用 paginationQuery 验证 query 参数
+// 你的代码：</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">app.get("/api/posts", asyncHandler(async (req, res) => {
+    const query = paginationQuery.parse(req.query);
+    const result = await paginate(prisma.post, {
+        page: query.page,
+        pageSize: query.pageSize,
+    });
+    res.json(result);
+}));</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>下一章</h1>
+            <p>接口设计好了，但谁来都能调吗？下一章学习<strong>用户认证与授权</strong>——区分"谁在请求"和"能不能做"。</p>
+        </section>
+
+    </main>
+
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="./references/slide-nav.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="./references/slide-toc.js"></script>
+    <script src="./references/chapter-nav.js"></script>
+</body>
+</html>

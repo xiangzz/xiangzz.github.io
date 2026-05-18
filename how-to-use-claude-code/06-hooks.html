@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>06 Hooks</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪝</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 06 章</div>
+            <h1>Hooks</h1>
+            <p>事件驱动自动化——在关键时刻自动执行约束</p>
+            <strong>不再靠人自觉 — 让质量门禁变成自动化的</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>靠人自觉不靠谱</h2>
+                <h4>你有没有发现，"记得做"的事情经常被忘掉？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>提交前忘跑测试</h4>
+                        <p>团队规定"提交前必须跑测试"。但你急着下班一敲 <code>git commit</code> 就走了。<strong>第二天 CI 红了，全组等你修</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>不小心提交密钥</h4>
+                        <p>"别提交密钥"——说了无数遍。但某次赶进度，<code>.env</code> 文件混进了提交。<strong>密钥泄露，连夜轮换</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>代码忘了格式化</h4>
+                        <p>审查 PR 时发现满屏的格式问题。不是什么大 bug，但<strong>每次都要花时间指出同样的格式问题</strong>，审查者和提交者都很烦。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>Hooks 就是为这个设计的：</strong>在特定事件发生时自动执行检查——写入文件前自动格式化、提交前自动扫描敏感信息、每次操作后自动记录审计日志。不合规的操作直接被阻断，不靠人自觉。
+                </div>
+            </div>
+        </section>
+
+        <!-- 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>需要把"规范检查、日志记录、自动修复"融入日常工作流的个人和团队</li>
+                            <li>厌倦了口头约定"记得做 XXX"却总是被忘掉的人</li>
+                            <li>了解命令和 Skill 的基本使用，想让流程更自动化的开发者</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该已经能</h4>
+                        <ul>
+                            <li>说清 Hooks 的触发时机和能做什么</li>
+                            <li>设计典型用例的 Hook（安全门禁、格式校验、质量检查）</li>
+                            <li>理解失败策略（提醒 / 阻断 / 自动修复）的选择依据</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Hook 是什么 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>什么是 Hook</h2>
+                <h4>定义 → 白话 → 能做什么</h4>
+                <p><strong>Hook</strong>是在 Claude Code 事件发生时自动执行的 shell 命令。它们在特定动作的前后触发，不需要手动操作。</p>
+                <p>说白了，Hook 就是一个<strong>"自动触发的检查点"</strong>——你设好"什么时候检查"和"检查什么"，之后每次到那个时间点，它就自动跑一遍。过了就放行，没过就拦截或提醒。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>校验</h4>
+                        <p>检查输入/输出是否符合预期</p>
+                    </div>
+                    <div class="card">
+                        <h4>格式化</h4>
+                        <p>写入前自动格式化代码</p>
+                    </div>
+                    <div class="card">
+                        <h4>告警</h4>
+                        <p>发现问题时提醒用户</p>
+                    </div>
+                    <div class="card">
+                        <h4>阻断</h4>
+                        <p>阻止不合规的操作执行</p>
+                    </div>
+                    <div class="card">
+                        <h4>审计</h4>
+                        <p>记录所有操作到日志</p>
+                    </div>
+                    <div class="card">
+                        <h4>自动修复</h4>
+                        <p>检测到问题后自动修正</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 触发时机 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>四类事件</h2>
+                <h4>Hook 能挂在哪些时间点上</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/06-hooks-1.png" alt="图：Hook 事件时间线——一次工具调用的完整生命周期中各 Hook 挂载点" class="ai-diagram-img">
+                <table>
+                    <thead><tr><th>类别</th><th>事件</th><th>典型用途</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="tag tag-primary">Tool</span></td>
+                            <td>PreToolUse、PostToolUse、PostToolUseFailure、PermissionRequest</td>
+                            <td>格式化、安全扫描、日志、自动审批</td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag tag-success">Session</span></td>
+                            <td>SessionStart、SessionEnd、Stop、StopFailure、SubagentStart、SubagentStop</td>
+                            <td>初始化、清理、审计、子 agent 追踪</td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag tag-warning">Task</span></td>
+                            <td>UserPromptSubmit、TaskCompleted、TaskCreated、TeammateIdle</td>
+                            <td>输入校验、任务追踪、协作调度</td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag tag-info">Lifecycle</span></td>
+                            <td>ConfigChange、CwdChanged、FileChanged、PreCompact、PostCompact、WorktreeCreate、WorktreeRemove、Notification、InstructionsLoaded、Elicitation、ElicitationResult</td>
+                            <td>环境变更、上下文管理、工作树、通知、交互问答</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>最常用的两个：</strong><code>PreToolUse</code>（工具执行前拦截或修改）和 <code>PostToolUse</code>（工具执行后校验或记录）。先掌握这两个，其他的按需取用。
+                </div>
+            </div>
+        </section>
+
+        <!-- 配置方式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置方式</h2>
+                <h4>在 settings.json 中声明 Hook</h4>
+                <pre><code>{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Write",
+      "hooks": ["~/.claude/hooks/format-code.sh"]
+    }],
+    "PostToolUse": [{
+      "matcher": "Write",
+      "hooks": [{
+        "type": "command",
+        "command": "prettier --write $CLAUDE_FILE_PATH"
+      }]
+    }]
+  }
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>两种 hook 格式</h4>
+                        <p><strong>脚本路径</strong>（字符串）：适合复杂逻辑，指向一个 <code>.sh</code> 文件。</p>
+                        <p><strong>内联命令</strong>（对象）：适合一行命令搞定的事，如 <code>{"type": "command", "command": "prettier --write $CLAUDE_FILE_PATH"}</code>。不用单独写脚本文件。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Hook 可用的环境变量</h4>
+                        <ul>
+                            <li><code>$CLAUDE_FILE_PATH</code> — 当前操作的文件路径</li>
+                            <li><code>$CLAUDE_TOOL_NAME</code> — 当前使用的工具名</li>
+                            <li><code>$CLAUDE_SESSION_ID</code> — 当前会话 ID</li>
+                            <li><code>$CLAUDE_PROJECT_DIR</code> — 项目目录路径</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 失败策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三种结果</h2>
+                <h4>退出码决定 Hook 的行为——通过、提醒、阻断</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-cc-images/06-hooks-2.png" alt="图：Hook 执行决策流程——从触发到最终结果的分支判断" class="ai-diagram-img">
+                <table>
+                    <thead><tr><th>退出码</th><th>效果</th><th>什么时候用</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>0</code></td><td>通过，操作正常继续</td><td>检查全部通过</td></tr>
+                        <tr><td><code>1</code></td><td>提醒，不阻断但提示用户</td><td>非致命问题，建议关注</td></tr>
+                        <tr><td><code>2</code></td><td>阻断，操作被取消</td><td>严重违规，必须拦截</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>建议：</strong>新 Hook 先设为"提醒"模式（exit 1）观察一段时间。确认没有误报后再升级为"阻断"（exit 2）。一上来就阻断，容易把正常工作流也卡住。
+                </div>
+            </div>
+        </section>
+
+        <!-- 实战 1：安全门禁 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全门禁</h2>
+                <h4>写入文件前自动扫描敏感信息</h4>
+                <pre><code><span style="color: var(--text-muted);"># 文件：~/.claude/hooks/security-scan.sh</span>
+#!/bin/bash
+
+FILE="$CLAUDE_FILE_PATH"
+CONTENT=$(cat "$FILE" 2>/dev/null)
+
+<span style="color: var(--text-muted);"># 检查是否包含密钥模式</span>
+if echo "$CONTENT" | grep -qE '(AKIA|sk-|api_key|secret|password)\s*[:=]'; then
+    echo "🚨 检测到可能的密钥或敏感信息！"
+    echo "请检查文件: $FILE"
+    exit 2  <span style="color: var(--text-muted);"># 阻断操作</span>
+fi
+
+echo "✅ 安全检查通过"
+exit 0</code></pre>
+                <div class="warning">
+                    <strong>这个 Hook 用 exit 2（阻断）：</strong>密钥泄露是严重安全问题，宁可误报也不能放过。如果你担心误报，可以先改成 exit 1（提醒）观察一周。
+                </div>
+            </div>
+        </section>
+
+        <!-- 实战 2：格式校验 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>格式校验</h2>
+                <h4>确保生成的 API 文档包含必需字段</h4>
+                <pre><code><span style="color: var(--text-muted);"># 文件：~/.claude/hooks/check-api-docs.sh</span>
+#!/bin/bash
+
+FILE="$CLAUDE_FILE_PATH"
+
+if [[ "$FILE" == *api-docs* ]]; then
+    for section in "## 概述" "## 参数" "## 返回值" "## 示例"; do
+        if ! grep -q "$section" "$FILE"; then
+            echo "⚠️ API 文档缺少必需章节: $section"
+            exit 1  <span style="color: var(--text-muted);"># 提醒但不阻断</span>
+        fi
+    done
+fi
+
+exit 0</code></pre>
+                <div class="info-block">
+                    <strong>这个 Hook 用 exit 1（提醒）：</strong>缺少章节不是致命错误，但需要引起注意。Claude 看到提醒后会自行补充。
+                </div>
+            </div>
+        </section>
+
+        <!-- 实战 3：质量检查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>质量检查</h2>
+                <h4>提交前自动运行测试</h4>
+                <pre><code><span style="color: var(--text-muted);"># 文件：~/.claude/hooks/pre-commit-test.sh</span>
+#!/bin/bash
+<span style="color: var(--text-muted);"># PreToolUse hook for Bash(git commit*)</span>
+
+if ! npm test 2>/dev/null; then
+    echo "❌ 测试失败！请修复后再提交。"
+    exit 2  <span style="color: var(--text-muted);"># 阻断提交</span>
+fi
+
+echo "✅ 所有测试通过"
+exit 0</code></pre>
+                <div class="key-point">
+                    <strong>三段式理解 Hooks：</strong>触发点（什么时候）→ 动作（做什么）→ 结果（通过/提醒/阻断）。把这三个想清楚，任何 Hook 都能设计出来。
+                </div>
+            </div>
+        </section>
+
+        <!-- 更多实战示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>更多示例</h2>
+                <h4>三个常见场景的 Hook 脚本</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>记录 Bash 命令</h4>
+                        <pre><code><span style="color: var(--text-muted);"># log-bash.sh — PostToolUse</span>
+#!/bin/bash
+echo "[$(date '+%Y-%m-%d %H:%M')] " \
+  "cmd=$CLAUDE_TOOL_NAME " \
+  "file=$CLAUDE_FILE_PATH" \
+  >> ~/.claude/hooks/audit.log
+exit 0</code></pre>
+                        <p>每次工具调用后写审计日志，exit 0 不阻断。</p>
+                    </div>
+                    <div class="card">
+                        <h4>校验用户输入</h4>
+                        <pre><code><span style="color: var(--text-muted);"># validate-prompt.sh — UserPromptSubmit</span>
+#!/bin/bash
+PROMPT=$(cat)
+if echo "$PROMPT" | grep -qiE '(删除所有|drop table)'; then
+  echo "⚠️ 输入包含高危关键词"
+  exit 1
+fi
+exit 0</code></pre>
+                        <p>检测用户输入中的危险指令，提醒但不阻断。</p>
+                    </div>
+                    <div class="card">
+                        <h4>发送团队通知</h4>
+                        <pre><code><span style="color: var(--text-muted);"># notify-team.sh — Notification</span>
+#!/bin/bash
+MSG=$(cat)
+curl -s -X POST "$WEBHOOK_URL" \
+  -H 'Content-type: application/json' \
+  -d "{\"text\":\"$MSG\"}" \
+  >/dev/null 2>&amp;1
+exit 0</code></pre>
+                        <p>通过 Webhook 把通知转发到团队聊天工具。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 安装与最佳实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安装与最佳实践</h2>
+                <h4>把 Hook 脚本放到正确位置，并给执行权限</h4>
+                <pre><code><span style="color: var(--text-muted);"># 1. 创建 hooks 目录</span>
+$ mkdir -p ~/.claude/hooks
+
+<span style="color: var(--text-muted);"># 2. 复制 Hook 脚本</span>
+$ cp security-scan.sh ~/.claude/hooks/
+$ cp format-code.sh ~/.claude/hooks/
+
+<span style="color: var(--text-muted);"># 3. 赋予执行权限</span>
+$ chmod +x ~/.claude/hooks/*.sh
+
+<span style="color: var(--text-muted);"># 4. 在 settings.json 中配置触发规则</span></code></pre>
+                <table>
+                    <thead><tr><th>配置位置</th><th>影响范围</th><th>适合放什么</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>~/.claude/settings.json</code></td><td>所有项目</td><td>个人通用的安全扫描、格式化</td></tr>
+                        <tr><td><code>.claude/settings.json</code></td><td>当前项目</td><td>团队共享的质量门禁、项目规范</td></tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>性能要求</h4>
+                        <p>Hook 执行时间应<strong>控制在 1 秒以内</strong>。超时的 Hook 会拖慢整个工作流。耗时操作（完整测试套件）放 CI，Hook 只做快速检查。</p>
+                    </div>
+                    <div class="card">
+                        <h4>权限提示自动化</h4>
+                        <p><code>PermissionRequest</code> 事件可以自动审批特定工具调用。比如自动允许 <code>Read</code> 操作，但 <code>Bash(rm *)</code> 仍然需要手动确认——减少弹窗但不降低安全性。</p>
+                    </div>
+                    <div class="card">
+                        <h4>单一职责</h4>
+                        <p>每个 Hook 只做一件事。不要在一个脚本里同时格式化、扫描密钥、跑测试。分开写便于调试、单独开关、逐步升级失败策略。</p>
+                    </div>
+                    <div class="card">
+                        <h4>先本地再上线</h4>
+                        <p>新 Hook 先用 <code>exit 1</code>（提醒模式）在本地观察几天。确认没有误报后再改成 <code>exit 2</code>（阻断）。不要一上来就阻断——会把正常工作流卡住。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>不要在 Hook 里放复杂业务逻辑。</strong>Hook 不是应用——它应该是短小的检查脚本。复杂逻辑容易出错、难维护、拖慢速度。对副作用保持谨慎：Hook 修改文件或发送请求时要考虑失败场景。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>误报太多</h4>
+                        <p><strong>症状：</strong>规则太严，正常操作也被阻断，同事开始绕过 Hook。</p>
+                        <p><strong>修复：</strong>先降级为"提醒"模式（exit 1）。收集一周的告警数据，调整规则后再升级为"阻断"。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>Hook 太慢</h4>
+                        <p><strong>症状：</strong>每次操作都要等好几秒，拖慢整个工作流。</p>
+                        <p><strong>修复：</strong>保持 Hook 短小精悍。避免在 Hook 中跑完整测试套件——只做最关键的快速检查。耗时操作放到 CI。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>别人跑不了</h4>
+                        <p><strong>症状：</strong>你的 Hook 在别人机器上跑不通。</p>
+                        <p><strong>修复：</strong>用标准工具，不依赖特定环境。如果必须依赖，在 Hook 开头检查依赖是否可用，不可用则 exit 0（静默跳过）。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>CI 环境差异</h4>
+                        <p><strong>症状：</strong>本地 Hook 正常，CI 环境行为不同。</p>
+                        <p><strong>修复：</strong>注意环境变量和路径差异。CI 环境可能没有交互式权限确认——用 <code>--permission-mode</code> 控制。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>配置语法错误</h4>
+                        <p><strong>症状：</strong>Hook 配了但不生效，Claude Code 启动时报错或静默忽略。</p>
+                        <p><strong>修复：</strong>用 <code>cat ~/.claude/settings.json | python3 -m json.tool</code> 检查 JSON 语法。常见问题：缺少逗号、括号不匹配、数组/对象嵌套错误。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>版本不兼容</h4>
+                        <p><strong>症状：</strong>某些事件在旧版 Claude Code 中不被识别。</p>
+                        <p><strong>修复：</strong>运行 <code>claude --version</code> 检查版本。新事件（如 <code>WorktreeCreate</code>、<code>Elicitation</code>）需要较新版本。参考 <a href="https://code.claude.com/docs/en/changelog" target="_blank">更新日志</a> 确认支持情况。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>设计一个"防止提交临时代码"的 Hook</h4>
+                <div class="key-point">
+                    <strong>题目：</strong>在提交前检查代码中是否有 <code>console.log</code>、<code>debugger</code>、<code>TODO:</code> 等临时调试代码。发现时提醒，但不阻断。
+                </div>
+                <ul>
+                    <li>确定触发点（哪个事件）</li>
+                    <li>编写检查逻辑（扫描什么内容）</li>
+                    <li>决定失败策略（提醒 or 阻断）</li>
+                    <li>思考：为什么这个场景用"提醒"而不是"阻断"？</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <pre><code><span style="color: var(--text-muted);"># 文件：~/.claude/hooks/check-debug-code.sh</span>
+#!/bin/bash
+<span style="color: var(--text-muted);"># PreToolUse hook for Bash(git commit*)</span>
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM \
+  | grep -E '\.(js|ts|jsx|tsx)$')
+
+if [ -z "$STAGED" ]; then
+    exit 0
+fi
+
+FOUND=0
+for file in $STAGED; do
+    if git diff --cached "$file" | grep -qE \
+      '^\+.*(console\.log|debugger|TODO:)'; then
+        echo "⚠️ $file 中包含调试代码"
+        FOUND=1
+    fi
+done
+
+if [ $FOUND -eq 1 ]; then
+    echo ""
+    echo "发现临时调试代码，建议清理后再提交。"
+    echo "如确认需要提交，可忽略此提醒。"
+    exit 1  <span style="color: var(--text-muted);"># 提醒但不阻断</span>
+fi
+
+exit 0</code></pre>
+                <div class="key-point">
+                    <strong>为什么用提醒而非阻断：</strong>有些 <code>console.log</code> 是故意留的调试日志，有些 <code>TODO:</code> 是标记后续优化点。硬性阻断会误伤正常开发。提醒给开发者选择权。
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>说清 Hooks 解决什么问题</li>
+                            <li>理解四类触发时机和三种失败策略</li>
+                            <li>设计安全门禁、格式校验、质量检查三类 Hook</li>
+                            <li>判断一个检查该"提醒"还是"阻断"</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>它和前后章节的关系</h4>
+                        <ul>
+                            <li><a href="./04-subagents.html">Subagents</a> — Hook 可以在 agent 执行前后做校验</li>
+                            <li><a href="./05-mcp.html">MCP</a> — Hook 可以校验 MCP 调用的输入输出</li>
+                            <li><strong>Hooks</strong> — 自动化的质量门禁</li>
+                            <li><a href="./07-plugins.html">Plugins</a> — 把 Hooks 打包成可安装的团队标准</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Hooks 把"应该做但容易忘"的事变成自动化的。好的 Hook = 精准的触发点 + 最小的开销 + 清晰的失败策略。先观察再阻断，别一上来就锁死。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./07-plugins.html">下一章：Plugins</a> — 把 Hooks 打包成可安装的团队标准</li>
+                            <li><a href="./08-checkpoints.html">Checkpoints</a> — 与 Hooks 配合做安全试错</li>
+                            <li><a href="./01-slash-commands.html">Slash Commands</a> — 用命令快速触发常用操作</li>
+                            <li><a href="./03-skills.html">Skills</a> — 把复杂工作流封装成可复用的技能</li>
+                            <li><a href="./09-advanced-features.html">Advanced Features</a> — 进阶功能与高级配置</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://code.claude.com/docs/en/hooks" target="_blank">Official Hooks Documentation</a> — 官方 Hook 配置与事件参考</li>
+                            <li><a href="https://code.claude.com/docs/en/cli-reference" target="_blank">CLI Reference</a> — 命令行参数与环境变量大全</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章源文件 <span style="font-weight:normal;font-size:0.85em;color:var(--text-muted);">（点击查看完整内容）</span></h4>
+                        <ul>
+                            <li><code><a href="#" class="md-link" data-md="README">README.md</a></code> — Hooks 完整配置指南</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- README 弹窗 -->
+    <style>
+        .md-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .md-modal-overlay.active {
+            display: flex;
+        }
+        .md-modal {
+            background: var(--surface-color, #fff);
+            border-radius: 12px;
+            width: min(720px, 92vw);
+            max-height: 82vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+            animation: md-modal-in 0.2s ease-out;
+        }
+        @keyframes md-modal-in {
+            from { opacity: 0; transform: translateY(20px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .md-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
+        }
+        .md-modal-header h3 {
+            margin: 0;
+            font-size: 1.05em;
+            font-family: var(--font-mono, monospace);
+            color: var(--accent-color, #8A4A12);
+        }
+        .md-modal-close {
+            background: none;
+            border: none;
+            font-size: 1.6em;
+            line-height: 1;
+            cursor: pointer;
+            color: var(--text-color, #333);
+            padding: 0 4px;
+            border-radius: 4px;
+        }
+        .md-modal-close:hover {
+            background: var(--code-bg-color, #f3f4f6);
+        }
+        .md-modal-body {
+            padding: 20px 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .md-modal-body pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.88em;
+            line-height: 1.65;
+            color: var(--text-color, #333);
+            font-family: var(--font-mono, monospace);
+        }
+        .md-modal-body .md-loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted, #888);
+        }
+        a.md-link {
+            color: var(--code-text-color, #0B598E);
+            text-decoration: none;
+            border-bottom: 1px dashed var(--code-text-color, #0B598E);
+            cursor: pointer;
+        }
+        a.md-link:hover {
+            color: var(--primary-color, #D06519);
+            border-bottom-color: var(--primary-color, #D06519);
+        }
+    </style>
+
+    <div class="md-modal-overlay" id="md-modal-overlay">
+        <div class="md-modal">
+            <div class="md-modal-header">
+                <h3 id="md-modal-title"></h3>
+                <button class="md-modal-close" id="md-modal-close">&times;</button>
+            </div>
+            <div class="md-modal-body">
+                <div class="md-loading" id="md-modal-loading">加载中…</div>
+                <pre id="md-modal-content" style="display:none;"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        var overlay = document.getElementById('md-modal-overlay');
+        var titleEl = document.getElementById('md-modal-title');
+        var contentEl = document.getElementById('md-modal-content');
+        var loadingEl = document.getElementById('md-modal-loading');
+        var closeBtn = document.getElementById('md-modal-close');
+
+        var cache = {};
+
+        function openModal(name) {
+            titleEl.textContent = name + '.md';
+            contentEl.style.display = 'none';
+            loadingEl.style.display = 'block';
+            overlay.classList.add('active');
+
+            if (cache[name]) {
+                showContent(cache[name]);
+                return;
+            }
+
+            fetch('./06-hooks/' + name + '.md')
+                .then(function(r) {
+                    if (!r.ok) throw new Error('Not found');
+                    return r.text();
+                })
+                .then(function(text) {
+                    cache[name] = text;
+                    showContent(text);
+                })
+                .catch(function() {
+                    loadingEl.textContent = '加载失败，请确认文件存在。';
+                });
+        }
+
+        function showContent(text) {
+            contentEl.textContent = text;
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+        }
+
+        function closeModal() {
+            overlay.classList.remove('active');
+        }
+
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && overlay.classList.contains('active')) {
+                closeModal();
+            }
+        });
+
+        document.querySelectorAll('a.md-link').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                openModal(this.getAttribute('data-md'));
+            });
+        });
+    })();
+    </script>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>
