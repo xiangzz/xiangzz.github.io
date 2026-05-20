@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>与 Claude Agent SDK 的对比</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚖️</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 04 章</div>
+            <h1>与 Claude Agent SDK 的对比</h1>
+            <p>深入比较 LangChain Deep Agents 与 Claude Agent SDK 的架构差异</p>
+            <strong>为你的用例选择合适的 Agent 框架</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Why compare ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么要对比</h2>
+                <h4>两个框架都能构建自定义 Agent，但设计哲学截然不同</h4>
+                <p>当你决定用框架构建生产级 Agent 时，<strong>Deep Agents</strong> 和 <strong>Claude Agent SDK</strong> 都在候选列表上。它们各自做了不同的权衡——理解这些差异，才能选对工具。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>Claude Agent SDK</h4>
+                        <ul>
+                            <li>Agent 在<strong>沙箱内部</strong>运行，操作本地文件系统</li>
+                            <li>模型锁定在 <strong>Claude 生态</strong>（Anthropic / Bedrock / Vertex）</li>
+                            <li>自托管：需要自行构建服务器、认证和流式传输层</li>
+                            <li>多租户需自行实现 API 封装和沙箱管理</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agents</h4>
+                        <ul>
+                            <li>Agent 可在沙箱内或外运行，<strong>两种模式都支持</strong></li>
+                            <li>支持 <strong>100+ 家模型提供商</strong>，按需切换</li>
+                            <li>托管或自托管一键切换，<strong>无需改代码</strong></li>
+                            <li>内置多租户：作用域线程、按用户沙箱、RBAC</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心问题：</strong>两者都是构建自定义 Agent 的 harness（框架），但在执行环境、部署方式和供应商耦合上做出了不同的权衡。没有"更好"的框架，只有"更适合你场景"的框架。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Overview table ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>核心对比</h2>
+                <h4>六大维度一览：从运行位置到许可证</h4>
+                <table>
+                    <thead>
+                        <tr><th>维度</th><th>Deep Agents</th><th>Claude Agent SDK</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Agent 运行位置</strong></td>
+                            <td>沙箱内部，或沙箱外远程执行</td>
+                            <td>仅在沙箱内部</td>
+                        </tr>
+                        <tr>
+                            <td><strong>执行后端</strong></td>
+                            <td>可插拔：本地 / 虚拟文件系统 / 远程 / 自定义</td>
+                            <td>沙箱的本地文件系统</td>
+                        </tr>
+                        <tr>
+                            <td><strong>模型提供商</strong></td>
+                            <td>任意（Anthropic、OpenAI、Google 等 100+）</td>
+                            <td>Claude（Anthropic、Bedrock、Vertex、Azure）</td>
+                        </tr>
+                        <tr>
+                            <td><strong>按提供商/模型调优</strong></td>
+                            <td>Harness 配置文件（profiles）（测试版）：系统提示词、工具、中间件和子 Agent 调整的声明式捆绑包，按提供商或特定模型注册</td>
+                            <td>在每次模型调用的代码处进行配置</td>
+                        </tr>
+                        <tr>
+                            <td><strong>部署方式</strong></td>
+                            <td>LangSmith 托管 或 <code>langgraph build</code> 自托管</td>
+                            <td>自托管，需自行构建服务器和认证层</td>
+                        </tr>
+                        <tr>
+                            <td><strong>多租户</strong></td>
+                            <td>内置：作用域线程、按用户沙箱、RBAC</td>
+                            <td>需自行构建</td>
+                        </tr>
+                        <tr>
+                            <td><strong>许可证</strong></td>
+                            <td>MIT</td>
+                            <td>MIT（Claude Code 本身专有）</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>生产验证：</strong>Deep Agents 已被 <strong>OpenSWE</strong> 和 <strong>LangSmith Fleet</strong> 用于生产环境。Claude Agent SDK 的托管模型（Claude managed agents）是一个独立的产品。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Execution environment ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>执行环境</h2>
+                <h4>Agent 连接沙箱有两种模式，Deep Agents 两种都支持</h4>
+                <p>Agent 与沙箱的连接方式决定了你的<strong>部署灵活性和扩展上限</strong>。理解这两种模式是做出正确选择的关键。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>模式一：Agent 在沙箱内</h4>
+                        <p>Agent 直接运行在沙箱容器里，操作沙箱的本地文件系统。</p>
+                        <ul>
+                            <li>架构简单，Agent 与文件系统零延迟</li>
+                            <li><strong>Claude Agent SDK 仅支持此模式</strong></li>
+                            <li>每个 Agent 需要独占一个沙箱容器</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>模式二：Agent 在沙箱外</h4>
+                        <p>Agent 运行在长期容器中，将远程沙箱作为工具使用。</p>
+                        <ul>
+                            <li>Agent 可以同时管理多个沙箱</li>
+                            <li>通过网络执行命令，灵活性更高</li>
+                            <li><strong>Deep Agents 两种模式都支持</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// Deep Agents：通过 backend 配置选择执行模式
+import { createHarness } from "@langchain/deepagents";
+
+const harness = createHarness({
+  // 本地虚拟文件系统（测试用）—— 文件仅存在于内存中
+  // backend: "local",
+
+  // 远程沙箱（生产用）—— Agent 在隔离容器中执行代码
+  backend: "remote",
+
+  // 自定义后端（自有基础设施）—— 实现自己的存储和执行逻辑
+  // backend: customBackend,
+});</code></pre>
+                <div class="key-point">
+                    <strong>实际意义：</strong>在测试时切换虚拟文件系统，在生产时用远程沙箱，在自有基础设施上用自定义后端——同一个 Agent 代码，三种执行环境。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/04-comparison-1.png" alt="图：Agent 连接沙箱的两种模式" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Multi-tenancy ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多租户设计</h2>
+                <h4>当你的应用需要服务多个终端用户时，环境隔离是硬需求</h4>
+                <p>把 Agent 投入生产，几乎必然要面对多用户隔离。两个框架在这方面的差距很大。</p>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>Claude Agent SDK：需自行构建</h4>
+                        <p>SDK 将 Agent 绑定到其沙箱。要实现多租户，你必须：</p>
+                        <ul>
+                            <li>编写 <strong>API 封装层</strong>，为每个用户启动沙箱</li>
+                            <li>自行<strong>跟踪每个沙箱的归属关系</strong></li>
+                            <li>在使用后<strong>销毁沙箱</strong>回收资源</li>
+                            <li>自行实现认证和权限控制</li>
+                        </ul>
+                        <p><span class="tag tag-danger">工作量大</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>Deep Agents：内置支持</h4>
+                        <p>框架直接处理了这些问题：</p>
+                        <ul>
+                            <li>按用户或按助手<strong>自动配置沙箱</strong></li>
+                            <li>内置<strong>作用域线程</strong>和运行历史</li>
+                            <li>内置 <strong>RBAC</strong> 团队访问控制</li>
+                            <li>LangSmith Sandbox 提供<strong>认证代理</strong>，用户可直接调第三方 API</li>
+                        </ul>
+                        <p><span class="tag tag-success">开箱即用</span></p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>容易忽视的点：</strong>Claude Agent SDK 的认证代理意味着你需要为每个用户单独配置第三方 API 凭证。而 Deep Agents + LangSmith Sandbox 让终端用户直接在沙箱中调用第三方 API，你不需要替用户管凭证。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/04-comparison-2.png" alt="图：多租户架构对比" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Agent server ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>生产级服务</h2>
+                <h4>从"能跑的 Agent"到"能对外提供服务的 Agent 服务器"</h4>
+                <p>写好 Agent 只是第一步。要把它暴露给终端用户，你需要一个完整的服务器基础设施。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>Claude Agent SDK：自己造轮子</h4>
+                        <p>你需要自己编写并运维：</p>
+                        <ul>
+                            <li>HTTP / WebSocket / SSE 服务器</li>
+                            <li>Agent 调用和 <strong>token 流式传输</strong></li>
+                            <li>对话<strong>线程管理</strong></li>
+                            <li><strong>认证和安全加固</strong></li>
+                        </ul>
+                        <p>全部由你构建、运维和安全加固。</p>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agents：开箱即用</h4>
+                        <p>部署自带完整的 Agent 服务器：</p>
+                        <ul>
+                            <li><strong>流式传输端点</strong>（SSE / streaming）</li>
+                            <li><strong>线程管理</strong>和运行历史</li>
+                            <li><strong>Webhook</strong> 通知</li>
+                            <li>内置<strong>认证</strong>（LangSmith Auth）</li>
+                        </ul>
+                        <p>从开发到生产，零额外工作。</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// Deep Agents：部署即包含完整 Agent 服务器
+// 流式传输、线程管理、认证——全部开箱即用
+
+// 自托管：一行命令生成独立 Docker 镜像
+// $ langgraph build
+
+// 托管模式：在 LangSmith 中一键创建
+// 无需修改任何 Agent 代码</code></pre>
+                <div class="key-point">
+                    <strong>省下的不只是时间：</strong>自己构建服务器意味着你要持续维护它——处理连接中断、流式重连、线程清理、安全补丁。这些是"看不见"但持续消耗工程资源的部分。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Deployment ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>部署方式</h2>
+                <h4>托管还是自托管？Deep Agents 无需改代码即可切换</h4>
+                <p>部署方式直接影响你的<strong>运维成本和上线速度</strong>。两个框架在这方面差异显著。</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>Deep Agents：双模部署</h4>
+                        <p><strong>托管模式：</strong>在 LangSmith 中使用 Managed Deep Agents，创建、运行和管理——零运维。</p>
+                        <p><strong>自托管模式：</strong>运行 <code>langgraph build</code> 生成独立 Docker 镜像，部署到任何地方。</p>
+                        <p>两种模式<strong>共享同一份 Agent 代码</strong>，随时可以切换。</p>
+                        <p><span class="tag tag-info">灵活切换</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>Claude Agent SDK：仅自托管</h4>
+                        <p>SDK 和 <strong>Claude managed agents</strong> 是独立的产品。</p>
+                        <p>针对 SDK 编写的代码<strong>不能直接部署</strong>到托管服务上。</p>
+                        <p>你需要自行搭建基础设施：服务器、容器编排、负载均衡、监控。</p>
+                        <p><span class="tag tag-warning">自行运维</span></p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>扩展选择：</strong>如果你需要一个跨任意模型提供商的托管 Agent 平台，可以使用 <strong>LangSmith Fleet</strong>。Claude managed agents 仅限于 Anthropic 生态系统。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/04-comparison-3.png" alt="图：双模部署切换示意" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: LLM & Ecosystem ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模型与生态</h2>
+                <h4>模型选择自由度 vs 深度集成优化——不同的设计哲学</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>Claude Agent SDK：深度捆绑</h4>
+                        <p>模型、后端和部署<strong>三者捆绑</strong>在一起，优化三者之间的协同支持。</p>
+                        <ul>
+                            <li>专为 <strong>Claude</strong> 模型优化</li>
+                            <li>绑定 <strong>Anthropic 产品体系</strong></li>
+                            <li>深度集成意味着<strong>更好的开箱体验</strong></li>
+                            <li>但切换模型 = 切换框架</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agents：按需组合</h4>
+                        <p>模型提供商、执行后端和部署目标<strong>三者独立选择</strong>。</p>
+                        <ul>
+                            <li>支持 <strong>100+ 家</strong>模型提供商</li>
+                            <li>通过 <strong>profiles</strong> 按提供商调优提示词和工具</li>
+                            <li>与 <strong>LangChain 生态</strong>深度集成（LangSmith 可观测性、评估、部署）</li>
+                            <li>切换模型<strong>不改架构</strong>，只改配置</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// Deep Agents：通过 profiles 按提供商调优
+// 不同模型可以有不同的系统提示词、工具集和中间件
+// 这样切换模型时，Agent 代码不需要任何改动
+
+// profile 配置示例（概念性代码）
+{
+  profiles: {
+    "anthropic/claude-4": {
+      systemPrompt: "...",         // 针对 Claude 优化的提示词
+      tools: [...],                // Claude 可用的工具集
+      middleware: [...]            // Claude 专用的中间件（如提示缓存）
+    },
+    "openai/gpt-5": {
+      systemPrompt: "...",         // 针对 GPT 优化的提示词
+      tools: [...],                // GPT 可用的工具集
+    }
+  }
+}</code></pre>
+                <div class="key-point">
+                    <strong>选哪个：</strong>如果你已经深入 Anthropic 生态且不打算换模型，Claude Agent SDK 的深度集成可能更顺手。如果你需要模型灵活性、或团队使用多个模型提供商，Deep Agents 保留了最大的选择空间。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Summary ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>如何选择</h2>
+                <h4>没有"更好"的框架，只有"更适合你场景"的框架</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>选 Deep Agents，如果你需要：</h4>
+                        <ul>
+                            <li><strong>模型灵活性</strong>——支持 100+ 家提供商，随时切换</li>
+                            <li><strong>内置多租户</strong>——作用域线程、按用户沙箱、RBAC 开箱即用</li>
+                            <li><strong>双模部署</strong>——托管和自托管无需改代码即可切换</li>
+                            <li><strong>生产级 Agent 服务器</strong>——流式传输、线程管理、认证全包含</li>
+                            <li><strong>多后端支持</strong>——沙箱内/外两种执行模式</li>
+                            <li><strong>LangChain 生态</strong>——LangSmith 可观测性、评估、部署一体化</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>选 Claude Agent SDK，如果你：</h4>
+                        <ul>
+                            <li>已经<strong>深入使用 Anthropic 生态系统</strong></li>
+                            <li>不需要多模型支持，<strong>Claude 够用</strong></li>
+                            <li>愿意<strong>自行构建</strong> API 层、认证和多租户</li>
+                            <li>偏好<strong>深度集成</strong>的开箱体验</li>
+                            <li>团队有足够资源<strong>自行运维</strong>基础设施</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>决策关键：</strong>问自己三个问题——你需要多模型吗？你需要多租户吗？你想自己管基础设施吗？如果前两个答案是"是"、第三个是"否"，Deep Agents 更适合你。如果你只在 Anthropic 生态内运作且愿意自建基础设施，Claude Agent SDK 也能胜任。
+                </div>
+                <div class="warning">
+                    <strong>文档时效：</strong>本文基于 2026 年 4 月 16 日的对比。产品可能已有更新，建议同时查阅两个框架的最新文档。
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

@@ -6,6 +6,7 @@
     <title>09 时间旅行</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏰</text></svg>">
     <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
     <style>
         .card-grid {
             display: flex;
@@ -69,6 +70,8 @@
                             <li>从任意检查点重新执行图</li>
                             <li>修改历史状态并创建新分支</li>
                             <li>理解中断在时间旅行中的行为</li>
+                            <li>在多个中断点之间进行分叉</li>
+                            <li>配置子图的独立检查点并时间旅行到子图内部</li>
                         </ul>
                     </div>
                 </div>
@@ -122,23 +125,26 @@
             <div class="slide-content">
                 <h2>重放</h2>
                 <h4>找到目标检查点，原样重新执行</h4>
-                <pre><code><span style="color: var(--text-muted);">// 先运行一次图</span>
-<span style="color: var(--primary-color);">const</span> config = { configurable: { thread_id: <span style="color: var(--success-color);">"thread-1"</span> } };
-<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> graph.invoke({}, config);
+                <pre><code class="language-javascript">// 先运行一次图
+const config = { configurable: { thread_id: "thread-1" } };
+const result = await graph.invoke({}, config);
 
-<span style="color: var(--text-muted);">// 收集所有检查点</span>
-<span style="color: var(--primary-color);">const</span> states = [];
-<span style="color: var(--primary-color);">for await</span> (<span style="color: var(--primary-color);">const</span> state <span style="color: var(--primary-color);">of</span> graph.getStateHistory(config)) {
+// 收集所有检查点
+const states = [];
+for await (const state of graph.getStateHistory(config)) {
   states.push(state);
 }
 
-<span style="color: var(--text-muted);">// 找到 writeJoke 执行前的检查点</span>
-<span style="color: var(--primary-color);">const</span> beforeJoke = states.find((s) => s.next.includes(<span style="color: var(--success-color);">"writeJoke"</span>));
+// 找到 writeJoke 执行前的检查点
+const beforeJoke = states.find((s) => s.next.includes("writeJoke"));
 
-<span style="color: var(--text-muted);">// 从那个检查点重新执行</span>
-<span style="color: var(--primary-color);">const</span> replayResult = <span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">null</span>, beforeJoke.config);</code></pre>
+// 从那个检查点重新执行
+const replayResult = await graph.invoke(null, beforeJoke.config);</code></pre>
                 <div class="key-point">
                     <strong>关键 API：</strong><code>graph.getStateHistory(config)</code> 返回所有历史检查点。用 <code>invoke(null, checkpointConfig)</code> 从指定检查点重新执行。<code>null</code> 表示不提供新输入。
+                </div>
+                <div class="info-block">
+                    <strong>最终检查点的重放是无操作：</strong>如果检查点的 <code>next</code> 为空（即图已执行完毕），重放不会有任何效果——因为没有后续节点需要执行。只有 <code>next</code> 中包含待执行节点的检查点才有重放意义。
                 </div>
             </div>
         </section>
@@ -186,20 +192,23 @@
                     - 避免：过度装饰、3D 效果、杂乱的颜色
                     </p>
                 </div>
-                <pre><code><span style="color: var(--text-muted);">// 找到目标检查点</span>
-<span style="color: var(--primary-color);">const</span> beforeJoke = states.find((s) => s.next.includes(<span style="color: var(--success-color);">"writeJoke"</span>));
+                <pre><code class="language-javascript">// 找到目标检查点
+const beforeJoke = states.find((s) => s.next.includes("writeJoke"));
 
-<span style="color: var(--text-muted);">// 分叉：在那个检查点修改 topic</span>
-<span style="color: var(--primary-color);">const</span> forkConfig = <span style="color: var(--primary-color);">await</span> graph.updateState(
+// 分叉：在那个检查点修改 topic
+const forkConfig = await graph.updateState(
   beforeJoke.config,
-  { topic: <span style="color: var(--success-color);">"chickens"</span> },  <span style="color: var(--text-muted);">// 修改状态</span>
+  { topic: "chickens" },  // 修改状态
 );
 
-<span style="color: var(--text-muted);">// 从分叉点继续执行</span>
-<span style="color: var(--primary-color);">const</span> forkResult = <span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">null</span>, forkConfig);
-console.log(forkResult.joke); <span style="color: var(--text-muted);">// 关于 chickens 的笑话</span></code></pre>
+// 从分叉点继续执行
+const forkResult = await graph.invoke(null, forkConfig);
+console.log(forkResult.joke); // 关于 chickens 的笑话</code></pre>
                 <div class="key-point">
                     <strong>分叉 = updateState + invoke：</strong>先用 <code>updateState</code> 在目标检查点修改状态，这会创建一个新的检查点。然后用 <code>invoke(null, forkConfig)</code> 从新检查点继续执行。
+                </div>
+                <div class="info-block">
+                    <strong>updateState 不会回滚线程：</strong>它只是在指定检查点处创建一个分支——原始执行历史保持完整，不受影响。两条时间线独立存在，互不干扰。
                 </div>
             </div>
         </section>
@@ -209,21 +218,29 @@ console.log(forkResult.joke); <span style="color: var(--text-muted);">// 关于 
             <div class="slide-content">
                 <h2>指定节点</h2>
                 <h4>用 asNode 控制分叉后的执行起点</h4>
-                <pre><code><span style="color: var(--text-muted);">// 将更新视为 generateTopic 产生的</span>
-<span style="color: var(--text-muted);">// 执行从 writeJoke（generateTopic 的后继）恢复</span>
-<span style="color: var(--primary-color);">const</span> forkConfig = <span style="color: var(--primary-color);">await</span> graph.updateState(
+                <pre><code class="language-javascript">// 将更新视为 generateTopic 产生的
+// 执行从 writeJoke（generateTopic 的后继）恢复
+const forkConfig = await graph.updateState(
   beforeJoke.config,
-  { topic: <span style="color: var(--success-color);">"chickens"</span> },
-  { asNode: <span style="color: var(--success-color);">"generateTopic"</span> },
+  { topic: "chickens" },
+  { asNode: "generateTopic" },
 );</code></pre>
                 <div class="card-grid">
                     <div class="card">
                         <h4>不指定 asNode</h4>
-                        <p>LangGraph 自动推断——通常是目标检查点的 <code>next</code> 中列出的节点。</p>
+                        <p>LangGraph 自动推断——通常是目标检查点的 <code>next</code> 中列出的节点。绝大多数情况下推断是正确的。</p>
                     </div>
                     <div class="card">
                         <h4>指定 asNode</h4>
                         <p>明确告诉 LangGraph "这次修改是哪个节点产生的"。执行从该节点的后继开始。</p>
+                    </div>
+                    <div class="card">
+                        <h4>需要显式指定的场景</h4>
+                        <ul>
+                            <li><strong>并行分支：</strong>同一超步中多个节点都更新了状态，LangGraph 无法确定谁是最后一个（抛出 <code>InvalidUpdateError</code>）</li>
+                            <li><strong>无执行历史：</strong>在全新线程上设置初始状态（常见于测试）</li>
+                            <li><strong>跳过节点：</strong>设为后续节点，让图认为该节点已执行过</li>
+                        </ul>
                     </div>
                 </div>
             </div>
@@ -234,22 +251,55 @@ console.log(forkResult.joke); <span style="color: var(--text-muted);">// 关于 
             <div class="slide-content">
                 <h2>中断与回溯</h2>
                 <h4>中断在时间旅行中总是重新触发</h4>
-                <pre><code><span style="color: var(--text-muted);">// 首次运行：遇到中断</span>
-<span style="color: var(--primary-color);">await</span> graph.invoke({ value: [] }, config);
-<span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--success-color);">"Alice"</span> }), config);
+                <pre><code class="language-javascript">// 首次运行：遇到中断
+await graph.invoke({ value: [] }, config);
+await graph.invoke(new Command({ resume: "Alice" }), config);
 
-<span style="color: var(--text-muted);">// 从中断前重放 → 中断再次触发</span>
-<span style="color: var(--primary-color);">const</span> beforeAsk = states.filter((s) => s.next.includes(<span style="color: var(--success-color);">"askHuman"</span>)).pop();
-<span style="color: var(--primary-color);">const</span> replayResult = <span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">null</span>, beforeAsk.config);
-<span style="color: var(--text-muted);">// 图再次暂停在中断处，等待新的 resume</span>
+// 从中断前重放 → 中断再次触发
+const beforeAsk = states.filter((s) => s.next.includes("askHuman")).pop();
+const replayResult = await graph.invoke(null, beforeAsk.config);
+// 图再次暂停在中断处，等待新的 resume
 
-<span style="color: var(--text-muted);">// 从中断前分叉</span>
-<span style="color: var(--primary-color);">const</span> forkConfig = <span style="color: var(--primary-color);">await</span> graph.updateState(beforeAsk.config, { value: [<span style="color: var(--success-color);">"forked"</span>] });
-<span style="color: var(--primary-color);">const</span> forkResult = <span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">null</span>, forkConfig);
-<span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--success-color);">"Bob"</span> }), forkConfig);
-<span style="color: var(--text-muted);">// 结果: { value: ["forked", "Hello, Bob!", "Done"] }</span></code></pre>
+// 从中断前分叉
+const forkConfig = await graph.updateState(beforeAsk.config, { value: ["forked"] });
+const forkResult = await graph.invoke(null, forkConfig);
+await graph.invoke(new Command({ resume: "Bob" }), forkConfig);
+// 结果: { value: ["forked", "Hello, Bob!", "Done"] }</code></pre>
                 <div class="warning">
                     <strong>注意：</strong>重放/分叉时遇到 interrupt 会暂停——你需要提供新的 resume 值。旧的中断值不会自动回放。
+                </div>
+            </div>
+        </section>
+
+        <!-- 多重中断之间的分叉 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多重中断之间的分叉</h2>
+                <h4>图中有多个中断点时，可以从它们之间分叉</h4>
+                <pre><code class="language-javascript">// 图结构：askName → askAge → final
+// askName 和 askAge 各有一个 interrupt()
+
+// 运行完成两个中断
+await graph.invoke({ value: [] }, config);
+await graph.invoke(new Command({ resume: "Alice" }), config);
+await graph.invoke(new Command({ resume: "30" }), config);
+
+// 收集检查点
+const states = [];
+for await (const state of graph.getStateHistory(config)) {
+  states.push(state);
+}
+
+// 找到 askName 之后、askAge 之前的检查点
+const between = states.filter((s) => s.next.includes("askAge")).pop();
+
+// 在两个中断之间分叉
+const forkConfig = await graph.updateState(between.config, { value: ["modified"] });
+const result = await graph.invoke(null, forkConfig);
+// askName 的结果保留（"name:Alice"）
+// askAge 重新触发中断，等待新的回答</code></pre>
+                <div class="key-point">
+                    <strong>关键思路：</strong>多步表单场景中，用户可能想修改第二步的答案而不影响第一步。<code>getStateHistory</code> 能精确定位两个中断之间的检查点，分叉后前面的回答被保留，只有后续步骤重新执行。
                 </div>
             </div>
         </section>
@@ -263,11 +313,27 @@ console.log(forkResult.joke); <span style="color: var(--text-muted);">// 关于 
                     <thead><tr><th>模式</th><th>checkpointer</th><th>行为</th></tr></thead>
                     <tbody>
                         <tr><td><strong>继承（默认）</strong></td><td>不单独指定</td><td>父图将整个子图视为一个超步，只能从父级时间旅行</td></tr>
-                        <tr><td><strong>子图独立</strong></td><td>子图单独指定</td><td>可以时间旅行到子图内部节点之间</td></tr>
+                        <tr><td><strong>子图独立</strong></td><td><code>checkpointer: true</code></td><td>可以时间旅行到子图内部节点之间</td></tr>
                     </tbody>
                 </table>
+                <pre><code class="language-javascript">// 子图使用独立的 checkpointer
+const subgraph = new StateGraph(StateAnnotation)
+  .addNode("stepA", stepA)  // 含 interrupt()
+  .addNode("stepB", stepB)  // 含 interrupt()
+  .addEdge(START, "stepA")
+  .addEdge("stepA", "stepB")
+  .compile({ checkpointer: true }); // 独立的检查点历史
+
+// 获取子图的内部检查点
+const parentState = await graph.getState(config, { subgraphs: true });
+const subConfig = parentState.tasks[0].state.config;
+
+// 从子图内部检查点分叉
+const forkConfig = await graph.updateState(subConfig, { value: ["forked"] });
+const result = await graph.invoke(null, forkConfig);
+// stepB 重新执行，stepA 的结果被保留</code></pre>
                 <div class="info-block">
-                    <strong>推荐做法：</strong>大多数情况用继承模式就够了。只有当子图内部有复杂的多步逻辑需要独立调试时，才给它单独的 checkpointer。
+                    <strong>推荐做法：</strong>大多数情况用继承模式就够了。只有当子图内部有复杂的多步逻辑需要独立调试时，才给它设置 <code>checkpointer: true</code>。访问子图内部检查点需要用 <code>getState(config, { subgraphs: true })</code>。
                 </div>
             </div>
         </section>
@@ -316,24 +382,24 @@ console.log(forkResult.joke); <span style="color: var(--text-muted);">// 关于 
         <section class="slide">
             <div class="slide-content">
                 <h2>参考答案</h2>
-                <pre><code><span style="color: var(--text-muted);">// 1. 运行一次</span>
-<span style="color: var(--primary-color);">const</span> config = { configurable: { thread_id: <span style="color: var(--success-color);">"tt-1"</span> } };
-<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> chain.invoke({ topic: <span style="color: var(--success-color);">"cats"</span> }, config);
+                <pre><code class="language-javascript">// 1. 运行一次
+const config = { configurable: { thread_id: "tt-1" } };
+const result = await chain.invoke({ topic: "cats" }, config);
 
-<span style="color: var(--text-muted);">// 2. 收集检查点</span>
-<span style="color: var(--primary-color);">const</span> states = [];
-<span style="color: var(--primary-color);">for await</span> (<span style="color: var(--primary-color);">const</span> s <span style="color: var(--primary-color);">of</span> chain.getStateHistory(config)) states.push(s);
+// 2. 收集检查点
+const states = [];
+for await (const s of chain.getStateHistory(config)) states.push(s);
 
-<span style="color: var(--primary-color);">const</span> beforeJoke = states.find((s) => s.next.includes(<span style="color: var(--success-color);">"generateJoke"</span>));
+const beforeJoke = states.find((s) => s.next.includes("generateJoke"));
 
-<span style="color: var(--text-muted);">// 3. 重放</span>
-<span style="color: var(--primary-color);">const</span> replay = <span style="color: var(--primary-color);">await</span> chain.invoke(<span style="color: var(--primary-color);">null</span>, beforeJoke.config);
-console.log(<span style="color: var(--success-color);">"重放结果:"</span>, replay.joke);
+// 3. 重放
+const replay = await chain.invoke(null, beforeJoke.config);
+console.log("重放结果:", replay.joke);
 
-<span style="color: var(--text-muted);">// 4. 分叉</span>
-<span style="color: var(--primary-color);">const</span> forkConfig = <span style="color: var(--primary-color);">await</span> chain.updateState(beforeJoke.config, { topic: <span style="color: var(--success-color);">"chickens"</span> });
-<span style="color: var(--primary-color);">const</span> fork = <span style="color: var(--primary-color);">await</span> chain.invoke(<span style="color: var(--primary-color);">null</span>, forkConfig);
-console.log(<span style="color: var(--success-color);">"分叉结果:"</span>, fork.joke);</code></pre>
+// 4. 分叉
+const forkConfig = await chain.updateState(beforeJoke.config, { topic: "chickens" });
+const fork = await chain.invoke(null, forkConfig);
+console.log("分叉结果:", fork.joke);</code></pre>
                 <div class="key-point">
                     <strong>核心模式：</strong>getStateHistory 找检查点 → invoke(null, config) 重放 → updateState + invoke 分叉。三个 API 就能完成所有时间旅行操作。
                 </div>
@@ -353,6 +419,8 @@ console.log(<span style="color: var(--success-color);">"分叉结果:"</span>, f
                             <li>修改历史状态并创建新分支</li>
                             <li>用 asNode 控制执行起点</li>
                             <li>理解中断在时间旅行中的行为</li>
+                            <li>在多个中断点之间分叉，保留前面的回答</li>
+                            <li>为子图配置独立检查点并时间旅行到内部</li>
                         </ul>
                     </div>
                     <div class="card">
@@ -401,6 +469,8 @@ console.log(<span style="color: var(--success-color);">"分叉结果:"</span>, f
         <span id="slide-counter"></span>
         <button id="next-btn">下一页 →</button>
     </div>
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
     <script src="./js/slide.js"></script>
     <script src="./js/nav.js"></script>
 </body>

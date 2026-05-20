@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型提供商</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔌</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 30 章</div>
+            <h1>模型提供商</h1>
+            <p>为 Deep Agents Code 配置任何兼容 LangChain 的模型提供商</p>
+            <strong>从"只用一家模型"到"灵活切换任意供应商"的关键一步</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你有没有遇到过这些问题：模型 A 不支持工具调用、模型 B 太贵、模型 C 延迟太高？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>单模型绑定的困境</h4>
+                        <ul>
+                            <li>只用一个模型，<strong>无法按任务选择最合适的供应商</strong></li>
+                            <li>想切换模型？改代码、改环境变量、<strong>一套流程走一遍</strong></li>
+                            <li>不同项目需要不同模型？<strong>手动管理凭据很混乱</strong></li>
+                            <li>某个模型服务挂了？<strong>没有备用方案</strong></li>
+                            <li>新出的模型想试试？<strong>不确定兼容性</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agents Code 的解法</h4>
+                        <ul>
+                            <li>支持<strong>任何兼容 LangChain 的聊天模型提供商</strong></li>
+                            <li>一条命令切换模型：<code>/model provider:model</code></li>
+                            <li>凭据统一存在 <code>~/.deepagents/.env</code>，<strong>跨项目复用</strong></li>
+                            <li>模型路由器（OpenRouter、LiteLLM）提供<strong>多供应商聚合</strong></li>
+                            <li>安装对应的包就能用——<strong>即插即用</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>在真实项目中，你不会只用一个模型——不同任务需要不同模型的"性价比"。Deep Agents Code 让你用统一的方式管理所有模型供应商，切换模型就像切换频道一样简单。
+                    <p class="metaphor-disarm">这里"切换频道"只是比喻帮助你理解操作体验。实际上计算机内部做的事情是：更新模型配置字符串（如 <code>anthropic:claude-opus-4-7</code>），重新初始化对应的 LangChain 聊天模型实例，并加载新的 API 端点和参数——与电视频道切换的物理机制完全不同。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Quick start - Install ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>快速入门</h2>
+                <h4>安装提供商包——每个模型供应商都需要其对应的 LangChain 集成包</h4>
+                <p>Deep Agents Code 基于 Python 构建，模型提供商通过<strong>可选附加组件</strong>安装。这样设计是为了保持核心包的轻量化——你只需要安装你实际使用的提供商。</p>
+                <pre><code class="language-bash"># 快速安装指定提供商（通过环境变量指定附加组件）
+# OpenAI、Anthropic 和 Gemini 默认已包含，无需额外安装
+DEEPAGENTS_EXTRAS="baseten,groq" curl -LsSf https://langch.in/dcode | bash
+
+# 或者使用 uv 直接安装指定提供商
+uv tool install 'deepagents-code[baseten,groq]'
+
+# 已安装后，用 --with 追加额外的提供商包
+uv tool install deepagents-code --with langchain-ollama
+
+# 一次性安装所有提供商（按需选择，通常不需要全部）
+uv tool install 'deepagents-code[anthropic,baseten,bedrock,cohere,deepseek,\
+fireworks,google-genai,groq,huggingface,ibm,litellm,mistralai,nvidia,\
+ollama,openai,openrouter,perplexity,vertexai,xai]'</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>默认已包含</h4>
+                        <ul>
+                            <li><strong>OpenAI</strong> — GPT 系列模型</li>
+                            <li><strong>Anthropic</strong> — Claude 系列模型</li>
+                            <li><strong>Google GenAI</strong> — Gemini 系列模型</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>按需安装</h4>
+                        <p>其他提供商需要通过可选附加组件安装。安装对应的包后即可直接使用，无需额外配置。</p>
+                    </div>
+                    <div class="card">
+                        <h4>追加安装</h4>
+                        <p>已安装 Deep Agents Code 后，可以用 <code>--with</code> 参数追加安装额外的提供商包，不影响已有配置。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Setting credentials ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>设置凭据</h2>
+                <h4>将 API 密钥存储在 ~/.deepagents/.env 中，跨项目通用</h4>
+                <p>有两种方式设置凭据：<strong>永久添加</strong>（写入配置文件）和<strong>临时导出</strong>（仅当前会话）。推荐使用永久方式，这样所有项目都能共享凭据。</p>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #10B981;">
+                        <h4>OpenAI</h4>
+                        <pre><code class="language-bash"># 永久添加——写入配置文件，所有项目共享
+mkdir -p ~/.deepagents
+echo 'OPENAI_API_KEY=your-api-key' >> ~/.deepagents/.env
+
+# 仅当前会话——关闭终端后失效
+export OPENAI_API_KEY="your-api-key"</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D97706;">
+                        <h4>Anthropic</h4>
+                        <pre><code class="language-bash"># 永久添加——写入配置文件，所有项目共享
+mkdir -p ~/.deepagents
+echo 'ANTHROPIC_API_KEY=your-api-key' >> ~/.deepagents/.env
+
+# 仅当前会话——关闭终端后失效
+export ANTHROPIC_API_KEY="your-api-key"</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #3B82F6;">
+                        <h4>Google</h4>
+                        <pre><code class="language-bash"># 永久添加——写入配置文件，所有项目共享
+mkdir -p ~/.deepagents
+echo 'GOOGLE_API_KEY=your-api-key' >> ~/.deepagents/.env
+
+# 仅当前会话——关闭终端后失效
+export GOOGLE_API_KEY="your-api-key"</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #8B5CF6;">
+                        <h4>限定范围</h4>
+                        <p>使用 <code>DEEPAGENTS_CODE_</code> 前缀可以将凭据限定在 Deep Agents Code 范围内，避免与其他工具的凭据冲突。</p>
+                        <pre><code class="language-bash"># 使用 DEEPAGENTS_CODE_ 前缀限定范围，避免与其他工具冲突
+echo 'DEEPAGENTS_CODE_ANTHROPIC_API_KEY=xxx' >> ~/.deepagents/.env</code></pre>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>其他提供商：</strong>Deep Agents Code 可与任何支持工具调用的 LLM 配合使用。完整支持的提供商列表及其所需环境变量请参见<a href="#provider-reference">提供商参考</a>章节。
+                </div>
+                <div class="info-block">
+                    <strong>配置模型参数：</strong>要配置模型参数（温度、推理预算等），请参见<a href="https://docs.langchain.com/oss/javascript/deepagents/code/providers#model-parameters">模型参数</a>章节。
+                </div>
+                <div class="warning">
+                    <strong>安全提示：</strong>不要将 <code>~/.deepagents/.env</code> 文件提交到版本控制。建议将此文件加入 <code>.gitignore</code>。API 密钥是敏感信息，泄露可能导致未经授权的调用和费用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Provider overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>提供商一览</h2>
+                <h4>Deep Agents Code 支持广泛的模型提供商——安装对应的包即可使用</h4>
+                <p>Deep Agents Code 支持任何<strong>兼容 LangChain 的聊天模型提供商</strong>。几乎所有支持工具调用的 LLM 都可以使用。任何提供兼容 OpenAI 或兼容 Anthropic API 的服务也可以直接使用。</p>
+                <table>
+                    <thead>
+                        <tr><th>提供商</th><th>附加组件</th><th>环境变量</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>OpenAI</strong></td><td>默认包含</td><td><code>OPENAI_API_KEY</code></td></tr>
+                        <tr><td><strong>Anthropic</strong></td><td>默认包含</td><td><code>ANTHROPIC_API_KEY</code></td></tr>
+                        <tr><td><strong>Google GenAI</strong></td><td>默认包含</td><td><code>GOOGLE_API_KEY</code></td></tr>
+                        <tr><td><strong>Ollama</strong></td><td><code>[ollama]</code></td><td>本地运行，无需密钥</td></tr>
+                        <tr><td><strong>Groq</strong></td><td><code>[groq]</code></td><td><code>GROQ_API_KEY</code></td></tr>
+                        <tr><td><strong>DeepSeek</strong></td><td><code>[deepseek]</code></td><td><code>DEEPSEEK_API_KEY</code></td></tr>
+                        <tr><td><strong>Mistral</strong></td><td><code>[mistralai]</code></td><td><code>MISTRAL_API_KEY</code></td></tr>
+                        <tr><td><strong>AWS Bedrock</strong></td><td><code>[bedrock]</code></td><td>AWS 凭据</td></tr>
+                        <tr><td><strong>Vertex AI</strong></td><td><code>[vertexai]</code></td><td><code>GOOGLE_CLOUD_PROJECT</code></td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>兼容 API：</strong>如果你的模型提供商提供兼容 OpenAI 或兼容 Anthropic 的 API，你可以直接使用，无需安装额外的包。只需配置自定义 Base URL 即可。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Model routers ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>路由与代理</h2>
+                <h4>模型路由器通过单一端点访问来自多个提供商的模型</h4>
+                <p>如果你不想为每个提供商单独配置凭据，可以使用<strong>模型路由器</strong>——一个端点聚合所有模型，统一计费、统一管理。</p>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>OpenRouter</h4>
+                        <p>通过单一 API 访问来自 OpenAI、Anthropic、Google、Meta 等多个提供商的模型。</p>
+                        <pre><code class="language-bash"># 安装 OpenRouter 集成
+uv tool install 'deepagents-code[openrouter]'</code></pre>
+                        <p><span class="tag tag-primary">内置提供商</span> 安装包后即可直接使用</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>LiteLLM</h4>
+                        <p>将 100+ 模型提供商统一为 OpenAI 格式的代理，支持自定义端点。</p>
+                        <pre><code class="language-bash"># 安装 LiteLLM 集成
+uv tool install 'deepagents-code[litellm]'</code></pre>
+                        <p><span class="tag tag-info">内置提供商</span> 安装包后即可直接使用</p>
+                    </div>
+                </div>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>路由器的优势</h4>
+                        <ul>
+                            <li><strong>单一凭据</strong> — 只需管理一个 API 密钥</li>
+                            <li><strong>统一计费</strong> — 所有模型费用合并</li>
+                            <li><strong>快速试新</strong> — 即时访问新发布的模型</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>需要在多个模型之间频繁切换</li>
+                            <li>不想为每个提供商单独注册和管理凭据</li>
+                            <li>想快速评估不同模型在你的任务上的表现</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Switching models ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>切换模型</h2>
+                <h4>三种方式切换模型——交互式选择器、直接指定、启动参数</h4>
+                <p>在 Deep Agents Code 中切换模型非常灵活，根据你的使用场景选择最合适的方式。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>方式一：交互式选择器</h4>
+                        <p>使用 <code>/model</code> 命令打开交互式模型选择器。它会显示所有已安装提供商的可用模型。</p>
+                        <pre><code class="language-text"># 打开模型选择器
+/model
+
+# 选择器会显示：
+# - 每个提供商下所有符合条件的模型
+# - 凭据状态（勾选/警告/问号）
+# - 模型能力信息</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>方式二：直接指定</h4>
+                        <p>直接传入模型名称，跳过选择器。支持提供商支持的任何模型。</p>
+                        <pre><code class="language-text"># 直接切换到指定模型
+/model gpt-5.5
+
+# 指定提供商和模型
+/model anthropic:claude-opus-4-7
+/model openai:gpt-5.5</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>方式三：启动参数</h4>
+                        <p>在启动 Deep Agents Code 时通过 <code>--model</code> 参数指定模型。</p>
+                        <pre><code class="language-bash"># 启动时指定模型
+dcode --model openai:gpt-5.5
+
+# 启动时指定模型和参数
+dcode --model openai:gpt-5.5 \
+  --model-params '{"temperature": 0.7}'</code></pre>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>并非所有模型都会出现在交互式选择器中。如果你的模型未显示，可以直接传入模型名称（例如 <code>/model gpt-5.5</code>）。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Model resolution order ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>解析顺序</h2>
+                <h4>Deep Agents Code 启动时按以下优先级解析要使用的模型</h4>
+                <p>了解模型解析顺序，可以帮助你排查"为什么用的不是我想要的模型"这类问题。</p>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. --model 标志</h4>
+                        <p>最高优先级，始终覆盖其他设置</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. default 配置</h4>
+                        <p>config.toml 中的 [models].default</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. recent 配置</h4>
+                        <p>config.toml 中的 [models].recent</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>4. 环境检测</h4>
+                        <p>自动检测可用的 API 密钥</p>
+                    </div>
+                </div>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>环境自动检测顺序</h4>
+                        <p>当没有任何配置时，Deep Agents Code 按以下顺序检查凭据：</p>
+                        <ol>
+                            <li><code>OPENAI_API_KEY</code></li>
+                            <li><code>ANTHROPIC_API_KEY</code></li>
+                            <li><code>GOOGLE_API_KEY</code></li>
+                            <li><code>GOOGLE_CLOUD_PROJECT</code>（Vertex AI）</li>
+                        </ol>
+                    </div>
+                    <div class="after">
+                        <h4>注意事项</h4>
+                        <ul>
+                            <li>环境自动检测<strong>仅检查这四个凭据</strong></li>
+                            <li>其他提供商（如 Groq）需通过 <code>--model</code>、<code>/model</code> 或配置文件来使用</li>
+                            <li><code>[models].recent</code> 由系统自动写入，<strong>不会覆盖</strong> <code>[models].default</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心原则：</strong><code>--model</code> > 配置文件 <code>default</code> > 配置文件 <code>recent</code> > 环境自动检测。如果你设置了默认模型但临时想用另一个，用 <code>--model</code> 标志即可覆盖。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/30-code-providers-1.png" alt="图：模型解析四级优先级链" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Model switcher details ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模型选择器</h2>
+                <h4>交互式 /model 选择器动态构建模型列表——不是硬编码的固定列表</h4>
+                <p>一个模型要出现在选择器中，需要<strong>同时满足</strong>以下所有条件：</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #10B981;">
+                        <h4>条件 1：已安装提供商包</h4>
+                        <p>每个提供商必须与 <code>deepagents-code</code> 一起安装。如果缺少某个包，该提供商的整个部分都不会出现在选择器中。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>条件 2：启用工具调用</h4>
+                        <p>模型的配置文件中必须设置 <code>tool_calling: true</code>。这是模型未出现在列表中<strong>最常见的原因</strong>。对于不捆绑配置文件的提供商，你可以在 <code>config.toml</code> 中定义：</p>
+                        <pre><code class="language-toml">[models.providers.ollama.profile."qwen3:4b"]
+tool_calling = true        # 声明该模型支持工具调用（必须为 true 才会出现在选择器中）
+max_input_tokens = 32768   # 最大输入 token 数，影响上下文窗口
+max_output_tokens = 8192   # 最大输出 token 数</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #3B82F6;">
+                        <h4>条件 3：接受文本</h4>
+                        <p>模型必须接受文本输入并生成文本输出。配置文件中将 <code>text_inputs</code> 或 <code>text_outputs</code> 设为 <code>false</code> 的模型会被排除。</p>
+                    </div>
+                </div>
+                <h4>故障排除</h4>
+                <table>
+                    <thead>
+                        <tr><th>症状</th><th>可能原因</th><th>解决方法</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>整个提供商缺失</td>
+                            <td>未安装提供商包</td>
+                            <td><code>uv tool install deepagents-code --with langchain-groq</code></td>
+                        </tr>
+                        <tr>
+                            <td>提供商显示但特定模型缺失</td>
+                            <td><code>tool_calling: false</code> 或没有配置文件</td>
+                            <td>在 <code>config.toml</code> 的 <code>[models.providers.&lt;name&gt;].models</code> 中添加</td>
+                        </tr>
+                        <tr>
+                            <td>提供商显示警告"缺少凭据"</td>
+                            <td>未设置 API 密钥</td>
+                            <td>设置对应的环境变量</td>
+                        </tr>
+                        <tr>
+                            <td>提供商显示"凭据未知"</td>
+                            <td>提供商使用非标准认证</td>
+                            <td>凭据可能仍然有效，尝试切换到该模型</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>凭据状态提示：</strong>凭据状态<strong>不会</strong>影响模型是否列出。选择器会显示所有符合条件的模型，并在每个提供商标题旁显示凭据指示器：已确认凭据显示勾选标记，缺少凭据显示警告，凭据状态未知显示问号。你仍然可以选择缺少凭据的模型——提供商将在请求时报告认证错误。
+                </div>
+                <div class="info-block">
+                    <strong>绕过过滤器：</strong>在 <code>config.toml</code> 的 <code>[models.providers.&lt;name&gt;].models</code> 中定义的模型会绕过配置文件过滤器，总是会出现在选择器中。这是添加缺失模型的推荐方式。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Setting default model ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>默认模型</h2>
+                <h4>设置持久化默认模型——所有未来的 CLI 启动都使用它</h4>
+                <p>你可以通过多种方式设置默认模型。设置后，每次启动 Deep Agents Code 都会自动使用该模型，无需手动指定。</p>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>设置默认模型</h4>
+                        <ul>
+                            <li><strong>选择器</strong>：打开 <code>/model</code>，导航到目标模型，按 <code>Ctrl+S</code> 固定</li>
+                            <li><strong>命令</strong>：<code>/model --default provider:model</code></li>
+                            <li><strong>配置文件</strong>：在 <code>~/.deepagents/config.toml</code> 中设置 <code>[models].default</code></li>
+                            <li><strong>命令行</strong>：<code>dcode --default-model anthropic:claude-opus-4-7</code></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>查看与清除</h4>
+                        <pre><code class="language-bash"># 查看当前设置的默认模型
+dcode --default-model
+
+# 清除默认模型设置，回退到环境自动检测
+dcode --clear-default-model</code></pre>
+                        <p>也可以通过以下方式清除：</p>
+                        <ul>
+                            <li>命令：<code>/model --default --clear</code></li>
+                            <li>选择器：在当前固定的默认模型上按 <code>Ctrl+S</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>如果没有设置默认模型，Deep Agents Code 将默认使用最近使用的模型（<code>[models].recent</code>）。如果也没有最近使用的模型，则回退到环境自动检测。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Model parameters ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模型参数</h2>
+                <h4>三种配置位置传递额外的构造函数参数——采样控制、推理预算、超时等</h4>
+                <p>你可以将底层聊天模型类接受的<strong>任何参数</strong>传递给模型——温度、推理力度、上下文窗口大小、请求超时等。有三个设置位置，按优先级从高到低排列：</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>优先级 1：启动参数</h4>
+                        <p>通过 <code>--model-params</code> 一次性设置，JSON 格式，仅对当前会话有效。</p>
+                        <pre><code class="language-bash"># OpenAI 推理力度——high 表示更多推理步骤，适合复杂任务
+dcode --model openai:gpt-5.5 \
+  --model-params '{"reasoning": {"effort": "high"}}'
+
+# Anthropic 扩展思考——启用思考模式并分配 token 预算
+dcode --model anthropic:claude-opus-4-7 \
+  --model-params '{"thinking": {"type": "enabled", \
+  "budget_tokens": 10000}, "max_tokens": 16000}'</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>优先级 2：会话中途</h4>
+                        <p>通过 <code>/model --model-params</code> 在运行中切换参数，无需重启。</p>
+                        <pre><code class="language-text"># 切换模型并同时设置参数
+/model --model-params '{"temperature": 0.7}' \
+  anthropic:claude-opus-4-7
+
+# 打开选择器，参数应用到所选模型
+/model --model-params '{"num_ctx": 16384}'</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #10B981;">
+                        <h4>优先级 3：配置文件</h4>
+                        <p>在 <code>config.toml</code> 中持久化设置，每次启动时生效。</p>
+                        <pre><code class="language-toml">[models.providers.anthropic.params]
+# 启用扩展思考并设置 10000 token 的思考预算
+thinking = { type = "enabled", budget_tokens = 10000 }
+# 最大输出 token 数（需大于 budget_tokens，因为思考 + 回答共享此限制）
+max_tokens = 16000</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>灵活且强大：</strong>底层聊天模型构造函数接受的任何关键字参数都是有效的。未知的关键字参数会被转发到上游 API 请求中，因此新发布的参数无需更新 CLI 即可使用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Parameter config examples ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参数配置</h2>
+                <h4>config.toml 中的提供商级别默认值——支持按模型覆盖</h4>
+                <pre><code class="language-toml">[models.providers.anthropic.params]
+# 启用扩展思考，budget_tokens 控制模型"内心独白"的 token 上限
+thinking = { type = "enabled", budget_tokens = 10000 }
+# max_tokens 必须大于 budget_tokens，因为思考和输出共享此限制
+max_tokens = 16000
+
+[models.providers.openai.params]
+# 推理力度：high（更深入）/ medium / low（更快）
+reasoning = { effort = "high", summary = "auto" }
+# 使用 OpenAI Responses API 格式
+output_version = "responses/v1"
+
+[models.providers.ollama.params]
+# Ollama Provider 级别的默认参数
+num_ctx = 16384      # 上下文窗口大小
+temperature = 0      # 确定性输出，适合代码生成
+
+# 按模型覆盖——优先级高于 Provider 级别的设置
+[models.providers.ollama.params."qwen3:4b"]
+temperature = 0.5    # qwen3:4b 单独使用更高的 temperature，增加多样性</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>配置优先级</h4>
+                        <ol>
+                            <li><strong>CLI 标志</strong>（<code>--model-params</code>）— 最高优先级，仅当前会话</li>
+                            <li><strong>按模型子表</strong>（<code>params."model_name"</code>）— 覆盖提供商级别</li>
+                            <li><strong>提供商级别</strong>（<code>params</code>）— 每次启动生效</li>
+                        </ol>
+                        <p>CLI 标志覆盖配置文件中的 <code>params</code>，且仅对当前会话有效（会话中途的更改不会被持久化）。<code>config.toml</code> 中的按模型子表会覆盖提供商级别的设置（<strong>浅合并</strong>——完整语义请参见<a href="https://docs.langchain.com/oss/javascript/deepagents/code/configuration#model-constructor-params">模型构造函数参数</a>）。<code>--model-params</code> 不能与 <code>--default</code> 同时使用。</p>
+                    </div>
+                    <div class="after">
+                        <h4>支持哪些参数？</h4>
+                        <ul>
+                            <li>所有底层聊天模型构造函数接受的参数</li>
+                            <li>如 <code>temperature</code>、<code>max_tokens</code>、<code>reasoning</code>、<code>thinking</code> 等</li>
+                            <li>未知参数会被<strong>转发到上游 API</strong></li>
+                            <li>新发布的参数无需更新 CLI 即可使用</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>重要：</strong>不要在 <code>params</code> 中放置凭据（如 <code>api_key</code>）。请使用 <code>api_key_env</code> 指向一个环境变量。将密钥放在配置文件中是不安全的做法。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Advanced config ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>高级配置</h2>
+                <h4>提供商参数、配置文件覆盖、自定义 Base URL、兼容 API 和生命周期钩子</h4>
+                <p>有关提供商参数、配置文件覆盖、自定义 Base URL、兼容 API、任意提供商和生命周期钩子的详细配置，请参见<a href="https://docs.langchain.com/oss/javascript/deepagents/code/configuration">配置</a>。</p>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #3B82F6;">
+                        <h4>提供商参数</h4>
+                        <p>每个提供商支持的特定参数配置，包括自定义 Base URL、API 版本等。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>配置文件覆盖</h4>
+                        <p>覆盖模型的配置文件字段（如 <code>max_input_tokens</code>、<code>tool_calling</code>、能力标志等）。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #10B981;">
+                        <h4>兼容 API</h4>
+                        <p>任何提供兼容 OpenAI 或兼容 Anthropic API 的服务都可以直接使用，无需安装额外的包。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #8B5CF6;">
+                        <h4>生命周期钩子</h4>
+                        <p>在 Deep Agents Code 的生命周期事件中执行自定义脚本或操作。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>下一步：</strong>这些高级配置在<a href="./31-code-configuration.html">下一章</a>中有详细讲解。如果你需要定制提供商行为或集成自定义 API，请继续深入学习。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了 Deep Agents Code 模型提供商的完整配置</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>Deep Agents Code 支持任何<strong>兼容 LangChain 的聊天模型提供商</strong></li>
+                            <li>安装提供商包 + 设置凭据 = <strong>两步完成配置</strong></li>
+                            <li>三种切换模型方式：<strong>选择器、直接指定、启动参数</strong></li>
+                            <li>模型解析的四级优先级：<strong>标志 > 默认 > 最近 > 环境</strong></li>
+                            <li>模型路由器（OpenRouter、LiteLLM）提供<strong>多供应商聚合</strong></li>
+                            <li>模型参数有三个配置位置：<strong>启动、会话、配置文件</strong></li>
+                            <li>故障排除：模型不显示时检查包安装和工具调用配置</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>配置详解</strong> — 提供商参数、配置文件覆盖、自定义 Base URL</li>
+                            <li><strong>MCP 工具</strong> — 连接外部工具和服务器</li>
+                            <li><strong>数据位置</strong> — 理解文件和数据的存储位置</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Deep Agents Code 的模型配置设计遵循"按需安装、统一管理、灵活切换"的原则。你只需要安装你用到的提供商，凭据统一存储，模型随时切换。这种设计让你在多模型环境中保持高效和安全。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./31-code-configuration.html">下一章：配置详解</a> — 高级配置选项</li>
+                            <li><a href="./32-code-mcp-tools.html">MCP 工具</a> — 连接外部工具服务器</li>
+                            <li><a href="./33-code-data-locations.html">数据位置</a> — 文件存储详解</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/oss/python/deepagents/code/providers">提供商参考文档</a> — 完整的提供商列表和配置</li>
+                            <li><a href="https://docs.langchain.com/oss/javascript/integrations/chat">LangChain 集成目录</a> — 所有可用的聊天模型</li>
+                            <li><a href="https://openrouter.ai/">OpenRouter</a> — 模型路由器服务</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关资源</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/llms.txt">LangChain 文档索引</a> — 完整的文档导航</li>
+                            <li><a href="https://docs.litellm.ai/">LiteLLM 文档</a> — 100+ 模型统一代理</li>
+                            <li>提供商参考表格 — 环境变量和配置详情</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

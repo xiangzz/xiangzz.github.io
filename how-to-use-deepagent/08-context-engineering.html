@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>上下文工程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧩</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 08 章</div>
+            <h1>上下文工程</h1>
+            <p>控制 deep agent 可以访问哪些上下文，以及如何在长时间运行的任务中管理这些上下文</p>
+            <strong>以正确的格式提供正确的信息和工具，让 agent 可靠完成任务</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你的 agent 是否经常"忘记"重要信息，或者上下文窗口被撑爆？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>没有上下文管理的困境</h4>
+                        <ul>
+                            <li>系统提示越来越长，token 消耗<strong>不可控</strong></li>
+                            <li>长时间运行后上下文溢出，agent <strong>丢失关键信息</strong></li>
+                            <li>所有工具输出全塞进对话，<strong>信噪比极低</strong></li>
+                            <li>子任务的中间过程污染主上下文，<strong>推理质量下降</strong></li>
+                            <li>跨会话无法记住用户偏好，<strong>每次都从零开始</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>上下文工程的解法</h4>
+                        <ul>
+                            <li><strong>输入上下文</strong>：精确控制启动时注入什么信息</li>
+                            <li><strong>上下文压缩</strong>：自动卸载大内容 + 智能摘要</li>
+                            <li><strong>上下文隔离</strong>：子 agent 独立运行，只返回结果</li>
+                            <li><strong>长期记忆</strong>：跨对话持久保存重要信息</li>
+                            <li><strong>运行时上下文</strong>：按需传递用户元数据和配置</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>上下文工程是指以正确的格式提供正确的信息和工具，使你的 deep agent 能够可靠地完成任务。不是"塞更多信息"，而是"精准地提供需要的信息"。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Context types overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>五种上下文</h2>
+                <h4>deep agent 可以访问和管理的五种上下文类型</h4>
+                <table>
+                    <thead>
+                        <tr><th>上下文类型</th><th>作用</th><th>触发时机</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>输入上下文</strong></td>
+                            <td>系统提示、记忆、技能等启动时注入的内容</td>
+                            <td>静态，每次运行时应用</td>
+                        </tr>
+                        <tr>
+                            <td><strong>运行时上下文</strong></td>
+                            <td>用户元数据、API 密钥、连接等配置</td>
+                            <td>每次运行，传播到子 agent</td>
+                        </tr>
+                        <tr>
+                            <td><strong>上下文压缩</strong></td>
+                            <td>卸载大内容 + 摘要旧消息，保持在窗口内</td>
+                            <td>自动触发，接近限制时</td>
+                        </tr>
+                        <tr>
+                            <td><strong>上下文隔离</strong></td>
+                            <td>子 agent 隔离繁重工作，只返回结果</td>
+                            <td>每种子 agent，委派时使用</td>
+                        </tr>
+                        <tr>
+                            <td><strong>长期记忆</strong></td>
+                            <td>跨线程持久存储用户偏好和知识</td>
+                            <td>跨对话持久保存</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>启动时可用</h4>
+                        <p>输入上下文和运行时上下文在 agent 启动时提供，是你<strong>可以直接控制</strong>的部分。</p>
+                    </div>
+                    <div class="card">
+                        <h4>运行时管理</h4>
+                        <p>压缩、隔离和长期记忆是 deep agent <strong>内置的机制</strong>，在运行过程中自动或按需触发。</p>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/08-context-engineering-1.png" alt="图：五种上下文类型及其触发时机" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Input context ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>输入上下文</h2>
+                <h4>启动时提供给 agent 的信息，成为系统提示的一部分</h4>
+                <p>最终的系统提示由多个来源组装而成，每个来源有不同的加载策略：</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>System prompt</h4>
+                        <p>你提供的自定义指令 + 内置的 agent 指导。定义角色、行为和知识。</p>
+                        <p><span class="tag tag-primary">静态注入</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>Memory（记忆）</h4>
+                        <p>配置后始终加载的 <code>AGENTS.md</code> 文件。用于项目约定和用户偏好。</p>
+                        <p><span class="tag tag-info">始终加载</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>Skills（技能）</h4>
+                        <p>启动时只读 frontmatter，判断相关时才加载完整内容。按需能力。</p>
+                        <p><span class="tag tag-success">渐进式披露</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>Tool prompts（工具提示）</h4>
+                        <p>内置工具和自定义工具的使用说明，包含 schema 和描述。</p>
+                        <p><span class="tag tag-warning">随工具加载</span></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>组装顺序：</strong>自定义 system_prompt → 基础 agent 提示 → 待办事项提示 → 记忆提示 → 技能提示 → 虚拟文件系统提示 → 子 agent 提示 → 自定义中间件提示 → 人在回路提示。理解顺序有助于调试。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: System prompt ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>系统提示</h2>
+                <h4>定义 agent 的角色、行为和知识的最直接方式</h4>
+                <p>白话：系统提示就是你对 Agent 说的"第一句话"，告诉它你是谁、你要做什么、怎么做。它不会变，每次运行都一样。</p>
+                <p><code>systemPrompt</code> 参数是静态的，不会在每次调用时改变。用最简洁的语言告诉 agent 它是谁、应该怎么做：</p>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+const agent = await createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  // systemPrompt 是静态的，每次运行都一样，定义 Agent 的角色和行为
+  systemPrompt: `You are a research assistant specializing in scientific literature.
+  Always cite sources. Use subagents for parallel research on different topics.`,
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>静态 systemPrompt</h4>
+                        <ul>
+                            <li>每次运行都一样，适合稳定的角色定义</li>
+                            <li>不需要中间件，直接传字符串</li>
+                            <li>适合：角色、通用规则、工作流指导</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>动态 systemPrompt</h4>
+                        <ul>
+                            <li>根据上下文变化，需要中间件</li>
+                            <li>用 <code>dynamicSystemPromptMiddleware</code></li>
+                            <li>适合：权限控制、用户偏好注入</li>
+                            <li>中间件可读取 <code>request.runtime.context</code> 和 <code>request.runtime.store</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>何时需要中间件？</strong>只有当系统提示本身需要根据请求变化时。如果只是工具需要上下文或 store，工具会直接接收 <code>runtime</code> 对象，<strong>不需要中间件</strong>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Memory ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>记忆文件</h2>
+                <h4>始终加载的持久化上下文——AGENTS.md 文件</h4>
+                <p>记忆文件提供了<strong>始终加载</strong>到系统提示中的持久化上下文。适合存放每次对话都适用的关键准则：</p>
+                <pre><code class="language-javascript">const agent = await createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  // memory 中的文件在每次对话时始终加载到系统提示中
+  // 适合存放项目约定、用户偏好、安全规则等始终需要的信息
+  memory: ["/project/AGENTS.md", "~/.deepagents/preferences.md"],
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合放记忆的内容</h4>
+                        <ul>
+                            <li>项目约定（代码风格、命名规范）</li>
+                            <li>用户偏好（简洁回复、语言偏好）</li>
+                            <li>关键准则（安全规则、合规要求）</li>
+                            <li>团队工作流（审批流程、部署步骤）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>不适合放记忆的内容</h4>
+                        <ul>
+                            <li>详细的工作流（太长，用技能代替）</li>
+                            <li>领域特定知识（用技能按需加载）</li>
+                            <li>临时的任务信息（用运行时上下文）</li>
+                            <li>敏感凭证（用运行时上下文传递）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>记忆是始终注入的，没有渐进式披露。保持记忆精简以避免上下文过载。将详细内容使用技能（Skills）来提供，只有始终相关的约定才放记忆。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Skills ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>技能系统</h2>
+                <h4>按需加载的能力——只在相关时才注入上下文</h4>
+                <p>技能是 <strong>渐进式披露</strong> 的核心。agent 启动时只读每个 <code>SKILL.md</code> 的 frontmatter，判断技能相关时才加载完整内容，大幅减少 token 消耗：</p>
+                <pre><code class="language-javascript">const agent = await createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  // skills 下的内容只在相关时才加载（渐进式披露），不是每次都消耗 token
+  // 每个目录下的 SKILL.md 的 frontmatter 会先被读取，判断相关后才加载完整内容
+  skills: ["/skills/research/", "/skills/web-search/"],
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>记忆 vs 技能</h4>
+                        <ul>
+                            <li><strong>记忆</strong>：始终加载，用于全局约定</li>
+                            <li><strong>技能</strong>：按需加载，用于特定工作流</li>
+                            <li>记忆每次都消耗 token</li>
+                            <li>技能只在相关时消耗 token</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>技能设计原则</h4>
+                        <ul>
+                            <li>每个技能聚焦<strong>单一工作流</strong></li>
+                            <li>主要内容简洁，详细参考放单独文件</li>
+                            <li>避免宽泛或重叠的技能定义</li>
+                            <li>始终相关的规则放记忆，不放技能</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>渐进式披露的价值：</strong>假设你有 20 个技能，平均每个 2000 token。如果全部加载就是 40,000 token。但按需加载意味着一次对话可能只用到 2-3 个技能，只需 4,000-6,000 token。
+                </div>
+                <div class="info-block">
+                    <strong>卸甲：</strong>上面用"按需加载"这个比喻，听起来像是 Agent 有"判断力"去选择技能。实际上 Agent 只是根据用户的问话内容，对比技能 frontmatter 中的关键词，匹配上了才加载。这和你去图书馆翻目录找书是两回事——Agent 没有"想不想学"的意愿。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Tool prompts ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工具提示</h2>
+                <h4>塑造模型如何使用工具的指令——名称、描述和参数</h4>
+                <p>所有工具都暴露模型能看到的元数据。清晰的工具描述能让模型更好地判断何时、如何使用工具：</p>
+                <pre><code class="language-javascript">import { tool } from "langchain";
+import { z } from "zod";
+
+const searchOrders = tool(
+  async ({ userId, status, limit }) => { /* ... */ },
+  {
+    name: "search_orders",
+    // 描述要写清楚"何时使用"，帮助模型判断是否调用此工具
+    description: `Search for user orders by status.
+
+Use this when the user asks about order history or wants to check
+order status. Always filter by the provided status.`,
+    // schema 用 zod 定义，每个字段用 describe() 标注含义
+    schema: z.object({
+      userId: z.string().describe("Unique identifier for the user"),
+      status: z.enum(["pending", "shipped", "delivered"])
+              .describe("Order status to filter by"),
+      limit: z.number().default(10)
+             .describe("Maximum number of results to return"),
+    }),
+  }
+);</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>内置工具提示</h4>
+                        <ul>
+                            <li>规划提示：<code>write_todos</code> 用法</li>
+                            <li>文件系统提示：<code>ls</code>、<code>read_file</code> 等</li>
+                            <li>子 agent 提示：<code>task</code> 工具用法</li>
+                            <li>人在回路提示：<code>interrupt_on</code> 用法</li>
+                            <li>本地上下文提示：当前目录和项目信息（仅 CLI）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>写好工具描述的要点</h4>
+                        <ul>
+                            <li>包含<strong>何时</strong>使用该工具</li>
+                            <li>描述每个参数的作用</li>
+                            <li>提供清晰的名称和描述</li>
+                            <li>使用 <code>describe()</code> 标注参数含义</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>Harness Profile 技巧：</strong>使用 harness profile 中的 <code>tool_description_overrides</code>（按工具名称索引）可覆盖内置或自定义工具描述。用 <code>excluded_tools</code> 可从可见工具集中完全移除某个工具。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Runtime context ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行时上下文</h2>
+                <h4>调用 agent 时传递的每次运行配置——不会自动进入模型提示</h4>
+                <p>运行时上下文用于传递用户元数据、API 密钥、功能标志等。模型<strong>只有在工具或中间件读取它时</strong>才会看到：</p>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+import { tool } from "langchain";
+import type { ToolRuntime } from "@langchain/core/tools";
+import { z } from "zod";
+
+// 定义运行时上下文的 schema，调用时传入的用户数据必须符合此结构
+const contextSchema = z.object({
+  userId: z.string(),
+  apiKey: z.string(),
+});
+
+// 工具通过第二个参数 runtime 获取上下文
+const fetchUserData = tool(
+  async (input, runtime: ToolRuntime<unknown, typeof contextSchema>) => {
+    // 从 runtime.context 中读取调用时传入的 userId
+    const userId = runtime.context?.userId;
+    return `Data for user ${userId}: ${input.query}`;
+  },
+  {
+    name: "fetch_user_data",
+    description: "Fetch data for the current user",
+    schema: z.object({ query: z.string() }),
+  }
+);
+
+const agent = await createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  tools: [fetchUserData],
+  contextSchema,  // 绑定上下文 schema，工具才能通过 runtime.context 访问
+});
+
+// 调用时通过第二个参数的 context 字段传入运行时上下文
+const result = await agent.invoke(
+  { messages: [{ role: "user", content: "Get my recent activity" }] },
+  { context: { userId: "user-123", apiKey: "sk-..." } },
+);</code></pre>
+                <div class="key-point">
+                    <strong>上下文传播：</strong>运行时上下文<strong>会自动传播到所有子 agent</strong>。子 agent 运行时接收与父级相同的运行时上下文，无需手动传递。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Context compression - Offloading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>内容卸载</h2>
+                <h4>当工具输入或结果超过 token 阈值时，自动存入文件系统</h4>
+                <p>长时间运行的任务会产生大量工具输出。内容卸载是第一道防线，默认阈值为 <strong>20,000 token</strong>：</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>工具输入卸载</h4>
+                        <p>文件写入和编辑操作在对话历史中留下包含完整文件内容的工具调用。当超过窗口 85% 时，<strong>较旧的工具调用被截断</strong>，用指向磁盘上文件的指针替代。</p>
+                        <p><span class="tag tag-primary">触发条件：窗口 85%</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>工具结果卸载</h4>
+                        <p>当工具结果超过 20,000 token 时，响应被卸载到后端，<strong>用文件路径引用 + 前 10 行预览替代</strong>。Agent 可以按需重新读取或搜索。</p>
+                        <p><span class="tag tag-info">触发条件：20,000 token</span></p>
+                    </div>
+                </div>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>卸载前</h4>
+                        <ul>
+                            <li>完整的文件内容在对话历史中</li>
+                            <li>一次大文件读写可能消耗数万 token</li>
+                            <li>多次操作后上下文快速膨胀</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>卸载后</h4>
+                        <ul>
+                            <li>大内容存入文件系统</li>
+                            <li>对话中只保留文件路径引用</li>
+                            <li>Agent 按需 <code>read_file</code> 获取详情</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心思路：</strong>已经持久化到文件系统的内容不需要在对话历史中保留。卸载机制自动识别冗余内容，用指针替代，保持活跃上下文的精简。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/08-context-engineering-2.png" alt="图：工具输入/结果的内容卸载流程" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Context compression - Summarization ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>智能摘要</h2>
+                <h4>当卸载不足以释放空间时，自动压缩对话历史</h4>
+                <p>当上下文超过窗口限制（如 <code>max_input_tokens</code> 的 85%），且没有更多可卸载的内容时，触发摘要：</p>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. 接近限制</h4>
+                        <p>上下文超过 85% 窗口</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. 生成摘要</h4>
+                        <p>LLM 压缩旧消息</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. 保留最近</h4>
+                        <p>保留 10% token 近期上下文</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>4. 存档原始</h4>
+                        <p>完整消息写入文件系统</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 过滤掉摘要步骤生成的 token，只处理用户可见的输出
+for await (const [namespace, chunk] of await agent.stream(
+  { messages: [...] },
+  { streamMode: "messages" },  // 以消息模式流式输出
+)) {
+  const [message, metadata] = chunk;
+  if (metadata?.lcSource === "summarization") {
+    continue;  // 跳过自动摘要产生的 token，避免干扰用户界面
+  } else {
+    // 处理正常的输出 token
+  }
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>摘要配置</h4>
+                        <ul>
+                            <li>在 <code>max_input_tokens</code> 的 85% 时触发</li>
+                            <li>保留 10% token 作为最近上下文</li>
+                            <li>无 model profile 时回退到 170,000 / 6 条消息</li>
+                            <li>需要 <code>deepagents&gt;=1.6.0</code>（含通过 <code>wrapModelCall</code> 进行模型内摘要、精确 token 计数和自动 <code>ContextOverflowError</code> 回退）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>错误回退</h4>
+                        <ul>
+                            <li>如果模型调用抛出 <code>ContextOverflowError</code></li>
+                            <li>Agent 立即回退到摘要</li>
+                            <li>用摘要 + 最近保留的消息重试</li>
+                            <li>无需手动处理溢出</li>
+                        </ul>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/08-context-engineering-3.png" alt="图：四步智能摘要流程" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Context isolation ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>上下文隔离</h2>
+                <h4>用子 agent 隔离繁重工作——主 agent 只接收最终结果</h4>
+                <p>当主 agent 使用产生大量输出的工具时，上下文窗口很快被填满。子 agent 解决了这个<strong>上下文膨胀问题</strong>：</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>不用子 agent</h4>
+                        <ul>
+                            <li>主 agent 直接调用搜索、文件读取、数据库查询</li>
+                            <li>所有中间结果都在主上下文中</li>
+                            <li>上下文快速膨胀，推理质量下降</li>
+                            <li>难以追踪哪部分有用</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>用子 agent</h4>
+                        <ul>
+                            <li>主 agent 用 <code>task</code> 工具委派工作</li>
+                            <li>子 agent 用<strong>全新上下文</strong>独立运行</li>
+                            <li>子 agent 只返回<strong>单一最终报告</strong></li>
+                            <li>主 agent 上下文保持干净</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">const researchSubagent = {
+  name: "researcher",
+  description: "Conducts research on a topic",
+  // 子 agent 的 systemPrompt 不继承主 agent，必须完整定义
+  // 关键：要求返回摘要而非原始数据，避免撑爆主 agent 的上下文
+  systemPrompt: `You are a research assistant.
+  IMPORTANT: Return only the essential summary (under 500 words).
+  Do NOT include raw search results or detailed tool outputs.`,
+  tools: [webSearch],  // 只给搜索工具，保持子 agent 专注
+};</code></pre>
+                <div class="warning">
+                    <strong>最佳实践：</strong>指示子 agent 返回摘要而非原始数据。如果子 agent 生成了很长的输出，在其 <code>systemPrompt</code> 中添加指导，要求生成摘要和综合发现。大型数据让子 agent 写入文件，主 agent 按需读取。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Long-term memory ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>长期记忆</h2>
+                <h4>跨对话持久保存信息——使用虚拟文件系统 + LangGraph Store</h4>
+                <p>默认情况下，deep agent 的文件仅在线程内持久保存。长期记忆通过 <code>CompositeBackend</code> 将特定路径路由到持久存储：</p>
+                <pre><code class="language-javascript">import { createDeepAgent, CompositeBackend,
+         StateBackend, StoreBackend } from "deepagents";
+import { InMemoryStore } from "@langchain/langgraph-checkpoint";
+
+const agent = await createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  store: new InMemoryStore(),  // LangGraph 存储，用于跨线程持久化
+  backend: new CompositeBackend(
+    new StateBackend(),                  // 默认后端：线程内临时文件
+    { "/memories/": new StoreBackend() }, // /memories/ 路径走跨线程持久化
+  ),
+  // 在系统提示中告知 Agent 如何使用长期记忆
+  systemPrompt: `When users tell you their preferences,
+  save them to /memories/user_preferences.txt
+  so you remember them in future conversations.`,
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>工作原理</h4>
+                        <ul>
+                            <li><code>CompositeBackend</code> 混合存储系统</li>
+                            <li><code>StateBackend</code>：线程内临时文件</li>
+                            <li><code>StoreBackend</code>：跨线程持久文件</li>
+                            <li>路径匹配：<code>/memories/</code> 路由到 Store</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>使用方式</h4>
+                        <ul>
+                            <li>不需要预先填充文件</li>
+                            <li>提供后端配置 + store + 提示指令</li>
+                            <li>Agent 按需用 <code>write_file</code> 创建记忆</li>
+                            <li>跨对话自动读取已有记忆</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>记忆分层：</strong>短期记忆（线程内的 State）用于当前任务，长期记忆（<code>/memories/</code> 路径）用于跨会话。两层互不干扰，各有各的生命周期。
+                </div>
+                <div class="warning">
+                    <strong>预填充记忆：</strong>如果需要在部署前预填充记忆内容，请在 LangSmith 上部署时使用 <code>Store API</code> 直接写入记忆数据。设置和用例请参阅长期记忆文档。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Best practices ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践</h2>
+                <h4>六条经过验证的上下文管理策略</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>1. 精简输入上下文</h4>
+                        <p>记忆只放始终相关的约定，特定任务能力用聚焦的技能提供。避免在系统提示中堆砌信息。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>2. 子 agent 处理繁重工作</h4>
+                        <p>将多步骤、输出量大的任务委派给子 agent，保持主 agent 的上下文干净。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>3. 配置子 agent 输出</h4>
+                        <p>在子 agent 的 <code>system_prompt</code> 中要求返回摘要，而非原始数据。从源头控制输出量。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>4. 善用文件系统</h4>
+                        <p>将大型输出持久化到文件，活跃上下文保持较小。模型按需通过 <code>read_file</code> 和 <code>grep</code> 提取。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #E11D48;">
+                        <h4>5. 记录记忆结构</h4>
+                        <p>在系统提示中告诉 agent <code>/memories/</code> 中存放什么、如何使用。让 agent 知道记忆的组织方式。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #2563EB;">
+                        <h4>6. 传递运行时上下文</h4>
+                        <p>用 <code>context</code> 传递用户元数据、API 密钥等静态配置，不要硬编码在提示中。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Full system prompt assembly ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>系统提示组装</h2>
+                <h4>理解完整的系统提示由哪些部分组成</h4>
+                <p>模型在运行开始时接收到的系统消息，按顺序由以下部分组成：</p>
+                <table>
+                    <thead>
+                        <tr><th>序号</th><th>组件</th><th>条件</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1</td><td>自定义 <code>system_prompt</code></td><td>如果提供</td></tr>
+                        <tr><td>2</td><td>基础 agent 提示</td><td>始终存在</td></tr>
+                        <tr><td>3</td><td>待办事项列表提示</td><td>始终存在</td></tr>
+                        <tr><td>4</td><td>记忆提示（<code>AGENTS.md</code> + 使用指南）</td><td>仅提供 memory 时</td></tr>
+                        <tr><td>5</td><td>技能提示（位置 + frontmatter + 用法）</td><td>仅提供 skills 时</td></tr>
+                        <tr><td>6</td><td>虚拟文件系统提示</td><td>如适用</td></tr>
+                        <tr><td>7</td><td>子 agent 提示（Task 工具用法）</td><td>始终存在</td></tr>
+                        <tr><td>8</td><td>用户中间件提示</td><td>如果提供自定义中间件</td></tr>
+                        <tr><td>9</td><td>人在回路提示</td><td>设置 <code>interrupt_on</code> 时</td></tr>
+                    </tbody>
+                </table>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/08-context-engineering-4.png" alt="图：系统提示多层组装顺序" class="ai-diagram-img">
+                <div class="warning">
+                    <strong>调试提示：</strong>如果你觉得 agent 的行为不符合预期，可能是系统提示的某部分与你的自定义指令冲突。用 harness profile 的 <code>base_system_prompt</code> 直接替换基础提示，或用 <code>system_prompt_suffix</code> 追加内容。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>上下文工程是让 deep agent 可靠运行的核心能力</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li><strong>五种上下文类型</strong>：输入、运行时、压缩、隔离、长期记忆</li>
+                            <li><strong>输入上下文</strong>：系统提示 + 记忆（始终加载）+ 技能（按需加载）+ 工具提示</li>
+                            <li><strong>上下文压缩</strong>：卸载（文件系统替代）+ 摘要（LLM 压缩旧消息）</li>
+                            <li><strong>上下文隔离</strong>：子 agent 独立上下文，只返回最终结果</li>
+                            <li><strong>长期记忆</strong>：<code>CompositeBackend</code> 实现跨对话持久化</li>
+                            <li><strong>六条最佳实践</strong>：精简输入、委派繁重、控制输出、善用文件、记录结构、传递上下文</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>后端系统</strong>：文件系统后端和 CompositeBackend 深入配置</li>
+                            <li><strong>子 Agent</strong>：上下文隔离、运行时上下文传播详解</li>
+                            <li><strong>长期记忆</strong>：跨线程持久化的完整实现</li>
+                            <li><strong>技能</strong>：渐进式披露和技能编写的最佳实践</li>
+                            <li><strong>配置</strong>：Harness profiles 调整提示和工具描述</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>上下文工程不是"塞更多信息"，而是"精准地提供需要的信息"。通过记忆、技能、卸载、摘要和子 agent 的组合，你可以让 agent 在长时间运行中始终保持高效的上下文利用率。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./09-backends.html">下一章：后端系统</a> -- 文件系统后端和 CompositeBackend 深入</li>
+                            <li><a href="./10-subagents.html">子 Agent</a> -- 上下文隔离和委派机制详解</li>
+                            <li><a href="./14-memory.html">长期记忆</a> -- 跨线程持久化的完整实现</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关主题</h4>
+                        <ul>
+                            <li><a href="./06-harness.html">Harness</a> -- 上下文管理概述、卸载、摘要</li>
+                            <li><a href="./15-skills.html">技能</a> -- 渐进式披露和技能编写</li>
+                            <li><a href="./18-profiles.html">配置</a> -- Harness profiles 调整提示和工具</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 文档</a> -- 完整 API 参考</li>
+                            <li><a href="https://smith.langchain.com/">LangSmith</a> -- 可视化调试平台</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

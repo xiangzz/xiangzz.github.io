@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配置 Deep Agents Code</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚙️</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 31 章</div>
+            <h1>配置 Deep Agents</h1>
+            <p>通过 config.toml、环境变量、Hooks 和 MCP 服务器深度定制 Deep Agents Code</p>
+            <strong>从"开箱即用"到"按需调优"的完整配置指南</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你有没有试过在多个项目间切换不同的 LLM Provider？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>无配置管理的困境</h4>
+                        <ul>
+                            <li>API 密钥散落在各个 <code>.env</code> 文件中，<strong>无法统一管理</strong></li>
+                            <li>不同项目需要不同模型参数，<strong>只能手动反复调整</strong></li>
+                            <li>本地 Ollama 和云端 API 切来切去，<strong>没有统一的 Provider 管理</strong></li>
+                            <li>主题、更新策略各自为政，<strong>团队协作配置不一致</strong></li>
+                            <li>想对生命周期事件做自动化？<strong>没有钩子机制</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agents 的解法</h4>
+                        <ul>
+                            <li>所有配置集中在 <code>~/.deepagents/</code>，<strong>一处管理所有设置</strong></li>
+                            <li>全局 + 项目级 <code>.env</code> 文件，<strong>灵活覆盖不冲突</strong></li>
+                            <li>Provider 配置支持按模型覆盖参数，<strong>精细控制每个模型</strong></li>
+                            <li>自定义主题 + 终端映射，<strong>自动适配不同环境</strong></li>
+                            <li>Hooks 钩子系统响应生命周期事件，<strong>自动化一切</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>当你从"试玩一个 Agent"走向"日常使用一个 Agent"，你就需要管理密钥、切换模型、调整参数、自动化流程。Deep Agents Code 的配置系统就是为这个阶段准备的。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Config overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置文件总览</h2>
+                <h4>所有配置集中在 ~/.deepagents/ 目录下</h4>
+                <table>
+                    <thead>
+                        <tr><th>文件</th><th>格式</th><th>用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>config.toml</code></td>
+                            <td>TOML</td>
+                            <td>模型默认值、Provider 设置、构造函数参数、Profile 覆盖、主题、更新设置</td>
+                        </tr>
+                        <tr>
+                            <td><code>.env</code></td>
+                            <td>Dotenv</td>
+                            <td>全局 API 密钥和密钥（如 OPENAI_API_KEY）</td>
+                        </tr>
+                        <tr>
+                            <td><code>hooks.json</code></td>
+                            <td>JSON</td>
+                            <td>订阅 Deep Agents Code 生命周期事件的外部工具</td>
+                        </tr>
+                        <tr>
+                            <td><code>.mcp.json</code></td>
+                            <td>JSON</td>
+                            <td>全局 MCP 服务器定义</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>目录结构</h4>
+                        <pre><code class="language-bash">~/.deepagents/
+  config.toml      # 主配置文件：模型、Provider、主题、更新等
+  .env             # API 密钥（所有项目共享）
+  hooks.json       # 生命周期钩子（响应 Agent 事件）
+  .mcp.json        # MCP 服务器定义（全局工具扩展）
+  .state/          # 运行时状态（自动管理，不要手动修改）</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>快速开始</h4>
+                        <ul>
+                            <li><code>/auth</code> — 管理 Provider 凭证</li>
+                            <li><code>/model</code> — 切换模型</li>
+                            <li><code>/agents</code> — 切换 Agent</li>
+                            <li><code>/theme</code> — 切换主题</li>
+                            <li><code>/reload</code> — 重载配置</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong><code>~/.deepagents/.state/</code> 目录下的文件保存运行时状态，由系统自动管理，不要手动修改。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Provider credentials ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Provider 凭证</h2>
+                <h4>两种方式管理 API 密钥：/auth 命令或环境变量</h4>
+                <p>Deep Agents Code 按以下优先级检查凭证：<strong>已存储的密钥 > 环境变量</strong>。</p>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>推荐：/auth 命令</h4>
+                        <p>在任意会话中输入 <code>/auth</code> 打开凭证管理器。</p>
+                        <table>
+                            <thead><tr><th>标签</th><th>含义</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>credentials set</code></td><td>已有密钥可用</td></tr>
+                                <tr><td><code>missing XXX_KEY</code></td><td>未设置，按 Enter 粘贴</td></tr>
+                                <tr><td><code>local provider</code></td><td>无需凭证（如 Ollama）</td></tr>
+                                <tr><td><code>implicit auth</code></td><td>隐式认证（如 Vertex AI）</td></tr>
+                                <tr><td><code>custom auth</code></td><td>使用 class_path 自行管理认证（mTLS、JWT 等）</td></tr>
+                            </tbody>
+                        </table>
+                        <p><span class="tag tag-success">密钥仅保存在本地</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>CI/无头模式：环境变量</h4>
+                        <p>适合非交互式运行，写入 <code>~/.deepagents/.env</code> 或导出环境变量：</p>
+                        <pre><code class="language-bash"># 适用于 CI/CD 或无头模式——密钥在 shell 关闭后失效
+export ANTHROPIC_API_KEY="sk-ant-..."
+export OPENAI_API_KEY="sk-..."
+export DEEPSEEK_API_KEY="sk-..."         # DeepSeek V4 系列（需安装 @langchain/deepseek）</code></pre>
+                        <p>工具凭证（如 <code>TAVILY_API_KEY</code>）只能通过环境变量设置，<code>/auth</code> 不管理。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>优先级链：</strong>已存储密钥 > shell 环境变量 > 项目 <code>.env</code> > 全局 <code>~/.deepagents/.env</code>。<code>/reload</code> 会重新读取 <code>.env</code> 文件，无需重启。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Environment variables ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>环境变量加载</h2>
+                <h4>两级 .env 文件 + shell 环境变量，优先级清晰不冲突</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>加载顺序</h4>
+                        <ol>
+                            <li><strong>项目 <code>.env</code></strong> — 当前工作目录</li>
+                            <li><strong>全局 <code>~/.deepagents/.env</code></strong> — 所有项目共享</li>
+                        </ol>
+                        <p>已在 shell 中设置的值永远不会被覆盖。</p>
+                    </div>
+                    <div class="after">
+                        <h4>优先级（高到低）</h4>
+                        <ol>
+                            <li><strong>shell 环境变量</strong></li>
+                            <li><strong>项目 <code>.env</code></strong></li>
+                            <li><strong>全局 <code>~/.deepagents/.env</code></strong></li>
+                        </ol>
+                    </div>
+                </div>
+                <pre><code class="language-bash"># ~/.deepagents/.env — 全局共享密钥（所有项目通用）
+ANTHROPIC_API_KEY=sk-ant-...       # Anthropic Claude 系列模型
+OPENAI_API_KEY=sk-...              # OpenAI GPT 系列模型
+DEEPSEEK_API_KEY=sk-...            # DeepSeek V4 系列（需安装 @langchain/deepseek）
+LANGSMITH_API_KEY=lsv2_...         # LangSmith 追踪和沙箱
+TAVILY_API_KEY=tvly-...            # Tavily 网络搜索工具</code></pre>
+                <div class="key-point">
+                    <strong>Tavily 网络搜索：</strong>内置 <code>web_search</code> 工具使用 Tavily。按照以下三步配置即可启用。
+                </div>
+                <div class="card-grid cols-3">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>步骤 1：获取密钥</h4>
+                        <p>在 <a href="https://tavily.com">tavily.com</a> 注册并复制密钥（以 <code>tvly-</code> 开头）。免费额度足以满足大多数 Deep Agents Code 使用场景。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>步骤 2：添加到环境</h4>
+                        <p>将密钥添加到 <code>~/.deepagents/.env</code>：</p>
+                        <pre><code class="language-bash">TAVILY_API_KEY=tvly-...</code></pre>
+                        <p>或在 shell 中导出：<code>export TAVILY_API_KEY=tvly-...</code></p>
+                        <p>使用 <code>DEEPAGENTS_CODE_</code> 前缀隔离（仅作用于 Deep Agents，不影响其他工具）：</p>
+                        <pre><code class="language-bash"># 前缀隔离——仅 Deep Agents Code 读取此密钥，不影响其他工具
+DEEPAGENTS_CODE_TAVILY_API_KEY=tvly-...</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>步骤 3：重载或重启</h4>
+                        <p>在已有会话中运行 <code>/reload</code> 重新读取 <code>.env</code> 文件。下次启动时，"Web search disabled" 通知将消失，Agent 即可调用 <code>web_search</code>。</p>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/31-code-configuration-1.png" alt="图：环境变量三级优先级加载链" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: DEEPAGENTS_CODE_ prefix ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>前缀覆盖机制</h2>
+                <h4>DEEPAGENTS_CODE_ 前缀让 Deep Agents 读取独立的密钥值</h4>
+                <p>前缀的核心用途：为 Deep Agents Code 指定独立密钥，<strong>不影响其他工具</strong>读取同名环境变量。</p>
+                <pre><code class="language-bash"># ~/.deepagents/.env
+
+# 仅覆盖 Deep Agents Code 使用的 OPENAI_API_KEY，其他工具仍读取原始值
+DEEPAGENTS_CODE_OPENAI_API_KEY=sk-cli-only
+
+# 设为空值可屏蔽shell 中导出的密钥，使 Deep Agents Code 无法使用它
+DEEPAGENTS_CODE_ANTHROPIC_API_KEY=</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>读取逻辑</h4>
+                        <p>Deep Agents Code 先检查 <code>DEEPAGENTS_CODE_{NAME}</code>，然后回退到 <code>{NAME}</code>。</p>
+                        <p>这意味着你可以为 Deep Agents 单独配置一套密钥，而不影响已导出的 shell 变量。</p>
+                    </div>
+                    <div class="card">
+                        <h4>动态重载</h4>
+                        <p>执行 <code>/reload</code> 时会重新读取 <code>.env</code> 文件并加载带前缀的值。</p>
+                        <p>因此你可以<strong>无需重启</strong>即可轮换密钥。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>典型场景：</strong>你的 <code>OPENAI_API_KEY</code> 已在 shell 中为其他工具导出，但 Deep Agents 需要用不同的密钥或代理端点——用 <code>DEEPAGENTS_CODE_OPENAI_API_KEY</code> 即可隔离。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: config.toml defaults ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>默认模型与 Agent</h2>
+                <h4>在 config.toml 中设置长期偏好，命令行切换不会覆盖默认值</h4>
+                <pre><code class="language-toml"># ~/.deepagents/config.toml
+
+[models]
+default = "ollama:qwen3:4b"                          # 长期偏好
+recent = "google_genai:gemini-3.1-pro-preview"       # 最近 /model 切换（自动写入）
+
+[agents]
+default = "backend-dev"    # 长期偏好（Ctrl+S 固定）
+recent = "frontend-dev"    # 最近 /agents 切换（自动写入）</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>模型优先级</h4>
+                        <ul>
+                            <li><code>default</code> 始终优先于 <code>recent</code></li>
+                            <li><code>/model</code> 只写入 <code>recent</code>，不覆盖 <code>default</code></li>
+                            <li>清除默认：<code>/model --default --clear</code></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>Agent 优先级</h4>
+                        <ul>
+                            <li><code>default</code> 始终优先于 <code>recent</code></li>
+                            <li><code>Enter</code> 写入 <code>recent</code>，<code>Ctrl+S</code> 写入 <code>default</code></li>
+                            <li><code>-a</code> 参数覆盖两者</li>
+                            <li><code>-r</code> / <code>--resume</code> 绕过两者，恢复线程原来的 Agent</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>设计意图：</strong>默认值是你的"长期偏好"，不受会话中临时切换影响。这样你可以放心用 <code>/model</code> 试试新模型，不会丢失你的日常首选。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Provider config structure ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Provider 配置</h2>
+                <h4>每个 Provider 是 [models.providers] 下的一个 TOML 表</h4>
+                <pre><code class="language-toml">[models.providers.&lt;name&gt;]
+models = ["gpt-4o"]                   # 切换器中显示的模型
+api_key_env = "OPENAI_API_KEY"        # 密钥环境变量名
+base_url = "https://api.openai.com/v1"  # 可选：覆盖默认 URL
+class_path = "my_package.models:MyChatModel"  # 可选：自定义 Provider
+enabled = true                         # 可选：是否在切换器中显示
+
+[models.providers.&lt;name&gt;.params]
+temperature = 0          # 适用于此 Provider 的所有模型
+max_tokens = 4096
+
+[models.providers.&lt;name&gt;.params."gpt-4o"]
+temperature = 0.7        # 仅覆盖 gpt-4o 的 temperature</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>models</code></td><td>string[]</td><td>切换器中显示的模型列表，可选</td></tr>
+                        <tr><td><code>api_key_env</code></td><td>string</td><td>密钥环境变量的名称（非密钥本身）</td></tr>
+                        <tr><td><code>base_url</code></td><td>string</td><td>覆盖 Provider 默认 URL</td></tr>
+                        <tr><td><code>params</code></td><td>object</td><td>传递给构造函数的额外参数</td></tr>
+                        <tr><td><code>profile</code></td><td>object</td><td>覆盖模型运行时 Profile</td></tr>
+                        <tr><td><code>class_path</code></td><td>string</td><td>自定义模型类的完全限定路径</td></tr>
+                        <tr><td><code>enabled</code></td><td>boolean</td><td>是否在 /model 切换器中显示</td></tr>
+                    </tbody>
+                </table>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/31-code-configuration-2.png" alt="图：TOML 配置嵌套与覆盖层级" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Model params override ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>按模型覆盖参数</h2>
+                <h4>在 params 下用模型名为键的子表，覆盖个别值无需复制整个配置</h4>
+                <pre><code class="language-toml">[models.providers.ollama]
+models = ["qwen3:4b", "llama3"]  # 在 /model 切换器中显示的模型列表
+
+[models.providers.ollama.params]
+temperature = 0       # Provider 级别默认：确定性输出，适合代码生成
+num_ctx = 8192        # 上下文窗口大小（token 数）
+
+[models.providers.ollama.params."qwen3:4b"]
+temperature = 0.5     # 模型级覆盖：qwen3:4b 用更高 temperature 增加多样性
+num_ctx = 4000        # 模型级覆盖：qwen3:4b 使用更小的上下文窗口</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>qwen3:4b 最终参数</h4>
+                        <ul>
+                            <li><code>temperature: 0.5</code> — 模型级覆盖</li>
+                            <li><code>num_ctx: 4000</code> — 模型级覆盖</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>llama3 最终参数</h4>
+                        <ul>
+                            <li><code>temperature: 0</code> — Provider 级默认</li>
+                            <li><code>num_ctx: 8192</code> — Provider 级默认</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>合并策略：</strong>浅合并——模型子表中存在的键替换 Provider 级别的同名键，仅存在于 Provider 级别的键则保留。也可通过 <code>--model-params</code> CLI 标志临时覆盖，优先级高于配置文件。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Profile overrides ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Profile 覆盖</h2>
+                <h4>高级功能：覆盖模型运行时 Profile，改变 Deep Agents 解读模型能力的方式</h4>
+                <p>最常见的用例是降低 <code>max_input_tokens</code> 以更早触发自动摘要——适用于测试或限制上下文使用量。</p>
+                <pre><code class="language-toml"># 应用于此 Provider 的所有模型（触发自动摘要的阈值）
+[models.providers.anthropic.profile]
+max_input_tokens = 4096   # 限制最大输入 token，超出时自动压缩上下文
+
+# 此模型获得更高的限制（模型级覆盖优先）
+[models.providers.anthropic.profile."claude-sonnet-4-5"]
+max_input_tokens = 8192   # claude-sonnet-4-5 单独放宽到 8192</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>配置文件方式</h4>
+                        <p>在 <code>config.toml</code> 中设置 Profile 覆盖，持久生效。优先级链：</p>
+                        <p><code>模型默认值 &lt; config.toml profile &lt; CLI --profile-override</code></p>
+                    </div>
+                    <div class="card">
+                        <h4>CLI 临时覆盖</h4>
+                        <pre><code class="language-bash">dcode --profile-override \
+  '{"max_input_tokens": 4096}'
+
+# 与 --model 结合
+dcode --model google_genai:gemini-3.1-pro \
+  --profile-override \
+  '{"max_input_tokens": 4096}'</code></pre>
+                        <p><code>--profile-override</code> 在 <code>/model</code> 热切换后持续有效。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>生效范围：</strong>上下文限制显示、自动摘要阈值、能力检查等所有读取 Profile 的功能都会使用覆盖后的值。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Custom base URL & compatible API ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义端点</h2>
+                <h4>通过 base_url 指向代理、网关或兼容 API</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>自定义 Base URL</h4>
+                        <p>某些 Provider 接受 <code>base_url</code> 来覆盖默认端点：</p>
+                        <pre><code class="language-toml">[models.providers.ollama]
+base_url = "http://your-host:port"  # 指向局域网或远程 Ollama 实例</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>OpenAI 兼容 API</h4>
+                        <p>复用 <code>langchain-openai</code> 包指向兼容端点：</p>
+                        <pre><code class="language-toml">[models.providers.openai]
+base_url = "https://api.example.com/v1"  # 兼容 OpenAI 的自定义端点
+api_key_env = "EXAMPLE_API_KEY"        # 指向存放密钥的环境变量名
+models = ["my-model"]                 # 在切换器中显示的模型列表</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Anthropic 兼容 API</h4>
+                        <p>复用 <code>langchain-anthropic</code> 包指向兼容端点：</p>
+                        <pre><code class="language-toml">[models.providers.anthropic]
+base_url = "https://api.example.com"  # 兼容 Anthropic 的自定义端点
+api_key_env = "EXAMPLE_API_KEY"       # 指向存放密钥的环境变量名
+models = ["my-model"]                # 在切换器中显示的模型列表</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>DeepSeek 兼容 API</h4>
+                        <p>复用 <code>@langchain/deepseek</code> 包指向兼容端点（如硅基流动 SiliconFlow）：</p>
+                        <pre><code class="language-toml">[models.providers.deepseek]
+base_url = "https://api.siliconflow.cn/v1"  # 兼容 DeepSeek 的第三方端点
+api_key_env = "DEEPSEEK_API_KEY"             # 密钥环境变量名
+models = ["deepseek-v4-pro", "deepseek-v4-flash"]  # V4 系列模型</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>重要提示：</strong>OpenAI Provider 默认使用 Responses API，大多数兼容网关并未实现。如果你的 Provider 仅支持 Chat Completions API，请显式禁用：
+                    <pre><code class="language-toml">[models.providers.openai.params]
+use_responses_api = false  # 禁用 Responses API，回退到 Chat Completions API</code></pre>
+                </div>
+                <div class="key-point">
+                    <strong>选择原则：</strong>如果兼容 Provider 提供了专用的 LangChain 集成包，优先使用它。通用兼容模式无法识别 Provider 在官方规范之上添加的扩展功能。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Adding models to switcher ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>切换器添加模型</h2>
+                <h4>某些 Provider 不内置模型 Profile，需要手动配置切换器列表</h4>
+                <pre><code class="language-toml">[models.providers.ollama]
+models = ["llama3", "mistral", "codellama"]  # 手动列出模型，绕过 Profile 筛选</code></pre>
+                <p>配置后，<code>/model</code> 切换器会出现 Ollama 分区并列出这些模型。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>手动配置 models 列表</h4>
+                        <ul>
+                            <li>适用于所有 Provider</li>
+                            <li>列表中的模型<strong>绕过</strong> Profile 筛选条件</li>
+                            <li>始终显示在切换器中</li>
+                            <li>新发布模型的最佳添加方式</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Ollama 自动发现</h4>
+                        <ul>
+                            <li>当守护进程可达时自动生效</li>
+                            <li>自动发现本地已拉取的模型</li>
+                            <li>拉取新模型后运行 <code>/reload</code> 刷新</li>
+                            <li>关闭：<code>DEEPAGENTS_CODE_OLLAMA_DISCOVERY=0</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>直接切换：</strong>无论模型是否在切换器中，你始终可以通过 <code>/model ollama:llama3</code> 直接切换。models 列表只是让模型出现在交互式选择器中。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Custom providers ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义 Provider</h2>
+                <h4>用 class_path 接入任何 LangChain BaseChatModel 子类</h4>
+                <pre><code class="language-toml">[models.providers.my_custom]
+class_path = "my_package.models:MyChatModel"  # 模块路径:类名格式
+api_key_env = "MY_API_KEY"                    # 密钥环境变量名（非密钥本身）
+base_url = "https://my-endpoint.example.com"  # 自定义 API 端点
+
+[models.providers.my_custom.params]
+temperature = 0     # 确定性输出，适合代码生成
+max_tokens = 4096   # 最大输出 token 数</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>实例化过程</h4>
+                        <p>切换到 <code>my_custom:my-model-v1</code> 时：</p>
+                        <pre><code class="language-python">MyChatModel(
+  model="my-model-v1",     # 自动传入你选择的模型名
+  base_url="...",          # 来自 config.toml 的 base_url
+  api_key="...",           # 来自 api_key_env 指向的环境变量
+  temperature=0,             # 来自 params 配置
+  max_tokens=4096            # 来自 params 配置
+)</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>安装要求</h4>
+                        <p>Provider 包必须与 deepagents-code 安装在同一 Python 环境中：</p>
+                        <pre><code class="language-bash"># uv tool 安装方式
+uv tool install deepagents-code \
+  --with my_package</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>工具调用要求：</strong>Deep Agents Code 要求模型支持 Tool Calling。如果自定义模型支持但未被识别，在 Profile 中声明：<code>[models.providers.xyz.profile] tool_calling = true</code>
+                </div>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>自定义认证示例</h4>
+                        <p>适用于 mTLS、JWT、自定义请求头等认证方式：</p>
+                        <pre><code class="language-toml">[models.providers.xyz]
+class_path = "abc.integrations.deepagents:DeepAgentsXYZChat"  # 自定义认证类
+models = ["abc-xyz-1"]  # 在切换器中显示的模型
+
+[models.providers.xyz.params]
+bypass_auth = true   # 跳过标准认证，由自定义类内部处理
+temperature = 0</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>完整 Profile 声明</h4>
+                        <pre><code class="language-toml">[models.providers.xyz.profile]
+tool_calling = true        # 声明模型支持工具调用（必须为 true）
+max_input_tokens = 128000  # 最大输入 token 数，用于上下文追踪和自动摘要</code></pre>
+                        <p>设置 <code>max_input_tokens</code> 以启用准确的上下文长度跟踪和自动摘要。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>Provider 软件包 Profile 字典：</strong>你的 Provider 软件包可以选择在 <code>&lt;package&gt;.data._profiles</code> 中的 <code>_PROFILES</code> 字典中提供模型 Profile，而无需在 <code>models</code> 键下定义它们。更多信息请参阅 <a href="https://github.com/langchain-ai/langchain/tree/master/libs/model-profiles">LangChain 模型 Profile</a>。
+                </div>
+                <div class="warning">
+                    <strong>安全提醒：</strong><code>class_path</code> 会从你的配置文件执行任意 Python 代码。这与 <code>pyproject.toml</code> 构建脚本的信任模型相同 — 你控制自己的机器。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Skills extra dirs ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Skills 白名单</h2>
+                <h4>为 Skill 的符号链接添加额外的允许目录</h4>
+                <p>默认情况下，Deep Agents Code 验证 Skill 文件路径保持在标准 Skill 目录之内，防止符号链接读取任意文件。如果你将共享 Skill 存储在非标准位置：</p>
+                <pre><code class="language-toml">[skills]
+extra_allowed_dirs = [
+    "~/shared-skills",     # 家目录下的共享技能（支持 ~ 展开）
+    "/opt/team-skills",    # 团队共享的技能目录（绝对路径）
+]</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>配置文件方式</h4>
+                        <p>在 <code>config.toml</code> 的 <code>[skills]</code> 节中添加 <code>extra_allowed_dirs</code>。支持 <code>~</code> 展开。</p>
+                        <p>更改在 <code>/reload</code> 后生效。</p>
+                    </div>
+                    <div class="card">
+                        <h4>环境变量方式</h4>
+                        <pre><code class="language-bash">export DEEPAGENTS_CODE_EXTRA_SKILLS_DIRS="\
+~/shared-skills:/opt/team-skills"</code></pre>
+                        <p>冒号分隔的路径列表。环境变量优先于配置文件。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>注意：</strong>这不会添加新的 Skill 发现位置——Skill 仍然只从标准目录中发现。它只是允许已发现的 Skill 中的符号链接指向白名单中的路径。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Theme ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>主题配置</h2>
+                <h4>内置主题、自定义主题和终端映射</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>切换主题</h4>
+                        <p><code>/theme</code> 打开交互式选择器，实时预览，按 Enter 保存到 config.toml：</p>
+                        <pre><code class="language-toml">[ui]
+theme = "langchain-dark"  # /theme 选择器按 Enter 后自动写入</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>自定义主题</h4>
+                        <pre><code class="language-toml">[themes.my-solarized]
+label = "My Solarized"     # 在 /theme 选择器中显示的名称
+dark = true                 # 标记为深色主题
+primary = "#268BD2"         # 主色调（蓝色）
+warning = "#B58900"         # 警告色（黄色）
+
+[themes."ocean breeze"]
+label = "Ocean Breeze"      # 选择器中显示的名称
+primary = "#0077B6"         # 主色调（海蓝色）
+background = "#CAF0F8"      # 背景色（浅蓝色）</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>覆盖内置主题</h4>
+                        <pre><code class="language-toml">[themes.langchain]
+primary = "#FF5500"  # 只覆盖主色调，其他字段保留内置默认值</code></pre>
+                        <p>只读取颜色字段，label 和 dark 从内置主题继承。省略的字段保留原值。</p>
+                    </div>
+                    <div class="card">
+                        <h4>终端映射</h4>
+                        <pre><code class="language-toml">[ui.terminal_themes]
+"Apple_Terminal" = "langchain-light"  # macOS 终端使用浅色主题
+"iTerm.app" = "langchain"             # iTerm2 使用默认主题
+"vscode" = "langchain-dark"            # VS Code 终端使用深色主题</code></pre>
+                        <p>根据 <code>TERM_PROGRAM</code> 自动切换主题。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>解析优先级：</strong><code>DEEPAGENTS_CODE_THEME</code> 环境变量 > 终端映射 > <code>[ui] theme</code> > 内置默认值。
+                </div>
+                <details class="accordion">
+                    <summary>高级：选择器快捷键、解析顺序、终端标识符</summary>
+                    <div class="card-grid cols-3">
+                        <div class="card">
+                            <h4>选择器快捷键</h4>
+                            <ul>
+                                <li><code>N</code> — 在显示标签和规范注册表键之间切换</li>
+                                <li><code>T</code> — 将高亮的主题保存到当前 <code>TERM_PROGRAM</code> 对应的终端映射中</li>
+                            </ul>
+                        </div>
+                        <div class="card">
+                            <h4>常见 TERM_PROGRAM 值</h4>
+                            <table>
+                                <thead><tr><th>终端</th><th>TERM_PROGRAM</th></tr></thead>
+                                <tbody>
+                                    <tr><td>Apple Terminal</td><td><code>Apple_Terminal</code></td></tr>
+                                    <tr><td>iTerm2</td><td><code>iTerm.app</code></td></tr>
+                                    <tr><td>WezTerm</td><td><code>WezTerm</code></td></tr>
+                                    <tr><td>VS Code 终端</td><td><code>vscode</code></td></tr>
+                                    <tr><td>Ghostty</td><td><code>ghostty</code></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="card">
+                            <h4>解析顺序（启动时）</h4>
+                            <ol>
+                                <li><code>DEEPAGENTS_CODE_THEME</code> 环境变量（显式覆盖）</li>
+                                <li>当前 <code>TERM_PROGRAM</code> 对应的终端映射</li>
+                                <li><code>[ui] theme</code> 保存的偏好</li>
+                                <li>内置默认值（<code>langchain</code>）</li>
+                            </ol>
+                        </div>
+                    </div>
+                </details>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Auto update ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自动更新</h2>
+                <h4>让 Deep Agents Code 自动检查并安装更新</h4>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>配置文件</h4>
+                        <pre><code class="language-toml">[update]
+auto_update = true  # 启用自动更新，会话开始时检查 PyPI 并升级</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>环境变量</h4>
+                        <pre><code class="language-bash"># 环境变量方式（优先于 config.toml）
+export DEEPAGENTS_CODE_AUTO_UPDATE=1</code></pre>
+                        <p>环境变量优先于配置文件。</p>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>设置</th><th>行为</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>auto_update = true</code></td>
+                            <td>会话开始时检查 PyPI，自动使用检测到的安装方式（uv、Homebrew 或 pip）升级</td>
+                        </tr>
+                        <tr>
+                            <td><code>auto_update = false</code>（默认）</td>
+                            <td>显示更新提示和安装命令，不自动升级</td>
+                        </tr>
+                        <tr>
+                            <td><code>/update</code> 命令</td>
+                            <td>手动检查并安装更新，绕过缓存</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>升级后 "what's new" 横幅</h4>
+                        <p>升级后，Deep Agents Code 在下次启动时显示 "what's new" 横幅，附带更新日志链接。</p>
+                    </div>
+                    <div class="card">
+                        <h4>会话退出更新提醒</h4>
+                        <p>在会话退出时，如果在会话期间检测到了更新版本，会显示更新横幅作为提醒。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>托管部署：</strong>在 MDM 工具中设置 <code>DEEPAGENTS_CODE_AUTO_UPDATE=1</code> 或部署含 <code>[update] auto_update = true</code> 的 config.toml。完全禁止更新检查：<code>DEEPAGENTS_CODE_NO_UPDATE_CHECK=1</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Managed deployment ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>托管部署</h2>
+                <h4>以 root 身份运行安装脚本，支持 MDM 工具管理</h4>
+                <p><a href="https://github.com/langchain-ai/deepagents/blob/main/libs/cli/scripts/install.sh">安装脚本</a>支持以 root 身份运行，适用于在最小化 root 环境中执行脚本的 macOS MDM 工具（Kandji、Jamf 等）。</p>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>Root 模式行为</h4>
+                        <p>当 <code>id -u</code> 为 <code>0</code> 时，脚本会：</p>
+                        <ol>
+                            <li>解析真实控制台用户的 <code>HOME</code>（通过 <code>/dev/console</code> 或 <code>/Users</code> 目录扫描）</li>
+                            <li>在每个安装步骤后将所有创建的文件 <code>chown</code> 回目标用户</li>
+                        </ol>
+                    </div>
+                    <div class="card">
+                        <h4>预配置自动更新</h4>
+                        <ul>
+                            <li>在用户 shell 配置文件中设置 <code>DEEPAGENTS_CODE_AUTO_UPDATE=1</code></li>
+                            <li>或部署包含 <code>[update] auto_update = true</code> 的 config.toml</li>
+                            <li>完全禁止更新检查：<code>DEEPAGENTS_CODE_NO_UPDATE_CHECK=1</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>非 root 不受影响：</strong>所有 root 专用代码路径在不以 root 运行时会自动跳过。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 18: External editor ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>外部编辑器</h2>
+                <h4>按 Ctrl+X 或输入 /editor 在外部编辑器中编写提示</h4>
+                <p>Deep Agents Code 依次检查 <code>$VISUAL</code>、<code>$EDITOR</code>，然后回退到 <code>vi</code>（macOS/Linux）或 <code>notepad</code>（Windows）。</p>
+                <pre><code class="language-bash"># 在 shell 配置文件中设置（~/.zshrc、~/.bashrc 等）
+export VISUAL="code"    # 优先使用 VS Code（GUI 编辑器，自动注入 --wait 阻塞等待）
+export EDITOR="nvim"    # VISUAL 不可用时的后备编辑器</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>GUI 编辑器支持</h4>
+                        <p>VS Code、Cursor、Zed、Sublime Text、Windsurf 等 GUI 编辑器会自动接收 <code>--wait</code> 标志，使 Deep Agents Code 阻塞等待直到你关闭文件。</p>
+                    </div>
+                    <div class="card">
+                        <h4>典型场景</h4>
+                        <ul>
+                            <li>编写长提示词——在编辑器中利用完整编辑能力</li>
+                            <li>粘贴多行代码——避免终端粘贴问题</li>
+                            <li>使用编辑器的 AI 补全增强提示词质量</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 19: Hooks intro ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Hooks 钩子</h2>
+                <h4>让外部程序对 Deep Agents Code 生命周期事件做出响应</h4>
+                <p>在 <code>~/.deepagents/hooks.json</code> 中配置命令，每当事件触发时，JSON 负载通过管道传递给命令的标准输入。</p>
+                <pre><code class="language-json">{
+  "hooks": [
+    {
+      "command": ["bash", "-c", "cat >> ~/deepagents-events.log"],  // 将事件 JSON 追加到日志文件
+      "events": ["session.start", "session.end"]  // 仅监听会话开始和结束事件
+    }
+  ]
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>配置字段</h4>
+                        <table>
+                            <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>command</code></td><td>list[str]</td><td>要运行的命令及参数（必填）</td></tr>
+                                <tr><td><code>events</code></td><td>list[str]</td><td>订阅的事件名，留空接收所有</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>执行模型</h4>
+                        <ul>
+                            <li><strong>后台线程</strong>——不阻塞主循环</li>
+                            <li><strong>并发分派</strong>——多 Hook 并行运行</li>
+                            <li><strong>5 秒超时</strong>——超时自动终止</li>
+                            <li><strong>即发即弃</strong>——失败只记日志，不会崩溃</li>
+                            <li><strong>无 shell 展开</strong>——需要时用 bash -c 包装</li>
+                            <li><strong>懒加载</strong>——配置文件在首次事件分派时读取一次，并在会话的剩余时间内缓存</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>负载格式</h4>
+                        <p>每个 Hook 命令在标准输入上接收一个 JSON 对象：</p>
+                        <pre><code class="language-json">{
+  "event": "session.start",   // 事件名称
+  "thread_id": "abc123"      // 会话线程 ID（用于追踪关联事件）
+}</code></pre>
+                        <p>包含 <code>"event"</code> 键和事件特定字段。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 20: Hook events ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Hook 事件</h2>
+                <h4>七种生命周期事件，覆盖从会话开始到上下文压缩</h4>
+                <table>
+                    <thead>
+                        <tr><th>事件</th><th>触发时机</th><th>关键字段</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>session.start</code></td><td>Agent 会话开始</td><td><code>thread_id</code></td></tr>
+                        <tr><td><code>session.end</code></td><td>会话退出</td><td><code>thread_id</code></td></tr>
+                        <tr><td><code>user.prompt</code></td><td>用户提交消息</td><td>—</td></tr>
+                        <tr><td><code>input.required</code></td><td>Agent 需要人工输入</td><td>—</td></tr>
+                        <tr><td><code>permission.request</code></td><td>工具调用需要审批</td><td><code>tool_names</code></td></tr>
+                        <tr><td><code>tool.error</code></td><td>工具调用返回错误</td><td><code>tool_names</code></td></tr>
+                        <tr><td><code>task.complete</code></td><td>Agent 完成任务</td><td><code>thread_id</code></td></tr>
+                        <tr><td><code>context.compact</code></td><td>上下文压缩前</td><td>—</td></tr>
+                    </tbody>
+                </table>
+                <div class="card-grid cols-3">
+                    <div class="card">
+                        <h4>记录所有事件到 JSONL</h4>
+                        <pre><code class="language-json">{
+  "hooks": [{
+    "command": ["bash", "-c",
+      "jq -c . >> ~/.deepagents/hook-events.jsonl"],  // 用 jq 压缩为单行 JSON 后追加到文件
+    "events": []  // 空数组 = 接收所有事件
+  }]
+}</code></pre>
+                        <p>空 <code>events</code> 数组接收所有事件。</p>
+                    </div>
+                    <div class="card">
+                        <h4>macOS 桌面通知</h4>
+                        <pre><code class="language-json">{
+  "hooks": [{
+    "command": ["bash", "-c",
+      "osascript -e 'display notification \"Agent finished\" with title \"Deep Agents\"'"
+    ],
+    "events": ["task.complete"]
+  }]
+}</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Python 处理器</h4>
+                        <pre><code class="language-python">import json, sys
+payload = json.load(sys.stdin)  # 从标准输入读取 JSON 负载
+event = payload["event"]
+if event == "session.start":
+    # 将会话 ID 输出到 stderr，避免干扰 stdout 的 Agent 输出
+    print(f"Session: {payload['thread_id']}",
+          file=sys.stderr)</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>安全提醒：</strong>只添加你信任的来源的 Hooks。Hook 拥有与你的用户账户相同的权限。负载数据通过 JSON 流向标准输入，不会注入命令行参数。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/31-code-configuration-3.png" alt="图：七种生命周期 Hook 触发时序" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 21: Env var reference ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>环境变量速查</h2>
+                <h4>所有 DEEPAGENTS_CODE_ 前缀环境变量一览</h4>
+                <table>
+                    <thead>
+                        <tr><th>变量名</th><th>用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>AUTO_UPDATE</code></td>
+                            <td>启用自动更新（<code>1</code>/<code>true</code>/<code>yes</code>）</td>
+                        </tr>
+                        <tr>
+                            <td><code>DEBUG</code></td>
+                            <td>启用详细调试日志输出到文件</td>
+                        </tr>
+                        <tr>
+                            <td><code>DEBUG_FILE</code></td>
+                            <td>调试日志文件路径（默认 <code>/tmp/deepagents_debug.log</code>）</td>
+                        </tr>
+                        <tr>
+                            <td><code>EXTRA_SKILLS_DIRS</code></td>
+                            <td>冒号分隔的 Skill 白名单路径</td>
+                        </tr>
+                        <tr>
+                            <td><code>LANGSMITH_PROJECT</code></td>
+                            <td>覆盖 LangSmith 链路追踪项目名</td>
+                        </tr>
+                        <tr>
+                            <td><code>NO_UPDATE_CHECK</code></td>
+                            <td>完全禁止自动更新检查</td>
+                        </tr>
+                        <tr>
+                            <td><code>SHELL_ALLOW_LIST</code></td>
+                            <td>允许执行的 shell 命令（或 <code>recommended</code>/<code>all</code>）</td>
+                        </tr>
+                        <tr>
+                            <td><code>USER_ID</code></td>
+                            <td>附加到 LangSmith 追踪元数据的用户标识</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>前缀覆盖：</strong>所有第三方凭证也可用前缀覆盖，例如 <code>DEEPAGENTS_CODE_OPENAI_API_KEY</code> 为 Deep Agents Code 单独指定密钥，不影响其他工具。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 22: Exercise ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>配置一个完整的本地 + 云端混合开发环境</h4>
+                <p>现在轮到你了。根据以下需求，完成 Deep Agents Code 的配置：</p>
+                <pre><code class="language-text">需求：
+1. 本地使用 Ollama 的 qwen3:4b 作为默认模型
+2. 云端备选 google_genai:gemini-3.1-pro-preview
+3. Ollama 指向局域网内的 192.168.1.100:11434
+4. qwen3:4b 使用 temperature=0.5，其他 Ollama 模型使用 temperature=0
+5. 启用 Tavily 网络搜索
+6. 任务完成时发送桌面通知
+7. 使用 iTerm 时自动应用深色主题</code></pre>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>任务 1：配置凭证</h3>
+                        <ul>
+                            <li>你会用 <code>/auth</code> 还是环境变量？为什么？</li>
+                            <li><code>.env</code> 文件应该写在哪里？</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 2：编写 config.toml</h3>
+                        <ul>
+                            <li>如何配置 Ollama 的 base_url？</li>
+                            <li>如何为 qwen3:4b 单独设置 temperature？</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 3：配置 Hooks 和主题</h3>
+                        <ul>
+                            <li>hooks.json 应该怎么写？</li>
+                            <li>终端映射怎么配置？</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 23: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了 Deep Agents Code 的完整配置体系</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>四大配置文件：<code>config.toml</code>、<code>.env</code>、<code>hooks.json</code>、<code>.mcp.json</code></li>
+                            <li>Provider 凭证管理：<code>/auth</code> + 环境变量双通道</li>
+                            <li>环境变量优先级和 <code>DEEPAGENTS_CODE_</code> 前缀覆盖</li>
+                            <li>Provider 配置：<code>params</code> 按模型覆盖、Profile 覆盖</li>
+                            <li>自定义端点和自定义 Provider</li>
+                            <li>主题系统：自定义、覆盖、终端映射</li>
+                            <li>Hooks 钩子：生命周期事件和自动化</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>核心原则</h4>
+                        <ul>
+                            <li><strong>分层覆盖</strong>：全局默认 < 项目覆盖 < CLI 参数</li>
+                            <li><strong>按模型精细控制</strong>：Provider 级默认 + 模型级覆盖</li>
+                            <li><strong>安全优先</strong>：密钥本地存储，Hook 负载不注入命令行</li>
+                            <li><strong>热重载</strong>：<code>/reload</code> 无需重启即可应用更改</li>
+                            <li><strong>兼容开放</strong>：支持任何 BaseChatModel 子类和兼容 API</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心理念：</strong>Deep Agents Code 的配置系统遵循"约定优于配置"——开箱即用时零配置即可工作，但当你需要精细控制时，每一层都可以被覆盖和定制。从个人开发到团队协作，从本地模型到云端 API，同一套配置体系覆盖所有场景。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 24: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./01-overview.html">第 01 章：认识 Deep Agents</a> — 从零理解 Agent 架构</li>
+                            <li><a href="./03-customization.html">第 03 章：自定义</a> — 深入 Provider 定制</li>
+                            <li><a href="./15-skills.html">第 15 章：Skills</a> — 创建自定义技能</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/llms.txt">LangChain 文档索引</a> — 所有可用页面</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">GitHub 仓库</a> — 源码和示例</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>配置相关</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/oss/javascript/deepagents/code/providers">Provider 参考</a> — 各 Provider 配置详情</li>
+                            <li><a href="https://docs.langchain.com/oss/javascript/deepagents/code/overview">命令参考</a> — 所有斜杠命令</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>解释器</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 17 章</div>
+            <h1>解释器</h1>
+            <p>在 Deep Agents 中运行轻量级代码，组合工具、编排子代理并转换结构化数据</p>
+            <strong>从"逐个工具调用"到"编写小程序编排一切"的关键一步</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你有没有试过让 Agent 连续调用十几个工具，每一步都要等模型决定下一步？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>逐个工具调用的困境</h4>
+                        <ul>
+                            <li>每个工具调用都要<strong>模型推理一次</strong>，Token 消耗巨大</li>
+                            <li>中间结果全部回到上下文，<strong>窗口快速膨胀</strong></li>
+                            <li>循环、分支、重试？全靠 prompt 硬编码，<strong>不可控</strong></li>
+                            <li>想把结果排序、过滤、聚合？<strong>没有通用方式</strong></li>
+                            <li>并发调用多个工具？做不到，<strong>只能串行等待</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>解释器的解法</h4>
+                        <ul>
+                            <li>Agent 编写<strong>一段代码</strong>，运行时一次性执行完</li>
+                            <li>中间变量留在运行时，<strong>只返回精简结果</strong>给模型</li>
+                            <li>代码里写循环、分支、try-catch，<strong>完全可控</strong></li>
+                            <li>排序、过滤、聚合？直接用 <code>Array.reduce</code> 等 JS 方法</li>
+                            <li>用 <code>Promise.all</code> 实现<strong>并行批量调用</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>当 Agent 需要组合多个步骤、对结构化数据做推理或管理中间状态时，逐个工具调用就不够用了。解释器给 Agent 一个可编程的工作空间，让模型"写程序"而非"一步步选工具"。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: What is an interpreter ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>什么是解释器</h2>
+                <h4>一个内存中的代码运行时——Agent 编写代码，解释器执行并返回结果</h4>
+                <p>解释器为 Agent 提供了一个<strong>可编程的工作空间</strong>。Agent 通过编写代码来表达意图，一个基于 <strong>QuickJS</strong> 的轻量级 JavaScript 运行时执行代码并返回结果。默认不暴露文件系统、网络、Shell 或时钟 API。</p>
+                <div class="key-point">
+                    <strong>卸甲：</strong>"可编程的工作空间"只是一个比喻，帮助你直觉理解。实际上，解释器是一个在 Agent 内存中隔离运行的 QuickJS 实例。Agent 编写 JavaScript 代码，该实例执行代码，然后将精简结果返回给 Agent 循环。它不涉及任何"空间"概念，就是一个受限制的代码执行器。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/17-interpreters-1.png" alt="图：解释器工作流程——模型编写程序，运行时执行并返回精简结果" class="ai-diagram-img">
+                <div class="comparison">
+                    <div class="before">
+                        <h4>沙箱（Sandboxes）</h4>
+                        <p>代码优先的方式<strong>操作环境</strong>——运行 Shell 命令、安装依赖、编辑文件。适合需要完整操作系统级别执行的场景。</p>
+                    </div>
+                    <div class="after">
+                        <h4>解释器（Interpreters）</h4>
+                        <p>代码优先的方式<strong>在 Agent 循环内操作</strong>——组合工具、保持状态、决定哪些信息返回给模型。适合编排和数据处理场景。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>实验性功能：</strong>解释器目前是实验性功能，API 和生命周期行为可能在不同版本之间发生变化。建议在非关键路径上先试用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: When to use ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>何时使用</h2>
+                <h4>选择正确的执行路径——简单用工具，复杂用解释器，系统级用沙箱</h4>
+                <table>
+                    <thead>
+                        <tr><th>你的需求</th><th>应该使用</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>一次或两次简单的外部调用</td>
+                            <td>普通工具调用</td>
+                        </tr>
+                        <tr>
+                            <td>需要循环、分支、重试或聚合的小型程序</td>
+                            <td><strong>解释器</strong></td>
+                        </tr>
+                        <tr>
+                            <td>许多需要从代码中运行的选择性工具调用</td>
+                            <td>解释器 + PTC</td>
+                        </tr>
+                        <tr>
+                            <td>跨线程使用的可复用辅助函数</td>
+                            <td>解释器 + 解释器技能</td>
+                        </tr>
+                        <tr>
+                            <td>Shell 命令、包安装、测试、完整文件系统</td>
+                            <td>沙箱（Sandboxes）</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合解释器的场景</h4>
+                        <ul>
+                            <li>用代码组合多个工具调用，包括循环和并发</li>
+                            <li>从代码中协调子代理，将结果拼接为综合报告</li>
+                            <li>将中间值保留在运行时，不污染模型上下文</li>
+                            <li>确定性转换：排序、分组、解析、验证、评分</li>
+                            <li>探索大的变量空间，只返回精选证据给模型</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>不适合解释器的场景</h4>
+                        <ul>
+                            <li>只需要调用一两个工具——直接用普通工具调用</li>
+                            <li>需要安装 npm 包——用沙箱</li>
+                            <li>需要运行 Shell 命令——用沙箱</li>
+                            <li>需要完整的文件系统访问——用沙箱</li>
+                            <li>需要持久化存储——用文件系统后端</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Adding interpreter to agent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>添加解释器</h2>
+                <h4>安装 QuickJS 中间件包，一行代码就能启用解释器</h4>
+                <pre><code class="language-bash"># 安装 deepagents 和 QuickJS 中间件
+$ npm install deepagents @langchain/quickjs</code></pre>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
+
+// 创建带解释器的 Agent
+// 中间件会自动添加一个名为 "eval" 的工具
+const agent = createDeepAgent({
+  model: "openai:gpt-5.4",
+  middleware: [createCodeInterpreterMiddleware()],  // 一行启用解释器
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>中间件做了什么</h4>
+                        <ul>
+                            <li>为 Agent 添加一个名为 <code>eval</code> 的工具</li>
+                            <li>Agent 调用 <code>eval</code> 时，在 QuickJS 运行时中执行代码</li>
+                            <li>捕获 <code>console.log</code> 输出</li>
+                            <li>返回最后一个表达式的结果</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>QuickJS 是什么</h4>
+                        <p><strong>QuickJS</strong> 是一个专为嵌入式执行设计的轻量级 JavaScript 运行时。</p>
+                        <ul>
+                            <li>默认不暴露文件系统、网络、Shell</li>
+                            <li>内存和执行时间有严格限制</li>
+                            <li>代码在隔离环境中运行，安全可控</li>
+                            <li>是解释器代码的<strong>执行边界</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>如果看到报错：</strong><code>Cannot find module '@langchain/quickjs'</code> → 确认已安装：<code>$ npm install @langchain/quickjs</code>。该包是独立的中间件，不会随 deepagents 自动安装。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Running code in interpreter ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行代码</h2>
+                <h4>中间件添加了 eval 工具——Agent 编写代码，运行时执行并返回结果</h4>
+                <p>启用中间件后，Agent 就能通过 <code>eval</code> 工具在持久化上下文中运行 JavaScript。运行时捕获 <code>console.log</code> 输出，返回最后一个表达式的值。</p>
+                <pre><code class="language-javascript">// Agent 自动编写的代码示例：用 reduce 聚合团队得分
+// 这段代码由模型生成并提交给 eval 工具执行
+const rows = [
+  { team: "alpha", score: 8 },
+  { team: "beta", score: 13 },
+  { team: "alpha", score: 21 },
+];
+
+// 使用 reduce 按团队累加得分，中间结果留在运行时中
+const totals = rows.reduce((acc, row) => {
+  acc[row.team] = (acc[row.team] ?? 0) + row.score;
+  console.log(`${row.team} score: ${acc[row.team]}`);  // 输出会被捕获并返回
+  return acc;
+}, {});
+
+totals;  // 最后一个表达式的值作为 eval 的返回值
+// 控制台输出：
+// alpha score: 8
+// beta score: 13
+// alpha score: 29
+// 返回值：{ alpha: 29, beta: 13 }</code></pre>
+                <div class="key-point">
+                    <strong>关键理解：</strong>这段代码由 Agent 自动编写并提交给 eval 工具。你不需要手写解释器代码——模型根据任务需要，自己决定写什么代码。开发者只需启用中间件，Agent 负责使用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Programmatic Tool Calling ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>编程式工具调用</h2>
+                <h4>PTC——把选定的 Agent 工具暴露到解释器的全局 tools 命名空间</h4>
+                <p>编程式工具调用（PTC）让解释器代码能直接调用 Agent 的工具。Agent 不再需要"调用一个工具 → 等模型 → 调用下一个"，而是<strong>写一段代码批量处理</strong>。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>工作原理</h4>
+                        <ol>
+                            <li>你通过 <code>ptc</code> 白名单选择可调用的工具</li>
+                            <li>中间件将工具暴露为 <code>tools.xxx()</code> 异步函数</li>
+                            <li>Agent 在代码中用 <code>await tools.xxx()</code> 调用</li>
+                            <li>解释器运行工具桥接，接收结果后继续执行</li>
+                            <li>模型只收到最终的精简输出</li>
+                        </ol>
+                    </div>
+                    <div class="card">
+                        <h4>命名转换规则</h4>
+                        <p>工具名称自动转为<strong>驼峰命名法</strong>：</p>
+                        <ul>
+                            <li><code>web_search</code> → <code>tools.webSearch()</code></li>
+                            <li><code>read_file</code> → <code>tools.readFile()</code></li>
+                            <li><code>task</code> → <code>tools.task()</code></li>
+                        </ul>
+                        <p>输入对象仍遵循工具的原始 schema。</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// PTC 调用示例：通过 tools 命名空间直接调用 Agent 工具
+// 工具名自动转为驼峰命名：web_search → tools.webSearch()
+const result = await tools.webSearch({
+  query: "deepagents interpreters",
+});</code></pre>
+                <div class="warning">
+                    <strong>重要限制：</strong>PTC 调用通过解释器桥接执行，<strong>不会经过正常的工具调用路径</strong>。因此 <code>interrupt_on</code> 审批工作流不会对每个 PTC 调用生效。需要审批的操作应在解释器外进行。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Enabling PTC ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>启用 PTC</h2>
+                <h4>通过显式白名单启用——只暴露 Agent 需要的工具</h4>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
+
+// 通过 ptc 白名单启用 PTC，只暴露指定的工具给解释器代码
+const agent = createDeepAgent({
+  model: "openai:gpt-5.4",
+  middleware: [
+    createCodeInterpreterMiddleware({
+      ptc: ["task"],  // 白名单即权限边界，只允许调用 task 工具
+    }),
+  ],
+});</code></pre>
+                <div class="key-point">
+                    <strong>安全原则：</strong>PTC 白名单就是权限边界。只暴露 Agent 需要的工具，避免桥接那些可以访问敏感系统、花费资金或修改数据的广泛工具。
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>PTC 实用模式</th><th>解释器可以做什么</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>批量处理</strong></td><td>遍历多个输入，为每个输入调用工具</td></tr>
+                        <tr><td><strong>并行工作</strong></td><td>对独立调用使用 <code>Promise.all</code></td></tr>
+                        <tr><td><strong>条件逻辑</strong></td><td>根据先前结果选择下一次工具调用</td></tr>
+                        <tr><td><strong>提前终止</strong></td><td>一旦满足成功条件就停止调用</td></tr>
+                        <tr><td><strong>数据过滤</strong></td><td>仅返回相关的行、片段或摘要给模型</td></tr>
+                        <tr><td><strong>递归编排</strong></td><td>反复调用 task，在代码中合并子代理结果</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: PTC in practice - parallel subagents ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>PTC 实战</h2>
+                <h4>并行启动多个子代理，合并结果后再返回给模型</h4>
+                <pre><code class="language-javascript">// 并行启动多个子代理，各自研究一个主题
+// Promise.all 让所有子代理同时运行，而非串行等待
+const topics = ["retrieval", "memory", "evaluation"];
+
+const reports = await Promise.all(
+  topics.map((topic) =>
+    tools.task({  // 通过 PTC 调用 task 工具启动子代理
+      description: `Research ${topic} in Deep Agents and return three concise findings.`,
+      subagent_type: "general-purpose",
+    }),
+  ),
+);
+
+// 在解释器代码中合并所有子代理的报告
+// 只有这个最终结果会返回给模型，中间结果留在运行时
+reports.join("\n\n");</code></pre>
+                <pre><code class="language-javascript">// 本地处理失败——不需要让模型介入
+try {
+  const report = await tools.task({
+    description: "Check the migration notes and return breaking changes.",
+    subagent_type: "general-purpose",
+  });
+  console.log(report);
+} catch (error) {
+  console.log(`Subagent failed: ${error.message}`);
+}</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>没有 PTC 时</h4>
+                        <ul>
+                            <li>模型发出工具调用 → 等结果 → 决定下一步</li>
+                            <li>每个子代理结果都塞进上下文</li>
+                            <li>想并行？做不到</li>
+                            <li>想处理错误？只能靠模型重试</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>有了 PTC 后</h4>
+                        <ul>
+                            <li>一段代码搞定所有工具调用</li>
+                            <li>中间结果留在运行时变量中</li>
+                            <li><code>Promise.all</code> 原生并行</li>
+                            <li><code>try/catch</code> 原生错误处理</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Recursive Language Models ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>递归语言模型</h2>
+                <h4>用解释器作为分解工作的工作空间——变量空间与模型上下文分离</h4>
+                <p>递归语言模型是一种高级模式：模型将大型输入保存在<strong>运行时变量</strong>中，编写代码拆分和检查数据，对较小部分调用子代理，最后在代码中拼接结果。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/17-interpreters-2.png" alt="图：递归语言模型——变量空间与模型上下文分离" class="ai-diagram-img">
+                <div class="key-point">
+                    <strong>核心思想：</strong>变量空间（解释器中的信息）与 Agent 上下文（模型实际处理的内容）是分离的。模型决定哪些片段成为子任务、哪些结果需要再处理、什么最终结果应返回到主对话。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Recursive LM example ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>递归实战</h2>
+                <h4>从大量笔记中筛选迁移相关条目，并行分析风险</h4>
+                <pre><code class="language-javascript">// 递归语言模型实战：迁移风险分析
+const candidates = notes
+  .filter((note) => note.includes("migration"))  // 筛选迁移相关笔记
+  .slice(0, 5);  // 只取前 5 条，控制并行调用数量
+
+// 并行调用子代理分析每一条迁移笔记
+const riskReports = await Promise.all(
+  candidates.map((note) =>
+    tools.task({  // 通过 PTC 调用 task 工具启动子代理
+      description: `Analyze this migration note for release risk.
+Return risks, affected users, and recommended follow-up:\n\n${note}`,
+      subagent_type: "general-purpose",
+    }),
+  ),
+);
+
+// 在解释器代码中拼接综合报告，只返回精简结果给模型
+const releaseSummary = riskReports
+  .map((report, index) => `## Candidate ${index + 1}\n${report}`)
+  .join("\n\n");
+
+releaseSummary;  // 最后一个表达式作为 eval 的返回值，这是唯一返回给模型的内容</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>数据流</h4>
+                        <ol>
+                            <li>所有笔记存在变量 <code>notes</code> 中（不进入模型上下文）</li>
+                            <li>代码筛选出前 5 条迁移相关笔记</li>
+                            <li>并行启动 5 个子代理各自分析</li>
+                            <li>代码拼接综合报告</li>
+                        </ol>
+                    </div>
+                    <div class="after">
+                        <h4>Token 节省</h4>
+                        <ul>
+                            <li>模型只看到<strong>最终的精简报告</strong></li>
+                            <li>5 条原始笔记 + 5 个子代理的完整输出<strong>全留在变量空间</strong></li>
+                            <li>如果没有解释器，这些中间结果会全部塞进上下文</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>论文参考：</strong>递归语言模型的理论基础来自 <a href="https://arxiv.org/abs/2512.24601">Recursive LM 论文</a>。在 Deep Agents 中，递归调用通常通过 PTC 暴露的 <code>task</code> 工具实现。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Interpreter Skills ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>解释器技能</h2>
+                <h4>向解释器暴露可复用的代码模块——用于结构化数据工作流</h4>
+                <p>解释器技能是向解释器暴露代码模块的 <strong>Skills</strong>。当配置了解释器中间件时，Agent 可以从代码中导入这些模块，用于确定性的辅助逻辑。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合用解释器技能的场景</h4>
+                        <ul>
+                            <li>排序、分组、评分、解析、验证、聚合数据</li>
+                            <li>跨线程复用的结构化数据处理函数</li>
+                            <li>不需要模型推理的确定性逻辑</li>
+                            <li>需要在不同 Agent 之间共享的辅助函数</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>配置方式</h4>
+                        <ul>
+                            <li>在技能定义中添加 <code>module</code> 条目</li>
+                            <li>配置 <code>skillsBackend</code> 或 <code>skills_backend</code></li>
+                            <li>Agent 通过 <code>import</code> 在解释器代码中导入</li>
+                            <li>详细的设置方式参见 Skills 章节</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>与普通技能的区别：</strong>普通技能为 Agent 提供工作流和领域知识；解释器技能为<strong>解释器代码</strong>提供可导入的模块。前者面向模型推理，后者面向确定性计算。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Security and limitations ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全与限制</h2>
+                <h4>QuickJS 严格隔离——默认什么都不能做，显式授权才能访问</h4>
+                <table>
+                    <thead>
+                        <tr><th>功能</th><th>默认可用</th><th>如何暴露</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>JavaScript 执行</td><td>是</td><td>添加解释器中间件</td></tr>
+                        <tr><td>顶层 <code>await</code></td><td>是</td><td>在解释器代码中使用 Promise</td></tr>
+                        <tr><td><code>console.log</code> 捕获</td><td>是</td><td>用 <code>captureConsole: false</code> 禁用</td></tr>
+                        <tr><td>Agent 工具</td><td><strong>否</strong></td><td>添加 PTC 白名单</td></tr>
+                        <tr><td>解释器技能模块</td><td><strong>否</strong></td><td>配置 module 和 skillsBackend</td></tr>
+                        <tr><td>文件系统访问</td><td><strong>否</strong></td><td>通过 PTC 白名单添加内置文件系统工具</td></tr>
+                        <tr><td>网络访问</td><td><strong>否</strong></td><td>通过 PTC 暴露特定的网络工具</td></tr>
+                        <tr><td>墙钟或日期时间</td><td><strong>否</strong></td><td>暴露显式的时间工具</td></tr>
+                        <tr><td>Shell / 包安装 / 测试</td><td><strong>否</strong></td><td>使用沙箱后端</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>安全提示：</strong>将解释器视为<strong>有限范围的运行时</strong>，而非完整的生产级沙箱。通过 PTC 暴露的每个工具都是解释器代码可以使用的外部功能。仅暴露必要的工具，特别是涉及敏感系统、资金消耗或数据修改的工具。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Middleware options ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>中间件选项</h2>
+                <h4>createCodeInterpreterMiddleware 的完整配置项</h4>
+                <table>
+                    <thead>
+                        <tr><th>选项</th><th>默认值</th><th>用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>ptc</code></td>
+                            <td>省略</td>
+                            <td>PTC 白名单：工具名称数组或工具实例</td>
+                        </tr>
+                        <tr>
+                            <td><code>memoryLimitBytes</code></td>
+                            <td>64 MB</td>
+                            <td>QuickJS 内存限制（字节）</td>
+                        </tr>
+                        <tr>
+                            <td><code>maxStackSizeBytes</code></td>
+                            <td>320 KB</td>
+                            <td>QuickJS 栈大小限制（字节）</td>
+                        </tr>
+                        <tr>
+                            <td><code>executionTimeoutMs</code></td>
+                            <td>5000</td>
+                            <td>每次评估的超时时间（毫秒），负值禁用</td>
+                        </tr>
+                        <tr>
+                            <td><code>systemPrompt</code></td>
+                            <td>null</td>
+                            <td>覆盖内置的解释器系统提示词</td>
+                        </tr>
+                        <tr>
+                            <td><code>skillsBackend</code></td>
+                            <td>省略</td>
+                            <td>用于解析解释器技能模块的后端</td>
+                        </tr>
+                        <tr>
+                            <td><code>maxPtcCalls</code></td>
+                            <td>256</td>
+                            <td>每次评估的最大 tools.* 调用次数</td>
+                        </tr>
+                        <tr>
+                            <td><code>maxResultChars</code></td>
+                            <td>4000</td>
+                            <td>返回结果的最大字符数</td>
+                        </tr>
+                        <tr>
+                            <td><code>toolName</code></td>
+                            <td>"eval"</td>
+                            <td>暴露给模型的工具名称</td>
+                        </tr>
+                        <tr>
+                            <td><code>captureConsole</code></td>
+                            <td>true</td>
+                            <td>是否捕获 console.log 输出</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>常用调优：</strong>如果你的解释器代码处理大量数据，可能需要调高 <code>memoryLimitBytes</code>；如果代码涉及多次工具调用，注意 <code>maxPtcCalls</code> 的上限；如果返回结果被截断，调高 <code>maxResultChars</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Exercise ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>用解释器 + PTC 构建一个并行研究 Agent</h4>
+                <p>现在轮到你了。设计一个<strong>并行研究 Agent</strong>，需求如下：</p>
+                <pre><code class="language-javascript">智能体应该：
+1. 接收一个研究主题列表（如 ["React", "Vue", "Svelte"]）
+2. 为每个主题并行启动子代理做深度研究
+3. 在代码中收集和汇总所有子代理的结果
+4. 对结果进行排序、过滤或评分
+5. 只返回最终的精选摘要给模型</code></pre>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>任务 1：配置中间件</h3>
+                        <ul>
+                            <li>PTC 白名单应该包含哪些工具？</li>
+                            <li>需要调整哪些中间件选项？</li>
+                            <li><code>executionTimeoutMs</code> 应该设多少？</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 2：设计代码逻辑</h3>
+                        <ul>
+                            <li>如何用 <code>Promise.all</code> 并行调用？</li>
+                            <li>如何在代码中处理子代理失败？</li>
+                            <li>如何对结果排序或过滤？</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 3：思考安全边界</h3>
+                        <ul>
+                            <li>PTC 白名单是否暴露了过多的工具？</li>
+                            <li>子代理的权限如何控制？</li>
+                            <li>结果大小如何限制？</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>参考前面"递归实战"幻灯片中的代码模式。核心思路是：筛选 → 并行调用 → 聚合 → 返回精简结果。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Reference answer ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <h4>一种可行的实现方案——不是唯一答案，但逻辑合理</h4>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
+
+const agent = createDeepAgent({
+  model: "openai:gpt-5.4",
+  middleware: [
+    createCodeInterpreterMiddleware({
+      ptc: ["task"],                // 只暴露 task 工具
+      executionTimeoutMs: 30000,    // 30 秒超时，并行调用需要更长时间
+      maxPtcCalls: 50,              // 最多 50 次工具调用
+    }),
+  ],
+});
+
+// Agent 生成的解释器代码（伪代码，展示概念）：
+// const topics = ["React", "Vue", "Svelte"];
+//
+// const results = await Promise.all(
+//   topics.map(async (topic) => {
+//     try {
+//       return await tools.task({
+//         description: `研究 ${topic} 的核心优势、生态和适用场景，返回三条关键发现。`,
+//         subagent_type: "general-purpose",
+//       });
+//     } catch (e) {
+//       return `${topic} 研究失败：${e.message}`;
+//     }
+//   }),
+// );
+//
+// // 过滤失败结果，按质量排序
+// const validResults = results
+//   .filter((r) => !r.includes("失败"))
+//   .map((report, i) => ({ topic: topics[i], report }))
+//   .sort((a, b) => b.report.length - a.report.length);
+//
+// validResults
+//   .map((r) => `## ${r.topic}\n${r.report}`)
+//   .join("\n\n");</code></pre>
+                <div class="key-point">
+                    <strong>你的方案可能不一样——这很正常。</strong>关键是你能解释清楚：为什么选这些工具进白名单、超时设多少合适、如何在代码中处理失败、如何过滤和排序结果。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了 Deep Agents 解释器的完整用法</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>解释器是 Agent 的<strong>可编程工作空间</strong>，基于 QuickJS 运行</li>
+                            <li>通过 <code>createCodeInterpreterMiddleware</code> 一行启用</li>
+                            <li>PTC 让解释器代码能调用白名单中的 Agent 工具</li>
+                            <li>递归语言模型：变量空间与模型上下文分离</li>
+                            <li>解释器技能：可复用的确定性数据处理模块</li>
+                            <li>默认严格隔离，显式授权才能访问外部功能</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>核心设计原则</h4>
+                        <ul>
+                            <li><strong>白名单即权限边界</strong>——只暴露必要工具</li>
+                            <li><strong>中间状态留在运行时</strong>——不污染模型上下文</li>
+                            <li><strong>代码编排优于 prompt 编排</strong>——循环、分支、错误处理</li>
+                            <li><strong>并行优于串行</strong>——<code>Promise.all</code> 原生支持</li>
+                            <li><strong>精简结果返回模型</strong>——在代码中过滤和聚合</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>解释器让 Agent 从"一步步选工具"进化为"写程序编排一切"。当你需要组合工具、处理结构化数据、编排子代理时，解释器是比逐个工具调用更高效、更可控、更省 Token 的选择。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 18: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./18-profiles.html">下一章：Profiles</a> — Agent 配置文件详解</li>
+                            <li><a href="./16-sandboxes.html">沙箱</a> — 系统级代码执行环境</li>
+                            <li><a href="./15-skills.html">技能</a> — 包含解释器技能的详细配置</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://www.npmjs.com/package/@langchain/quickjs">@langchain/quickjs</a> — QuickJS 中间件包</li>
+                            <li><a href="https://github.com/quickjs-ng/quickjs">QuickJS 仓库</a> — 轻量级 JavaScript 运行时</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">Deep Agents 仓库</a> — 源码和示例</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关论文</h4>
+                        <ul>
+                            <li><a href="https://arxiv.org/abs/2512.24601">Recursive LM 论文</a> — 递归语言模型的理论基础</li>
+                            <li><a href="https://docs.langchain.com/llms.txt">LangChain 文档索引</a> — 完整的文档导航</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自定义 Deep Agents</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔧</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 03 章</div>
+            <h1>自定义 Deep Agents</h1>
+            <p>通过模型、工具、提示、中间件、子代理等配置，打造专属智能体</p>
+            <strong>掌握 createDeepAgent 的全部配置选项</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要自定义</h2>
+                <h4>默认的 Deep Agent 能写代码、管文件，但你的业务远不止于此</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>只用默认配置的局限</h4>
+                        <ul>
+                            <li>只能用默认模型，<strong>无法切换更便宜或更强的选项</strong></li>
+                            <li>没有自定义工具，<strong>无法搜索网页、查询数据库</strong></li>
+                            <li>系统提示是通用的，<strong>缺少业务专有知识</strong></li>
+                            <li>没有中间件，<strong>无法拦截和记录工具调用</strong></li>
+                            <li>没有子代理，<strong>复杂任务容易上下文爆炸</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>自定义后的能力</h4>
+                        <ul>
+                            <li>灵活切换 OpenAI、Anthropic、Google 等多家模型</li>
+                            <li>添加网页搜索、天气查询等<strong>自定义工具</strong></li>
+                            <li>用 <code>systemPrompt</code> 注入<strong>业务专有指令</strong></li>
+                            <li>用中间件实现<strong>日志、重试、缓存</strong>等横切逻辑</li>
+                            <li>用子代理<strong>隔离细节工作</strong>，避免上下文膨胀</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心思路：</strong><code>createDeepAgent</code> 就像一个万能开关面板——每个配置项控制一个维度。本章带你逐个拨动这些开关，把通用代理变成你的专属智能体。
+                </div>
+                <p class="note">比喻只是为了帮你理解——实际上，<code>createDeepAgent</code> 只是一个工厂函数，它根据你传入的配置对象组装出一个 LangGraph graph。所谓"开关"就是对象上的各个字段，不存在真的面板。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Config overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>全景配置一览</h2>
+                <h4>createDeepAgent 提供的配置项多达十余个，但核心只有五个</h4>
+                <p>先看一眼完整的配置参数，心里有个地图。后续每一节深入一个配置项。</p>
+                <pre><code class="language-javascript">const agent = createDeepAgent({
+  // 核心五件套
+  model?: string | BaseLanguageModel,     // 1. 模型 —— 字符串 "provider:model" 或模型实例
+  tools?: TTools | StructuredTool[],      // 2. 自定义工具 —— Agent 通过 LLM 自主选择调用
+  systemPrompt?: string | SystemMessage,  // 3. 系统提示 —— 叠加在 SDK 默认提示之上
+  middleware?: TMiddleware,                // 4. 中间件 —— 拦截模型/工具调用的钩子
+  subagents?: TSubagents,                 // 5. 子代理 —— 隔离上下文的任务委派
+
+  // 文件与存储
+  backend?: AnyBackendProtocol,           // 虚拟文件系统后端（默认 StateBackend）
+  store?: BaseStore,                      // 跨线程持久存储（StoreBackend 需要此项）
+  checkpointer?: BaseCheckpointSaver,     // 检查点存储器（人在回路中功能必需）
+
+  // 交互与记忆
+  interruptOn?: Record&lt;string, boolean&gt;,  // 人在回路中断规则 —— 指定哪些工具需审批
+  memory?: string[],                      // 记忆文件路径 —— 每次调用都加载
+  skills?: string[],                      // 技能文件路径 —— 按需加载，节省 token
+
+  // 高级选项
+  name?: string,                          // 代理名称
+  permissions?: FilesystemPermission[],   // 文件系统权限 —— 控制读写范围
+  responseFormat?: TResponse,             // 结构化输出 schema —— 返回 JSON 而非自由文本
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>本章覆盖范围</h4>
+                        <ul>
+                            <li>模型选择与三种初始化方式</li>
+                            <li>自定义工具的定义与注册</li>
+                            <li>系统提示的组装机制</li>
+                            <li>中间件的内置与自定义</li>
+                            <li>子代理、后端、人机交互、技能、记忆</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>不在本章范围</h4>
+                        <ul>
+                            <li>后端的详细对比（见第 09 章）</li>
+                            <li>子代理的高级用法（见第 10-11 章）</li>
+                            <li>沙箱环境（见第 16 章）</li>
+                            <li>配置文件 profiles（见第 18 章）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Model ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>选择模型</h2>
+                <h4>三种方式传入模型：字符串、initChatModel、模型类实例</h4>
+                <p>最简单的方式是传入 <code>"provider:model"</code> 格式的字符串。<strong>一行代码切换模型提供商。</strong></p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #10A37F;">
+                        <h4>方式一：字符串（推荐）</h4>
+                        <p>传入 <code>"provider:model"</code>，SDK 自动初始化。</p>
+                        <p><span class="tag tag-success">最简方式</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>方式二：initChatModel</h4>
+                        <p>需要自定义 temperature 等参数时使用。</p>
+                        <p><span class="tag tag-primary">需要调参</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>方式三：模型类实例</h4>
+                        <p>完全控制所有模型参数，直接实例化。</p>
+                        <p><span class="tag tag-warning">完全控制</span></p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 方式一：字符串（最简） —— SDK 自动初始化模型，适合快速验证
+const agent = createDeepAgent({ model: "openai:gpt-5.4" });
+const agent = createDeepAgent({ model: "anthropic:claude-sonnet-4-6" });
+const agent = createDeepAgent({ model: "google-genai:gemini-3.1-pro-preview" });
+
+// 方式二：initChatModel（需要调参） —— 通过 provider 字段指定提供商
+import { initChatModel } from "langchain";
+const model = await initChatModel("gpt-5.4");
+const agent = createDeepAgent({ model, temperature: 0 });
+
+// 方式三：模型类实例（完全控制） —— 可设置 apiKey、temperature 等所有参数
+import { ChatOpenAI } from "@langchain/openai";
+const agent = createDeepAgent({
+  model: new ChatOpenAI({
+    model: "gpt-5.4",
+    apiKey: "your-api-key",     // 也可从环境变量自动读取
+    temperature: 0,              // 0 = 确定性输出，1 = 更有创意
+  }),
+});</code></pre>
+                <div class="key-point">
+                    <strong>选择建议：</strong>快速验证用字符串，需要调参用 initChatModel，生产环境用模型类实例。聊天模型会自动重试瞬时 API 故障（指数退避）。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Supported providers ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>支持的提供商</h2>
+                <h4>Deep Agents 支持主流 LLM 提供商，用统一的接口接入</h4>
+                <table>
+                    <thead>
+                        <tr><th>提供商</th><th>provider 前缀</th><th>示例模型</th><th>安装包</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>OpenAI</strong></td>
+                            <td><code>openai:</code></td>
+                            <td>gpt-5.4</td>
+                            <td><code>@langchain/openai</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Anthropic</strong></td>
+                            <td><code>anthropic:</code></td>
+                            <td>claude-sonnet-4-6</td>
+                            <td><code>@langchain/anthropic</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Google Gemini</strong></td>
+                            <td><code>google-genai:</code></td>
+                            <td>gemini-3.1-pro-preview</td>
+                            <td><code>@langchain/google-genai</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Azure OpenAI</strong></td>
+                            <td><code>azure_openai:</code></td>
+                            <td>gpt-5.4</td>
+                            <td><code>@langchain/azure</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>AWS Bedrock</strong></td>
+                            <td><code>bedrock:</code></td>
+                            <td>anthropic.claude-sonnet-4-6</td>
+                            <td><code>@langchain/aws</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Ollama（本地）</strong></td>
+                            <td><code>ollama:</code></td>
+                            <td>devstral-2</td>
+                            <td>无需额外包</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-bash"># 安装示例（以 OpenAI 为例）
+$ npm install @langchain/openai deepagents
+
+# Anthropic
+$ npm install @langchain/anthropic deepagents</code></pre>
+                <div class="warning">
+                    <strong>环境变量别忘了：</strong>每种提供商需要设置对应的 API Key。例如 OpenAI 需要 <code>OPENAI_API_KEY</code>，Anthropic 需要 <code>ANTHROPIC_API_KEY</code>。Azure 还需要 <code>AZURE_OPENAI_ENDPOINT</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Tools ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义工具</h2>
+                <h4>用 langchain 的 tool 函数定义工具，让代理拥有新能力</h4>
+                <p>Deep Agent 已经内置了文件管理和规划工具。当你需要<strong>搜索网页、查询天气、调用内部 API</strong> 时，就需要自定义工具。</p>
+                <pre><code class="language-javascript">import { tool } from "langchain";
+import { createDeepAgent } from "deepagents";
+import { z } from "zod";
+
+// 定义一个网络搜索工具 —— tool() 的第一个参数是执行函数，第二个是元数据
+const internetSearch = tool(
+  async ({ query, maxResults = 5 }) => {
+    // 动态导入 TavilySearch，避免在不需要搜索时加载该模块
+    const { TavilySearch } = await import("@langchain/tavily");
+    const search = new TavilySearch({
+      maxResults,                                 // 返回结果数量
+      tavilyApiKey: process.env.TAVILY_API_KEY,   // 密钥从环境变量读取
+    });
+    return await search._call({ query });          // 执行搜索，返回结果给 Agent
+  },
+  {
+    name: "internet_search",                           // Agent 调用时的名称
+    description: "运行网络搜索，获取最新信息",            // LLM 据此判断何时调用
+    schema: z.object({
+      query: z.string().describe("搜索查询关键词"),     // .describe() 帮助 LLM 理解参数用途
+      maxResults: z.number().optional().default(5),
+    }),
+  }
+);
+
+// 注册到代理 —— Agent 会根据任务需要自主决定是否调用搜索工具
+const agent = createDeepAgent({
+  model: "openai:gpt-5.4",
+  tools: [internetSearch],
+});</code></pre>
+                <div class="key-point">
+                    <strong>工具定义三要素：</strong><code>name</code>（代理调用时的名称）、<code>description</code>（代理理解何时使用）、<code>schema</code>（参数类型校验，用 Zod 定义）。description 的质量直接决定代理能否正确选择工具。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: System Prompt ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>系统提示</h2>
+                <h4>注入业务专有指令，让代理行为符合你的期望</h4>
+                <p>Deep Agent 自带内置系统提示（规划、文件管理指导等）。你的自定义提示会<strong>叠加在</strong>内置提示之上，而不是替换它。</p>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+const researchInstructions =
+  "你是一位专业研究员。" +
+  "你的工作是进行深入的研究，然后撰写精炼的报告。" +
+  "请始终引用来源，区分事实与观点。";
+
+const agent = createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  systemPrompt: researchInstructions,
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>好的系统提示</h4>
+                        <ul>
+                            <li>明确角色定位（"你是..."）</li>
+                            <li>说明工作流程（先做什么，再做什么）</li>
+                            <li>给出约束条件（"始终引用来源"）</li>
+                            <li>避免模糊指令（"尽量做好"）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>需要注意</h4>
+                        <ul>
+                            <li>不要试图替换 SDK 内置提示</li>
+                            <li>不要把所有逻辑塞进提示里——用工具</li>
+                            <li>提示过长会挤占上下文窗口</li>
+                            <li>复杂逻辑用 skills（技能）替代</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Prompt Assembly ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>提示组装机制</h2>
+                <h4>系统提示由四个命名部分按固定顺序拼接而成</h4>
+                <p>Deep Agent 从最多四个部分构建最终的系统提示。这确保了你的指令始终优先，而模型特定优化始终在最后。</p>
+                <table>
+                    <thead>
+                        <tr><th>名称</th><th>来源</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>USER</strong></td>
+                            <td>你的 <code>systemPrompt</code> 参数</td>
+                            <td>始终在最前面，优先级最高</td>
+                        </tr>
+                        <tr>
+                            <td><strong>BASE</strong></td>
+                            <td>SDK 默认提示</td>
+                            <td>除非被 CUSTOM 替换，否则始终存在</td>
+                        </tr>
+                        <tr>
+                            <td><strong>CUSTOM</strong></td>
+                            <td>HarnessProfile 的 base_system_prompt</td>
+                            <td>设置后直接替换 BASE</td>
+                        </tr>
+                        <tr>
+                            <td><strong>SUFFIX</strong></td>
+                            <td>HarnessProfile 的 system_prompt_suffix</td>
+                            <td>始终在最后面，最靠近对话历史</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-javascript">// 典型场景：使用 Anthropic 模型 + 自定义提示
+const agent = createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  systemPrompt: "你是 ACME Corp. 的客户支持代理。",
+});
+// 最终结果 = USER + BASE + SUFFIX
+// = "你是 ACME Corp. 的客户支持代理。"
+// + "\n\n"
+// + SDK 默认代理提示（BASE）
+// + "\n\n"
+// + Claude 特定优化指导（SUFFIX）</code></pre>
+                <div class="key-point">
+                    <strong>两个不变量：</strong>(1) USER 始终在最前面——你的指令优先级最高；(2) SUFFIX 始终在最后——模型调优指导最靠近对话历史。大多数情况下你只需要关心 USER 槽位。
+                </div>
+                <div class="info-block" style="margin-top: 1em;">
+                    <strong>子代理提示真值表</strong>
+                    <p style="margin-top: 0.5em;">相同的叠加规则适用于声明式子代理——每个子代理针对<strong>其自身的模型</strong>重新运行配置文件解析。子代理的 <code>systemPrompt</code> 扮演 BASE 角色。</p>
+                    <table style="margin-top: 0.5em;">
+                        <thead>
+                            <tr><th>spec["system_prompt"]</th><th>配置文件 base_system_prompt (CUSTOM)</th><th>配置文件 system_prompt_suffix (SUFFIX)</th><th>最终子代理系统提示</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>authored</td><td>-</td><td>-</td><td>authored</td></tr>
+                            <tr><td>authored</td><td>-</td><td>✓</td><td>authored + SUFFIX</td></tr>
+                            <tr><td>authored</td><td>✓</td><td>-</td><td>CUSTOM</td></tr>
+                            <tr><td>authored</td><td>✓</td><td>✓</td><td>CUSTOM + SUFFIX</td></tr>
+                        </tbody>
+                    </table>
+                    <p style="margin-top: 0.5em;"><strong>通用子代理多层回退：</strong>自动添加的通用子代理遵循相同的叠加规则，但多了一层——GP 基础提示的解析优先级为 <strong>general_purpose_subagent.system_prompt → HarnessProfile.base_system_prompt → SDK GP 默认值</strong>。GP 特定的意图在 GP 子代理中优先。</p>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/03-customization-1.png" alt="图：系统提示四层组装顺序" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Middleware ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>内置中间件</h2>
+                <h4>Deep Agent 开箱即用的中间件，覆盖常见需求</h4>
+                <p>中间件是横切关注点的解决方案——不侵入业务逻辑，却能拦截和增强每一步操作。</p>
+                <table>
+                    <thead>
+                        <tr><th>中间件</th><th>功能</th><th>何时使用</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>TodoListMiddleware</code></td>
+                            <td>跟踪和管理待办事项列表</td>
+                            <td>多步骤任务需要进度追踪时</td>
+                        </tr>
+                        <tr>
+                            <td><code>FilesystemMiddleware</code></td>
+                            <td>处理文件读写和目录导航</td>
+                            <td>默认启用，通常不需手动配置</td>
+                        </tr>
+                        <tr>
+                            <td><code>SubAgentMiddleware</code></td>
+                            <td>生成和协调子代理</td>
+                            <td>需要委派任务给专门代理时</td>
+                        </tr>
+                        <tr>
+                            <td><code>SummarizationMiddleware</code></td>
+                            <td>压缩长对话历史</td>
+                            <td>对话超出上下文窗口时</td>
+                        </tr>
+                        <tr>
+                            <td><code>PatchToolCallsMiddleware</code></td>
+                            <td>修复中断的工具调用消息</td>
+                            <td>工具调用被取消或中断时</td>
+                        </tr>
+                        <tr>
+                            <td><code>AnthropicPromptCachingMiddleware</code></td>
+                            <td>减少 Anthropic token 消耗</td>
+                            <td>使用 Anthropic 模型时</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>条件启用的中间件：</strong>提供 <code>memory</code> 参数时自动加入 MemoryMiddleware；提供 <code>skills</code> 参数时自动加入 SkillsMiddleware；提供 <code>interruptOn</code> 参数时自动加入 HumanInTheLoopMiddleware。
+                </div>
+                <div class="card-grid" style="margin-top: 1em;">
+                    <div class="card" style="border-top: 3px solid #2563EB;">
+                        <h4>预置中间件</h4>
+                        <p>LangChain 提供额外的预置中间件，添加各种功能：</p>
+                        <ul>
+                            <li><strong>重试</strong>——自动重试失败的工具调用</li>
+                            <li><strong>回退</strong>——主模型失败时切换备用模型</li>
+                            <li><strong>PII 检测</strong>——过滤敏感个人信息</li>
+                            <li><strong>摘要</strong>——<code>createSummarizationMiddleware</code> 压缩长对话历史</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>特定提供商的中间件</h4>
+                        <p>针对特定 LLM 提供商优化的中间件：</p>
+                        <ul>
+                            <li><strong>官方集成</strong>——LangChain 团队维护的提供商适配中间件</li>
+                            <li><strong>社区集成</strong>——社区贡献的第三方中间件</li>
+                            <li>覆盖缓存优化、速率限制、格式转换等场景</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Custom Middleware ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义中间件</h2>
+                <h4>用 createMiddleware 拦截工具调用，实现日志、监控等横切逻辑</h4>
+                <p>自定义中间件的核心是 <code>wrapToolCall</code> 钩子——<strong>在工具执行前后插入你的逻辑</strong>。</p>
+                <pre><code class="language-javascript">import { tool, createMiddleware } from "langchain";
+import { createDeepAgent } from "deepagents";
+import { z } from "zod";
+
+// 一个天气工具
+const getWeather = tool(
+  ({ city }: { city: string }) => `${city} 的天气是晴天。`,
+  {
+    name: "get_weather",
+    description: "获取某个城市的天气。",
+    schema: z.object({ city: z.string() }),
+  }
+);
+
+// 自定义中间件：在每次工具调用前后记录日志
+const logToolCallsMiddleware = createMiddleware({
+  name: "LogToolCallsMiddleware",
+  // wrapToolCall 钩子：拦截每次工具调用，可在执行前后插入自定义逻辑
+  wrapToolCall: async (request, handler) => {
+    const toolName = request.toolCall.name;
+    console.log(`[调用] ${toolName}`, request.toolCall.args);  // 记录调用前的参数
+    const result = await handler(request);                      // 调用 handler 执行原始工具
+    console.log(`[完成] ${toolName}`);                          // 记录调用完成
+    return result;                                               // 将结果返回给 Agent
+  },
+});
+
+// 中间件按数组顺序依次执行，可叠加多个
+const agent = await createDeepAgent({
+  model: "openai:gpt-5.4",
+  tools: [getWeather],
+  middleware: [logToolCallsMiddleware],
+});</code></pre>
+                <div class="warning">
+                    <strong>初始化后不要修改变量</strong>
+                    <p>如果你需要在多次 hook 调用之间追踪值（例如计数器或累积数据），请使用图状态（graph state）。图状态在设计上是按线程隔离的，因此在并发环境下更新是安全的。</p>
+                    <p style="margin-top: 0.5em;"><strong>推荐做法（使用图状态）：</strong></p>
+                    <pre><code class="language-javascript">const customMiddleware = createMiddleware({
+  name: "CustomMiddleware",
+  beforeAgent: async (state) => {
+    return { x: (state.x ?? 0) + 1 }; // 更新图状态
+  },
+});</code></pre>
+                    <p style="margin-top: 0.5em;"><strong>不要这样做（修改外部变量）：</strong></p>
+                    <pre><code class="language-javascript">let x = 1;
+const customMiddlewareBad = createMiddleware({
+  name: "CustomMiddleware",
+  beforeAgent: async () => {
+    x += 1; // 修改变量会导致竞态条件！
+  },
+});</code></pre>
+                    <p style="margin-top: 0.5em;">原地修改（例如修改 <code>state.x</code>、修改共享变量，或在 hook 中更改其他共享值）可能会导致难以排查的 bug 和竞态条件，因为许多操作是并发运行的（子代理、并行工具调用，以及不同线程上的并行调用）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Interpreters ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>代码解释器</h2>
+                <h4>添加 eval 工具，让代理在沙箱中执行 JavaScript</h4>
+                <p>解释器为代理提供了一个 QuickJS 运行时。当代理需要<strong>批量处理数据、组合工具调用、在代码中处理错误</strong>时，解释器非常有用。</p>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
+
+// 添加 eval 工具：Agent 可以在 QuickJS 沙箱中执行 JavaScript
+// 适用于批量处理数据、组合工具调用、复杂错误处理等场景
+const agent = createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  middleware: [createCodeInterpreterMiddleware()],  // 自动为 Agent 添加 eval 工具
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>需要以编程方式组合多个工具调用</li>
+                            <li>批量处理结构化数据</li>
+                            <li>在代码中实现错误处理和重试逻辑</li>
+                            <li>转换复杂的数据格式</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>注意事项</h4>
+                        <ul>
+                            <li>运行在 QuickJS 沙箱中，非 Node.js 环境</li>
+                            <li>不能访问文件系统或网络</li>
+                            <li>适合纯计算和数据处理任务</li>
+                            <li>需要完整 shell 环境请使用沙箱后端</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Subagents ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子代理</h2>
+                <h4>隔离细节工作，避免主代理上下文爆炸</h4>
+                <p>当任务变得复杂时，主代理的上下文会被大量中间结果塞满。<strong>子代理</strong>帮你把详细工作外包出去，主代理只看到最终结果。</p>
+                <pre><code class="language-javascript">import { tool } from "langchain";
+import { createDeepAgent, type SubAgent } from "deepagents";
+import { z } from "zod";
+
+// 研究子代理——拥有独立上下文、工具和提示，不污染主代理
+const researchSubagent: SubAgent = {
+  name: "research-agent",                               // 主代理通过 task 工具按名称委派
+  description: "深入研究特定问题的子代理",                  // 帮助主代理判断何时委派
+  systemPrompt: "你是一个优秀的研究员，请引用来源。",       // 子代理的专属提示词
+  tools: [internetSearch],                               // 可选：子代理专用工具（不继承主代理工具）
+  model: "anthropic:claude-sonnet-4-6",                  // 可选：覆盖主代理的模型
+};
+
+const agent = createDeepAgent({
+  model: "openai:gpt-5.4",
+  subagents: [researchSubagent],
+});</code></pre>
+                <div class="key-point">
+                    <strong>子代理的提示继承：</strong>子代理会针对自身的模型重新运行 profile 解析，然后叠加 system_prompt。子代理编写的 <code>systemPrompt</code> 扮演 BASE 角色，模型的 SUFFIX 会自动追加。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Backends ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>后端选择</h2>
+                <h4>虚拟文件系统后端决定了代理的文件存储和访问方式</h4>
+                <p>Deep Agent 的工具使用虚拟文件系统。选择不同的后端，文件存储的位置和生命周期完全不同。</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #10A37F;">
+                        <h4>StateBackend（默认）</h4>
+                        <p>文件存储在 LangGraph 状态中，线程级持久化。</p>
+                        <p><strong>适用：</strong>无副作用的对话场景</p>
+                        <p><span class="tag tag-success">安全隔离</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>FilesystemBackend</h4>
+                        <p>直接读写本地文件系统。代理能改你的真实文件。</p>
+                        <p><strong>适用：</strong>开发工具场景</p>
+                        <p><span class="tag tag-warning">需谨慎</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>StoreBackend</h4>
+                        <p>跨线程持久存储。数据在所有会话间共享。</p>
+                        <p><strong>适用：</strong>多用户部署、长期记忆</p>
+                        <p><span class="tag tag-primary">跨线程</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>LocalShellBackend</h4>
+                        <p>在宿主机上直接执行 shell 命令。提供文件系统工具以及 <code>execute</code> 工具。</p>
+                        <p><strong>适用：</strong>需要在本地环境执行命令的自动化场景</p>
+                        <p><span class="tag tag-danger">高危</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>CompositeBackend</h4>
+                        <p>混合后端——不同路径指向不同后端。</p>
+                        <p><strong>适用：</strong>同时需要临时和持久文件</p>
+                        <p><span class="tag tag-info">灵活组合</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #8B5CF6;">
+                        <h4>ContextHubBackend</h4>
+                        <p>LangSmith Hub 仓库中的持久文件系统存储。</p>
+                        <p><strong>适用：</strong>利用 LangSmith Hub 托管的共享上下文</p>
+                        <p><span class="tag tag-primary">Hub 集成</span></p>
+                    </div>
+                </div>
+                <div class="warning" style="margin-top: 1em;">
+                    <strong>LocalShellBackend 安全警告：</strong>此后端授予代理直接的文件系统读写权限 <strong>以及</strong> 在宿主机上不受限制的 shell 执行权限。请极其谨慎地使用，仅在合适的环境中使用。
+                </div>
+                <pre><code class="language-javascript">// StateBackend（默认，无需显式配置）—— 文件存储在 LangGraph 状态中，线程级持久化
+const agent = createDeepAgent();
+
+// StoreBackend（跨线程持久化）—— 数据在不同对话间共享
+import { StoreBackend } from "deepagents";
+import { InMemoryStore } from "@langchain/langgraph";
+const store = new InMemoryStore();    // 生产环境应使用持久化存储
+const agent = createDeepAgent({
+  backend: new StoreBackend({ namespace: (rt) => [rt.serverInfo.user.identity] }),  // 按用户隔离
+  store,                              // StoreBackend 需要传入 store 实例
+});
+
+// CompositeBackend（混合）—— 不同路径路由到不同后端
+import { CompositeBackend, StateBackend } from "deepagents";
+const agent = createDeepAgent({
+  backend: new CompositeBackend(new StateBackend(), {  // 默认路径用 StateBackend
+    "/memories/": new StoreBackend({ namespace: () => ["memories"] }),  // /memories/ 路径用 StoreBackend
+  }),
+  store,
+});
+
+// LocalShellBackend（本地 shell 执行——高危！）—— 直接在宿主机上执行命令
+import { LocalShellBackend } from "deepagents";
+const backend = new LocalShellBackend({ workingDirectory: "." });  // 工作目录设为当前目录
+const agent = createDeepAgent({
+  model: "google-genai:gemini-3.1-pro-preview",
+  backend,
+});</code></pre>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/03-customization-2.png" alt="图：六种后端的层级架构" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Human-in-the-loop ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>人在回路中</h2>
+                <h4>为敏感操作配置人工审批，防止代理越权执行</h4>
+                <p>有些操作（删除文件、发送邮件）需要<strong>人工确认后才能执行</strong>。通过 <code>interruptOn</code> 配置审批规则。</p>
+                <pre><code class="language-javascript">import { tool } from "langchain";
+import { createDeepAgent } from "deepagents";
+import { MemorySaver } from "@langchain/langgraph";
+import { z } from "zod";
+
+const removeFile = tool(
+  async ({ path }: { path: string }) => `Deleted ${path}`,
+  {
+    name: "remove_file",
+    description: "删除文件",
+    schema: z.object({ path: z.string() }),
+  }
+);
+
+const notifyEmail = tool(
+  async ({ to, subject, body }) => `Sent email to ${to}`,
+  {
+    name: "notify_email",
+    description: "发送邮件",
+    schema: z.object({
+      to: z.string(),
+      subject: z.string(),
+      body: z.string(),
+    }),
+  }
+);
+
+const checkpointer = new MemorySaver();  // 内存检查点存储器，生产环境用数据库
+
+const agent = createDeepAgent({
+  model: "openai:gpt-5.4",
+  tools: [removeFile, notifyEmail],
+  interruptOn: {
+    remove_file: true,  // true = 每次调用前暂停，支持审批/拒绝/编辑
+    notify_email: { allowedDecisions: ["approve", "reject"] }, // 只允许批准或拒绝，不允许编辑参数
+  },
+  checkpointer,  // 必需！暂停/恢复依赖检查点，没有它 interruptOn 会被忽略
+});</code></pre>
+                <div class="warning">
+                    <strong>checkpointer 是必需的：</strong>人在回路中功能需要暂停和恢复代理执行，这依赖检查点存储器。没有 checkpointer，interruptOn 配置会被忽略。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/03-customization-3.png" alt="图：interruptOn 工作流程" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Skills ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>技能系统</h2>
+                <h4>用 SKILL.md 文件为代理提供专业知识和操作指南</h4>
+                <p>技能（Skills）不同于工具。工具是低级功能（搜索、读写文件），技能包含<strong>完整的任务说明、参考信息和模板</strong>。技能文件只在代理判断有用时才加载——渐进式披露，节省 token。</p>
+                <pre><code class="language-javascript">import { createDeepAgent, StateBackend, type FileData } from "deepagents";
+import { MemorySaver } from "@langchain/langgraph";
+import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
+
+const checkpointer = new MemorySaver();
+const backend = new StateBackend();
+
+// 从 GitHub 获取技能文件
+const skillUrl = "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/main/examples/skills/langgraph-docs/SKILL.md";
+const skillContent = await (await fetch(skillUrl)).text();
+
+const agent = await createDeepAgent({
+  model: "openai:gpt-5.4",
+  backend,
+  checkpointer,
+  skills: ["/skills/"],  // 技能源路径，Agent 会按需加载该目录下的 SKILL.md
+  middleware: [createCodeInterpreterMiddleware({ skillsBackend: backend })],
+});
+
+// 首次调用时通过 files 参数将技能文件写入后端
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "什么是 LangGraph？" }],
+  files: { "/skills/langgraph-docs/SKILL.md": createFileData(skillContent) },  // 技能内容
+}, { configurable: { thread_id: `thread-${Date.now()}` } });  // thread_id 用于检查点隔离</code></pre>
+                <div class="key-point">
+                    <strong>工具 vs 技能：</strong>工具是"能做什么"（低级操作），技能是"怎么做"（专业知识 + 操作指南）。技能文件使用 Markdown 格式，包含说明、示例和最佳实践。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Memory ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>记忆系统</h2>
+                <h4>用 AGENTS.md 文件为代理提供跨会话的持久上下文</h4>
+                <p>记忆（Memory）使用 <code>AGENTS.md</code> 文件为代理提供额外的上下文信息。不同于技能的渐进式加载，<strong>记忆文件在每次调用时都会被读取</strong>。</p>
+                <pre><code class="language-javascript">import { createDeepAgent, type FileData } from "deepagents";
+import { MemorySaver } from "@langchain/langgraph";
+
+const checkpointer = new MemorySaver();
+
+// 获取记忆文件
+const agentsMd = await (await fetch("https://.../AGENTS.md")).text();
+
+const agent = await createDeepAgent({
+  model: "openai:gpt-5.4",
+  memory: ["/AGENTS.md"],   // 记忆文件路径，每次调用都会加载（与技能的按需加载不同）
+  checkpointer,
+});
+
+// 通过 files 参数传入记忆文件内容，之后每次调用都会自动读取
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "你的记忆里有什么？" }],
+  files: { "/AGENTS.md": createFileData(agentsMd) },  // 首次调用时写入记忆文件
+}, { configurable: { thread_id: "12345" } });          // 固定 thread_id 以复用检查点</code></pre></code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>技能 vs 记忆</h4>
+                        <table>
+                            <thead><tr><th>维度</th><th>技能</th><th>记忆</th></tr></thead>
+                            <tbody>
+                                <tr><td>加载时机</td><td>代理判断有用时</td><td>每次调用都读取</td></tr>
+                                <tr><td>内容类型</td><td>操作指南</td><td>背景知识</td></tr>
+                                <tr><td>token 消耗</td><td>按需加载</td><td>始终占用</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>用户偏好和个性化设置</li>
+                            <li>项目背景和业务规则</li>
+                            <li>数据库 Schema 和 API 文档</li>
+                            <li>跨会话需要保持的上下文</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Structured Output ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>结构化输出</h2>
+                <h4>让代理返回符合 Schema 的结构化数据，而非自由文本</h4>
+                <p>通过 <code>responseFormat</code> 参数，你可以指定代理输出的结构。模型生成的数据会被<strong>捕获、验证</strong>，放在 <code>structuredResponse</code> 字段中返回。</p>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+import { z } from "zod";
+
+// 定义输出结构 —— 用 Zod schema 约束 Agent 返回的字段和类型
+const weatherReportSchema = z.object({
+  location: z.string().describe("天气报告的地点"),
+  temperature: z.number().describe("当前温度（摄氏度）"),
+  condition: z.string().describe("当前天气状况"),
+  humidity: z.number().describe("湿度百分比"),
+  forecast: z.string().describe("未来24小时预报"),
+});
+
+// 设置 responseFormat 后，Agent 会返回结构化 JSON 而非自由文本
+const agent = await createDeepAgent({
+  responseFormat: weatherReportSchema,  // schema 中的 .describe() 帮助模型理解字段含义
+  tools: [internetSearch],
+});
+
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "旧金山天气怎么样？" }],
+});
+
+// 结构化结果在 structuredResponse 字段中，类型安全可直接使用
+console.log(result.structuredResponse);
+// { location: "San Francisco", temperature: 18.3,
+//   condition: "Sunny", humidity: 48,
+//   forecast: "Clear skies with mild temperatures..." }</code></pre>
+                <div class="key-point">
+                    <strong>使用场景：</strong>当你的代理需要输出 JSON、表格数据或特定格式的结果时，结构化输出比解析自由文本可靠得多。Schema 中的 <code>.describe()</code> 会帮助模型理解每个字段的含义。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 18: Sandbox ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>沙箱环境</h2>
+                <h4>在隔离环境中运行代理代码，不触碰本地文件系统</h4>
+                <p>沙箱是一种特殊的后端——代理在隔离环境中运行，拥有自己的文件系统和 shell。你希望代理能写文件、跑命令，但<strong>不想让它改你本地机器</strong>时，用沙箱。</p>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { DenoSandbox } from "@langchain/deno";
+
+// 创建并初始化沙箱 —— 隔离环境，Agent 的代码执行不影响本地机器
+const sandbox = await DenoSandbox.create({
+  memoryMb: 1024,       // 内存限制：1GB
+  lifetime: "10m",      // 存活时间：10 分钟后自动销毁
+});
+
+try {
+  const agent = createDeepAgent({
+    model: new ChatAnthropic({ model: "claude-opus-4-6" }),
+    systemPrompt: "You are a JavaScript coding assistant.",
+    backend: sandbox,    // 将沙箱作为文件系统后端，Agent 在其中执行代码
+  });
+
+  const result = await agent.invoke({
+    messages: [{
+      role: "user",
+      content: "创建一个简单的 HTTP 服务器并用 curl 测试",
+    }],
+  });
+} finally {
+  await sandbox.close(); // 务必关闭沙箱释放资源！放在 finally 块中确保异常时也能清理
+}</code></pre>
+                <div class="warning">
+                    <strong>沙箱生命周期：</strong>沙箱有内存限制和存活时间。任务完成后务必调用 <code>sandbox.close()</code> 释放资源，建议放在 <code>finally</code> 块中。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 19: Practice ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>构建一个带搜索、审批和子代理的研究助手</h4>
+                <p>现在轮到你了。综合运用本章所学，构建一个研究助手：</p>
+                <pre><code class="language-javascript">需求：
+1. 使用 Anthropic 的 claude-sonnet-4-6 模型
+2. 拥有网络搜索能力（使用 TavilySearch）
+3. 系统提示：专注于技术研究，引用来源
+4. 拥有一个"写作子代理"，负责将研究结果整理成报告
+5. 发送邮件的操作需要人工审批
+6. 使用 StateBackend 作为文件系统</code></pre>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>任务 1：基础配置</h3>
+                        <ul>
+                            <li>选择模型并设置 API Key</li>
+                            <li>编写系统提示（角色 + 工作流程）</li>
+                            <li>定义 TavilySearch 工具并注册</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 2：进阶功能</h3>
+                        <ul>
+                            <li>创建写作子代理（独立的 systemPrompt）</li>
+                            <li>为邮件发送配置 interruptOn</li>
+                            <li>添加 checkpointer 支持中断恢复</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 3：测试验证</h3>
+                        <ul>
+                            <li>测试搜索工具是否被正确调用</li>
+                            <li>验证邮件发送前是否会暂停等待审批</li>
+                            <li>观察子代理的上下文是否隔离</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>先写最简版本（模型 + 工具 + 系统提示），跑通后再逐步添加子代理和人在回路中。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 20: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>你已经掌握了 Deep Agent 的全部配置维度</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>核心知识点</h4>
+                        <ul>
+                            <li><strong>模型</strong>：字符串 / initChatModel / 模型类，三种方式灵活切换</li>
+                            <li><strong>工具</strong>：用 <code>tool()</code> 定义，三要素是 name、description、schema</li>
+                            <li><strong>系统提示</strong>：USER -> BASE/CUSTOM -> SUFFIX 的固定组装顺序</li>
+                            <li><strong>中间件</strong>：内置六种 + 自定义 <code>createMiddleware</code></li>
+                            <li><strong>子代理</strong>：隔离上下文，可独立配置工具和模型</li>
+                            <li><strong>后端</strong>：State / Filesystem / Store / Composite 四种选择</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>关键原则</h4>
+                        <ul>
+                            <li>description 的质量决定工具选择准确性</li>
+                            <li>USER 提示始终优先，SUFFIX 始终在最后</li>
+                            <li>中间件不要修改外部变量，使用图状态</li>
+                            <li>人在回路中必须配合 checkpointer</li>
+                            <li>技能按需加载，记忆每次都读取</li>
+                            <li>结构化输出比解析自由文本更可靠</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>自定义 Deep Agent 不是堆砌配置，而是根据业务需求<strong>选择合适的维度</strong>。模型决定能力天花板，工具决定能做什么，提示决定行为方式，中间件决定可靠性，子代理决定可扩展性。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 21: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./04-comparison.html">下一章：Deep Agents 对比</a> -- 与其他框架的异同</li>
+                            <li><a href="./09-backends.html">后端详解</a> -- 各后端的深入对比</li>
+                            <li><a href="./10-subagents.html">子代理详解</a> -- 子代理的高级用法</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/llms.txt">Deep Agents 完整文档索引</a></li>
+                            <li><a href="https://reference.langchain.com/javascript/deepagents">API 参考</a></li>
+                            <li><a href="https://github.com/langchain-ai/deepagentsjs">GitHub 仓库</a> -- 源码和示例</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>深入主题</h4>
+                        <ul>
+                            <li><a href="https://github.com/langchain-ai/deepagentsjs/tree/main/examples/skills">示例技能</a> -- 可直接使用的技能模板</li>
+                            <li><a href="https://agents.md/">AGENTS.md 规范</a> -- 记忆文件的标准格式</li>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 文档</a> -- 底层运行时</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

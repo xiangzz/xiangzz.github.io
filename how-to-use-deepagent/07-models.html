@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型配置</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 07 章</div>
+            <h1>模型配置</h1>
+            <p>为 Deep Agents 配置模型提供商和参数</p>
+            <strong>选对模型、配好参数——Agent 才能跑得稳</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么关注模型</h2>
+                <h4>你的 Agent 效果好坏，很大程度上取决于底层模型的选型和配置</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>随意选模型的困境</h4>
+                        <ul>
+                            <li>不知道哪些模型支持<strong>工具调用</strong>，Agent 根本跑不起来</li>
+                            <li>参数没调好，模型要么太"懒"要么太"发散"</li>
+                            <li>换了模型后行为完全不同，<strong>没有统一的配置方式</strong></li>
+                            <li>想运行时切换模型？只能重写代码</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agents 的解法</h4>
+                        <ul>
+                            <li>只需 <code>provider:model</code> 一行字符串即可指定模型</li>
+                            <li>通过 <code>ProviderProfile</code> 统一管理参数，<strong>提供商级 + 模型级</strong>分层配置</li>
+                            <li>用中间件实现<strong>运行时动态切换</strong>，无需重建 Agent</li>
+                            <li>官方评测套件帮你筛选表现良好的模型</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心前提：</strong>Deep Agents 支持任何实现了工具调用（tool calling）的 LangChain 聊天模型。不是所有模型都能用——必须支持工具调用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Model format ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模型格式</h2>
+                <h4>用 <code>provider:model</code> 格式指定模型</h4>
+                <p>白话：你想用哪个模型，只需写一行 <code>提供商名:模型名</code>。比如 <code>openai:gpt-5.4</code> 就是 OpenAI 的 GPT-5.4，<code>anthropic:claude-sonnet-4-6</code> 就是 Anthropic 的 Claude。</p>
+                <p>使用 <code>provider:model</code> 格式传给 <code>createDeepAgent</code>，冒号前面是提供商前缀，冒号后面是模型标识符。提供商前缀用于选择对应的 LangChain 集成。</p>
+                <pre><code class="language-javascript">// 格式：provider:model
+"google_genai:gemini-3.1-pro-preview"
+"openai:gpt-5.4"
+"anthropic:claude-sonnet-4-6"
+"baseten:zai-org/GLM-5.1"    // 带命名空间的 ID
+"ollama:llama3"</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>提供商前缀</h4>
+                        <p>决定使用哪个 LangChain 集成包。例如 <code>openai</code> 会加载 <code>@langchain/openai</code>。</p>
+                        <p>有效前缀参见 <code>init_chat_model</code> 的 <code>model_provider</code> 参数。</p>
+                    </div>
+                    <div class="card">
+                        <h4>模型标识符</h4>
+                        <p>冒号之后的所有内容直接传递给提供商。</p>
+                        <p>有些用简单名称（如 <code>gpt-5.4</code>），有些用命名空间路径（如 <code>zai-org/GLM-5.1</code>）。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>常见错误：</strong>模型标识符必须与提供商期望的格式完全匹配。写错了不会报"找不到模型"，而是报更底层的 API 错误。请查阅提供商的模型目录确认标识符。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Recommended models ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>推荐模型</h2>
+                <h4>通过 Deep Agents 评测套件验证的模型</h4>
+                <p>以下模型在官方评测套件中表现良好，该套件测试基本的 Agent 操作（文件操作、信息检索、工具使用等）。通过评测是必要条件，但不保证在更复杂任务中同样出色。</p>
+                <table>
+                    <thead>
+                        <tr><th>提供商</th><th>推荐模型</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Google</strong></td>
+                            <td><code>gemini-3.1-pro-preview</code>、<code>gemini-3-flash-preview</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>OpenAI</strong></td>
+                            <td><code>gpt-5.4</code>、<code>gpt-4o</code>、<code>gpt-4o-mini</code>、<code>o4-mini</code>、<code>gpt-5.2-codex</code>、<code>o3</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Anthropic</strong></td>
+                            <td><code>claude-opus-4-6</code>、<code>claude-opus-4-5</code>、<code>claude-sonnet-4-6</code>、<code>claude-sonnet-4</code>、<code>claude-sonnet-4-5</code>、<code>claude-haiku-4-5</code>、<code>claude-opus-4-1</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>开源权重</strong></td>
+                            <td><code>GLM-5</code>、<code>Kimi-K2.5</code>、<code>MiniMax-M2.5</code>、<code>qwen3.5-397B-A17B</code>、<code>devstral-2-123B</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>开源权重模型</strong>可通过 OpenRouter、Fireworks 或 Ollama 等提供商使用。例如：<code>openrouter:deepseek/deepseek-v4-pro</code>、<code>ollama:minimax-m2.7:cloud</code>。
+                </div>
+                <div class="key-point">
+                    <strong>选择建议：</strong>如果你不确定用哪个模型，先从 <code>google_genai:gemini-3.1-pro-preview</code> 或 <code>openai:gpt-5.4</code> 开始——它们在文件操作和信息检索两项上均拿到 100%。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Model evaluation results ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>评测成绩</h2>
+                <h4>主流模型在 Deep Agents 评测套件中的表现一览</h4>
+                <p>评测涵盖六大类 Agent 操作，加粗数字表示该维度最佳表现。数据来自官方 CI 运行记录。</p>
+                <table>
+                    <thead>
+                        <tr><th>模型</th><th>文件操作</th><th>信息检索</th><th>工具使用</th><th>记忆</th><th>对话</th><th>摘要</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>gemini-3.1-pro</code></td>
+                            <td><strong>100%</strong></td>
+                            <td><strong>100%</strong></td>
+                            <td>25%</td>
+                            <td>54%</td>
+                            <td>48%</td>
+                            <td>80%</td>
+                        </tr>
+                        <tr>
+                            <td><code>gpt-5.4</code></td>
+                            <td><strong>100%</strong></td>
+                            <td><strong>100%</strong></td>
+                            <td>18%</td>
+                            <td>51%</td>
+                            <td>38%</td>
+                            <td><strong>100%</strong></td>
+                        </tr>
+                        <tr>
+                            <td><code>claude-opus-4-6</code></td>
+                            <td>92%</td>
+                            <td><strong>100%</strong></td>
+                            <td>26%</td>
+                            <td><strong>69%</strong></td>
+                            <td>22%</td>
+                            <td><strong>100%</strong></td>
+                        </tr>
+                        <tr>
+                            <td><code>claude-opus-4-7</code></td>
+                            <td><strong>100%</strong></td>
+                            <td><strong>100%</strong></td>
+                            <td>18%</td>
+                            <td>--</td>
+                            <td><strong>52%</strong></td>
+                            <td><strong>100%</strong></td>
+                        </tr>
+                        <tr>
+                            <td><code>GLM-5</code></td>
+                            <td>92%</td>
+                            <td><strong>100%</strong></td>
+                            <td><strong>87%</strong></td>
+                            <td>44%</td>
+                            <td>29%</td>
+                            <td>60%</td>
+                        </tr>
+                        <tr>
+                            <td><code>minimax-m2.7</code></td>
+                            <td>92%</td>
+                            <td>90%</td>
+                            <td>82%</td>
+                            <td>38%</td>
+                            <td>29%</td>
+                            <td>60%</td>
+                        </tr>
+                        <tr>
+                            <td><code>gpt-5.5</code></td>
+                            <td>92%</td>
+                            <td><strong>100%</strong></td>
+                            <td>20%</td>
+                            <td>64%</td>
+                            <td><strong>52%</strong></td>
+                            <td>80%</td>
+                        </tr>
+                        <tr>
+                            <td><code>Kimi-K2.6</code></td>
+                            <td><strong>100%</strong></td>
+                            <td><strong>100%</strong></td>
+                            <td>20%</td>
+                            <td>--</td>
+                            <td>--</td>
+                            <td>60%</td>
+                        </tr>
+                        <tr>
+                            <td><code>deepseek-v4-pro</code></td>
+                            <td><strong>100%</strong></td>
+                            <td><strong>100%</strong></td>
+                            <td>25%</td>
+                            <td>--</td>
+                            <td>--</td>
+                            <td>80%</td>
+                        </tr>
+                        <tr>
+                            <td><code>minimax-m2.7</code> (OpenRouter)</td>
+                            <td>92%</td>
+                            <td><strong>100%</strong></td>
+                            <td>20%</td>
+                            <td>--</td>
+                            <td>--</td>
+                            <td>60%</td>
+                        </tr>
+                        <tr>
+                            <td><code>nemotron-3-super-120b</code></td>
+                            <td>0%</td>
+                            <td>0%</td>
+                            <td>0%</td>
+                            <td>0%</td>
+                            <td>0%</td>
+                            <td>0%</td>
+                        </tr>
+                        <tr>
+                            <td><code>glm-5.1</code></td>
+                            <td>92%</td>
+                            <td><strong>100%</strong></td>
+                            <td>25%</td>
+                            <td>--</td>
+                            <td>33%</td>
+                            <td>80%</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>关键发现：</strong>文件操作和信息检索各模型整体表现较好（90%+），但<strong>工具使用</strong>是普遍短板（大多数低于 30%）。如果你的 Agent 重度依赖工具调用，优先考虑 <code>GLM-5</code>（87%）或 <code>minimax-m2.7</code>（82%）。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Configure model parameters ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置参数</h2>
+                <h4>两种方式精细控制模型行为</h4>
+                <p>白话：如果你只想换模型名称，传字符串就够了。但如果你要调参数（如 temperature、reasoning_effort），有两种更灵活的方式。</p>
+                <p>除了传入 <code>provider:model</code> 字符串，你还可以传入一个<strong>已配置的模型实例</strong>来获得完全控制。底层通过 <code>init_chat_model</code> 解析。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>方式一：initChatModel</h4>
+                        <pre><code class="language-javascript">import { initChatModel } from "langchain/chat_models/universal";
+import { createDeepAgent } from "deepagents";
+
+// 用通用工厂方法初始化模型，字符串指定提供商和模型
+// reasoningEffort 控制推理深度，"medium" 为中等，可选 "low"/"high"
+const model = await initChatModel(
+  "google_genai:gemini-3.1-pro-preview",
+  { reasoningEffort: "medium" }
+);
+// 将已配置的模型实例传入，Agent 直接使用它
+const agent = createDeepAgent({ model });</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>方式二：提供商包</h4>
+                        <pre><code class="language-javascript">import { ChatGoogle } from "@langchain/google";
+import { createDeepAgent } from "deepagents";
+
+// 直接用提供商包实例化，可访问该提供商的所有专有参数
+const model = new ChatGoogle({
+  model: "gemini-3.1-pro-preview",  // 模型标识符，只需写模型名
+  reasoningEffort: "medium",        // 推理深度参数
+});
+const agent = createDeepAgent({ model });</code></pre>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>initChatModel</h4>
+                        <p>通用方法，用字符串指定模型，通过选项配置参数。适合快速切换模型时使用。</p>
+                    </div>
+                    <div class="card">
+                        <h4>提供商包</h4>
+                        <p>直接实例化提供商类，可访问该提供商的所有专有参数。适合需要深度定制的场景。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>可用参数因提供商而异。<code>reasoningEffort</code> 可能只对部分模型有效。请查阅各提供商的集成文档确认支持的参数列表。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Provider Profile ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置档案</h2>
+                <h4>用 ProviderProfile 统一管理模型参数</h4>
+                <p>白话：ProviderProfile 就像"模型配置模板"。你可以写一个模板说"所有 OpenAI 模型温度设 0"，再写一个说"GPT-5.4 额外开启推理功能"——它们会自动合并。</p>
+                <p><code>ProviderProfile</code> 封装了在使用 <code>provider:model</code> 字符串创建 Agent 时应用的初始化参数。它支持<strong>两级注册</strong>，且两者可以共存、自动合并。</p>
+                <pre><code class="language-python">from deepagents import ProviderProfile, register_provider_profile
+
+# 提供商级别：所有 openai 模型都设置 temperature=0
+register_provider_profile(
+    "openai",
+    ProviderProfile(init_kwargs={"temperature": 0}),
+)
+
+# 模型级别：gpt-5.4 额外设置 reasoning_effort
+# 会继承上面提供商级别的 temperature=0
+register_provider_profile(
+    "openai:gpt-5.4",
+    ProviderProfile(init_kwargs={"reasoning_effort": "medium"}),
+)</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>提供商级别</h4>
+                        <p>用裸提供商键名（如 <code>"openai"</code>）注册，应用于该提供商的<strong>所有模型</strong>。</p>
+                        <p>适合设置通用默认值，如 <code>temperature</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>模型级别</h4>
+                        <p>用 <code>provider:model</code> 键名（如 <code>"openai:gpt-5.4"</code>）注册，仅应用于特定模型。</p>
+                        <p>会与提供商级别配置<strong>合并</strong>，模型级优先。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>合并规则：</strong>模型级别的配置会覆盖提供商级别的同名参数，未覆盖的参数保留提供商级别的值。如果你传入的是预配置的模型实例（而非字符串），ProviderProfile 不会生效。
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>若要控制模型构建完成后 <em>Agent</em> 的行为方式（而非模型本身的参数），请使用<strong>框架配置档案（harness profile）</strong>。Harness Profile 在 Provider Profile 之上提供更高层的 Agent 行为控制。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/07-models-1.png" alt="图：Provider/Model 两级注册与合并" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Runtime model selection ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行时切换</h2>
+                <h4>用中间件在运行时动态选择模型，无需重建 Agent</h4>
+                <p>如果你的应用允许用户通过 UI 下拉菜单选择模型，可以使用 LangChain <strong>中间件（middleware）</strong>在运行时切换。</p>
+                <pre><code class="language-javascript">import { initChatModel, createMiddleware } from "langchain";
+import { createDeepAgent } from "deepagents";
+import * as z from "zod";
+
+// 定义上下文的 schema，model 字段存放用户选择的模型名
+const contextSchema = z.object({
+  model: z.string(),
+});
+
+// 定义中间件：拦截每次模型调用，替换为用户选择的模型
+const configurableModel = createMiddleware({
+  name: "ConfigurableModel",
+  // wrapModelCall 会在每次 LLM 调用前执行
+  wrapModelCall: async (request, handler) => {
+    // 从运行时上下文中读取用户选择的模型名
+    const modelName = request.runtime.context.model;
+    // 动态初始化新模型实例
+    const model = await initChatModel(modelName);
+    // 用新模型替换原请求中的模型，继续执行后续流程
+    return handler({ ...request, model });
+  },
+});
+
+const agent = await createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",  // 默认模型（首次调用时使用）
+  middleware: [configurableModel],                 // 注册中间件
+  contextSchema,                                   // 绑定上下文 schema
+});</code></pre>
+                <div class="key-point">
+                    <strong>工作原理：</strong>中间件拦截每次模型调用，从上下文中读取用户选择的模型名称，动态初始化新模型并替换。Agent 只需构建一次，之后通过传入不同的 <code>context</code> 即可切换模型。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/07-models-2.png" alt="图：中间件拦截动态切换模型" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Runtime selection example ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>切换实战</h2>
+                <h4>用不同模型调用同一个 Agent</h4>
+                <pre><code class="language-javascript">// 用 Google 模型调用——context.model 指定模型，中间件会拦截并切换
+const result1 = await agent.invoke(
+  { messages: [{ role: "user", content: "分析这段代码" }] },
+  { context: { model: "google_genai:gemini-3.1-pro-preview" } },
+);
+
+// 切换到 OpenAI 模型——同一个 agent 实例，无需重建
+const result2 = await agent.invoke(
+  { messages: [{ role: "user", content: "分析这段代码" }] },
+  { context: { model: "openai:gpt-5.4" } },
+);
+
+// 切换到 Anthropic 模型——只需改变 context 中的 model 值
+const result3 = await agent.invoke(
+  { messages: [{ role: "user", content: "分析这段代码" }] },
+  { context: { model: "anthropic:claude-sonnet-4-6" } },
+);</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>用户在 UI 中自选模型</li>
+                            <li>根据任务复杂度路由到不同模型</li>
+                            <li>A/B 测试不同模型的效果</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>注意事项</h4>
+                        <ul>
+                            <li>每次切换都会初始化新模型，有少量延迟</li>
+                            <li>确保所有候选模型都支持工具调用</li>
+                            <li>不同模型的输出格式可能有差异</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>进阶用法：</strong>如果需要更复杂的动态选择模式（如根据对话复杂度自动路由或成本优化），可参考 LangChain Agent 指南中的<a href="https://js.langchain.com/docs/concepts/agents#dynamic-model" target="_blank">"动态模型（Dynamic model）"</a>章节。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Summary ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章小结</h2>
+                <h4>模型配置的三层能力：选模型、调参数、运行时切换</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>选模型</h4>
+                        <ul>
+                            <li>格式：<code>provider:model</code></li>
+                            <li>必须支持工具调用</li>
+                            <li>参考官方评测套件选择</li>
+                            <li>Google / OpenAI / Anthropic 整体领先</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>调参数</h4>
+                        <ul>
+                            <li><code>initChatModel</code> 通用配置</li>
+                            <li>提供商包直接实例化</li>
+                            <li><code>ProviderProfile</code> 分层管理</li>
+                            <li>提供商级 + 模型级自动合并</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>运行时切换</h4>
+                        <ul>
+                            <li>中间件拦截模型调用</li>
+                            <li>上下文传入模型名称</li>
+                            <li>无需重建 Agent</li>
+                            <li>适合用户自选和 A/B 测试</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Deep Agents 的模型配置遵循"简单场景用字符串、复杂场景用实例、动态场景用中间件"的分层策略。从一行字符串开始，按需升级控制粒度。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./08-context-engineering.html">下一章：上下文工程</a> -- 管理和优化 Agent 的上下文窗口</li>
+                            <li><a href="./18-profiles.html">配置档案详解</a> -- ProviderProfile 的完整字段与合并语义</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://reference.langchain.com/javascript/langchain/chat_models/universal/initChatModel">init_chat_model API</a> -- 模型初始化参考</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents/tree/main/libs/evals#readme">评测套件</a> -- 模型评测详情和运行记录</li>
+                            <li><a href="https://js.langchain.com/docs/integrations/chat/">聊天模型集成</a> -- 各提供商配置选项</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关概念</h4>
+                        <ul>
+                            <li><a href="https://js.langchain.com/docs/concepts/middleware">LangChain 中间件</a> -- 动态模型选择的基础</li>
+                            <li><a href="https://js.langchain.com/docs/concepts/models">LangChain 中的模型</a> -- 工具调用、结构化输出、多模态</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

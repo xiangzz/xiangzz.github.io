@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>快速入门</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 02 章</div>
+            <h1>快速入门</h1>
+            <p>几分钟内构建你的第一个 Deep Agent</p>
+            <strong>从安装依赖到运行一个具备规划、搜索和子 Agent 能力的研究型智能体</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>我们要构建什么</h2>
+                <h4>一个能自主规划、搜索、总结的研究型 Agent</h4>
+                <p>传统聊天机器人只能一问一答。但现实中的研究任务需要<strong>多步推理、工具调用、上下文管理</strong>。Deep Agent 就是为此而生。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>传统 LLM 调用</h4>
+                        <ul>
+                            <li>单次问答，没有规划能力</li>
+                            <li>无法自主决定"接下来做什么"</li>
+                            <li>长上下文管理靠手动拼接</li>
+                            <li>复杂任务需要人类逐步指挥</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agent</h4>
+                        <ul>
+                            <li>自动将任务拆解为子任务并规划执行顺序</li>
+                            <li>自主选择工具（搜索、文件读写等）</li>
+                            <li>内置虚拟文件系统管理大量上下文</li>
+                            <li>可生成子 Agent 委派复杂子任务</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>本章目标：</strong>从零开始创建一个 Deep Agent，给它一个搜索工具，让它自主研究并撰写报告。完成本章后，你就拥有了构建复杂 Agent 的基础。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/02-quickstart-1.png" alt="图：传统 LLM 调用与 Deep Agent 数据流对比" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Prerequisites ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>前提条件</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你必须有</h4>
+                        <ul>
+                            <li>一个模型提供商的 API Key（Gemini、OpenAI、Anthropic 等均可）</li>
+                            <li>一个 Tavily API Key（用于搜索功能，免费注册）</li>
+                            <li>Node.js 运行环境</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>模型要求</h4>
+                        <ul>
+                            <li>模型必须支持 <strong>tool calling</strong>（工具调用）</li>
+                            <li>推荐：Gemini 3.1 Pro、GPT-5.4、Claude Sonnet 4.6</li>
+                            <li>也支持 Ollama 本地模型</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>可选但推荐</h4>
+                        <ul>
+                            <li>LangChain Docs MCP Server（让 AI 编程助手访问最新文档）</li>
+                            <li>LangChain Skills（提升 Agent 在 LangChain 任务上的表现）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>Deep Agents 依赖模型的 tool calling 能力。如果你的模型不支持工具调用，Agent 将无法正常运行。请查阅<a href="https://langchain-ai.github.io/langgraphjs/">支持的模型列表</a>确认兼容性。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Install dependencies ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安装依赖</h2>
+                <h4>只需一行命令，安装核心包和搜索工具</h4>
+                <p>Deep Agents 的核心包是 <code>deepagents</code>，配合 <code>langchain</code> 和 <code>@langchain/tavily</code> 即可快速启动。</p>
+                <pre><code class="language-bash">$ npm install deepagents langchain @langchain/core @langchain/tavily</code></pre>
+                <div class="install-alt">
+                    <p><strong>或使用其他包管理器：</strong></p>
+                    <pre><code class="language-bash">$ yarn add deepagents langchain @langchain/core @langchain/tavily</code></pre>
+                    <pre><code class="language-bash">$ pnpm add deepagents langchain @langchain/core @langchain/tavily</code></pre>
+                </div>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>各包的作用</h4>
+                        <table>
+                            <thead><tr><th>包名</th><th>做什么</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>deepagents</code></td><td>Deep Agent 核心，包含规划引擎和子 Agent 管理</td></tr>
+                                <tr><td><code>langchain</code></td><td>LLM 调用和工具集成的基础层</td></tr>
+                                <tr><td><code>@langchain/core</code></td><td>LangChain 核心抽象（消息、工具等）</td></tr>
+                                <tr><td><code>@langchain/tavily</code></td><td>Tavily 搜索 API 的 LangChain 封装</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>关于搜索提供商</h4>
+                        <p>本教程使用 <strong>Tavily</strong> 作为搜索提供商，但你可以替换为任何搜索 API：</p>
+                        <ul>
+                            <li>DuckDuckGo Search</li>
+                            <li>SerpAPI</li>
+                            <li>Brave Search</li>
+                        </ul>
+                        <p>只需修改工具实现即可，Agent 代码不需要变。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Set API Key ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置密钥</h2>
+                <h4>配置你的模型提供商和搜索服务的密钥</h4>
+                <p>Deep Agents 通过环境变量读取 API Key。根据你的模型提供商设置对应的变量：</p>
+                <div class="provider-tabs">
+                    <details class="provider-details" open>
+                        <summary>Google Gemini</summary>
+                        <pre><code class="language-bash">export GOOGLE_API_KEY="your-api-key"
+export TAVILY_API_KEY="your-tavily-api-key"</code></pre>
+                    </details>
+                    <details class="provider-details">
+                        <summary>OpenAI</summary>
+                        <pre><code class="language-bash">export OPENAI_API_KEY="your-api-key"
+export TAVILY_API_KEY="your-tavily-api-key"</code></pre>
+                    </details>
+                    <details class="provider-details">
+                        <summary>Anthropic</summary>
+                        <pre><code class="language-bash">export ANTHROPIC_API_KEY="your-api-key"
+export TAVILY_API_KEY="your-tavily-api-key"</code></pre>
+                    </details>
+                    <details class="provider-details">
+                        <summary>DeepSeek</summary>
+                        <pre><code class="language-bash"># 需要额外安装 @langchain/deepseek 包
+# npm install @langchain/deepseek
+export DEEPSEEK_API_KEY="your-api-key"
+export TAVILY_API_KEY="your-tavily-api-key"</code></pre>
+                        <p class="note">V4 模型（deepseek-v4-pro / deepseek-v4-flash）支持 1M 上下文、Function Calling 和三种思考模式。旧的 deepseek-chat / deepseek-reasoner 将于 2026-07-24 停用。</p>
+                    </details>
+                    <details class="provider-details">
+                        <summary>OpenRouter</summary>
+                        <pre><code class="language-bash">export OPENROUTER_API_KEY="your-api-key"
+export TAVILY_API_KEY="your-tavily-api-key"</code></pre>
+                    </details>
+                    <details class="provider-details">
+                        <summary>Fireworks</summary>
+                        <pre><code class="language-bash">export FIREWORKS_API_KEY="your-api-key"
+export TAVILY_API_KEY="your-tavily-api-key"</code></pre>
+                    </details>
+                    <details class="provider-details">
+                        <summary>Baseten</summary>
+                        <pre><code class="language-bash">export BASETEN_API_KEY="your-api-key"
+export TAVILY_API_KEY="your-tavily-api-key"</code></pre>
+                    </details>
+                    <details class="provider-details">
+                        <summary>Ollama</summary>
+                        <pre><code class="language-bash"># 本地使用：Ollama 必须在你的机器上运行
+# 云端使用：设置你的 Ollama API Key 以进行托管推理
+export OLLAMA_API_KEY="your-api-key"
+export TAVILY_API_KEY="your-tavily-api-key"</code></pre>
+                    </details>
+                    <details class="provider-details">
+                        <summary>其他提供商</summary>
+                        <pre><code class="language-bash"># 设置你的提供商的 API Key
+export &lt;PROVIDER&gt;_API_KEY="your-api-key"
+export TAVILY_API_KEY="your-tavily-api-key"</code></pre>
+                        <p class="note">Deep Agents 支持所有 LangChain 聊天模型，请设置你的提供商对应的 API Key。</p>
+                    </details>
+                </div>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>支持的提供商</h4>
+                        <table>
+                            <thead><tr><th>提供商</th><th>环境变量</th></tr></thead>
+                            <tbody>
+                                <tr><td>Google</td><td><code>GOOGLE_API_KEY</code></td></tr>
+                                <tr><td>OpenAI</td><td><code>OPENAI_API_KEY</code></td></tr>
+                                <tr><td>Anthropic</td><td><code>ANTHROPIC_API_KEY</code></td></tr>
+                                <tr><td>DeepSeek</td><td><code>DEEPSEEK_API_KEY</code></td></tr>
+                                <tr><td>OpenRouter</td><td><code>OPENROUTER_API_KEY</code></td></tr>
+                                <tr><td>Fireworks</td><td><code>FIREWORKS_API_KEY</code></td></tr>
+                                <tr><td>Ollama</td><td><code>OLLAMA_API_KEY</code></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>配置格式</h4>
+                        <p>创建 Agent 时以 <code>provider:model</code> 格式指定模型：</p>
+                        <pre><code class="language-javascript">// Google Gemini
+model: "google-genai:gemini-3.1-pro-preview"
+
+// OpenAI
+model: "openai:gpt-5.4"
+
+// Anthropic
+model: "anthropic:claude-sonnet-4-6"
+
+// DeepSeek V4（需安装 @langchain/deepseek）
+model: "deepseek:deepseek-v4-pro"      // V4-Pro，1.6T 参数，适合复杂 Agent 任务
+model: "deepseek:deepseek-v4-flash"    // V4-Flash，284B 参数，更快更便宜
+// 旧模型名（2026-07-24 停用）：
+// model: "deepseek:deepseek-chat"     // → 指向 deepseek-v4-flash 非思考模式
+// model: "deepseek:deepseek-reasoner" // → 指向 deepseek-v4-flash 思考模式
+
+// Ollama 本地
+model: "ollama:devstral-2"</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>常见问题：</strong>如果报错 <code>API key not found</code>，请确认环境变量已正确设置。在 Windows 上使用 <code>set</code> 而非 <code>export</code>，或者使用 <code>.env</code> 文件配合 <code>dotenv</code> 包。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Create search tool ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建搜索工具</h2>
+                <h4>用 LangChain 的 tool 函数封装 Tavily 搜索能力</h4>
+                <p>工具是 Agent 感知外部世界的手脚。我们用 <code>tool()</code> 函数把 Tavily 搜索封装成 Agent 可调用的工具。</p>
+                <p class="note">比喻是为了帮你理解——实际上，工具不过是一段定义了 name、description 和 schema 的函数。Agent 通过 LLM 的 tool calling 能力来决定何时调用它，并非真的有"手脚"。</p>
+                <pre><code class="language-javascript">import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { z } from "zod";
+
+// 定义搜索工具：tool() 接收执行函数和元数据两个参数
+const internetSearch = tool(
+  // 执行函数：每次 Agent 决定搜索时调用
+  async ({
+    query,                     // 搜索关键词
+    maxResults = 5,            // 最多返回几条结果
+    topic = "general",         // 搜索类别：general / news / finance
+    includeRawContent = false, // 是否包含原始网页内容（更耗 token）
+  }: {
+    query: string;
+    maxResults?: number;
+    topic?: "general" | "news" | "finance";
+    includeRawContent?: boolean;
+  }) => {
+    // 创建 Tavily 搜索实例，传入 API Key 和配置
+    const tavilySearch = new TavilySearch({
+      maxResults,
+      tavilyApiKey: process.env.TAVILY_API_KEY,
+      includeRawContent,
+      topic,
+    });
+    // _call() 执行搜索并返回结果
+    return await tavilySearch._call({ query });
+  },
+  // 元数据：帮助 LLM 理解工具的用途和参数
+  {
+    name: "internet_search",        // Agent 调用时的工具名称
+    description: "Run a web search", // LLM 据此判断何时该调用此工具
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z.number().optional().default(5)
+        .describe("Maximum number of results"),
+      topic: z.enum(["general", "news", "finance"])
+        .optional().default("general")
+        .describe("Search topic category"),
+      includeRawContent: z.boolean().optional().default(false)
+        .describe("Whether to include raw content"),
+    }),
+  },
+);</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Search tool explained ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工具代码解读</h2>
+                <h4>理解 tool() 函数的两个核心部分</h4>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>第一部分：执行函数</h4>
+                        <p>即 <code>tool()</code> 的第一个参数，一个 <strong>async 函数</strong>：</p>
+                        <ul>
+                            <li>接收参数：<code>query</code>（搜索词）、<code>maxResults</code>、<code>topic</code>、<code>includeRawContent</code></li>
+                            <li>内部创建 <code>TavilySearch</code> 实例</li>
+                            <li>调用 <code>_call({ query })</code> 执行搜索</li>
+                            <li>返回搜索结果给 Agent</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>第二部分：工具描述</h4>
+                        <p>即 <code>tool()</code> 的第二个参数，一个<strong>配置对象</strong>：</p>
+                        <ul>
+                            <li><code>name</code>：工具名称，Agent 通过它调用</li>
+                            <li><code>description</code>：工具描述，帮助 LLM 决定何时调用</li>
+                            <li><code>schema</code>：用 Zod 定义参数结构，LLM 据此生成合法调用</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>关键设计：</strong>schema 用 Zod 定义而非手写 JSON Schema，因为 Zod 同时提供类型检查和运行时验证。description 写得越清楚，LLM 就越能准确判断什么时候该调用这个工具。
+                </div>
+                <div class="warning">
+                    <strong>常见错误：</strong><code>description</code> 太模糊（如 "search stuff"）会导致 LLM 在不该调用时调用，或者该调用时不调用。写清楚工具做什么、输入是什么、输出是什么。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Create Deep Agent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建智能体</h2>
+                <h4>用 createDeepAgent() 一行代码组装完整智能体</h4>
+                <p>接下来，用 <code>createDeepAgent()</code> 把模型、工具和系统提示词组合在一起：</p>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+// 系统提示词：定义 Agent 的角色、工作方式和工具使用说明
+// 这个提示词会叠加在 SDK 内置提示之上，不会替换它
+const researchInstructions = `You are an expert researcher.
+Your job is to conduct thorough research
+and then write a polished report.
+
+You have access to an internet search tool
+as your primary means of gathering information.
+
+## \`internet_search\`
+
+Use this to run an internet search for a given query.
+You can specify the max number of results to return,
+the topic, and whether raw content should be included.
+`;
+
+const agent = createDeepAgent({
+  model: "google-genai:gemini-3.1-pro-preview",  // 以 "provider:model" 格式指定模型
+  tools: [internetSearch],                         // Agent 会自主决定何时调用搜索
+  systemPrompt: researchInstructions,              // 你的自定义提示叠加在 SDK 默认提示之上
+});</code></pre>
+                <div class="other-providers">
+                    <details>
+                        <summary><strong>其他模型提供商配置</strong>（点击展开）</summary>
+                        <details class="provider-details">
+                            <summary>OpenAI</summary>
+                            <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+// 系统提示词：引导 Agent 成为专业研究人员
+const researchInstructions = `You are an expert researcher.
+Your job is to conduct thorough research
+and then write a polished report.
+
+You have access to an internet search tool
+as your primary means of gathering information.
+
+## \`internet_search\`
+
+Use this to run an internet search for a given query.
+You can specify the max number of results to return,
+the topic, and whether raw content should be included.
+`;
+
+const agent = createDeepAgent({
+  model: "openai:gpt-5.4",
+  tools: [internetSearch],
+  systemPrompt: researchInstructions,
+});</code></pre>
+                        </details>
+                        <details class="provider-details">
+                            <summary>Anthropic</summary>
+                            <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+// 系统提示词：引导 Agent 成为专业研究人员
+const researchInstructions = `You are an expert researcher.
+Your job is to conduct thorough research
+and then write a polished report.
+
+You have access to an internet search tool
+as your primary means of gathering information.
+
+## \`internet_search\`
+
+Use this to run an internet search for a given query.
+You can specify the max number of results to return,
+the topic, and whether raw content should be included.
+`;
+
+const agent = createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [internetSearch],
+  systemPrompt: researchInstructions,
+});</code></pre>
+                        </details>
+                        <details class="provider-details">
+                            <summary>DeepSeek</summary>
+                            <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+// 系统提示词：引导 Agent 成为专业研究人员
+const researchInstructions = `You are an expert researcher.
+Your job is to conduct thorough research
+and then write a polished report.
+
+You have access to an internet search tool
+as your primary means of gathering information.
+
+## \`internet_search\`
+
+Use this to run an internet search for a given query.
+You can specify the max number of results to return,
+the topic, and whether raw content should be included.
+`;
+
+const agent = createDeepAgent({
+  model: "deepseek:deepseek-v4-pro",    // V4-Pro，1.6T 参数，适合复杂 Agent 任务
+  // model: "deepseek:deepseek-v4-flash",  // V4-Flash，284B 参数，更快更便宜
+  tools: [internetSearch],
+  systemPrompt: researchInstructions,
+});</code></pre>
+                            <p class="note">需要额外安装 <code>@langchain/deepseek</code> 包（<code>npm install @langchain/deepseek</code>），并设置 <code>DEEPSEEK_API_KEY</code> 环境变量。</p>
+                        </details>
+                        <details class="provider-details">
+                            <summary>OpenRouter</summary>
+                            <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+// 系统提示词：引导 Agent 成为专业研究人员
+const researchInstructions = `You are an expert researcher.
+Your job is to conduct thorough research
+and then write a polished report.
+
+You have access to an internet search tool
+as your primary means of gathering information.
+
+## \`internet_search\`
+
+Use this to run an internet search for a given query.
+You can specify the max number of results to return,
+the topic, and whether raw content should be included.
+`;
+
+const agent = createDeepAgent({
+  model: "openrouter:anthropic/claude-sonnet-4-6",
+  tools: [internetSearch],
+  systemPrompt: researchInstructions,
+});</code></pre>
+                        </details>
+                        <details class="provider-details">
+                            <summary>Fireworks</summary>
+                            <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+// 系统提示词：引导 Agent 成为专业研究人员
+const researchInstructions = `You are an expert researcher.
+Your job is to conduct thorough research
+and then write a polished report.
+
+You have access to an internet search tool
+as your primary means of gathering information.
+
+## \`internet_search\`
+
+Use this to run an internet search for a given query.
+You can specify the max number of results to return,
+the topic, and whether raw content should be included.
+`;
+
+const agent = createDeepAgent({
+  model: "fireworks:accounts/fireworks/models/qwen3p5-397b-a17b",
+  tools: [internetSearch],
+  systemPrompt: researchInstructions,
+});</code></pre>
+                        </details>
+                        <details class="provider-details">
+                            <summary>Baseten</summary>
+                            <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+// 系统提示词：引导 Agent 成为专业研究人员
+const researchInstructions = `You are an expert researcher.
+Your job is to conduct thorough research
+and then write a polished report.
+
+You have access to an internet search tool
+as your primary means of gathering information.
+
+## \`internet_search\`
+
+Use this to run an internet search for a given query.
+You can specify the max number of results to return,
+the topic, and whether raw content should be included.
+`;
+
+const agent = createDeepAgent({
+  model: "baseten:zai-org/GLM-5",
+  tools: [internetSearch],
+  systemPrompt: researchInstructions,
+});</code></pre>
+                        </details>
+                        <details class="provider-details">
+                            <summary>Ollama</summary>
+                            <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+// 系统提示词：引导 Agent 成为专业研究人员
+const researchInstructions = `You are an expert researcher.
+Your job is to conduct thorough research
+and then write a polished report.
+
+You have access to an internet search tool
+as your primary means of gathering information.
+
+## \`internet_search\`
+
+Use this to run an internet search for a given query.
+You can specify the max number of results to return,
+the topic, and whether raw content should be included.
+`;
+
+const agent = createDeepAgent({
+  model: "ollama:devstral-2",
+  tools: [internetSearch],
+  systemPrompt: researchInstructions,
+});</code></pre>
+                        </details>
+                    </details>
+                </div>
+                <div class="key-point">
+                    <strong>三个必填参数：</strong><code>model</code>（以 <code>provider:model</code> 格式指定）、<code>tools</code>（工具数组）、<code>systemPrompt</code>（系统提示词，引导 Agent 的行为和角色）。就这三样，一个完整的智能体就建好了。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: createDeepAgent explained ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>代码逐行解读</h2>
+                <h4>理解 createDeepAgent 的每个参数</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>model 参数</h4>
+                        <p>以 <code>"provider:model"</code> 格式传入，例如：</p>
+                        <ul>
+                            <li><code>"google-genai:gemini-3.1-pro-preview"</code></li>
+                            <li><code>"openai:gpt-5.4"</code></li>
+                            <li><code>"anthropic:claude-sonnet-4-6"</code></li>
+                            <li><code>"deepseek:deepseek-v4-pro"</code></li>
+                            <li><code>"deepseek:deepseek-v4-flash"</code></li>
+                            <li><code>"ollama:devstral-2"</code></li>
+                        </ul>
+                        <p>也可以传入已初始化的模型实例，以自定义参数。</p> 
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>tools 参数</h4>
+                        <p>一个包含所有工具的数组。Agent 会根据用户任务<strong>自主选择</strong>调用哪些工具、调用几次。</p>
+                        <p>本例中只有 <code>internetSearch</code>，但你可以添加更多工具。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>systemPrompt 参数</h4>
+                        <p>系统提示词决定 Agent 的<strong>角色和行为</strong>。写好提示词的技巧：</p>
+                        <ul>
+                            <li>明确角色定位（"expert researcher"）</li>
+                            <li>描述可用工具及使用方式</li>
+                            <li>规定输出格式和质量标准</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>系统提示词中列出了 <code>internet_search</code> 工具的使用说明，这帮助 LLM 理解每个参数的用途，从而做出更好的调用决策。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Run the Agent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行 Agent</h2>
+                <h4>用 invoke() 启动 Agent，传入用户消息即可</h4>
+                <p>创建好 Agent 后，用 <code>invoke()</code> 方法运行它。传入一个包含用户消息的对象：</p>
+                <pre><code class="language-javascript">const result = await agent.invoke({
+  messages: [{ role: "user", content: "What is langgraph?" }],
+});
+
+// 打印 Agent 的响应
+console.log(result.messages[result.messages.length - 1].content);
+</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>输入格式</h4>
+                        <p><code>invoke()</code> 接收一个对象，包含 <code>messages</code> 数组。每条消息有 <code>role</code> 和 <code>content</code>。</p>
+                        <p>你可以传入单条消息，也可以传入完整对话历史。</p>
+                    </div>
+                    <div class="card">
+                        <h4>输出格式</h4>
+                        <p>返回结果中的 <code>messages</code> 数组包含了完整的对话历史，包括 Agent 的所有中间步骤。</p>
+                        <p><code>result.messages</code> 的最后一条就是 Agent 的最终回复。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>背后发生了什么：</strong>Agent 收到消息后，会自动规划研究步骤、调用搜索工具、整理信息、撰写报告。整个过程你只需要一行 <code>invoke()</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: How it works ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工作原理</h2>
+                <h4>Deep Agent 自动执行五个阶段</h4>
+                <p>当你调用 <code>invoke()</code> 后，Deep Agent 会自动执行以下步骤：</p>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. 规划方案</h4>
+                        <p>用 write_todos 工具拆解任务</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. 执行研究</h4>
+                        <p>调用 internet_search 收集信息</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. 管理上下文</h4>
+                        <p>用文件系统工具存取大量数据</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>4. 生成子 Agent</h4>
+                        <p>委派复杂子任务给专门 Agent</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>5. 综合报告</h4>
+                        <p>整合研究发现为连贯响应</p>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>阶段</th><th>内置工具</th><th>做什么</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>规划</strong></td>
+                            <td><code>write_todos</code></td>
+                            <td>将研究任务分解为可执行的子任务列表</td>
+                        </tr>
+                        <tr>
+                            <td><strong>上下文管理</strong></td>
+                            <td><code>write_file</code> / <code>read_file</code></td>
+                            <td>用虚拟文件系统处理大量搜索结果，避免上下文溢出</td>
+                        </tr>
+                        <tr>
+                            <td><strong>委派</strong></td>
+                            <td>子 Agent 机制</td>
+                            <td>为复杂子任务创建专门的子 Agent 并行处理</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/02-quickstart-2.png" alt="图：Deep Agent 五阶段执行流程" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Streaming ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>流式输出</h2>
+                <h4>实时获取 Agent 执行的每一步更新</h4>
+                <p><code>invoke()</code> 会等待整个任务完成后才返回。如果你需要<strong>实时监控</strong> Agent 的执行过程，可以使用流式输出。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>invoke() — 批量模式</h4>
+                        <ul>
+                            <li>等待全部完成后一次性返回</li>
+                            <li>适合后台任务、批处理</li>
+                            <li>用户看不到中间过程</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>stream() — 流式模式</h4>
+                        <ul>
+                            <li>实时推送每一步的更新</li>
+                            <li>适合前端展示、进度追踪</li>
+                            <li>可观察工具调用和子 Agent 工作</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 流式获取 Agent 执行过程 —— 每完成一步就推送一个事件
+const stream = await agent.stream({
+  messages: [{ role: "user", content: "What is langgraph?" }],
+});
+
+for await (const event of stream) {
+  // 每个 event 包含一步更新的信息
+  // 事件类型包括：工具调用（tool_calls）、工具结果（tool_results）、LLM 响应等
+  console.log(event);
+}</code></pre>
+                <div class="key-point">
+                    <strong>流式输出的价值：</strong>Deep Agent 基于 LangGraph 的流式功能，能让你渐进式观察输出，审查和调试 Agent 及子 Agent 的工作——包括工具调用、工具结果和 LLM 响应。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/02-quickstart-3.png" alt="图：invoke() 批量模式与 stream() 流式模式对比" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Debugging with LangSmith ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>调试与追踪</h2>
+                <h4>用 LangSmith 可视化查看 Agent 的完整执行过程</h4>
+                <p>当 Agent 行为不符合预期时，LangSmith 能帮你追踪<strong>每一个规划步骤、工具调用和子 Agent 委派</strong>。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>LangSmith 能追踪什么</h4>
+                        <ul>
+                            <li>Agent 的任务规划和分解过程</li>
+                            <li>每次工具调用的输入和输出</li>
+                            <li>子 Agent 的创建和委派情况</li>
+                            <li>LLM 的每次请求和响应</li>
+                            <li>Token 消耗和执行耗时</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>如何设置</h4>
+                        <ul>
+                            <li>注册 <a href="https://smith.langchain.com/">LangSmith</a> 账号</li>
+                            <li>设置环境变量：<code>LANGSMITH_API_KEY</code></li>
+                            <li>设置 <code>LANGSMITH_TRACING=true</code></li>
+                            <li>运行 Agent，自动记录追踪</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>LangSmith 是可选的。开发阶段强烈推荐使用它来调试，但生产环境中不是必须的。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Complete example ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>完整代码汇总</h2>
+                <h4>从零到运行的所有代码，一个文件搞定</h4>
+                <pre><code class="language-javascript">import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { z } from "zod";
+import { createDeepAgent } from "deepagents";
+
+// 1. 创建搜索工具 —— 封装 Tavily API 为 LangChain 工具格式
+const internetSearch = tool(
+  async ({ query, maxResults = 5, topic = "general" }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults,
+      tavilyApiKey: process.env.TAVILY_API_KEY,  // 从环境变量读取密钥
+      topic,
+    });
+    return await tavilySearch._call({ query });    // 执行搜索并返回结果
+  },
+  {
+    name: "internet_search",
+    description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+    }),
+  },
+);
+
+// 2. 创建 Deep Agent —— 传入模型、工具和系统提示词
+const agent = createDeepAgent({
+  model: "google-genai:gemini-3.1-pro-preview",
+  tools: [internetSearch],
+  systemPrompt: "You are an expert researcher. "
+    + "Conduct thorough research and write reports.",
+});
+
+// 3. 运行 —— invoke() 等待完整结果后返回
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "What is langgraph?" }],
+});
+// result.messages 数组包含完整对话历史，最后一条是 Agent 最终回复
+console.log(result.messages[result.messages.length - 1].content);</code></pre>
+                <div class="warning">
+                    <strong>运行前确保：</strong>已设置 <code>GOOGLE_API_KEY</code>（或你选择的提供商 Key）和 <code>TAVILY_API_KEY</code> 环境变量。使用 ESM 模式（<code>"type": "module"</code> in <code>package.json</code>）或 <code>.mjs</code> 后缀。
+                </div>
+                <details class="provider-details">
+                    <summary>使用 DeepSeek V4 的完整代码</summary>
+                    <pre><code class="language-javascript">import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { z } from "zod";
+import { createDeepAgent } from "deepagents";
+
+// 1. 创建搜索工具 —— 封装 Tavily API 为 LangChain 工具格式
+const internetSearch = tool(
+  async ({ query, maxResults = 5, topic = "general" }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults,
+      tavilyApiKey: process.env.TAVILY_API_KEY,  // 从环境变量读取密钥
+      topic,
+    });
+    return await tavilySearch._call({ query });    // 执行搜索并返回结果
+  },
+  {
+    name: "internet_search",
+    description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+    }),
+  },
+);
+
+// 2. 创建 Deep Agent —— 使用 DeepSeek V4-Pro 模型
+const agent = createDeepAgent({
+  model: "deepseek:deepseek-v4-pro",    // V4-Pro，1.6T 参数，适合复杂 Agent 任务
+  // model: "deepseek:deepseek-v4-flash",  // V4-Flash，284B 参数，更快更便宜
+  tools: [internetSearch],
+  systemPrompt: "You are an expert researcher. "
+    + "Conduct thorough research and write reports.",
+});
+
+// 3. 运行 —— invoke() 等待完整结果后返回
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "What is langgraph?" }],
+});
+console.log(result.messages[result.messages.length - 1].content);</code></pre>
+                    <p class="note">需要额外安装 <code>@langchain/deepseek</code> 包（<code>npm install @langchain/deepseek</code>），并设置 <code>DEEPSEEK_API_KEY</code> 和 <code>TAVILY_API_KEY</code> 环境变量。V4 模型支持 1M 上下文、Function Calling 和三种思考模式。</p>
+                </details>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Next steps ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>下一步学什么</h2>
+                <h4>你已经构建了第一个 Deep Agent，接下来可以深入这些方向</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>自定义你的 Agent</h4>
+                        <p>了解<strong>自定义选项</strong>，包括自定义系统提示词、工具和子 Agent。让 Agent 更贴合你的业务需求。</p>
+                        <p><span class="tag tag-primary">必读</span></p>
+                    </div>
+                    <div class="card">
+                        <h4>添加长期记忆</h4>
+                        <p>启用<strong>持久化记忆</strong>，让 Agent 跨对话记住用户偏好和历史信息。</p>
+                        <p><span class="tag tag-info">进阶</span></p>
+                    </div>
+                    <div class="card">
+                        <h4>部署到生产环境</h4>
+                        <p>使用 <strong>Managed Deep Agents</strong> 在 LangSmith 中创建、运行和管理 Deep Agent 的生产部署。</p>
+                        <p><span class="tag tag-success">生产</span></p>
+                    </div>
+                </div>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./03-customization.html">下一章：自定义配置</a></li>
+                            <li><a href="./06-harness.html">Harness 能力详解</a></li>
+                            <li><a href="./10-subagents.html">子 Agent 机制</a></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>更多资源</h4>
+                        <ul>
+                            <li><a href="https://github.com/langchain-ai/deepagents/tree/main/examples">官方示例集</a> — 各种 Agent 模式和应用</li>
+                            <li><a href="https://smith.langchain.com/">LangSmith</a> — 调试和部署平台</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">GitHub 仓库</a> — 源码和问题反馈</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

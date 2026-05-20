@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>事件流（Event Streaming）</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 19 章</div>
+            <h1>事件流（Event Streaming）</h1>
+            <p>从 Deep Agents 流式传输子代理、消息、工具调用和最终输出</p>
+            <strong>让用户实时看到 Agent 的思考与行动过程</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你有没有试过让 Agent 执行复杂任务，却只能干等最终结果？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>没有事件流的困境</h4>
+                        <ul>
+                            <li>Agent 执行 30 秒，用户只看到一个<strong>空白加载画面</strong></li>
+                            <li>子代理启动了多少个、完成了几个？<strong>完全不知道</strong></li>
+                            <li>工具调用正在执行什么？<strong>无法展示进度</strong></li>
+                            <li>协调器和子代理的消息混在一起，<strong>无法按来源分离显示</strong></li>
+                            <li>用户体验差——看起来像<strong>卡死了</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>事件流的解法</h4>
+                        <ul>
+                            <li><code>stream.subagents</code> 实时获取每个子代理的状态</li>
+                            <li><code>stream.messages</code> 按来源逐字流式展示消息</li>
+                            <li><code>stream.toolCalls</code> 实时展示工具调用进度</li>
+                            <li>子代理消息与协调器消息<strong>独立流句柄</strong>，按来源分离</li>
+                            <li>并发消费所有流，<strong>UI 即时更新</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>长时间运行的 Agent 如果不能实时反馈进度，用户体验会极差。事件流让你从"黑盒等待"变成"透明协作"——用户能看到 Agent 在做什么、做了多少、还剩什么。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Streaming subagents ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>流式传输子代理</h2>
+                <h4>用 stream.subagents 获取每个委托子代理的独立流句柄</h4>
+                <p>Deep Agents 在 LangGraph 流式传输基础上增加了<strong>子代理投影（projection）</strong>。当你希望每个委托的 <code>task</code> 调用都有独立的流句柄时，使用 <code>stream.subagents</code>。</p>
+                <p>这个投影是<strong>轻量级的</strong>：它首先发现子代理任务，只有当你访问子代理句柄上的消息、工具调用和值流时，才会打开这些流。</p>
+                <pre><code class="language-javascript">const stream = await agent.streamEvents(
+  { messages: [{ role: "user", content: "Write me a haiku about the sea" }] },
+  { version: "v3" }  // 使用 v3 版本的事件协议
+);
+
+// subagents 是异步迭代器，每当有新子代理被委托时 yield 一个句柄
+for await (const subagent of stream.subagents) {
+  console.log(subagent.name);            // 子代理名称，用于 UI 标识
+  console.log(await subagent.taskInput); // 协调器传给 task 工具的 prompt
+
+  // 惰性求值：只有迭代 messages 时才会打开消息流
+  for await (const message of subagent.messages) {
+    console.log(await message.text);     // 子代理生成的文本，逐 token 到达
+  }
+}</code></pre>
+                <div class="key-point">
+                    <strong>关键概念：</strong><code>stream.subagents</code> 是一个异步迭代器——每当有新的子代理被委托时，它就会 yield 一个句柄。你可以选择性订阅该句柄上的消息、工具调用或最终输出。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/19-event-streaming-1.png" alt="图：stream.subagents 投影与惰性求值" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Subagent stream fields ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子代理流字段</h2>
+                <h4>每个子代理流暴露与父运行相同类型的投影</h4>
+                <p>每个子代理流句柄提供以下字段，让你按需访问不同层级的数据：</p>
+                <table>
+                    <thead>
+                        <tr><th>字段</th><th>类型</th><th>描述</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>name</code></td>
+                            <td>string</td>
+                            <td>子代理名称，用于标识来源</td>
+                        </tr>
+                        <tr>
+                            <td><code>messages</code></td>
+                            <td>AsyncIterable</td>
+                            <td>子代理发出的消息流</td>
+                        </tr>
+                        <tr>
+                            <td><code>subagents</code></td>
+                            <td>AsyncIterable</td>
+                            <td>嵌套的子代理调用（递归）</td>
+                        </tr>
+                        <tr>
+                            <td><code>output</code></td>
+                            <td>Promise</td>
+                            <td>子代理的最终状态或完成信号</td>
+                        </tr>
+                        <tr>
+                            <td><code>taskInput</code></td>
+                            <td>Promise</td>
+                            <td>传递给 task 工具的 prompt</td>
+                        </tr>
+                        <tr>
+                            <td><code>toolCalls</code></td>
+                            <td>AsyncIterable</td>
+                            <td>子代理范围内的工具调用</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>命名约定</h4>
+                        <p>TypeScript 使用<strong>驼峰命名</strong>（camelCase）：<code>toolCalls</code>、<code>taskInput</code>。与 Python 版本的 snake_case 命名不同，注意区分。</p>
+                    </div>
+                    <div class="card">
+                        <h4>设计理念</h4>
+                        <p>字段都是<strong>惰性求值</strong>的——只有当你实际迭代它们时，才会打开对应的流通道。不访问 <code>messages</code> 就不会产生消息流的开销。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Tracking subagent lifecycle ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>跟踪生命周期</h2>
+                <h4>用 output Promise 跟踪每个子代理的启动与完成</h4>
+                <p>当你只需要显示哪些子代理已启动和已完成时，使用 <code>stream.subagents</code> 的 <code>output</code> 字段。无需订阅消息或值流，就能实时统计进度。</p>
+                <pre><code class="language-javascript">const stream = await agent.streamEvents(input, { version: "v3" });
+
+let running = 0;     // 正在运行的子代理计数
+let completed = 0;  // 已成功完成的子代理计数
+let failed = 0;     // 失败的子代理计数
+const watchers: Promise&lt;void&gt;[] = [];  // 收集所有 output Promise
+
+for await (const subagent of stream.subagents) {
+  running += 1;
+  console.log(`${subagent.name}: started`);
+
+  // output 是 Promise：resolve=成功，reject=失败
+  watchers.push(
+    subagent.output.then(
+      () => {
+        running -= 1;
+        completed += 1;
+        console.log(`${subagent.name}: completed`);
+      },
+      () => {
+        running -= 1;
+        failed += 1;
+        console.log(`${subagent.name}: failed`);
+      }
+    )
+  );
+}
+
+// 等待所有子代理完成后再打印最终统计
+await Promise.all(watchers);
+console.log({ running, completed, failed });</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong><code>output</code> 的 Promise 有两个回调——resolve 表示成功完成，reject 表示失败。务必同时处理这两种情况，否则失败的子代理会被静默忽略。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Streaming messages ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>流式传输消息</h2>
+                <h4>用 stream.messages 和 subagent.messages 分别获取不同层级的消息</h4>
+                <p>Deep Agents 可以从<strong>协调器代理</strong>和<strong>委托的子代理</strong>分别发出消息。两者的流句柄不同：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>协调器消息</h4>
+                        <p>使用 <code>stream.messages</code> 获取顶层协调器发出的消息。</p>
+                        <p><span class="tag tag-primary">顶层流</span></p>
+                    </div>
+                    <div class="card">
+                        <h4>子代理消息</h4>
+                        <p>使用 <code>subagent.messages</code> 获取每个委托子代理的消息。</p>
+                        <p><span class="tag tag-info">子代理流</span></p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">const stream = await agent.streamEvents(input, { version: "v3" });
+
+// 协调器消息：只包含顶层协调器发出的内容
+for await (const message of stream.messages) {
+  console.log("[coordinator]", await message.text);
+}
+
+// 子代理消息：每个子代理有独立的消息流
+for await (const subagent of stream.subagents) {
+  for await (const message of subagent.messages) {
+    console.log(`[${subagent.name}]`, await message.text);
+  }
+}</code></pre>
+                <div class="key-point">
+                    <strong>分离显示：</strong>在 UI 中，你应该把协调器消息和子代理消息分开渲染——协调器消息通常展示在对话主区域，子代理消息展示在对应的任务卡片内。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Streaming tool calls ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>流式传输工具</h2>
+                <h4>在代理树的每一层级暴露工具调用的实时状态</h4>
+                <p>Deep Agents 在代理树的<strong>每一层级</strong>暴露工具调用。你可以分别获取协调器和每个子代理的工具调用，并实时查看执行状态。</p>
+                <pre><code class="language-javascript">const stream = await agent.streamEvents(input, { version: "v3" });
+
+// 协调器层级的工具调用
+for await (const call of stream.toolCalls) {
+  console.log("[coordinator tool]", call.name, call.input);
+  console.log(await call.status);  // "running" | "finished" | "error"
+}
+
+// 每个子代理的工具调用，独立于协调器
+for await (const subagent of stream.subagents) {
+  for await (const call of subagent.toolCalls) {
+    console.log(`[${subagent.name} tool]`, call.name, call.input);
+
+    // 必须先检查 status，再按需访问 output 或 error
+    const status = await call.status;
+    if (status === "finished") {
+      console.log(await call.output);   // 工具执行成功，获取返回值
+    } else if (status === "error") {
+      console.error(await call.error);  // 工具执行出错，获取错误信息
+    }
+  }
+}</code></pre>
+                <div class="warning">
+                    <strong>常见陷阱：</strong>别忘了 <code>await call.status</code>。如果你直接读 <code>call.output</code> 而不检查状态，当工具调用出错时会抛出未捕获的异常。先检查状态，再按需获取 output 或 error。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Streaming nested work ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>嵌套子代理流</h2>
+                <h4>递归进入子代理流，观察多层嵌套的工具调用和子代理</h4>
+                <p>你可以<strong>递归进入</strong>子代理流来观察嵌套的子代理、消息和工具调用。这对于展示深层任务委派链特别有用。</p>
+                <pre><code class="language-javascript">const stream = await agent.streamEvents(input, { version: "v3" });
+
+for await (const subagent of stream.subagents) {
+  console.log(`subagent ${subagent.name}: started`);
+
+  // 第一层子代理的工具调用
+  for await (const toolCall of subagent.toolCalls) {
+    console.log(`${toolCall.name}(${JSON.stringify(toolCall.input)})`);
+
+    const status = await toolCall.status;
+    if (status === "finished") {
+      console.log(await toolCall.output);
+    } else if (status === "error") {
+      console.error(await toolCall.error);
+    }
+  }
+
+  // 递归进入嵌套子代理，可继续向下遍历任意深度
+  for await (const nested of subagent.subagents) {
+    console.log(`nested subagent ${nested.name}: started`);
+  }
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>递归模式</h4>
+                        <p>你可以在 <code>subagent.subagents</code> 上继续迭代，访问任意深度的嵌套。每一层都有完整的 <code>messages</code>、<code>toolCalls</code>、<code>output</code> 等字段。</p>
+                    </div>
+                    <div class="card">
+                        <h4>何时使用</h4>
+                        <p>大多数 UI 只需要前两层（协调器 + 子代理）。只有在展示深度任务分解——例如子代理再委托子代理——时才需要递归。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Concurrent consumption ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>并发消费</h2>
+                <h4>用 Promise.all 并发消费协调器和子代理的流，实现实时 UI 更新</h4>
+                <p>协调器和子代理的输出通常会<strong>交错出现</strong>。当你需要实时的 UI 更新时，必须并发地消费各投影。</p>
+                <h4>方式一：用 Promise.all 并发迭代</h4>
+                <pre><code class="language-javascript">const stream = await agent.streamEvents(input, { version: "v3" });
+
+// 并发消费：协调器和子代理的事件交错到达，必须同时迭代
+await Promise.all([
+  // 协调器消息流
+  (async () => {
+    for await (const message of stream.messages) {
+      console.log("[coordinator]", await message.text);
+    }
+  })(),
+  // 子代理消息流：每个子代理启动一个独立的异步消费协程
+  (async () => {
+    for await (const subagent of stream.subagents) {
+      // void 表示不等待内部协程，允许多个子代理并发消费
+      void (async () => {
+        for await (const message of subagent.messages) {
+          console.log(`[${subagent.name}]`, await message.text);
+        }
+      })();
+    }
+  })(),
+]);</code></pre>
+                <div class="key-point">
+                    <strong>为什么必须并发：</strong>如果串行地先消费完所有消息再消费子代理，子代理的事件会被延迟处理。并发确保所有事件<strong>按到达顺序</strong>即时处理。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/19-event-streaming-2.png" alt="图：并发消费协调器与子代理流" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Raw protocol events ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>原始协议事件</h2>
+                <h4>用 namespace 精确区分协调器和子代理的内容</h4>
+                <p>当你需要在协调器和所有子代理之间获取<strong>精确的到达顺序</strong>时，请迭代原始协议事件，并使用 <code>namespace</code> 来标识来源。</p>
+                <pre><code class="language-javascript">const stream = await agent.streamEvents(input, { version: "v3" });
+
+// 迭代原始协议事件，获取严格的时间顺序
+for await (const event of stream) {
+  // 只处理消息类型的事件
+  if (event.method !== "messages") continue;
+
+  const data = event.params.data;
+  // 只处理文本增量事件（每个 token 触发一次）
+  if (data.event !== "content-block-delta") continue;
+
+  const block = data.delta ?? {};
+  if (block.type === "text-delta") {
+    // namespace 中含 "tools:" 前缀说明事件来自子代理
+    const isSubagent = event.params.namespace.some(
+      (seg) => seg.startsWith("tools:")
+    );
+    const source = isSubagent ? "subagent" : "coordinator";
+    console.log(`[${source}] ${block.text}`);
+  }
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>namespace 规则</h4>
+                        <p>如果 <code>namespace</code> 中有以 <code>tools:</code> 开头的段，说明事件来自子代理。否则来自协调器。</p>
+                    </div>
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <p>这种方式适合需要<strong>严格时序</strong>的场景——比如聊天界面中消息必须按真实到达顺序渲染，不能因为分了多个迭代器而打乱顺序。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Subagents vs Subgraphs ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子代理与子图</h2>
+                <h4>stream.subagents 与 stream.subgraphs 的区别</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>stream.subgraphs</h4>
+                        <ul>
+                            <li>显示图的<strong>执行结构</strong></li>
+                            <li>暴露底层图节点细节</li>
+                            <li>适合调试和开发阶段</li>
+                            <li>面向<strong>开发者</strong>的抽象</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>stream.subagents</h4>
+                        <ul>
+                            <li>显示<strong>产品级别</strong>的任务委托</li>
+                            <li>隐藏内部图节点，直接暴露子代理概念</li>
+                            <li>适合面向用户的 UI 展示</li>
+                            <li>面向<strong>最终用户</strong>的抽象</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>选择原则：</strong>对于面向用户的 UI，请使用 <code>stream.subagents</code>。它隐藏了内部图节点的实现细节，直接暴露用户能理解的"任务"和"子代理"概念。只有在调试底层图执行时才需要 <code>stream.subgraphs</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了 Deep Agents 事件流的完整用法</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li><code>stream.subagents</code> 是核心投影，提供每个子代理的独立流句柄</li>
+                            <li>子代理流暴露 <code>name</code>、<code>messages</code>、<code>toolCalls</code>、<code>output</code>、<code>subagents</code> 等字段</li>
+                            <li>用 <code>output</code> Promise 跟踪子代理的生命周期（启动/完成/失败）</li>
+                            <li><code>stream.messages</code> 获取协调器消息，<code>subagent.messages</code> 获取子代理消息</li>
+                            <li>工具调用有 <code>status</code> 状态，需先检查再获取 output 或 error</li>
+                            <li>并发消费用 <code>Promise.all</code>，原始时序用 <code>namespace</code> 判断来源</li>
+                            <li>面向用户用 <code>subagents</code>，调试用 <code>subgraphs</code></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>流式传输</strong>：通用代理的流式传输详细机制</li>
+                            <li><strong>前端子代理流</strong>：将协调器消息与子代理卡片分离的 UI 模式</li>
+                            <li><strong>前端 TODO 列表</strong>：实时展示任务进度的 UI 组件</li>
+                            <li><strong>前端沙箱</strong>：可视化展示代码执行过程</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>事件流是 Deep Agents 与用户之间的桥梁。通过 <code>stream.subagents</code> 提供的分层投影，你可以按需获取任意层级的数据——从简单的"哪个子代理完成了"到精确的"每个 token 来自哪里"。选择合适的消费方式，让你的 UI 既实时又清晰。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./20-streaming.html">下一章：流式传输</a> — 通用代理的流式传输详细机制</li>
+                            <li><a href="./21-frontend-overview.html">前端概述</a> — 构建 Deep Agents 前端的全局视角</li>
+                            <li><a href="./22-frontend-subagent-streaming.html">前端子代理流</a> — 将事件流应用到实际 UI</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关文档</h4>
+                        <ul>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 官方文档</a> — 底层图流式传输模型</li>
+                            <li><a href="https://docs.langchain.com/oss/javascript/langchain/event-streaming">LangChain 事件流</a> — 通用代理的消息和工具调用流式传输</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>背景知识</h4>
+                        <ul>
+                            <li><a href="./10-subagents.html">子代理</a> — 理解事件流的前提：子代理如何工作</li>
+                            <li><a href="./11-async-subagents.html">异步子代理</a> — 并发子代理的执行模型</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

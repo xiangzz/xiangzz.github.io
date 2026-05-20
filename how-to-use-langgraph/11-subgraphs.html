@@ -6,6 +6,7 @@
     <title>11 子图</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔧</text></svg>">
     <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
     <style>
         .card-grid {
             display: flex;
@@ -151,27 +152,27 @@
             <div class="slide-content">
                 <h2>节点内调用</h2>
                 <h4>父子图状态不同时，在节点函数内调用子图并转换状态</h4>
-                <pre><code><span style="color: var(--text-muted);">// 子图 — 有自己的状态 { bar }</span>
-<span style="color: var(--primary-color);">const</span> SubgraphState = <span style="color: var(--primary-color);">new</span> StateSchema({ bar: z.string() });
+                <pre><code class="language-javascript">// 子图 — 有自己的状态 { bar }
+const SubgraphState = new StateSchema({ bar: z.string() });
 
-<span style="color: var(--primary-color);">const</span> subgraph = <span style="color: var(--primary-color);">new</span> StateGraph(SubgraphState)
-  .addNode(<span style="color: var(--success-color);">"subgraphNode1"</span>, (state) => {
-    <span style="color: var(--primary-color);">return</span> { bar: <span style="color: var(--success-color);">"hi! "</span> + state.bar };
+const subgraph = new StateGraph(SubgraphState)
+  .addNode("subgraphNode1", (state) => {
+    return { bar: "hi! " + state.bar };
   })
-  .addEdge(START, <span style="color: var(--success-color);">"subgraphNode1"</span>)
+  .addEdge(START, "subgraphNode1")
   .compile();
 
-<span style="color: var(--text-muted);">// 父图 — 状态是 { foo }，和子图的 { bar } 不同</span>
-<span style="color: var(--primary-color);">const</span> State = <span style="color: var(--primary-color);">new</span> StateSchema({ foo: z.string() });
+// 父图 — 状态是 { foo }，和子图的 { bar } 不同
+const State = new StateSchema({ foo: z.string() });
 
-<span style="color: var(--primary-color);">const</span> graph = <span style="color: var(--primary-color);">new</span> StateGraph(State)
-  .addNode(<span style="color: var(--success-color);">"node1"</span>, <span style="color: var(--primary-color);">async</span> (state) => {
-    <span style="color: var(--text-muted);">// 手动映射：foo → bar</span>
-    <span style="color: var(--primary-color);">const</span> output = <span style="color: var(--primary-color);">await</span> subgraph.invoke({ bar: state.foo });
-    <span style="color: var(--text-muted);">// 手动映射回：bar → foo</span>
-    <span style="color: var(--primary-color);">return</span> { foo: output.bar };
+const graph = new StateGraph(State)
+  .addNode("node1", async (state) => {
+    // 手动映射：foo → bar
+    const output = await subgraph.invoke({ bar: state.foo });
+    // 手动映射回：bar → foo
+    return { foo: output.bar };
   })
-  .addEdge(START, <span style="color: var(--success-color);">"node1"</span>)
+  .addEdge(START, "node1")
   .compile();</code></pre>
                 <div class="info-block">
                     <strong>模式：</strong>在节点函数内手动完成 foo → bar 的输入映射，调用子图，再把 bar → foo 映射回来。两个图完全独立，各自维护自己的状态结构。
@@ -184,20 +185,20 @@
             <div class="slide-content">
                 <h2>直接作为节点</h2>
                 <h4>父子图共享状态键时，直接传入编译后的子图</h4>
-                <pre><code><span style="color: var(--text-muted);">// 父子图共享 { foo } 状态</span>
-<span style="color: var(--primary-color);">const</span> State = <span style="color: var(--primary-color);">new</span> StateSchema({ foo: z.string() });
+                <pre><code class="language-javascript">// 父子图共享 { foo } 状态
+const State = new StateSchema({ foo: z.string() });
 
-<span style="color: var(--primary-color);">const</span> subgraph = <span style="color: var(--primary-color);">new</span> StateGraph(State)
-  .addNode(<span style="color: var(--success-color);">"subgraphNode1"</span>, (state) => {
-    <span style="color: var(--primary-color);">return</span> { foo: <span style="color: var(--success-color);">"hi! "</span> + state.foo };
+const subgraph = new StateGraph(State)
+  .addNode("subgraphNode1", (state) => {
+    return { foo: "hi! " + state.foo };
   })
-  .addEdge(START, <span style="color: var(--success-color);">"subgraphNode1"</span>)
+  .addEdge(START, "subgraphNode1")
   .compile();
 
-<span style="color: var(--text-muted);">// 直接传入子图作为节点 — 无需包装函数</span>
-<span style="color: var(--primary-color);">const</span> graph = <span style="color: var(--primary-color);">new</span> StateGraph(State)
-  .addNode(<span style="color: var(--success-color);">"node1"</span>, subgraph)  <span style="color: var(--text-muted);">// 直接传！</span>
-  .addEdge(START, <span style="color: var(--success-color);">"node1"</span>)
+// 直接传入子图作为节点 — 无需包装函数
+const graph = new StateGraph(State)
+  .addNode("node1", subgraph)  // 直接传！
+  .addEdge(START, "node1")
   .compile();</code></pre>
                 <div class="key-point">
                     <strong>简洁很多：</strong>不需要包装函数，不需要状态映射。子图直接读取和更新父图的状态。只要两边的 StateSchema 有相同的键就行。
@@ -240,13 +241,13 @@
             <div class="slide-content">
                 <h2>查看子图状态</h2>
                 <h4>用 subgraphs: true 选项查看子图内部状态</h4>
-                <pre><code><span style="color: var(--text-muted);">// 查看当前调用的子图状态</span>
-<span style="color: var(--primary-color);">const</span> subgraphState = (<span style="color: var(--primary-color);">await</span> graph.getState(config, { subgraphs: <span style="color: var(--primary-color);">true</span> }))
-  .tasks[<span style="color: var(--primary-color);">0</span>].state;</code></pre>
-                <pre><code><span style="color: var(--text-muted);">// 流式输出子图结果</span>
-<span style="color: var(--primary-color);">for await</span> (<span style="color: var(--primary-color);">const</span> chunk <span style="color: var(--primary-color);">of await</span> graph.stream(
-  { foo: <span style="color: var(--success-color);">"foo"</span> },
-  { subgraphs: <span style="color: var(--primary-color);">true</span>, streamMode: <span style="color: var(--success-color);">"updates"</span> }
+                <pre><code class="language-javascript">// 查看当前调用的子图状态
+const subgraphState = (await graph.getState(config, { subgraphs: true }))
+  .tasks[0].state;</code></pre>
+                <pre><code class="language-javascript">// 流式输出子图结果
+for await (const chunk of await graph.stream(
+  { foo: "foo" },
+  { subgraphs: true, streamMode: "updates" }
 )) {
   console.log(chunk);
 }</code></pre>
@@ -301,60 +302,60 @@
         <section class="slide">
             <div class="slide-content">
                 <h2>参考答案</h2>
-                <pre><code><span style="color: var(--text-muted);">// 子图 A：研究</span>
-<span style="color: var(--primary-color);">const</span> ResearchState = <span style="color: var(--primary-color);">new</span> StateSchema({
+                <pre><code class="language-javascript">// 子图 A：研究
+const ResearchState = new StateSchema({
   topic: z.string(),
   findings: z.array(z.string()).optional(),
 });
 
-<span style="color: var(--primary-color);">const</span> researchGraph = <span style="color: var(--primary-color);">new</span> StateGraph(ResearchState)
-  .addNode(<span style="color: var(--success-color);">"search"</span>, <span style="color: var(--primary-color);">async</span> (state) => {
-    <span style="color: var(--text-muted);">// 模拟搜索</span>
-    <span style="color: var(--primary-color);">return</span> { findings: [<span style="color: var(--success-color);">`Found info about ${state.topic}`</span>] };
+const researchGraph = new StateGraph(ResearchState)
+  .addNode("search", async (state) => {
+    // 模拟搜索
+    return { findings: [`Found info about ${state.topic}`] };
   })
-  .addNode(<span style="color: var(--success-color);">"organize"</span>, (state) => {
-    <span style="color: var(--primary-color);">return</span> { findings: state.findings?.map(f => <span style="color: var(--success-color);">`Organized: ${f}`</span>) };
+  .addNode("organize", (state) => {
+    return { findings: state.findings?.map(f => `Organized: ${f}`) };
   })
-  .addEdge(START, <span style="color: var(--success-color);">"search"</span>)
-  .addEdge(<span style="color: var(--success-color);">"search"</span>, <span style="color: var(--success-color);">"organize"</span>)
+  .addEdge(START, "search")
+  .addEdge("search", "organize")
   .compile();
 
-<span style="color: var(--text-muted);">// 子图 B：写作</span>
-<span style="color: var(--primary-color);">const</span> WritingState = <span style="color: var(--primary-color);">new</span> StateSchema({
+// 子图 B：写作
+const WritingState = new StateSchema({
   findings: z.array(z.string()).optional(),
   article: z.string().optional(),
 });
 
-<span style="color: var(--primary-color);">const</span> writingGraph = <span style="color: var(--primary-color);">new</span> StateGraph(WritingState)
-  .addNode(<span style="color: var(--success-color);">"draft"</span>, (state) => {
-    <span style="color: var(--primary-color);">return</span> { article: <span style="color: var(--success-color);">`Draft based on ${state.findings?.join(", ")}`</span> };
+const writingGraph = new StateGraph(WritingState)
+  .addNode("draft", (state) => {
+    return { article: `Draft based on ${state.findings?.join(", ")}` };
   })
-  .addNode(<span style="color: var(--success-color);">"polish"</span>, (state) => {
-    <span style="color: var(--primary-color);">return</span> { article: <span style="color: var(--success-color);">`Polished: ${state.article}`</span> };
+  .addNode("polish", (state) => {
+    return { article: `Polished: ${state.article}` };
   })
-  .addEdge(START, <span style="color: var(--success-color);">"draft"</span>)
-  .addEdge(<span style="color: var(--success-color);">"draft"</span>, <span style="color: var(--success-color);">"polish"</span>)
+  .addEdge(START, "draft")
+  .addEdge("draft", "polish")
   .compile();
 
-<span style="color: var(--text-muted);">// 父图 — 用节点内调用连接</span>
-<span style="color: var(--primary-color);">const</span> ParentState = <span style="color: var(--primary-color);">new</span> StateSchema({
+// 父图 — 用节点内调用连接
+const ParentState = new StateSchema({
   topic: z.string(),
   findings: z.array(z.string()).optional(),
   article: z.string().optional(),
 });
 
-<span style="color: var(--primary-color);">const</span> parentGraph = <span style="color: var(--primary-color);">new</span> StateGraph(ParentState)
-  .addNode(<span style="color: var(--success-color);">"research"</span>, <span style="color: var(--primary-color);">async</span> (state) => {
-    <span style="color: var(--primary-color);">const</span> out = <span style="color: var(--primary-color);">await</span> researchGraph.invoke({ topic: state.topic });
-    <span style="color: var(--primary-color);">return</span> { findings: out.findings };
+const parentGraph = new StateGraph(ParentState)
+  .addNode("research", async (state) => {
+    const out = await researchGraph.invoke({ topic: state.topic });
+    return { findings: out.findings };
   })
-  .addNode(<span style="color: var(--success-color);">"write"</span>, <span style="color: var(--primary-color);">async</span> (state) => {
-    <span style="color: var(--primary-color);">const</span> out = <span style="color: var(--primary-color);">await</span> writingGraph.invoke({ findings: state.findings });
-    <span style="color: var(--primary-color);">return</span> { article: out.article };
+  .addNode("write", async (state) => {
+    const out = await writingGraph.invoke({ findings: state.findings });
+    return { article: out.article };
   })
-  .addEdge(START, <span style="color: var(--success-color);">"research"</span>)
-  .addEdge(<span style="color: var(--success-color);">"research"</span>, <span style="color: var(--success-color);">"write"</span>)
-  .addEdge(<span style="color: var(--success-color);">"write"</span>, END)
+  .addEdge(START, "research")
+  .addEdge("research", "write")
+  .addEdge("write", END)
   .compile();</code></pre>
                 <div class="key-point">
                     <strong>模式：</strong>每个子图有独立的状态（ResearchState vs WritingState）。父图在节点函数内做状态映射——把 topic 传给研究子图，把 findings 传给写作子图。
@@ -433,6 +434,8 @@
         <span id="slide-counter"></span>
         <button id="next-btn">下一页 →</button>
     </div>
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
     <script src="./js/slide.js"></script>
     <script src="./js/nav.js"></script>
 </body>

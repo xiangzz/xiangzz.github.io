@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>待办事项列表</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📋</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 23 章</div>
+            <h1>待办事项列表</h1>
+            <p>通过与 Agent 状态同步的实时待办事项列表来跟踪 Agent 的进度</p>
+            <strong>从"聊天气泡"到"进度仪表盘"——Agent 状态驱动的 UI 新范式</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>进度不可见</h2>
+                <h4>并非所有 Agent 交互都是聊天——多步骤任务需要进度可视化</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>纯聊天界面的局限</h4>
+                        <ul>
+                            <li>Agent 在执行多步计划时，用户只能看到<strong>一堆消息气泡</strong></li>
+                            <li>不知道哪些步骤已完成、哪些正在进行、<strong>还剩多少没做</strong></li>
+                            <li>长时间任务中，用户焦虑地等待——<strong>没有进度反馈</strong></li>
+                            <li>聊天记录滚动增长，关键信息被淹没</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>待办列表的解法</h4>
+                        <ul>
+                            <li>直接从 Agent 状态读取 <code>todos</code> 数组，<strong>实时渲染进度</strong></li>
+                            <li>每个待办项状态清晰：<code>pending</code> → <code>in_progress</code> → <code>completed</code></li>
+                            <li>进度条 + 颜色编码，<strong>一目了然</strong></li>
+                            <li>基于同一个 <code>useStream</code> hook，无需额外轮询</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心理念：</strong>Agent 状态可以驱动任何 UI，不仅仅是消息气泡。待办列表证明了 <code>stream.values</code> 能让前端组件与 Agent 执行过程实时同步。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: How it works ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工作原理</h2>
+                <h4>LangGraph Agent 的自定义状态键 + useStream hook 的实时同步</h4>
+                <p>在 LangGraph Agent 中，状态不仅限于消息。你可以定义<strong>自定义状态键</strong>来保存任意数据。本例中就是一个 <code>todos</code> 数组。当 Agent 执行计划时，它将每个待办项的状态从 <code>"pending"</code> 更新为 <code>"in_progress"</code> 再到 <code>"completed"</code>。</p>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. 用户提交</h4>
+                        <p>发送请求给 Agent</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. 创建计划</h4>
+                        <p>Agent 填充 todos 数组</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. 逐步执行</h4>
+                        <p>pending → in_progress → completed</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>4. 实时同步</h4>
+                        <p>stream.values.todos 更新</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>5. UI 重渲染</h4>
+                        <p>组件响应式更新视图</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// Agent 端：在 LangGraph 状态注解中定义 todos 自定义状态键
+const AgentState = Annotation({
+  // messages 是 LangGraph 的标准状态键，使用内置的消息归并器
+  messages: Annotation({ reducer: messagesReducer }),
+  // 自定义状态键：todos 数组，保存 Agent 的任务计划
+  todos: Annotation({
+    // 归并器：如果有新值就替换，否则保留旧值
+    reducer: (prev, next) => next ?? prev,
+    // 默认值为空数组
+    default: () => [],
+  }),
+});
+
+// 前端：useStream hook 建立与 Agent 的流式连接
+const stream = useStream({
+  apiUrl: "http://localhost:2024",       // LangGraph 服务地址
+  assistantId: "deep_agent_todo_list",   // 在 langgraph.json 中注册的图名称
+});
+
+// 从流式状态中读取 todos 数组，响应式更新
+const todos = stream.values?.todos ?? [];</code></pre>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/23-frontend-todo-list-1.png" alt="图：Agent 状态通过 useStream 实时同步到前端" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Configure useStream ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置流式数据</h2>
+                <h4>将 useStream 指向你的 Agent，从 stream.values 中读取 todos</h4>
+                <p>不需要特殊配置。导入 Agent 类型作为类型参数，即可获得对状态值的<strong>类型安全访问</strong>。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>React 实现</h4>
+                        <pre><code class="language-javascript">import { useStream } from "@langchain/react";
+import type { myAgent } from "./agent";
+
+const AGENT_URL = "http://localhost:2024";
+
+export function TodoAgent() {
+  // 泛型参数 typeof myAgent 让 stream.values 拥有完整类型提示
+  const stream = useStream&lt;typeof myAgent&gt;({
+    apiUrl: AGENT_URL,                      // LangGraph 服务地址
+    assistantId: "deep_agent_todo_list",    // 注册的 Agent 图 ID
+  });
+
+  // 从 Agent 状态中读取 todos 数组
+  const todos = stream.values?.todos ?? [];
+
+  return (
+    &lt;div&gt;
+      {/* 待办列表：显示 Agent 进度 */}
+      &lt;TodoList todos={todos} /&gt;
+      {/* 消息列表：显示 Agent 的对话消息 */}
+      {stream.messages.map((msg) =&gt; (
+        &lt;Message key={msg.id} message={msg} /&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Vue 实现</h4>
+                        <pre><code class="language-javascript">&lt;script setup lang="ts"&gt;
+import { useStream } from "@langchain/vue";
+import { computed } from "vue";
+import type { myAgent } from "./agent";
+
+const AGENT_URL = "http://localhost:2024";
+
+// useStream 在 Vue 中返回 ref 包装的响应式对象
+const stream = useStream&lt;typeof myAgent&gt;({
+  apiUrl: AGENT_URL,
+  assistantId: "deep_agent_todo_list",
+});
+
+// 使用 computed 从响应式状态中派生 todos
+const todos = computed(
+  () =&gt; stream.values.value?.todos ?? []
+);
+&lt;/script&gt;
+
+&lt;template&gt;
+  &lt;div&gt;
+    &lt;TodoList :todos="todos" /&gt;
+    &lt;!-- stream.messages 需要用 .value 解包 ref --&gt;
+    &lt;Message
+      v-for="msg in stream.messages.value"
+      :key="msg.id"
+      :message="msg"
+    /&gt;
+  &lt;/div&gt;
+&lt;/template&gt;</code></pre>
+                    </div>
+                </div>
+                <div class="card-grid" style="margin-top: 1rem;">
+                    <div class="card">
+                        <h4>Svelte 实现</h4>
+                        <pre><code class="language-javascript">&lt;script lang="ts"&gt;
+  import { useStream } from "@langchain/svelte";
+  import type { myAgent } from "./agent";
+
+  const AGENT_URL = "http://localhost:2024";
+
+  // Svelte 中 useStream 解构返回 store 对象
+  const { messages, values, submit } =
+    useStream&lt;typeof myAgent&gt;({
+      apiUrl: AGENT_URL,
+      assistantId: "deep_agent_todo_list",
+    });
+
+  // $ 前缀自动订阅 Svelte store，实现响应式读取
+  $: todos = $values?.todos ?? [];
+&lt;/script&gt;
+
+&lt;div&gt;
+  &lt;TodoList {todos} /&gt;
+  {#each $messages as msg (msg.id)}
+    &lt;Message message={msg} /&gt;
+  {/each}
+&lt;/div&gt;</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Angular 实现</h4>
+                        <pre><code class="language-javascript">import { Component, computed }
+  from "@angular/core";
+import { useStream } from "@langchain/angular";
+import type { myAgent } from "./agent";
+
+const AGENT_URL = "http://localhost:2024";
+
+@Component({
+  selector: "app-todo-agent",
+  template: `
+    &lt;div&gt;
+      &lt;!-- todos() 作为 Signal 函数调用，自动追踪依赖 --&gt;
+      &lt;app-todo-list
+        [todos]="todos()" /&gt;
+      @for (msg of stream.messages();
+        track msg.id) {
+        &lt;app-message [message]="msg" /&gt;
+      }
+    &lt;/div&gt;
+  `,
+})
+export class TodoAgentComponent {
+  // Angular 中 useStream 返回 Signal 包装的响应式对象
+  stream = useStream&lt;typeof myAgent&gt;({
+    apiUrl: AGENT_URL,
+    assistantId: "deep_agent_todo_list",
+  });
+
+  // computed Signal 从流式状态中派生 todos
+  todos = computed(
+    () =&gt; this.stream.values()?.todos ?? []
+  );
+}</code></pre>
+                    </div>
+                </div>
+                <div class="info-block" style="margin-top: 1rem;">
+                    <strong>关键点：</strong>无论哪个框架，核心都是 <code>stream.values</code> 访问自定义状态。框架差异仅在响应式包装方式上——React 用 Hook、Vue 用 <code>computed</code>、Svelte 用响应式 store（<code>$</code> 前缀）、Angular 用 <code>computed</code> Signal。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Todo interface ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>数据接口</h2>
+                <h4>每个待办项具有简单的结构——三个状态值 + 人类可读描述</h4>
+                <pre><code class="language-javascript">interface Todo {
+  status: "pending" | "in_progress" | "completed";
+  content: string;
+}</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>属性</th><th>类型</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>status</code></td>
+                            <td><code>"pending" | "in_progress" | "completed"</code></td>
+                            <td>任务的当前状态。<code>pending</code> 未开始、<code>in_progress</code> Agent 正在处理、<code>completed</code> 已完成</td>
+                        </tr>
+                        <tr>
+                            <td><code>content</code></td>
+                            <td><code>string</code></td>
+                            <td>人类可读的任务描述，如"搜索相关文档"</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #6B7280;">
+                        <h4>pending（未开始）</h4>
+                        <p>灰色图标 <code>○</code>，灰色背景。Agent 尚未开始处理此项。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #F59E0B;">
+                        <h4>in_progress（进行中）</h4>
+                        <p>琥珀色图标 <code>◉</code>，琥珀色背景，<strong>脉冲动画</strong>吸引用户注意。Agent 当前正在处理此项。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #10B981;">
+                        <h4>completed（已完成）</h4>
+                        <p>绿色图标 <code>✓</code>，绿色背景，<strong>删除线</strong>样式。Agent 已完成此项。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>状态流转方向：</strong>Agent 在创建计划时填充此数组，然后在执行每个步骤时更新各个待办项的状态。整个生命周期是 <code>pending</code> → <code>in_progress</code> → <code>completed</code> 的单向流转。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/23-frontend-todo-list-2.png" alt="图：Todo 三态状态机" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Build TodoList component ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>构建组件</h2>
+                <h4>TodoList 组件渲染进度条和待办项列表</h4>
+                <pre><code class="language-javascript">function TodoList({ todos }: { todos: Todo[] }) {
+  // 统计已完成的任务数量
+  const completed = todos.filter((t) => t.status === "completed").length;
+  // 计算完成百分比，避免除以零
+  const percentage = todos.length
+    ? Math.round((completed / todos.length) * 100)
+    : 0;
+
+  return (
+    &lt;div className="rounded-lg border bg-white p-4 shadow-sm"&gt;
+      {/* 头部：标题 + 已完成计数 */}
+      &lt;div className="mb-4 flex items-center justify-between"&gt;
+        &lt;h2 className="text-lg font-semibold"&gt;Agent Progress&lt;/h2&gt;
+        &lt;span className="text-sm text-gray-500"&gt;
+          {completed}/{todos.length} tasks
+        &lt;/span&gt;
+      &lt;/div&gt;
+
+      {/* 进度条：根据百分比填充宽度 */}
+      &lt;ProgressBar percentage={percentage} /&gt;
+
+      {/* 待办项列表：每个项根据状态显示不同样式 */}
+      &lt;ul className="mt-4 space-y-2"&gt;
+        {todos.map((todo, i) =&gt; (
+          &lt;TodoItem key={i} todo={todo} /&gt;
+        ))}
+      &lt;/ul&gt;
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>ProgressBar 进度条</h4>
+                        <pre><code class="language-javascript">function ProgressBar({ percentage }) {
+  return (
+    &lt;div className="space-y-1"&gt;
+      {/* 标签行：左侧文字 + 右侧百分比数值 */}
+      &lt;div className="flex items-center
+        justify-between text-xs text-gray-500"&gt;
+        &lt;span&gt;Progress&lt;/span&gt;
+        &lt;span&gt;{percentage}%&lt;/span&gt;
+      &lt;/div&gt;
+      {/* 外层轨道：灰色背景作为进度条底色 */}
+      &lt;div className="h-2 overflow-hidden
+        rounded-full bg-gray-200"&gt;
+        {/* 内层填充：宽度由百分比动态控制，500ms 平滑过渡动画 */}
+        &lt;div
+          className="h-full rounded-full
+            bg-green-500 transition-all
+            duration-500"
+          style={{ width: `${percentage}%` }}
+        /&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>TodoItem 待办项</h4>
+                        <pre><code class="language-javascript">function TodoItem({ todo }: { todo: Todo }) {
+  // 三种状态对应不同的视觉样式：图标、文字颜色、背景色
+  const config = {
+    pending: {                            // 未开始：灰色
+      icon: "○",
+      textClass: "text-gray-600",
+      bgClass: "bg-gray-50",
+    },
+    in_progress: {                        // 进行中：琥珀色（高亮提示）
+      icon: "◉",
+      textClass: "text-amber-800",
+      bgClass: "bg-amber-50 border-amber-200",
+    },
+    completed: {                          // 已完成：绿色 + 删除线
+      icon: "✓",
+      textClass: "text-green-800 line-through",
+      bgClass: "bg-green-50 border-green-200",
+    },
+  };
+  const style = config[todo.status];
+
+  return (
+    &lt;li className={`flex items-start gap-3
+      rounded-md border px-3 py-2 ${style.bgClass}`}&gt;
+      &lt;span className={style.iconClass}&gt;
+        {style.icon}
+      &lt;/span&gt;
+      &lt;span className={`text-sm ${style.textClass}`}&gt;
+        {todo.content}
+      &lt;/span&gt;
+    &lt;/li&gt;
+  );
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Computing progress ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>计算进度</h2>
+                <h4>直接从待办数组推导进度指标——响应式自动同步</h4>
+                <pre><code class="language-javascript">// 从流式状态中读取 todos，默认为空数组
+const todos = stream.values?.todos ?? [];
+
+// 统计各状态的任务数
+const completed = todos.filter((t) => t.status === "completed").length;   // 已完成
+const inProgress = todos.filter((t) => t.status === "in_progress").length; // 进行中
+const pending = todos.filter((t) => t.status === "pending").length;        // 待处理
+// 计算完成百分比
+const percentage = todos.length
+  ? Math.round((completed / todos.length) * 100)
+  : 0;</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么不需要手动轮询</h4>
+                        <p><code>stream.values</code> 是响应式的。Agent 每次修改状态，前端自动收到更新并重新渲染。你不需要 <code>setInterval</code>、<code>useEffect</code> 轮询或手动刷新。</p>
+                        <p><strong>原理：</strong><code>useStream</code> hook 内部通过流式连接（Server-Sent Events 或 WebSocket）监听 Agent 状态变化，任何 <code>todos</code> 数组的更新都会即时推送到前端。</p>
+                    </div>
+                    <div class="card">
+                        <h4>进度指标一览</h4>
+                        <table>
+                            <thead><tr><th>指标</th><th>计算方式</th><th>用途</th></tr></thead>
+                            <tbody>
+                                <tr><td><strong>完成率</strong></td><td><code>completed / total * 100</code></td><td>进度条百分比</td></tr>
+                                <tr><td><strong>已完成数</strong></td><td><code>.filter(status === "completed")</code></td><td>计数器 "3/5 tasks"</td></tr>
+                                <tr><td><strong>进行中</strong></td><td><code>.filter(status === "in_progress")</code></td><td>高亮当前任务</td></tr>
+                                <tr><td><strong>剩余数</strong></td><td><code>.filter(status === "pending")</code></td><td>预估剩余工作量</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>关键洞察：</strong>这些值会随着 Agent 修改状态而<strong>响应式更新</strong>，使进度条和计数器始终与 Agent 实际进度保持同步。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Combining with chat ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>聊天结合</h2>
+                <h4>待办列表与聊天消息配合使用——顶部面板 + 下方消息区</h4>
+                <pre><code class="language-javascript">function TodoAgentLayout() {
+  // 建立与 Agent 的流式连接
+  const stream = useStream&lt;typeof myAgent&gt;({
+    apiUrl: AGENT_URL,
+    assistantId: "deep_agent_todo_list",
+  });
+
+  const todos = stream.values?.todos ?? [];
+
+  return (
+    &lt;div className="flex h-screen flex-col"&gt;
+      {/* 条件渲染：只在有待办项时显示进度面板 */}
+      {todos.length &gt; 0 && (
+        &lt;div className="border-b bg-gray-50 p-4"&gt;
+          &lt;TodoList todos={todos} /&gt;
+        &lt;/div&gt;
+      )}
+
+      {/* 聊天消息区：flex-1 占据剩余空间，支持滚动 */}
+      &lt;main className="flex-1 overflow-y-auto p-6"&gt;
+        &lt;div className="mx-auto max-w-2xl space-y-4"&gt;
+          {stream.messages.map((msg) =&gt; (
+            &lt;Message key={msg.id} message={msg} /&gt;
+          ))}
+        &lt;/div&gt;
+      &lt;/main&gt;
+
+      {/* 输入框：提交时构造 HumanMessage 发送给 Agent */}
+      &lt;ChatInput
+        onSubmit={(text) =&gt;
+          stream.submit({
+            messages: [{ type: "human", content: text }]
+          })
+        }
+        isLoading={stream.isLoading}
+      /&gt;
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>仅当 <code>todos.length > 0</code> 时才显示待办列表。在 Agent 创建计划之前，没有任何内容可显示。显示空组件只会浪费屏幕空间。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/23-frontend-todo-list-3.png" alt="图：待办列表与聊天组合布局" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Custom state beyond todos ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义状态</h2>
+                <h4>stream.values 可以暴露 Agent 定义的任何自定义状态——todos 只是开始</h4>
+                <p>此模式演示了一个强大的原则：<code>stream.values</code> 不限于消息，它暴露你的 Agent 定义的<strong>任何自定义状态键</strong>。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>进度指标</h4>
+                        <p><code>stream.values.progress</code> 包含数字完成度数据</p>
+                        <p>适用于：任务完成百分比、阶段标记</p>
+                    </div>
+                    <div class="card">
+                        <h4>生成的内容</h4>
+                        <p><code>stream.values.document</code> 包含 Agent 正在构建的结构化文档</p>
+                        <p>适用于：实时预览报告、代码生成</p>
+                    </div>
+                    <div class="card">
+                        <h4>决策日志</h4>
+                        <p><code>stream.values.decisions</code> 记录 Agent 做出的每一个选择</p>
+                        <p>适用于：审计追踪、调试分析</p>
+                    </div>
+                    <div class="card">
+                        <h4>资源列表</h4>
+                        <p><code>stream.values.sources</code> 包含 Agent 找到的链接和引用</p>
+                        <p>适用于：研究助手、文献综述</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 除了 todos，stream.values 还可访问 Agent 定义的任何自定义状态键
+const document = stream.values?.document;                 // Agent 正在构建的文档
+const sources = stream.values?.sources ?? [];             // Agent 收集的引用来源
+const confidence = stream.values?.confidence_score;       // Agent 的置信度评分</code></pre>
+                <div class="key-point">
+                    <strong>零配置：</strong>自定义状态键在你的 LangGraph 图的状态模式中定义。<code>useStream</code> hook 会自动将它们包含在 <code>stream.values</code> 中，无需任何额外的客户端配置。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Animation transitions ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动画过渡</h2>
+                <h4>平滑的 CSS 过渡让状态切换显得精致而非突兀</h4>
+                <pre><code class="language-javascript">function TodoItem({ todo }: { todo: Todo }) {
+  return (
+    &lt;li className={`
+      flex items-start gap-3 rounded-md border px-3 py-2
+      transition-all duration-300 ease-in-out        /* ← 全属性过渡 */
+      ${getStatusStyles(todo.status)}
+    `}&gt;
+      &lt;span className={`
+        mt-0.5 text-lg leading-none
+        transition-colors duration-300                 /* ← 颜色过渡 */
+        ${getIconStyles(todo.status)}
+      `}&gt;
+        {getStatusIcon(todo.status)}
+      &lt;/span&gt;
+      &lt;span className={`
+        text-sm transition-all duration-300            /* ← 文本过渡 */
+        ${todo.status === "completed"
+          ? "line-through opacity-60" : ""}
+      `}&gt;
+        {todo.content}
+      &lt;/span&gt;
+    &lt;/li&gt;
+  );
+}</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>过渡效果清单</h4>
+                        <table>
+                            <thead><tr><th>属性</th><th>效果</th><th>用途</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>background-color</code></td><td>颜色平滑切换</td><td>状态变化时背景渐变</td></tr>
+                                <tr><td><code>color</code></td><td>文字颜色过渡</td><td>图标和文本变色</td></tr>
+                                <tr><td><code>opacity</code></td><td>透明度渐变</td><td>已完成项淡化</td></tr>
+                                <tr><td><code>text-decoration</code></td><td>删除线动画</td><td>完成时划线效果</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="column">
+                        <h4>关键 CSS 类</h4>
+                        <ul>
+                            <li><code>transition-all duration-300</code> —— 所有属性 300ms 过渡</li>
+                            <li><code>ease-in-out</code> —— 先慢后快再慢的缓动曲线</li>
+                            <li><code>animate-pulse</code> —— <code>in_progress</code> 图标脉冲闪烁</li>
+                            <li><code>transition-all duration-500</code> —— 进度条 500ms 平滑增长</li>
+                        </ul>
+                        <div class="info-block">
+                            <strong>提示：</strong><code>in_progress</code> 状态使用 <code>animate-pulse</code> 来吸引用户注意当前正在进行的任务，这是整个列表中唯一的动态元素。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Use cases ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>使用场景</h2>
+                <h4>任何 Agent 执行结构化计划的场景都适用</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>项目规划</h4>
+                        <p>Agent 将项目分解为任务并依次执行。每个任务成为一个待办项，用户实时看到哪些已完成、哪些正在进行。</p>
+                    </div>
+                    <div class="card">
+                        <h4>研究工作流</h4>
+                        <p>每个研究问题成为 Agent 调查并完成的待办项。从"搜索文献"到"撰写摘要"，步骤清晰可见。</p>
+                    </div>
+                    <div class="card">
+                        <h4>数据处理</h4>
+                        <p>数据摄取、验证、转换和导出等步骤各有对应的待办项。管道式处理一目了然。</p>
+                    </div>
+                    <div class="card">
+                        <h4>引导流程</h4>
+                        <p>Agent 逐步完成设置步骤，配置服务时逐一勾选。用户知道还差几步才能完成。</p>
+                    </div>
+                    <div class="card">
+                        <h4>报告生成</h4>
+                        <p>报告的各部分成为待办项：收集数据 → 分析趋势 → 撰写摘要 → 格式化输出。</p>
+                    </div>
+                    <div class="card">
+                        <h4>代码重构</h4>
+                        <p>Agent 将重构拆分为待办项：分析依赖 → 修改接口 → 更新测试 → 验证构建。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>通用模式：</strong>只要你的 Agent 工作流可以拆分为有序步骤，待办列表就是最佳进度可视化方案。它与具体业务逻辑无关，纯粹是状态驱动的 UI。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Empty and loading states ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>空状态处理</h2>
+                <h4>在 Agent 创建计划之前优雅地处理初始状态</h4>
+                <pre><code class="language-javascript">function TodoList({ todos, isLoading }) {
+  // 情况 1：没有待办项，也没有加载 —— 不显示任何东西
+  if (todos.length === 0 && !isLoading) {
+    return null;
+  }
+
+  // 情况 2：没有待办项，正在加载 —— 显示加载提示
+  if (todos.length === 0 && isLoading) {
+    return (
+      &lt;div className="rounded-lg border bg-white p-4 shadow-sm"&gt;
+        &lt;div className="flex items-center gap-2
+          text-sm text-gray-500"&gt;
+          &lt;span className="animate-spin"&gt;⟳&lt;/span&gt;
+          Agent is creating a plan...
+        &lt;/div&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  // 情况 3：有待办项 —— 显示完整列表
+  return (
+    &lt;div className="rounded-lg border bg-white p-4 shadow-sm"&gt;
+      {/* ... 完整的待办列表渲染 ... */}
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>三种状态</h4>
+                        <table>
+                            <thead><tr><th>条件</th><th>行为</th><th>原因</th></tr></thead>
+                            <tbody>
+                                <tr><td>空 + 不加载</td><td><code>return null</code></td><td>Agent 尚未开始，无内容可显示</td></tr>
+                                <tr><td>空 + 加载中</td><td>加载动画 + 提示文字</td><td>Agent 正在规划，给用户反馈</td></tr>
+                                <tr><td>有数据</td><td>完整 TodoList 渲染</td><td>正常工作状态</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>设计原则</h4>
+                        <ul>
+                            <li><strong>不显示空壳</strong>——空列表只会让用户困惑</li>
+                            <li><strong>加载时给反馈</strong>——旋转图标 + 描述性文字减少焦虑</li>
+                            <li><strong>条件渲染</strong>——<code>todos.length > 0</code> 才渲染整个面板</li>
+                            <li><strong>过渡自然</strong>——从加载到有内容的切换应平滑</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Best practices ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践</h2>
+                <h4>让待办列表成为基于计划的 Agent 的核心进度指示器</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>1. 放在醒目位置</h4>
+                        <p>待办列表是基于计划的 Agent 的<strong>主要进度指示器</strong>。不要把它藏在页面下方。推荐放在顶部面板或固定侧边栏。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>2. 添加状态动画</h4>
+                        <p>平滑的过渡让 Agent 显得更加灵敏。在背景色、文本装饰和透明度上使用 CSS <code>transition</code>。<code>in_progress</code> 项用 <code>animate-pulse</code> 闪烁。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>3. 只高亮一个进行中</h4>
+                        <p>Agent 通常一次只处理一个任务。如果多个项同时显示为 <code>in_progress</code>，UI 会变得嘈杂。<strong>建议只让第一个正在进行的项闪烁</strong>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #10B981;">
+                        <h4>4. 折叠已完成项</h4>
+                        <p>随着列表增长，已完成的项变得不那么重要。降低它们的视觉权重（透明度、删除线），让用户专注于还在进行中的任务。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #F59E0B;">
+                        <h4>5. 显示进度百分比</h4>
+                        <p>像"已完成 67%"这样简单的数字，即使远距离也能立即理解。进度条 + 百分比数字双重反馈。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #EF4444;">
+                        <h4>6. 保持自动同步</h4>
+                        <p><code>stream.values</code> 会响应式更新，待办列表自动保持最新。<strong>不要添加手动轮询或刷新逻辑</strong>——这会造成不必要的复杂性和性能浪费。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>Agent 状态驱动的 UI——不只是消息气泡</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>通过 <code>todos</code> 自定义状态键跟踪 Agent 执行进度</li>
+                            <li><code>useStream</code> hook 通过 <code>stream.values</code> 暴露自定义状态</li>
+                            <li>Todo 接口：<code>status</code>（三态）+ <code>content</code>（描述）</li>
+                            <li>构建 TodoList、ProgressBar、TodoItem 三层组件</li>
+                            <li>待办列表与聊天消息的组合布局</li>
+                            <li>CSS 动画过渡让状态切换更加精致</li>
+                            <li>空状态和加载状态的优雅处理</li>
+                            <li><code>stream.values</code> 可用于任何自定义状态，不止 todos</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>沙盒 UI</strong>：在隔离环境中可视化 Agent 的代码执行过程</li>
+                            <li><strong>ACP 协议</strong>：Agent 通信协议的深度解析</li>
+                            <li><strong>代码模式</strong>：在代码编辑器中集成 Agent 能力</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Agent 状态可以驱动任何 UI。待办列表只是开始——<code>stream.values</code> 能暴露进度指标、生成文档、决策日志等任何自定义数据。当你需要让用户理解 Agent 在做什么时，想想哪些状态值得可视化，然后用同样的模式构建你的 UI。
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

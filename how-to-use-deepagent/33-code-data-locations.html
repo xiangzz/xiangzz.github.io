@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据存储位置</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📁</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 33 章</div>
+            <h1>数据存储位置</h1>
+            <p>Deep Agents Code 在哪里存储配置、会话和自定义文件</p>
+            <strong>理解数据存放规则，是掌控 Agent 行为的第一步</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要了解</h2>
+                <h4>你的 Agent 记住了什么、会话存在哪里、技能从哪加载——全都取决于数据存储位置</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>不清楚存储位置的困扰</h4>
+                        <ul>
+                            <li>Agent 的自定义指令写在哪？<strong>改了没生效，不知道为什么</strong></li>
+                            <li>会话历史存在哪？<strong>想清理却找不到文件</strong></li>
+                            <li>技能文件放在哪个目录？<strong>放错了位置，Agent 找不到</strong></li>
+                            <li>项目级和用户级配置冲突？<strong>不知道谁的优先级更高</strong></li>
+                            <li>想彻底重置？<strong>不知道该删哪些目录</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>了解之后的掌控力</h4>
+                        <ul>
+                            <li>精确知道每个配置文件的<strong>存放路径和作用</strong></li>
+                            <li>按需清理会话、历史、密钥等<strong>特定数据</strong></li>
+                            <li>在正确位置放置技能文件，<strong>Agent 立即可用</strong></li>
+                            <li>理解优先级规则，<strong>避免配置冲突</strong></li>
+                            <li>区分工具无关与专用目录，<strong>实现跨工具共享</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>Deep Agents Code 的数据分布在两个层级（用户级 + 项目级）和两个目录（.deepagents/ + .agents/）。搞清楚"什么数据存在哪、谁能读谁优先"，你就能精准控制 Agent 的行为、安全地清理数据、合理地组织技能。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Two directory tiers ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>两级目录</h2>
+                <h4>Deep Agents Code 将数据存储在两个目录层级中</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>~/.deepagents/</h4>
+                        <p><strong>Deep Agents 专用数据</strong></p>
+                        <ul>
+                            <li>Agent 记忆和自定义指令</li>
+                            <li>用户级技能</li>
+                            <li>会话检查点数据库</li>
+                            <li>命令输入历史</li>
+                            <li>自定义子 Agent 定义</li>
+                        </ul>
+                        <p><span class="tag tag-primary">Deep Agents Code 专属</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>~/.agents/</h4>
+                        <p><strong>工具无关数据</strong></p>
+                        <ul>
+                            <li>跨 AI CLI 工具共享的技能</li>
+                            <li>不依赖 Deep Agents 专属功能的配置</li>
+                            <li>任何兼容工具都可使用</li>
+                        </ul>
+                        <p><span class="tag tag-success">跨 CLI 工具共享</span></p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>层级概念：</strong>用户级目录（<code>~/</code> 开头）对所有项目生效；项目级目录（在项目根目录下）只对当前项目生效。两者可以同时存在，优先级不同。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: User-level directory structure ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>用户级结构</h2>
+                <h4>~/.deepagents/ 和 ~/.agents/ 的完整目录树</h4>
+                <pre><code class="language-text">~/.deepagents/
+├── .state/                  # 每台机器的状态（自动管理）
+│   ├── sessions.db          #   会话检查点的 SQLite 数据库
+│   ├── history.jsonl        #   命令输入历史
+│   └── ...                  #   其他标记和凭证
+└── {agent}/                 # 每个 Agent 的目录（默认："agent"）
+    ├── AGENTS.md            # 用户对 Agent 指令的自定义
+    ├── skills/              # 用户级技能
+    │   └── {skill-name}/
+    │       └── SKILL.md
+    └── agents/              # 自定义子 Agent 定义
+        └── {subagent-name}/
+            └── AGENTS.md
+
+~/.agents/                   # 工具无关别名（跨 AI CLI 共享）
+└── skills/                  # 任何兼容工具都可使用的技能
+    └── {skill-name}/
+        └── SKILL.md</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>.state/ 自动管理</h4>
+                        <ul>
+                            <li><code>sessions.db</code> — SQLite 数据库，存储会话检查点</li>
+                            <li><code>history.jsonl</code> — 命令输入历史，上/下方向键调用</li>
+                            <li><code>auth.json</code> — 存储的 API 密钥</li>
+                            <li><code>mcp-tokens</code> — MCP OAuth 令牌</li>
+                            <li><code>onboarding_complete</code> — 首次引导标记</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>{agent}/ 可自定义</h4>
+                        <ul>
+                            <li><code>AGENTS.md</code> — 追加到基础指令之后的自定义指令</li>
+                            <li><code>skills/</code> — Agent 专属技能，只有该 Agent 可用</li>
+                            <li><code>agents/</code> — 自定义子 Agent，带 YAML frontmatter</li>
+                            <li>默认 agent 目录名是 <code>"agent"</code></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Project-level directory structure ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>项目级结构</h2>
+                <h4>在 Git 仓库根目录下的配置目录——只对当前项目生效</h4>
+                <pre><code class="language-text">{project}/                   # 项目级（位于 Git 仓库根目录）
+├── AGENTS.md                # 项目指令（根目录级别）
+└── .deepagents/
+│   ├── AGENTS.md            # 项目指令（首选位置）
+│   ├── skills/              # 项目专属技能
+│   │   └── {skill-name}/
+│   │       └── SKILL.md
+│   └── agents/              # 项目专属子 Agent
+│       └── {subagent-name}/
+│           └── AGENTS.md
+└── .agents/                 # 工具无关的项目技能
+    └── skills/
+        └── {skill-name}/
+            └── SKILL.md</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>.deepagents/（专用）</h4>
+                        <ul>
+                            <li>使用 Deep Agents Code <strong>专属功能</strong>的技能和配置</li>
+                            <li>依赖 Deep Agents 特定的工具或约定</li>
+                            <li>包含 <code>AGENTS.md</code>（指令）+ <code>skills/</code> + <code>agents/</code></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>.agents/（通用）</h4>
+                        <ul>
+                            <li>希望在不同 <strong>AI CLI 工具之间共享</strong>的技能</li>
+                            <li>不依赖任何特定工具的专属功能</li>
+                            <li>只包含 <code>skills/</code> 目录</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>选择建议：</strong>适用于任何 AI 编码助手的技能，用 <code>.agents/skills/</code>；依赖 Deep Agents 专属工具或约定的技能，用 <code>.deepagents/skills/</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Data location overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>数据一览</h2>
+                <h4>每种数据存储在哪里、读/写权限如何——一张表看全貌</h4>
+                <table>
+                    <thead>
+                        <tr><th>数据</th><th>位置</th><th>权限</th><th>备注</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>会话</strong></td>
+                            <td><code>~/.deepagents/.state/sessions.db</code></td>
+                            <td>读/写</td>
+                            <td>SQLite 检查点数据库</td>
+                        </tr>
+                        <tr>
+                            <td><strong>输入历史</strong></td>
+                            <td><code>~/.deepagents/.state/history.jsonl</code></td>
+                            <td>读/写</td>
+                            <td>JSON-lines，方向键调用</td>
+                        </tr>
+                        <tr>
+                            <td><strong>基础指令</strong></td>
+                            <td>包内 <code>default_agent_prompt.md</code></td>
+                            <td>只读</td>
+                            <td>不可变，随版本升级更新</td>
+                        </tr>
+                        <tr>
+                            <td><strong>用户自定义</strong></td>
+                            <td><code>~/.deepagents/{agent}/AGENTS.md</code></td>
+                            <td>读/写</td>
+                            <td>追加到基础指令之后</td>
+                        </tr>
+                        <tr>
+                            <td><strong>项目指令</strong></td>
+                            <td><code>.deepagents/AGENTS.md</code> 或 <code>AGENTS.md</code></td>
+                            <td>只读</td>
+                            <td>两者都存在则都会加载</td>
+                        </tr>
+                        <tr>
+                            <td><strong>用户技能</strong></td>
+                            <td><code>~/.deepagents/{agent}/skills/</code></td>
+                            <td>读/写</td>
+                            <td>Agent 专属技能</td>
+                        </tr>
+                        <tr>
+                            <td><strong>共享技能</strong></td>
+                            <td><code>~/.agents/skills/</code></td>
+                            <td>只读</td>
+                            <td>工具无关，跨 CLI 使用</td>
+                        </tr>
+                        <tr>
+                            <td><strong>项目技能</strong></td>
+                            <td><code>.deepagents/skills/</code> 或 <code>.agents/skills/</code></td>
+                            <td>只读</td>
+                            <td>项目范围内的技能</td>
+                        </tr>
+                        <tr>
+                            <td><strong>自定义子 Agent</strong></td>
+                            <td><code>~/.deepagents/{agent}/agents/</code></td>
+                            <td>读/写</td>
+                            <td>用户定义的子 Agent</td>
+                        </tr>
+                        <tr>
+                            <td><strong>项目子 Agent</strong></td>
+                            <td><code>.deepagents/agents/</code></td>
+                            <td>只读</td>
+                            <td>项目定义的子 Agent</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Priority rules - Skills ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>技能优先级</h2>
+                <h4>同名技能存在于多个位置时，优先级高的完全覆盖优先级低的（不合并）</h4>
+                <div class="flow-steps">
+                    <div class="flow-step" style="opacity: 0.5;">
+                        <h4>1. 最低</h4>
+                        <p><code>~/.deepagents/{agent}/skills/</code></p>
+                        <small>用户 Deep Agents Code</small>
+                    </div>
+                    <div class="flow-step" style="opacity: 0.65;">
+                        <h4>2. 较低</h4>
+                        <p><code>~/.agents/skills/</code></p>
+                        <small>用户工具无关</small>
+                    </div>
+                    <div class="flow-step" style="opacity: 0.8;">
+                        <h4>3. 较高</h4>
+                        <p><code>.deepagents/skills/</code></p>
+                        <small>项目 Deep Agents Code</small>
+                    </div>
+                    <div class="flow-step" style="border-color: #DC2626; background: #FEF2F2;">
+                        <h4>4. 最高</h4>
+                        <p><code>.agents/skills/</code></p>
+                        <small>项目工具无关</small>
+                    </div>
+                </div>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>覆盖规则</h4>
+                        <ul>
+                            <li>同名技能在多个位置存在时，<strong>优先级高的完全覆盖低的</strong></li>
+                            <li>不会合并——高优先级版本<strong>完全替代</strong>低优先级版本</li>
+                            <li>项目级（3、4）总是优先于用户级（1、2）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>安全限制</h4>
+                        <ul>
+                            <li>Deep Agents Code 会验证技能文件路径是否在允许的目录内</li>
+                            <li>符号链接解析后超出所有技能根目录会被<strong>拒绝</strong></li>
+                            <li>可通过 <code>[skills].extra_allowed_dirs</code> 配置允许额外目录</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>优先级是"完全覆盖"而非"合并"。如果你在用户级定义了技能 A，又在项目级定义了同名技能 A，最终生效的是项目级版本——用户级的指令和逻辑会被完全忽略。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Priority rules - Subagents & Instructions ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子 Agent 与指令</h2>
+                <h4>子 Agent 覆盖规则 vs 指令叠加规则——两种完全不同的优先级机制</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>子 Agent（覆盖）</h4>
+                        <p>和技能一样，同名子 Agent <strong>高优先级完全覆盖</strong>低优先级。</p>
+                        <table>
+                            <thead><tr><th>优先级</th><th>位置</th></tr></thead>
+                            <tbody>
+                                <tr><td>低</td><td><code>~/.deepagents/{agent}/agents/</code>（用户级）</td></tr>
+                                <tr><td><strong>高</strong></td><td><code>.deepagents/agents/</code>（项目级）</td></tr>
+                            </tbody>
+                        </table>
+                        <ul>
+                            <li>每个子 Agent 是一个带 YAML frontmatter 的 <code>AGENTS.md</code></li>
+                            <li>frontmatter 包含 <code>name</code>、<code>description</code>、可选的 <code>model</code></li>
+                            <li>Markdown 正文作为系统提示</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>指令（叠加）</h4>
+                        <p>所有指令来源<strong>组合叠加</strong>——不会被覆盖，全部追加。</p>
+                        <table>
+                            <thead><tr><th>顺序</th><th>来源</th></tr></thead>
+                            <tbody>
+                                <tr><td>1</td><td>包基础提示 <code>default_agent_prompt.md</code>（始终加载）</td></tr>
+                                <tr><td>2</td><td><code>~/.deepagents/{agent}/AGENTS.md</code>（追加）</td></tr>
+                                <tr><td>3</td><td><code>.deepagents/AGENTS.md</code>（追加）</td></tr>
+                                <tr><td>4</td><td>项目根目录的 <code>AGENTS.md</code>（追加）</td></tr>
+                            </tbody>
+                        </table>
+                        <ul>
+                            <li>四个来源的指令<strong>全部生效</strong></li>
+                            <li>后面的指令追加到前面的之后</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>关键区别：</strong>技能和子 Agent 是"覆盖"机制（同名只保留最高优先级），而指令是"叠加"机制（所有来源都生效）。不要混淆这两种行为。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/33-code-data-locations-1.png" alt="图：覆盖机制与叠加机制对比" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: .deepagents vs .agents ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>目录区别</h2>
+                <h4>.deepagents/ 与 .agents/ 的定位和使用场景</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>.deepagents/</h4>
+                        <p><strong>Deep Agents Code 专用</strong></p>
+                        <table>
+                            <thead><tr><th>包含</th><th>说明</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>AGENTS.md</code></td><td>自定义指令</td></tr>
+                                <tr><td><code>skills/</code></td><td>专属技能</td></tr>
+                                <tr><td><code>agents/</code></td><td>子 Agent 定义</td></tr>
+                                <tr><td><code>.state/</code></td><td>运行时状态</td></tr>
+                            </tbody>
+                        </table>
+                        <p><strong>适用场景：</strong>使用 Deep Agents Code 专属功能的技能和配置，如依赖特定的工具调用或内部约定。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>.agents/</h4>
+                        <p><strong>工具无关</strong></p>
+                        <table>
+                            <thead><tr><th>包含</th><th>说明</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>skills/</code></td><td>通用技能</td></tr>
+                            </tbody>
+                        </table>
+                        <p><strong>适用场景：</strong>希望在不同 AI CLI 工具（如 Claude Code、Cursor、Aider 等）之间共享的技能。不依赖任何特定工具的专属功能。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>实践建议：</strong>如果你写了一个技能，既能在 Deep Agents Code 中使用，也能在其他 AI 编码助手中使用，就放在 <code>.agents/skills/</code>。如果技能使用了 Deep Agents 的特定功能（如特定的沙箱后端、特定的工具 API），就放在 <code>.deepagents/skills/</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Cleanup operations ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>清理操作</h2>
+                <h4>按需清理特定数据——不同的需求对应不同的命令</h4>
+                <table>
+                    <thead>
+                        <tr><th>需求</th><th>操作</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>重置所有数据</strong></td>
+                            <td><code>rm -rf ~/.deepagents</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>仅清除会话</strong></td>
+                            <td><code>rm ~/.deepagents/.state/sessions.db*</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>清除输入历史</strong></td>
+                            <td><code>rm ~/.deepagents/.state/history.jsonl</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>清除 API 密钥</strong></td>
+                            <td><code>rm ~/.deepagents/.state/auth.json</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>清除 OAuth 令牌</strong></td>
+                            <td><code>rm -rf ~/.deepagents/.state/mcp-tokens</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>重跑首次引导</strong></td>
+                            <td><code>rm ~/.deepagents/.state/onboarding_complete</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>重置 Agent 指令</strong></td>
+                            <td><code>dcode agents reset --agent {name}</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>移除某个技能</strong></td>
+                            <td><code>rm -rf ~/.deepagents/{agent}/skills/{skill-name}</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>危险操作警告：</strong>删除 <code>~/.deepagents/.state/sessions.db</code> 将移除<strong>所有对话历史和检查点</strong>。除非你已备份该文件，否则此操作<strong>无法撤销</strong>。执行前请务必确认。
+                </div>
+                <pre><code class="language-bash"># 安全清理示例——先备份会话数据库，再删除
+$ cp ~/.deepagents/.state/sessions.db ~/sessions-backup.db
+$ rm ~/.deepagents/.state/sessions.db
+
+# 只想重新开始？删除引导标记即可，不影响其他数据
+$ rm ~/.deepagents/.state/onboarding_complete
+$ dcode  # 下次启动会自动重新进入首次引导流程</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Chapter review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了 Deep Agents Code 数据存储的完整图景</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>两个核心目录：<code>~/.deepagents/</code>（专用）和 <code>~/.agents/</code>（工具无关）</li>
+                            <li>用户级（全局生效）和项目级（仅当前项目）两个层级</li>
+                            <li>会话、历史、指令、技能、子 Agent 各自的<strong>存储位置和读写权限</strong></li>
+                            <li>技能和子 Agent 的优先级是<strong>"覆盖"</strong>，指令的优先级是<strong>"叠加"</strong></li>
+                            <li>项目级总是优先于用户级；工具无关目录优先于专用目录</li>
+                            <li>针对不同需求的<strong>清理命令</strong>，以及操作前备份的重要性</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>关键要点速查</h4>
+                        <ul>
+                            <li><strong>改指令</strong> → 编辑对应的 <code>AGENTS.md</code></li>
+                            <li><strong>加技能</strong> → 放到 <code>skills/{name}/SKILL.md</code></li>
+                            <li><strong>加子 Agent</strong> → 放到 <code>agents/{name}/AGENTS.md</code></li>
+                            <li><strong>清会话</strong> → 删除 <code>sessions.db</code>（先备份）</li>
+                            <li><strong>跨工具共享</strong> → 用 <code>.agents/skills/</code></li>
+                            <li><strong>彻底重置</strong> → <code>rm -rf ~/.deepagents</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Deep Agents Code 的数据存储设计遵循"专用与通用分离、用户级与项目级分层、覆盖与叠加分治"三个原则。理解这些规则，你就能精确控制 Agent 的行为配置、安全地管理运行时数据、合理地组织可复用的技能。
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

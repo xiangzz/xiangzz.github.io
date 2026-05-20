@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Client Protocol (ACP)</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔌</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 25 章</div>
+            <h1>Agent Client Protocol</h1>
+            <p>通过 ACP 协议将 Deep Agent 集成到代码编辑器和 IDE 中</p>
+            <strong>让智能体从命令行走进你的开发环境</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>通信无标准</h2>
+                <h4>你有没有想过，为什么 AI 编程助手只能在特定的工具里使用？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>没有 ACP 的困境</h4>
+                        <ul>
+                            <li>每个 AI 编程工具都<strong>自建通信协议</strong>，无法互操作</li>
+                            <li>在 Zed 里能用，换到 VS Code 就不行——<strong>编辑器绑定</strong></li>
+                            <li>自己写的 Agent 只能在终端跑，<strong>无法嵌入 IDE</strong></li>
+                            <li>每次集成新编辑器都要重写适配层——<strong>重复造轮子</strong></li>
+                            <li>编辑器无法向 Agent 提供项目上下文——<strong>信息割裂</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>ACP 的解法</h4>
+                        <ul>
+                            <li><strong>标准化协议</strong>——一次接入，所有兼容编辑器都能用</li>
+                            <li>编辑器自动提供<strong>项目上下文</strong>（工作区、文件结构）</li>
+                            <li>Agent 返回<strong>丰富的结构化更新</strong>（代码编辑、文件创建）</li>
+                            <li>基于 stdio 通信，<strong>无需启动 HTTP 服务器</strong></li>
+                            <li>支持 Zed、JetBrains、VS Code 等<strong>主流编辑器</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>ACP 解决的不是"Agent 能做什么"，而是"Agent 和编辑器怎么对话"。有了标准协议，你构建的 Deep Agent 就不再是终端里的孤岛，而是能嵌入任何 IDE 的编程伙伴。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: What is ACP ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>什么是 ACP</h2>
+                <h4>Agent Client Protocol——编码 Agent 与 IDE 之间的标准化通信协议</h4>
+                <p>ACP 标准化了<strong>编码 Agent 与代码编辑器/IDE 之间的通信方式</strong>。借助 ACP，你可以在任何兼容的客户端中使用自定义 Deep Agent，使编辑器能够提供项目上下文并接收丰富的更新信息。</p>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>ACP 是什么</h4>
+                        <ul>
+                            <li>Agent 与编辑器之间的<strong>通信协议</strong></li>
+                            <li>基于 <strong>stdio</strong>（标准输入/输出）传输</li>
+                            <li>编辑器启动 Agent 进程，通过 stdin/stdout 通信</li>
+                            <li>Agent 向编辑器注册能力和斜杠命令</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>ACP 不是什么</h4>
+                        <ul>
+                            <li><strong>不是</strong> HTTP 服务器——无需端口和网络</li>
+                            <li><strong>不是</strong> MCP（Model Context Protocol）——MCP 用于调用外部工具</li>
+                            <li><strong>不是</strong> Agent 框架——它只是通信层</li>
+                            <li><strong>不是</strong> 替代 API 调用——它是连接层</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>ACP vs MCP：</strong>ACP 用于 Agent 与编辑器集成，MCP 用于 Agent 调用外部服务器托管的工具。如果你需要 Agent 连接数据库或调用远程 API，应该用 MCP。如果你需要 Agent 出现在编辑器里，用 ACP。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/25-acp-1.png" alt="图：ACP 与 MCP 协议层对比" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Quick start ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>快速开始</h2>
+                <h4>三步走：安装 → 启动 → 连接编辑器</h4>
+                <pre><code class="language-bash"># 第一步：安装 ACP 集成包
+$ npm install deepagents-acp
+$ yarn add deepagents-acp
+$ pnpm add deepagents-acp</code></pre>
+                <pre><code class="language-javascript">// 第二步：编程方式启动 ACP 服务器
+import { startServer } from "deepagents-acp";
+
+await startServer({
+  agents: {
+    name: "coding-assistant",                            // Agent 名称，在编辑器中显示
+    description: "AI coding assistant with filesystem access", // Agent 描述
+  },
+  workspaceRoot: process.cwd(),  // 工作区根目录，Agent 自动获取项目上下文
+});</code></pre>
+                <pre><code class="language-bash"># 或者用 CLI 一行搞定（无需写代码）
+$ npx deepagents-acp</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>发生了什么？</h4>
+                        <ul>
+                            <li><code>startServer</code> 以 stdio 模式启动 ACP 服务器</li>
+                            <li>从 stdin 读取请求，向 stdout 写入响应</li>
+                            <li>编辑器作为 ACP 客户端启动并连接这个进程</li>
+                            <li>Agent 自动获得编辑器提供的项目上下文</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>CLI 的便捷之处</h4>
+                        <ul>
+                            <li>不需要写任何 TypeScript 代码</li>
+                            <li>直接运行，编辑器配置指向这个命令即可</li>
+                            <li>支持 <code>--name</code>、<code>--skills</code>、<code>--debug</code> 等选项</li>
+                            <li>零配置，开箱即用</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>最快路径：</strong><code>npx deepagents-acp</code> 一行命令启动服务器，然后在编辑器里配置指向这个命令。不需要写代码、不需要启动服务器、不需要端口。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/25-acp-2.png" alt="图：ACP 服务器 stdio 通信时序" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Supported clients ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>支持的客户端</h2>
+                <h4>Deep Agent 可以在任何能运行 ACP Agent 服务器的地方工作</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>Zed 编辑器</h4>
+                        <p>原生支持 ACP，配置最简单。</p>
+                        <ul>
+                            <li>在 settings.json 中添加 profile 配置</li>
+                            <li>支持简单配置和自定义服务器脚本</li>
+                            <li>打开 Agent 面板即可开始会话</li>
+                        </ul>
+                        <p><span class="tag tag-primary">推荐首选</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>JetBrains IDE</h4>
+                        <p>IntelliJ IDEA、PyCharm、WebStorm 等全系列支持。</p>
+                        <ul>
+                            <li>通过 AI Assistant 面板连接</li>
+                            <li>支持 ACP 注册表一键安装</li>
+                            <li>完整的项目上下文集成</li>
+                        </ul>
+                        <p><span class="tag tag-info">全系列支持</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>VS Code</h4>
+                        <p>通过社区扩展 vscode-acp 支持。</p>
+                        <ul>
+                            <li>安装 vscode-acp 扩展</li>
+                            <li>配置 Agent 命令路径</li>
+                            <li>享受 VS Code 的完整编辑体验</li>
+                        </ul>
+                        <p><span class="tag tag-warning">社区扩展</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>Neovim</h4>
+                        <p>通过兼容 ACP 的插件支持。</p>
+                        <ul>
+                            <li>灵活的插件生态</li>
+                            <li>适合终端重度用户</li>
+                            <li>可高度自定义集成方式</li>
+                        </ul>
+                        <p><span class="tag tag-success">插件支持</span></p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>ACP 注册表：</strong>Deep Agents 已在 ACP Agent Registry 中上架。支持注册表的客户端（如 Zed、JetBrains）可以一键安装，无需手动配置。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Zed integration ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Zed 编辑器集成</h2>
+                <h4>三种配置方式——从零代码到完全自定义</h4>
+                <pre><code class="language-json">// 方式一：零代码配置（最简单）——Zed settings.json
+{
+  "agent": {
+    "profiles": {
+      "deepagents": {
+        "name": "DeepAgents",          // 在编辑器 Agent 面板中显示的名称
+        "command": "npx",              // 启动命令
+        "args": ["deepagents-acp"],    // 启动参数
+        "env": {
+          "ANTHROPIC_API_KEY": "sk-ant-...",   // Anthropic Claude 系列模型
+          // "DEEPSEEK_API_KEY": "sk-...",     // DeepSeek V4 系列（需安装 @langchain/deepseek）
+          // "OPENAI_API_KEY": "sk-..."        // OpenAI GPT 系列
+        }
+      }
+    }
+  }
+}</code></pre>
+                <pre><code class="language-json">// 方式二：带 CLI 选项——自定义 Agent 名称、技能和调试模式
+{
+  "agent": {
+    "profiles": {
+      "deepagents": {
+        "name": "DeepAgents",
+        "command": "npx",
+        "args": [
+          "deepagents-acp",
+          "--name", "my-assistant",   // 自定义 Agent 名称
+          "--skills", "./skills",     // 加载技能目录
+          "--debug"                   // 启用调试日志（输出到 stderr）
+        ],
+        "env": {
+          "DEEPSEEK_API_KEY": "sk-...",         // DeepSeek V4 系列（需安装 @langchain/deepseek）
+          // "ANTHROPIC_API_KEY": "sk-ant-...",  // 或使用 Anthropic
+          // "OPENAI_API_KEY": "sk-..."          // 或使用 OpenAI
+        }
+      }
+    }
+  }
+}</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>配置文件位置</h4>
+                        <ul>
+                            <li><strong>Linux：</strong><code>~/.config/zed/settings.json</code></li>
+                            <li><strong>macOS：</strong><code>~/Library/Application Support/Zed/settings.json</code></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>使用方式</h4>
+                        <ul>
+                            <li>配置完成后，打开 Zed 的 <strong>Agent 面板</strong></li>
+                            <li>选择你的 Deep Agent profile</li>
+                            <li>开始对话，Agent 自动获取项目上下文</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Custom server script ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义服务器</h2>
+                <h4>需要更多控制？写一个 TypeScript 服务器脚本</h4>
+                <pre><code class="language-javascript">// server.ts —— 自定义服务器脚本
+import { startServer } from "deepagents-acp";
+
+await startServer({
+  agents: {
+    name: "my-agent",
+    description: "My custom coding agent",
+    skills: ["./skills/"],                          // 加载技能目录
+    memory: ["./.deepagents/AGENTS.md"],            // 加载记忆文件（长期上下文）
+  },
+});</code></pre>
+                <pre><code class="language-json">// Zed 配置指向自定义脚本——用 tsx 运行 TypeScript 服务器
+{
+  "agent": {
+    "profiles": {
+      "my-agent": {
+        "name": "My Agent",
+        "command": "npx",
+        "args": ["tsx", "./server.ts"]  // 使用 tsx 直接运行 TS 文件
+      }
+    }
+  }
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>什么时候需要自定义脚本？</h4>
+                        <ul>
+                            <li>需要加载自定义<strong>技能目录</strong></li>
+                            <li>需要指定<strong>记忆文件</strong>（AGENTS.md）</li>
+                            <li>需要注册<strong>自定义工具</strong></li>
+                            <li>需要配置<strong>多 Agent</strong>或<strong>斜杠命令</strong></li>
+                            <li>需要启用<strong>Human-in-the-loop</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>什么时候不需要？</h4>
+                        <ul>
+                            <li>只是想快速在编辑器里试试 Deep Agent</li>
+                            <li>不需要自定义技能或工具</li>
+                            <li>使用默认配置就够了</li>
+                        </ul>
+                        <p><strong>直接用：</strong><code>npx deepagents-acp</code></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: CLI reference ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>CLI 参考</h2>
+                <h4>启动 ACP 服务器最快的方式——无需写代码</h4>
+                <pre><code class="language-bash">$ npx deepagents-acp [options]</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>选项</th><th>短选项</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>--name &lt;name&gt;</code></td>
+                            <td><code>-n</code></td>
+                            <td>Agent 名称（默认：<code>"deepagents"</code>）</td>
+                        </tr>
+                        <tr>
+                            <td><code>--description &lt;desc&gt;</code></td>
+                            <td><code>-d</code></td>
+                            <td>Agent 描述</td>
+                        </tr>
+                        <tr>
+                            <td><code>--model &lt;model&gt;</code></td>
+                            <td><code>-m</code></td>
+                            <td>LLM 模型（默认：<code>"claude-sonnet-4-5-20250929"</code>）</td>
+                        </tr>
+                        <tr>
+                            <td><code>--workspace &lt;path&gt;</code></td>
+                            <td><code>-w</code></td>
+                            <td>工作区根目录（默认：当前工作目录）</td>
+                        </tr>
+                        <tr>
+                            <td><code>--skills &lt;paths&gt;</code></td>
+                            <td><code>-s</code></td>
+                            <td>逗号分隔的 Skill 路径</td>
+                        </tr>
+                        <tr>
+                            <td><code>--memory &lt;paths&gt;</code></td>
+                            <td></td>
+                            <td>逗号分隔的 AGENTS.md 路径</td>
+                        </tr>
+                        <tr>
+                            <td><code>--debug</code></td>
+                            <td></td>
+                            <td>启用调试日志输出到 stderr</td>
+                        </tr>
+                        <tr>
+                            <td><code>--help</code></td>
+                            <td><code>-h</code></td>
+                            <td>显示帮助信息</td>
+                        </tr>
+                        <tr>
+                            <td><code>--version</code></td>
+                            <td><code>-v</code></td>
+                            <td>显示版本号</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>环境变量</h4>
+                        <table>
+                            <thead><tr><th>变量</th><th>说明</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Anthropic/Claude 模型 API 密钥（必填）</td></tr>
+                                <tr><td><code>OPENAI_API_KEY</code></td><td>OpenAI 模型 API 密钥</td></tr>
+                                <tr><td><code>DEBUG</code></td><td>设为 <code>"true"</code> 启用调试日志</td></tr>
+                                <tr><td><code>WORKSPACE_ROOT</code></td><td><code>--workspace</code> 的替代方式</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>常用命令组合</h4>
+                        <pre><code class="language-bash"># 基础启动
+$ npx deepagents-acp
+
+# 指定名称和技能
+$ npx deepagents-acp \
+    --name my-agent \
+    --skills ./skills
+
+# 调试模式
+$ DEBUG=true npx deepagents-acp \
+    --debug</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Programming API - startServer ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>编程 API 概览</h2>
+                <h4>两种方式：便捷函数 startServer 和完全控制 DeepAgentsServer</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>startServer（便捷）</h4>
+                        <p>一次调用即可创建并启动服务器。适合大多数场景。</p>
+                        <pre><code class="language-javascript">import { startServer } from "deepagents-acp";
+
+// startServer 一步完成创建 + 启动，适合大多数场景
+const server = await startServer({
+  agents: {
+    name: "coding-assistant",          // Agent 唯一标识
+    description: "AI coding assistant", // Agent 功能描述
+  },
+  workspaceRoot: process.cwd(),        // 编辑器提供的项目根目录
+});</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>DeepAgentsServer（完全控制）</h4>
+                        <p>如需完全控制服务器生命周期和配置，直接使用类。</p>
+                        <pre><code class="language-javascript">import { DeepAgentsServer } from "deepagents-acp";
+
+// DeepAgentsServer 允许完全控制服务器生命周期
+const server = new DeepAgentsServer({
+  agents: [/* 多 Agent 配置数组 */],
+  serverName: "my-acp",              // ACP 服务器名称，在编辑器中显示
+  serverVersion: "1.0.0",            // 服务器版本号
+  workspaceRoot: process.cwd(),      // 工作区根目录
+  debug: true,                       // 启用调试日志输出到 stderr
+});
+
+await server.start();  // 以 stdio 模式启动服务器</code></pre>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>服务器选项</th><th>类型</th><th>默认值</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>agents</code></td><td><code>DeepAgentConfig | DeepAgentConfig[]</code></td><td>必填</td><td>Agent 配置</td></tr>
+                        <tr><td><code>serverName</code></td><td><code>string</code></td><td><code>"deepagents-acp"</code></td><td>ACP 服务器名称</td></tr>
+                        <tr><td><code>serverVersion</code></td><td><code>string</code></td><td><code>"0.0.1"</code></td><td>服务器版本</td></tr>
+                        <tr><td><code>workspaceRoot</code></td><td><code>string</code></td><td><code>process.cwd()</code></td><td>工作区根目录</td></tr>
+                        <tr><td><code>debug</code></td><td><code>boolean</code></td><td><code>false</code></td><td>启用调试日志</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Agent configuration ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Agent 配置</h2>
+                <h4>每个 Agent 的完整配置选项——从名称到中间件</h4>
+                <table>
+                    <thead>
+                        <tr><th>选项</th><th>类型</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>name</code></td>
+                            <td><code>string</code></td>
+                            <td>唯一的 Agent 名称（必填）</td>
+                        </tr>
+                        <tr>
+                            <td><code>description</code></td>
+                            <td><code>string</code></td>
+                            <td>Agent 描述</td>
+                        </tr>
+                        <tr>
+                            <td><code>model</code></td>
+                            <td><code>string</code></td>
+                            <td>LLM 模型（默认：<code>"claude-sonnet-4-5-20250929"</code>）</td>
+                        </tr>
+                        <tr>
+                            <td><code>tools</code></td>
+                            <td><code>StructuredTool[]</code></td>
+                            <td>自定义 LangChain 工具</td>
+                        </tr>
+                        <tr>
+                            <td><code>systemPrompt</code></td>
+                            <td><code>string</code></td>
+                            <td>自定义系统提示词</td>
+                        </tr>
+                        <tr>
+                            <td><code>middleware</code></td>
+                            <td><code>AgentMiddleware[]</code></td>
+                            <td>自定义中间件</td>
+                        </tr>
+                        <tr>
+                            <td><code>backend</code></td>
+                            <td><code>AnyBackendProtocol</code></td>
+                            <td>文件系统后端</td>
+                        </tr>
+                        <tr>
+                            <td><code>skills</code></td>
+                            <td><code>string[]</code></td>
+                            <td>Skill 源路径</td>
+                        </tr>
+                        <tr>
+                            <td><code>memory</code></td>
+                            <td><code>string[]</code></td>
+                            <td>Memory 源路径（AGENTS.md）</td>
+                        </tr>
+                        <tr>
+                            <td><code>interruptOn</code></td>
+                            <td><code>Record&lt;string, boolean | InterruptOnConfig&gt;</code></td>
+                            <td>需要用户批准的工具（HITL）</td>
+                        </tr>
+                        <tr>
+                            <td><code>commands</code></td>
+                            <td><code>Array&lt;{ name, description, input? }&gt;</code></td>
+                            <td>自定义斜杠命令</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>核心字段只有两个：</strong><code>name</code>（必填）和 <code>description</code>。其余全是可选的。你只需要关心和你的场景相关的配置项，其余使用默认值。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Multi-agent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多 Agent 支持</h2>
+                <h4>在单个服务器中暴露多个 Agent，客户端选择使用哪个</h4>
+                <pre><code class="language-javascript">import { DeepAgentsServer } from "deepagents-acp";
+
+const server = new DeepAgentsServer({
+  agents: [
+    {
+      name: "code-agent",                             // 通用编码助手
+      description: "General coding assistant",
+      model: "claude-sonnet-4-5-20250929",
+      skills: ["./skills/"],                          // 加载技能目录
+      memory: ["./.deepagents/AGENTS.md"],            // 加载项目记忆
+    },
+    {
+      name: "reviewer",                               // 代码审查专家
+      description: "Code review specialist",
+      systemPrompt: "You are a code review expert...", // 自定义系统提示词
+    },
+  ],
+  serverName: "my-deepagents-acp",   // 服务器名称
+  serverVersion: "1.0.0",
+  workspaceRoot: process.cwd(),
+  debug: true,
+});
+
+await server.start();</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>工作原理</h4>
+                        <ul>
+                            <li>ACP 客户端在<strong>创建会话时</strong>选择 Agent</li>
+                            <li>每个 Agent 有独立的配置、工具和提示词</li>
+                            <li>共享同一个 ACP 服务器进程</li>
+                            <li>适合不同职责的 Agent 组合场景</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>注意事项</h4>
+                        <ul>
+                            <li>某些客户端（如 Zed）<strong>不提供 Agent 选择 UI</strong></li>
+                            <li>此时考虑为每个 Agent 运行<strong>独立的服务器实例</strong></li>
+                            <li>配置不同的 <code>serverName</code> 以区分</li>
+                            <li>在编辑器中配置多个 profile 对应不同 Agent</li>
+                        </ul>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/25-acp-3.png" alt="图：单进程多 Agent 路由架构" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Slash commands ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>斜杠命令</h2>
+                <h4>向 IDE 注册内置命令和自定义命令——用户输入 / 触发</h4>
+                <p>服务器自动向 IDE 注册内置斜杠命令：<code>/plan</code>、<code>/agent</code>、<code>/ask</code>、<code>/clear</code>、<code>/status</code>。你还可以为每个 Agent 定义自定义命令：</p>
+                <pre><code class="language-javascript">import { DeepAgentsServer } from "deepagents-acp";
+
+const server = new DeepAgentsServer({
+  agents: {
+    name: "my-agent",
+    commands: [
+      // 简单命令：无需参数
+      { name: "test", description: "Run the project's test suite" },
+      { name: "lint", description: "Run linter and fix issues" },
+      // 带参数提示的命令：引导用户输入
+      {
+        name: "deploy",
+        description: "Deploy to staging",
+        input: { hint: "environment (staging or production)" },  // 输入提示
+      },
+    ],
+  },
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>内置命令</h4>
+                        <ul>
+                            <li><code>/plan</code> — 触发任务规划</li>
+                            <li><code>/agent</code> — 切换 Agent 模式</li>
+                            <li><code>/ask</code> — 提问模式</li>
+                            <li><code>/clear</code> — 清除对话历史</li>
+                            <li><code>/status</code> — 查看 Agent 状态</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>自定义命令的价值</h4>
+                        <ul>
+                            <li>将<strong>常用操作封装为快捷入口</strong></li>
+                            <li>用户不需要记住复杂提示词</li>
+                            <li>输入 <code>/</code> 即可看到所有可用命令</li>
+                            <li>支持 <code>input.hint</code> 引导用户输入参数</li>
+                            <li>在编辑器的命令面板中自动注册</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Human-in-the-loop ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>人在环路</h2>
+                <h4>使用 interruptOn 让 Agent 在执行敏感工具前等待用户批准</h4>
+                <pre><code class="language-javascript">import { DeepAgentsServer } from "deepagents-acp";
+
+const server = new DeepAgentsServer({
+  agents: {
+    name: "careful-agent",
+    // 配置需要在执行前暂停等待用户批准的工具
+    interruptOn: {
+      // execute：Shell 命令执行前暂停，用户可批准、编辑或拒绝
+      execute: { allowedDecisions: ["approve", "edit", "reject"] },
+      // write_file：写入文件前暂停，默认只允许批准或拒绝
+      write_file: true,
+    },
+  },
+});</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>interruptOn 配置</h4>
+                        <ul>
+                            <li><code>execute: true</code> — Shell 命令执行前暂停</li>
+                            <li><code>write_file: true</code> — 写文件前暂停</li>
+                            <li><code>edit_file: true</code> — 编辑文件前暂停</li>
+                            <li><code>allowedDecisions</code> — 允许的审批决策类型</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>用户体验</h4>
+                        <ul>
+                            <li>IDE 弹出提示，显示 Agent 要执行的操作</li>
+                            <li>用户可以<strong>批准、拒绝或编辑</strong>操作</li>
+                            <li>可选择<strong>在当前会话中记住</strong>该决定</li>
+                            <li>审批后 Agent 自动继续工作</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>安全提示：</strong>在生产环境中，始终为高风险操作（写文件、执行命令）配置 interruptOn。这确保 Agent 不会在未经确认的情况下修改代码或执行破坏性操作。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Custom tools ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义工具</h2>
+                <h4>用 LangChain tool 格式为 Agent 添加自定义能力</h4>
+                <pre><code class="language-javascript">import { DeepAgentsServer } from "deepagents-acp";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+// 使用 LangChain tool 函数 + Zod schema 定义自定义工具
+const searchTool = tool(
+  async ({ query }) => {
+    return `Results for: ${query}`;    // 工具的实际执行逻辑
+  },
+  {
+    name: "search",                     // 工具名称，Agent 调用时使用
+    description: "Search the codebase", // 工具描述，Agent 根据此判断何时调用
+    schema: z.object({ query: z.string() }), // 使用 Zod 定义参数类型
+  },
+);
+
+const deployTool = tool(
+  async ({ environment }) => {
+    return `Deployed to ${environment}`;
+  },
+  {
+    name: "deploy",
+    description: "Deploy the application",
+    schema: z.object({
+      environment: z.string().describe("staging or production"), // .describe() 为 Agent 提供参数说明
+    }),
+  },
+);
+
+const server = new DeepAgentsServer({
+  agents: {
+    name: "search-agent",
+    tools: [searchTool, deployTool],    // 将自定义工具注册到 Agent
+  },
+});
+
+await server.start();</code></pre>
+                <div class="key-point">
+                    <strong>工具格式兼容性：</strong>ACP 使用 LangChain 的 <code>tool</code> 函数定义工具，配合 Zod schema 声明参数类型。这意味着你之前为 LangGraph Agent 写的工具可以直接复用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Custom backend & Skills ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>后端与技能</h2>
+                <h4>自定义文件系统后端 + 加载技能和记忆文件</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>自定义后端</h4>
+                        <pre><code class="language-javascript">import { DeepAgentsServer } from "deepagents-acp";
+import {
+  CompositeBackend,
+  FilesystemBackend,
+  StateBackend,
+} from "deepagents";
+
+const server = new DeepAgentsServer({
+  agents: {
+    name: "custom-agent",
+    // CompositeBackend 根据路径前缀路由到不同后端
+    backend: new CompositeBackend({
+      routes: [
+        {
+          prefix: "/workspace",           // /workspace 路径走磁盘文件系统
+          backend: new FilesystemBackend({
+            rootDir: "./workspace",       // 映射到本地目录
+          }),
+        },
+        {
+          prefix: "/",                    // 其余路径走内存状态后端
+          backend: new StateBackend(),    // 适用于临时文件和状态数据
+        },
+      ],
+    }),
+  },
+});</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>Skill 和 Memory</h4>
+                        <pre><code class="language-javascript">import { startServer } from "deepagents-acp";
+
+await startServer({
+  agents: {
+    name: "project-agent",
+    description:
+      "Agent with project-specific knowledge",
+    skills: [
+      "./skills/",                         // 项目级技能目录
+      "~/.deepagents/skills/",             // 用户级技能目录
+    ],
+    memory: [
+      "./.deepagents/AGENTS.md",           // 项目级记忆文件
+    ],
+  },
+  workspaceRoot: process.cwd(),            // 设置工作区根目录
+});</code></pre>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>CompositeBackend 路由</h4>
+                        <p>根据路径前缀将请求路由到不同后端。<code>/workspace</code> 走磁盘，<code>/</code> 走内存。灵活组合，按需分配。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Skills 加载</h4>
+                        <p>支持目录和文件路径，多个路径逗号分隔。加载后 Agent 自动获得技能中定义的工作流和领域知识。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Memory 持久化</h4>
+                        <p>AGENTS.md 文件作为 Agent 的长期记忆。跨会话保留项目知识、编码规范和历史决策。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Complete example ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>完整示例</h2>
+                <h4>一个带有自定义工具、HITL 和技能的项目 Agent</h4>
+                <pre><code class="language-javascript">import { DeepAgentsServer } from "deepagents-acp";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+// 自定义工具：运行测试
+const runTests = tool(
+  async ({ scope }) => {
+    return `Tests passed for ${scope}`;
+  },
+  {
+    name: "run_tests",
+    description: "Run project tests",
+    schema: z.object({
+      scope: z.string().describe("test scope, e.g. 'unit' or 'all'"),
+    }),
+  },
+);
+
+// 创建完整配置的 ACP 服务器——集成了自定义工具、技能、记忆和 HITL
+const server = new DeepAgentsServer({
+  agents: {
+    name: "project-agent",
+    description: "Full-featured coding assistant",
+    tools: [runTests],                                // 自定义工具
+    skills: ["./skills/"],                            // 技能目录
+    memory: ["./.deepagents/AGENTS.md"],              // 长期记忆文件
+    commands: [                                       // 自定义斜杠命令
+      { name: "test", description: "Run tests" },
+      { name: "review", description: "Review current changes" },
+    ],
+    interruptOn: {                                    // 人在环路：敏感操作需审批
+      write_file: true,                               // 写文件前暂停
+      execute: { allowedDecisions: ["approve", "reject"] }, // Shell 命令前暂停
+    },
+  },
+  serverName: "my-project-acp",
+  serverVersion: "1.0.0",
+  workspaceRoot: process.cwd(),
+});
+
+await server.start();</code></pre>
+                <div class="key-point">
+                    <strong>这个配置涵盖了 ACP 的核心能力：</strong>自定义工具、技能加载、长期记忆、斜杠命令、人在环路。根据你的实际需求，可以自由组合这些选项。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Exercise ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>将你之前创建的 Deep Agent 通过 ACP 集成到编辑器中</h4>
+                <p>现在轮到你了。选择一个你喜欢的编辑器，完成以下任务：</p>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>任务 1：零代码启动</h3>
+                        <ul>
+                            <li>运行 <code>npx deepagents-acp</code> 启动服务器</li>
+                            <li>在 Zed 或 VS Code 中配置 Agent profile</li>
+                            <li>在编辑器中启动对话，验证连接成功</li>
+                            <li>观察 Agent 如何自动获取项目上下文</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 2：自定义配置</h3>
+                        <ul>
+                            <li>创建一个 <code>server.ts</code> 文件</li>
+                            <li>配置至少一个自定义工具</li>
+                            <li>添加 <code>interruptOn</code> 保护写操作</li>
+                            <li>注册一个自定义斜杠命令</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 3：多 Agent 尝试</h3>
+                        <ul>
+                            <li>创建两个不同职责的 Agent</li>
+                            <li>一个用于编码，一个用于审查</li>
+                            <li>在编辑器中切换使用不同 Agent</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>先用 <code>--debug</code> 选项启动服务器，可以在终端看到完整的通信日志，帮助理解 ACP 协议的工作方式。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 18: Troubleshooting ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见问题</h2>
+                <h4>集成过程中遇到的典型问题及解决方案</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>连接失败</h4>
+                        <ul>
+                            <li><strong>现象：</strong>编辑器提示"无法连接 Agent"</li>
+                            <li><strong>检查：</strong><code>command</code> 路径是否正确</li>
+                            <li><strong>检查：</strong><code>ANTHROPIC_API_KEY</code> 是否设置</li>
+                            <li><strong>解决：</strong>在终端手动运行命令，确认无报错</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>Agent 无响应</h4>
+                        <ul>
+                            <li><strong>现象：</strong>发送消息后无回复</li>
+                            <li><strong>检查：</strong>API 密钥是否有效</li>
+                            <li><strong>检查：</strong>模型名称是否正确</li>
+                            <li><strong>解决：</strong>用 <code>--debug</code> 查看完整日志</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>技能加载失败</h4>
+                        <ul>
+                            <li><strong>现象：</strong>Agent 无法使用自定义技能</li>
+                            <li><strong>检查：</strong><code>--skills</code> 路径是否存在</li>
+                            <li><strong>检查：</strong>路径是相对路径还是绝对路径</li>
+                            <li><strong>解决：</strong>使用 <code>workspaceRoot</code> 的相对路径</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>HITL 不生效</h4>
+                        <ul>
+                            <li><strong>现象：</strong>Agent 直接执行敏感操作，未暂停</li>
+                            <li><strong>检查：</strong><code>interruptOn</code> 配置的工具名是否正确</li>
+                            <li><strong>检查：</strong>编辑器是否支持 HITL UI</li>
+                            <li><strong>解决：</strong>确认客户端支持审批交互</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>调试技巧：</strong>始终使用 <code>--debug</code> 启动开发环境中的服务器。日志输出到 stderr，不会干扰 stdio 通信。同时设置 <code>DEBUG=true</code> 环境变量可以获得更详细的日志。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 19: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了通过 ACP 集成 Deep Agent 的完整流程</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>ACP 是 Agent 与编辑器之间的<strong>标准化通信协议</strong></li>
+                            <li><code>npx deepagents-acp</code> <strong>一行命令</strong>即可启动服务器</li>
+                            <li>支持 Zed、JetBrains、VS Code 等<strong>主流编辑器</strong></li>
+                            <li>编程 API：<code>startServer</code> 和 <code>DeepAgentsServer</code> 两种方式</li>
+                            <li>可配置<strong>多 Agent</strong>、<strong>斜杠命令</strong>、<strong>HITL</strong>、<strong>自定义工具</strong></li>
+                            <li>支持<strong>自定义后端</strong>、<strong>技能加载</strong>和<strong>记忆持久化</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>Deep Agent Code</strong> — 终端编程 Agent 的使用</li>
+                            <li><strong>Code 记忆与技能</strong> — 在终端环境中的持久化</li>
+                            <li><strong>Code 远程沙箱</strong> — 在云端隔离执行</li>
+                            <li><strong>Code 子 Agent</strong> — 终端环境中的任务委派</li>
+                            <li><strong>Code 供应商配置</strong> — 支持多种 LLM 供应商</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>ACP 让 Deep Agent 从终端走进编辑器。一行命令启动，标准协议通信，主流编辑器支持。你构建的 Agent 不再是孤立的工具，而是嵌入开发环境的编程伙伴——这是从"能用"到"好用"的关键一步。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 20: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./26-code-overview.html">下一章：Deep Agent Code 概览</a> — 终端编程 Agent 的使用</li>
+                            <li><a href="./01-overview.html">第 01 章：认识 Deep Agents</a> — 回顾基础概念</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://agentclientprotocol.com/get-started/introduction">ACP 协议官方文档</a> — 协议规范和概念</li>
+                            <li><a href="https://agentclientprotocol.com/get-started/clients">ACP 客户端列表</a> — 支持的编辑器</li>
+                            <li><a href="https://www.npmjs.com/package/deepagents-acp">deepagents-acp npm 包</a> — 安装和 API</li>
+                            <li><a href="https://agentclientprotocol.com/registry/index">ACP Agent Registry</a> — 一键安装注册表</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关资源</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/llms.txt">LangChain 文档索引</a> — 完整的文档导航</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">GitHub 仓库</a> — 源码和示例</li>
+                            <li>ACP vs MCP 对比 — 理解两个协议的适用场景</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

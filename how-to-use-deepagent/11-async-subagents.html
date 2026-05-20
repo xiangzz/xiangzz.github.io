@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>异步子代理（Async Subagents）</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 11 章</div>
+            <h1>异步子代理</h1>
+            <p>启动后台子代理并发运行，同时 Supervisor 继续与用户交互</p>
+            <strong>从"排队等结果"到"边聊边干活"的异步协作</strong>
+                <div class="warning" style="margin-top: 1.5rem;">
+                    <strong>Preview 功能：</strong>异步子代理是 <code>deepagents</code> 1.9.0 中提供的预览功能。预览功能正在积极开发中，API 可能会发生变化。请关注官方文档获取最新更新。
+                </div>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你的 Supervisor 是不是经常"卡住"等子代理干完活才能继续？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>同步子代理的困境</h4>
+                        <ul>
+                            <li>启动子代理后 <strong>Supervisor 完全阻塞</strong>，无法响应用户</li>
+                            <li>长时间任务让用户<strong>干等着</strong>，体验极差</li>
+                            <li>多个子代理只能排队执行，<strong>无法并发</strong></li>
+                            <li>任务启动后<strong>无法取消</strong>，也无法中途修正方向</li>
+                            <li>调用之间无状态，<strong>每次都从零开始</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>异步子代理的解法</h4>
+                        <ul>
+                            <li>启动后<strong>立即返回</strong>任务 ID，Supervisor 继续对话</li>
+                            <li>用户可以<strong>随时查看进度</strong>，不用被动等待</li>
+                            <li>多个子代理<strong>真正并发运行</strong>，互不干扰</li>
+                            <li>支持 <code>update</code> 中途修正、<code>cancel</code> 取消任务</li>
+                            <li>每个子代理<strong>维护独立状态</strong>，跨交互持久化</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>同步子代理像打电话——对方不挂断你就做不了别的；异步子代理像发微信——发完消息你可以继续干其他事，有空再看回复。
+                    <br><br>
+                    <strong>卸甲：</strong>上面用打电话和发微信来打比方，是为了帮你理解两种模式的差异。实际上同步子代理是主 Agent 调用 <code>task</code> 后，<strong>等待子 Agent 完全执行完毕</strong>才继续往下走，期间 LLM 不产生新回复；异步子代理则是通过 Agent Protocol 在服务端开启一个新线程，主 Agent 立即拿到任务 ID 继续处理用户消息——不涉及"通话"或"聊天"的概念。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Architecture diagram ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>架构概览</h2>
+                <h4>用户 → Supervisor → 异步子代理的协作架构</h4>
+                <div style="text-align: center; margin: 1.5rem 0;">
+                    <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 0.5rem; font-size: 0.95rem;">
+                        <div style="background: #059669; color: white; padding: 0.6rem 1.5rem; border-radius: 999px; font-weight: 600;">用户（User）</div>
+                        <div style="font-size: 1.2rem; color: #6b7280;">↓ 对话</div>
+                        <div style="background: #7C3AED; color: white; padding: 0.6rem 1.5rem; border-radius: 8px; font-weight: 600; position: relative;">
+                            Supervisor Agent（编排者）
+                        </div>
+                        <div style="font-size: 1.2rem; color: #6b7280;">↓ 启动 / 检查 / 更新 / 取消</div>
+                        <div style="display: flex; gap: 2rem; align-items: center;">
+                            <div style="background: #0284C7; color: white; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: 600;">
+                                研究代理（Researcher）
+                            </div>
+                            <div style="background: #D97706; color: white; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: 600;">
+                                编码代理（Coder）
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>Agent Protocol 兼容说明：</strong>异步子代理通过 <a href="https://github.com/langchain-ai/agent-protocol" target="_blank" rel="noopener">Agent Protocol</a> 与服务端通信。你可以使用 <strong>LangSmith Deployments</strong>，也可以自行托管任何兼容 Agent Protocol 的服务端。每个子代理独立于 Supervisor 运行，Supervisor 通过 SDK 控制它们的启动、检查、更新和取消。
+                </div>
+                <div class="key-point">
+                    <strong>通信方式：</strong>Supervisor 并不直接"运行"子代理——它通过 Agent Protocol 向服务端发指令，服务端负责创建线程、管理运行和返回结果。这种解耦让子代理可以部署在任何地方。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: When to use ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>何时使用它</h2>
+                <h4>同步 vs 异步子代理的适用场景对比</h4>
+                <table>
+                    <thead>
+                        <tr><th>维度</th><th>同步子代理</th><th>异步子代理</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>执行模型</strong></td>
+                            <td>Supervisor 阻塞直到完成</td>
+                            <td>立即返回任务 ID，继续执行</td>
+                        </tr>
+                        <tr>
+                            <td><strong>并发性</strong></td>
+                            <td>并行但阻塞</td>
+                            <td>并行且非阻塞</td>
+                        </tr>
+                        <tr>
+                            <td><strong>中途更新</strong></td>
+                            <td>不可能</td>
+                            <td>通过 <code>update_async_task</code> 发送新指令</td>
+                        </tr>
+                        <tr>
+                            <td><strong>取消</strong></td>
+                            <td>不可能</td>
+                            <td>通过 <code>cancel_async_task</code> 取消</td>
+                        </tr>
+                        <tr>
+                            <td><strong>状态管理</strong></td>
+                            <td>无状态，调用之间不保持</td>
+                            <td>有状态，跨交互维护持久状态</td>
+                        </tr>
+                        <tr>
+                            <td><strong>适用场景</strong></td>
+                            <td>需要等待结果才能继续</td>
+                            <td>长时间运行、需交互式管理</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>选型口诀：</strong>短任务、等结果的用同步；长任务、可并发的用异步。当你需要"启动后就忘掉，想起来再查"时，就是异步子代理的舞台。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Configuration ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置子代理</h2>
+                <h4>将异步子代理定义为 AsyncSubAgent 规范列表</h4>
+                <p>每个异步子代理指向一个 Agent Protocol 服务端。Supervisor 根据描述决定把任务派给谁。</p>
+                <pre><code class="language-javascript">import { createDeepAgent, AsyncSubAgent } from "deepagents";
+
+const asyncSubagents: AsyncSubAgent[] = [
+  {
+    name: "researcher",                     // Supervisor 用这个名字启动任务
+    description: "用于信息收集和综合的研究代理",  // 描述决定 Supervisor 何时委派
+    graphId: "researcher",                   // Agent Protocol 服务端上的图 ID
+    // 省略 url → 使用 ASGI 传输（同一部署内，零网络延迟）
+  },
+  {
+    name: "coder",
+    description: "用于代码生成和审查的编码代理",
+    graphId: "coder",
+    // url: "https://coder-deployment.langsmith.dev"
+    // 设置 url → 使用 HTTP 传输（远程独立部署）
+  },
+];
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  subagents: [...asyncSubagents],  // 注册异步子代理，Supervisor 自动获得管理工具
+});</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>name</code></td><td><code>string</code></td><td>必填。唯一标识符，启动任务时使用</td></tr>
+                        <tr><td><code>description</code></td><td><code>string</code></td><td>必填。描述功能，Supervisor 据此委派任务</td></tr>
+                        <tr><td><code>graphId</code></td><td><code>string</code></td><td>必填。Agent Protocol 服务端上的图 ID</td></tr>
+                        <tr><td><code>url</code></td><td><code>string</code></td><td>可选。省略用 ASGI，设置用 HTTP</td></tr>
+                        <tr><td><code>headers</code></td><td><code>Record</code></td><td>可选。远程服务端的额外请求头</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: langgraph.json co-deployment ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>协同部署配置</h2>
+                <h4>在同一个 langgraph.json 中注册所有图实现 ASGI 传输</h4>
+                <p>对于基于 LangGraph 的部署，推荐将所有图注册在同一个 <code>langgraph.json</code> 中。这样子代理通过 ASGI 传输协同部署，零网络延迟。</p>
+                <pre><code class="language-json">{
+  "graphs": {
+    "supervisor": "./src/supervisor.py:graph",   // 编排者，负责管理子代理
+    "researcher": "./src/researcher.py:graph",   // 研究代理
+    "coder": "./src/coder.py:graph"              // 编码代理
+  }
+}</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>ASGI 传输的优势</h4>
+                        <ul>
+                            <li><strong>零网络延迟</strong>——进程内函数调用</li>
+                            <li>无需额外身份验证配置</li>
+                            <li>子代理仍独立运行，各有自己的线程和状态</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>何时用 HTTP 传输</h4>
+                        <ul>
+                            <li>子代理需要<strong>独立扩展</strong></li>
+                            <li>不同团队各自维护不同子代理</li>
+                            <li>需要<strong>不同的资源配置</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>推荐起点：</strong>先用 ASGI 协同部署，一个服务端搞定所有代理。等真正遇到扩展瓶颈时再拆分为 HTTP 远程部署。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Five tools ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工具一览</h2>
+                <h4>中间件为 Supervisor 提供的五个异步管理工具</h4>
+                <p>AsyncSubAgentMiddleware 自动为 Supervisor 注入五个工具。LLM 像调用其他工具一样使用它们，中间件在后台处理线程创建、运行管理和状态持久化。</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4><code>start_async_task</code></h4>
+                        <p>启动新的后台任务</p>
+                        <p><span class="tag tag-success">返回任务 ID（立即）</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4><code>check_async_task</code></h4>
+                        <p>获取任务的当前状态和结果</p>
+                        <p><span class="tag tag-info">状态 + 结果</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4><code>update_async_task</code></h4>
+                        <p>向运行中的任务发送新指令</p>
+                        <p><span class="tag tag-primary">确认 + 更新后状态</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4><code>cancel_async_task</code></h4>
+                        <p>停止运行中的任务</p>
+                        <p><span class="tag tag-warning">确认取消</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D97706;">
+                        <h4><code>list_async_tasks</code></h4>
+                        <p>列出所有已跟踪任务及状态</p>
+                        <p><span class="tag tag-warning">所有任务摘要</span></p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>Supervisor 的 LLM 自动决定何时调用这些工具。你不需要手动管理线程 ID 或运行状态——中间件在后台完成所有底层操作。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Lifecycle ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>任务生命周期</h2>
+                <h4>从启动到获取结果，异步子代理的完整交互流程</h4>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. 启动</h4>
+                        <p>在服务端创建新线程，以任务描述开始运行，返回线程 ID 作为任务 ID</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. 检查</h4>
+                        <p>获取当前运行状态；完成则提取最终输出，否则报告进度</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. 更新</h4>
+                        <p>中断当前运行，以新指令 + 完整历史重启，任务 ID 不变</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>4. 取消</h4>
+                        <p>调用 <code>runs.cancel()</code>，标记任务为 cancelled</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>5. 列出</h4>
+                        <p>遍历所有任务，非终止状态并行获取实时状态</p>
+                    </div>
+                </div>
+                <h4 style="margin-top: 1rem;">交互时序</h4>
+                <div style="background: var(--code-bg, #1e1e2e); color: #cdd6f4; padding: 1rem; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 0.85rem; line-height: 1.6; overflow-x: auto; margin: 0.5rem 0;">
+                    <div style="color: #a6e3a1;">用户</div>
+                    <div style="color: #cba6f7;">Supervisor</div>
+                    <div style="color: #89b4fa;">Agent Protocol 服务端</div>
+                    <hr style="border-color: #45475a; margin: 0.3rem 0;">
+                    <div><span style="color: #a6e3a1;">用户</span> ── "研究主题 X" ──▶ <span style="color: #cba6f7;">Supervisor</span></div>
+                    <div><span style="color: #cba6f7;">Supervisor</span> ── launch(researcher, "主题 X") ──▶ <span style="color: #89b4fa;">服务端</span></div>
+                    <div><span style="color: #89b4fa;">服务端</span> ── task_id: abc123 ──▶ <span style="color: #cba6f7;">Supervisor</span></div>
+                    <div style="color: #6c7086; font-style: italic;">&nbsp;&nbsp;&nbsp;&nbsp;ℹ 研究代理正在后台工作...</div>
+                    <div><span style="color: #cba6f7;">Supervisor</span> ── "已启动任务 abc123" ──▶ <span style="color: #a6e3a1;">用户</span></div>
+                    <div style="color: #6c7086; font-style: italic;">&nbsp;&nbsp;&nbsp;&nbsp;ℹ 用户继续与 Supervisor 对话其他话题</div>
+                    <div><span style="color: #a6e3a1;">用户</span> ── "研究进展如何？" ──▶ <span style="color: #cba6f7;">Supervisor</span></div>
+                    <div><span style="color: #cba6f7;">Supervisor</span> ── check(abc123) ──▶ <span style="color: #89b4fa;">服务端</span></div>
+                    <div><span style="color: #89b4fa;">服务端</span> ── { status: success, result: "发现..." } ──▶ <span style="color: #cba6f7;">Supervisor</span></div>
+                    <div><span style="color: #cba6f7;">Supervisor</span> ── "以下是研究结果" ──▶ <span style="color: #a6e3a1;">用户</span></div>
+                </div>
+                <div class="key-point">
+                    <strong>关键设计：</strong>启动后 Supervisor 不会轮询等待完成。它把任务 ID 交给用户，继续处理其他请求。用户主动询问时才去检查状态——这就是"异步"的核心。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: State management ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>状态管理机制</h2>
+                <h4>为什么任务元数据不能存在消息历史里？</h4>
+                <p>任务元数据存储在 Supervisor 图上的专用状态通道 <code>asyncTasks</code> 中，与消息历史分开。这不是随意设计——而是为了对抗一个真实问题。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>如果存在消息历史中</h4>
+                        <ul>
+                            <li>Deep Agent 在上下文窗口填满时会<strong>压缩消息历史</strong></li>
+                            <li>任务 ID 存在工具消息中，<strong>压缩时会丢失</strong></li>
+                            <li>压缩后 Supervisor "忘记"自己启动过哪些任务</li>
+                            <li><code>list_async_tasks</code> 无法回忆起之前的任务</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>存在专用通道中</h4>
+                        <ul>
+                            <li><code>asyncTasks</code> 通道不受压缩影响</li>
+                            <li>任务 ID、状态、时间戳<strong>始终可访问</strong></li>
+                            <li>即使经过多轮摘要化也能回忆起任务</li>
+                            <li><code>list_async_tasks</code> 随时返回完整任务列表</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>每个任务记录包含：</strong>任务 ID、代理名称、线程 ID、运行 ID、状态、时间戳（<code>createdAt</code>、<code>checkedAt</code>、<code>updatedAt</code>）。这些信息与消息历史完全隔离。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/11-async-subagents-1.png" alt="图：asyncTasks 专用通道与消息历史隔离" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Transport options ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>选择传输方式</h2>
+                <h4>ASGI 协同部署 vs HTTP 远程连接，各有适用场景</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>ASGI 传输（推荐默认）</h4>
+                        <p>省略 <code>url</code> 字段即启用。SDK 通过进程内函数调用路由，不走 HTTP。</p>
+                        <ul>
+                            <li>零网络延迟，性能最优</li>
+                            <li>无需额外身份验证配置</li>
+                            <li>所有图注册在同一 <code>langgraph.json</code></li>
+                            <li>子代理仍有独立的线程和状态</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>HTTP 传输（远程部署）</h4>
+                        <p>设置 <code>url</code> 字段即启用。SDK 通过网络连接远程 Agent Protocol 服务端。</p>
+                        <ul>
+                            <li>子代理可独立扩展和配置</li>
+                            <li>不同团队可各自维护</li>
+                            <li>LangGraph 部署自动用 API Key 认证</li>
+                            <li>自托管服务端可用 <code>headers</code> 自定义认证</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// HTTP 传输示例：子代理部署在远程服务器上
+const asyncSubagents: AsyncSubAgent[] = [
+  {
+    name: "researcher",
+    description: "研究代理",
+    graphId: "researcher",
+    url: "https://my-research-deployment.langsmith.dev",  // 设置 url 即启用 HTTP 传输
+  },
+];</code></pre>
+                <div class="warning">
+                    <strong>安全提示：</strong>HTTP 传输时，LangGraph SDK 自动使用环境变量中的 <code>LANGSMITH_API_KEY</code> 或 <code>LANGGRAPH_API_KEY</code> 进行认证。自托管服务端需通过 <code>headers</code> 字段配置。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Deployment topology ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>部署拓扑选择</h2>
+                <h4>单一部署、分离部署、混合部署——按需选择</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>单一部署</h4>
+                        <p>所有代理在同一服务端，使用 ASGI 传输。一个 <code>langgraph.json</code> 注册所有图。</p>
+                        <ul>
+                            <li>管理简单，只维护一个服务端</li>
+                            <li>代理间零网络延迟</li>
+                            <li>推荐作为起点</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>分离部署</h4>
+                        <p>Supervisor 在一个服务端，子代理通过 HTTP 在另一个服务端。</p>
+                        <ul>
+                            <li>子代理可独立扩展</li>
+                            <li>可分配不同的计算资源</li>
+                            <li>适合不同团队维护的场景</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D97706;">
+                        <h4>混合部署</h4>
+                        <p>部分子代理 ASGI 协同部署，其他 HTTP 远程部署——灵活组合。</p>
+                        <ul>
+                            <li>核心代理零延迟，外部分离扩展</li>
+                            <li>最灵活但配置稍复杂</li>
+                            <li>按实际需求渐进式拆分</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 混合部署示例：部分协同部署，部分远程部署
+const asyncSubagents: AsyncSubAgent[] = [
+  {
+    name: "researcher",
+    description: "研究代理",
+    graphId: "researcher",
+    // 省略 url → ASGI 协同部署（零延迟，推荐默认方式）
+  },
+  {
+    name: "coder",
+    description: "编码代理",
+    graphId: "coder",
+    url: "https://coder-deployment.langsmith.dev",
+    // 设置 url → HTTP 远程部署（独立扩展，适合不同团队维护）
+  },
+];</code></pre>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/11-async-subagents-2.png" alt="图：三种部署拓扑对比" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Best practices ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践</h2>
+                <h4>三个关键实践帮你用好异步子代理</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>调整工作线程池</h4>
+                        <p>本地开发时每个活跃运行占用一个线程槽。3 个并发子代理 + 1 个 Supervisor = 4 个槽位。线程不足会导致任务排队。</p>
+                        <pre><code class="language-bash">langgraph dev --n-jobs-per-worker 10</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>编写清晰的描述</h4>
+                        <p>Supervisor 根据描述决定委派。描述要具体且面向行动，让 Supervisor 准确判断何时该用哪个子代理。</p>
+                        <div class="comparison">
+                            <div class="before">
+                                <h4>不好的示例</h4>
+                                <pre><code class="language-javascript">{
+  name: "helper",
+  description: "帮忙处理各种事情",  // 太模糊
+  graphId: "helper",
+}</code></pre>
+                                <p style="color: #DC2626; font-size: 0.85rem;">太模糊——Supervisor 不知道该把什么任务委派给它</p>
+                            </div>
+                            <div class="after">
+                                <h4>好的示例</h4>
+                                <pre><code class="language-javascript">{
+  name: "researcher",
+  description:
+    "使用网络搜索进行深入研究。" +
+    "适用于需要多次搜索和综合分析的问题。",  // 具体且面向行动
+  graphId: "researcher",
+}</code></pre>
+                                <p style="color: #059669; font-size: 0.85rem;">具体且面向行动——明确说明能力和适用场景</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>利用线程 ID 追踪</h4>
+                        <p>每个异步运行都是标准的 LangGraph 运行，在 LangSmith 中完全可见。用线程 ID（即任务 ID）关联 Supervisor 编排追踪与子代理执行追踪。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Troubleshooting ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见问题排查</h2>
+                <h4>四个高频问题及其解决方案</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>Supervisor 启动后立即轮询</h4>
+                        <p><strong>表现：</strong>Supervisor 在启动任务后立即循环调用 <code>check</code>，将异步执行变成了阻塞式。</p>
+                        <p><strong>内置防护：</strong>中间件会注入系统提示规则来防止这种行为。</p>
+                        <p><strong>手动加强：</strong>如果轮询仍然持续，可以在系统提示中强化此行为：</p>
+                        <pre><code class="language-javascript">const agent = createDeepAgent({
+  systemPrompt: `...你的指令...
+    启动异步子代理后，始终将控制权返回给用户。
+    绝对不要在启动后立即调用 check_async_task。`,  // 防止 Supervisor 轮询等待
+  subagents: [...asyncSubagents],
+});</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D97706;">
+                        <h4>Supervisor 报告过时的状态</h4>
+                        <p><strong>表现：</strong>Supervisor 引用对话历史中较早的任务状态，而不是发起新的 <code>check</code> 调用。</p>
+                        <p><strong>内置防护：</strong>中间件提示会指示模型"对话历史中的任务状态始终是过时的"。</p>
+                        <p><strong>手动加强：</strong>如果此问题仍然出现，添加明确的指令，要求在报告状态之前始终调用 <code>check</code> 或 <code>list</code>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>任务 ID 查找失败</h4>
+                        <p><strong>表现：</strong>Supervisor 截断或重新格式化任务 ID，导致 <code>check</code> 或 <code>cancel</code> 失败。</p>
+                        <p><strong>内置防护：</strong>中间件提示会指示模型始终使用完整的任务 ID。</p>
+                        <p><strong>手动加强：</strong>如果截断问题持续存在，这通常是<strong>模型特定的问题</strong>——尝试使用不同的模型，或在系统提示中添加"始终显示完整的 task_id，绝不截断或缩写"。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>子代理启动排队而非运行</h4>
+                        <p><strong>表现：</strong>启动子代理时挂起或需要很长时间才能开始。</p>
+                        <p><strong>原因：</strong>工作线程池可能已耗尽。每个活跃运行占用一个线程槽位。</p>
+                        <p><strong>解决方案：</strong>使用 <code>--n-jobs-per-worker</code> 增加池大小。参见"调整工作线程池大小"最佳实践。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>重要提示：</strong>中间件已内置了防止轮询和 ID 截断的系统提示规则。大多数情况下中间件已经足够，以上手动方案仅在特定模型或极端场景下才需要。如果某个问题反复出现且无法通过系统提示解决，考虑<strong>更换模型</strong>——不同模型对工具调用的遵循程度不同。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Reference implementation ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考实现</h2>
+                <h4>完整的可运行示例，帮你快速上手</h4>
+                <div class="card" style="border-left: 4px solid #059669; padding: 1.5rem;">
+                    <h4><a href="https://github.com/langchain-ai/async-deep-agents" target="_blank" rel="noopener" style="color: #059669;">async-deep-agents GitHub 仓库</a></h4>
+                    <p>官方参考实现仓库，包含完整的可部署示例代码：</p>
+                    <ul>
+                        <li><strong>Python 示例</strong>——使用 LangGraph Python SDK 构建的 Supervisor + 研究代理 + 编码代理</li>
+                        <li><strong>TypeScript 示例</strong>——使用 <code>deepagents</code> SDK 构建的完整异步子代理编排</li>
+                        <li>可直接部署到 <strong>LangSmith Deployments</strong></li>
+                        <li>演示了 Supervisor 管理多个后台任务的完整交互流程</li>
+                    </ul>
+                </div>
+                <div class="key-point">
+                    <strong>快速开始：</strong>克隆仓库后按照 README 说明操作即可运行。这是学习异步子代理最直接的方式——看一个真正能跑的系统怎么组织 Supervisor、定义子代理描述、处理检查和更新操作。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>掌握异步子代理的关键知识点</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>异步子代理让 Supervisor <strong>启动后立即返回</strong>，继续与用户交互</li>
+                            <li>五个核心工具：<strong>start / check / update / cancel / list</strong></li>
+                            <li>任务元数据存在<strong>专用通道 <code>asyncTasks</code></strong>，不受消息压缩影响</li>
+                            <li>ASGI 传输<strong>零延迟</strong>，HTTP 传输支持<strong>独立扩展</strong></li>
+                            <li>三种部署拓扑：<strong>单一 / 分离 / 混合</strong></li>
+                            <li>防止轮询、ID 截断等常见问题的<strong>系统提示策略</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>关键决策指南</h4>
+                        <ul>
+                            <li>短任务、需等结果 → 用<strong>同步子代理</strong></li>
+                            <li>长任务、可并发 → 用<strong>异步子代理</strong></li>
+                            <li>开始部署 → 先用 <strong>ASGI 单一部署</strong></li>
+                            <li>遇到瓶颈 → 拆分为 <strong>HTTP 分离部署</strong></li>
+                            <li>本地开发 → 记得调整 <code>--n-jobs-per-worker</code></li>
+                            <li>排查问题 → 先检查<strong>系统提示</strong>和<strong>工作线程池</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心思想：</strong>异步子代理把 AI 协作从"同步阻塞"升级为"异步非阻塞"。Supervisor 不再是串行的任务调度器，而是一个能同时管理多个后台任务、持续与用户对话的<strong>真正的编排者</strong>。
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Harness 能力</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧰</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 06 章</div>
+            <h1>Harness 能力</h1>
+            <p>Agent Harness 是多种能力的组合，用于简化长时间运行 Agent 的构建</p>
+            <strong>从规划、文件系统、权限、子 Agent 到人工介入——一次搞懂 Harness 全貌</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>构建一个长时间运行的 Agent，你面临哪些挑战？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>裸写 Agent 的困境</h4>
+                        <ul>
+                            <li>任务多步骤执行，<strong>没有结构化的任务追踪</strong></li>
+                            <li>文件读写散落在各处，<strong>没有统一的虚拟文件系统</strong></li>
+                            <li>Agent 随意读写文件，<strong>没有权限控制</strong></li>
+                            <li>大任务塞在一个上下文里，<strong>Token 爆了就崩</strong></li>
+                            <li>关键操作没人审批，<strong>出了错只能事后补救</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Harness 的解法</h4>
+                        <ul>
+                            <li><code>write_todos</code> 维护结构化任务列表，进度一目了然</li>
+                            <li>可插拔后端的虚拟文件系统，统一 <code>ls</code>/<code>read</code>/<code>write</code></li>
+                            <li>声明式权限规则，首次匹配，按需放行或拒绝</li>
+                            <li>子 Agent 隔离 + 自动压缩摘要，Token 在控制范围内</li>
+                            <li><code>interrupt_on</code> 在关键工具调用前暂停，等人确认</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>长时间运行的 Agent 不是"多调几次 LLM"就够了。你需要任务规划、文件管理、权限控制、上下文压缩、人工审批——这些"工程化"能力全部由 Harness 提供。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Harness overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Harness 全景</h2>
+                <h4>Agent Harness 包含八大核心能力</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>规划能力</h4>
+                        <p><code>write_todos</code> 维护任务列表，跟踪 pending / in_progress / completed 状态。</p>
+                    </div>
+                    <div class="card">
+                        <h4>虚拟文件系统</h4>
+                        <p>可插拔后端，支持 ls、read、write、edit、glob、grep 六大操作。</p>
+                    </div>
+                    <div class="card">
+                        <h4>文件系统权限</h4>
+                        <p>声明式规则控制读写，首次匹配生效，保护敏感文件。</p>
+                    </div>
+                    <div class="card">
+                        <h4>任务委派</h4>
+                        <p>子 Agent 隔离上下文、可并行、专业化分工、Token 效率更高。</p>
+                    </div>
+                    <div class="card">
+                        <h4>上下文管理</h4>
+                        <p>自动压缩、摘要和卸载，让 Agent 在 Token 限制内运行。</p>
+                    </div>
+                    <div class="card">
+                        <h4>代码执行</h4>
+                        <p>沙箱后端提供 Shell 环境，解释器提供 QuickJS 运行时。</p>
+                    </div>
+                    <div class="card">
+                        <h4>人工介入</h4>
+                        <p>指定工具调用处暂停，等人审批或修改后继续执行。</p>
+                    </div>
+                    <div class="card">
+                        <h4>配置档案</h4>
+                        <p>按提供者或模型声明配置包，切换模型不改调用代码。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>两大附加能力：</strong><code>Skills</code>（技能）采用渐进式展示，按需加载领域知识；<code>Memory</code>（记忆）始终加载持久化上下文，跨对话保持一致行为。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/06-harness-1.png" alt="图：Harness 八大核心能力全景" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Planning capabilities ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>规划能力</h2>
+                <h4>用 write_todos 维护结构化的任务列表</h4>
+                <p>长时间运行的 Agent 需要跟踪自己"做到哪了"。Harness 提供 <code>write_todos</code> 工具，让 Agent 把复杂工作拆成可追踪的步骤。</p>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>功能特性</h4>
+                        <ul>
+                            <li>每个任务有三种状态：<code>'pending'</code>、<code>'in_progress'</code>、<code>'completed'</code></li>
+                            <li>任务列表持久化在 Agent 状态中，不会丢失</li>
+                            <li>帮助 Agent 组织复杂的多步骤工作</li>
+                            <li>适用于长时间运行的任务和规划场景</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>多文件代码重构——追踪每个文件的修改进度</li>
+                            <li>数据处理流水线——追踪每个阶段的状态</li>
+                            <li>研究型任务——追踪每个信息源的调研进度</li>
+                            <li>任何需要"先规划再执行"的复杂任务</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心价值：</strong>Agent 不再是"一口气干完"的模式，而是能像人一样列待办、标进度、逐步推进。这让长时间运行的任务变得可控、可观测。
+                </div>
+                <div class="info-block">
+                    <strong>卸甲：</strong>上面说"像人一样"，这只是帮你理解。实际上 Agent 没有"意识"，它只是根据系统提示中的 <code>write_todos</code> 工具描述，在每一步选择调用哪个工具来更新任务列表。这和人脑的任务管理机制完全不同。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Virtual filesystem tools ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>虚拟文件系统</h2>
+                <h4>可插拔后端提供六大文件系统操作</h4>
+                <p>白话：Agent 要读写文件，总得有个统一的办法。虚拟文件系统就是这套"统一办法"——不管文件存在内存里、磁盘上、还是云端，Agent 都用同一套命令操作。至于背后存在哪，由后端决定。</p>
+                <p>虚拟文件系统是 Harness 的基础设施，Skills、Memory、代码执行和上下文管理都依赖它。</p>
+                <table>
+                    <thead>
+                        <tr><th>工具</th><th>功能</th><th>使用场景</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>ls</code></td>
+                            <td>列出目录中的文件及元数据（大小、修改时间）</td>
+                            <td>浏览项目结构、查找目标文件</td>
+                        </tr>
+                        <tr>
+                            <td><code>read_file</code></td>
+                            <td>读取文件内容（带行号），支持大文件分页，支持多模态</td>
+                            <td>查看代码、读取文档、查看图片/视频/音频</td>
+                        </tr>
+                        <tr>
+                            <td><code>write_file</code></td>
+                            <td>创建新文件</td>
+                            <td>生成代码文件、写入配置、保存输出</td>
+                        </tr>
+                        <tr>
+                            <td><code>edit_file</code></td>
+                            <td>精确字符串替换（支持全局替换）</td>
+                            <td>修改代码中的特定部分、批量重命名</td>
+                        </tr>
+                        <tr>
+                            <td><code>glob</code></td>
+                            <td>按模式匹配文件（如 <code>**/*.py</code>）</td>
+                            <td>批量查找特定类型的文件</td>
+                        </tr>
+                        <tr>
+                            <td><code>grep</code></td>
+                            <td>搜索文件内容，支持多种输出模式</td>
+                            <td>查找函数定义、定位 bug 位置</td>
+                        </tr>
+                        <tr>
+                            <td><code>execute</code></td>
+                            <td>运行 Shell 命令（仅沙箱后端可用）</td>
+                            <td>安装依赖、运行测试、调用 CLI</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <h4>多模态文件扩展名支持</h4>
+                <p><code>read_file</code> 对以下扩展名的文件返回多模态内容块而非纯文本：</p>
+                <table>
+                    <thead>
+                        <tr><th>类型</th><th>支持的扩展名</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>图像</strong></td>
+                            <td><code>.png</code> <code>.jpg</code> <code>.jpeg</code> <code>.gif</code> <code>.webp</code> <code>.heic</code> <code>.heif</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>视频</strong></td>
+                            <td><code>.mp4</code> <code>.mpeg</code> <code>.mov</code> <code>.avi</code> <code>.flv</code> <code>.mpg</code> <code>.webm</code> <code>.wmv</code> <code>.3gpp</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>音频</strong></td>
+                            <td><code>.wav</code> <code>.mp3</code> <code>.aiff</code> <code>.aac</code> <code>.ogg</code> <code>.flac</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>文档</strong></td>
+                            <td><code>.pdf</code> <code>.ppt</code> <code>.pptx</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Virtual filesystem - hide tools ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>隐藏文件工具</h2>
+                <h4>用 excluded_tools 对模型隐藏特定工具，而非移除中间件</h4>
+                <p>某些场景下你不希望 Agent 直接操作文件系统。正确做法是通过 Harness 配置档案的 <code>excluded_tools</code> 隐藏工具接口，中间件仍保留在原位。</p>
+                <pre><code class="language-python">from deepagents import HarnessProfile, register_harness_profile
+
+# 注册配置档案：对指定模型隐藏所有文件系统工具
+# 隐藏工具接口（excluded_tools）而非移除中间件，其他依赖文件系统的功能不受影响
+register_harness_profile(
+    "anthropic:claude-sonnet-4-6",              # 目标模型：仅对该模型生效
+    HarnessProfile(
+        excluded_tools=frozenset(               # frozenset 确保配置不可变
+            {"ls", "read_file", "write_file", "edit_file", "glob", "grep"}
+        ),                                      # 隐藏后模型看不到这些工具，但中间件仍保留
+    ),
+)</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>错误做法</h4>
+                        <ul>
+                            <li>通过 <code>excluded_middleware</code> 移除 <code>FilesystemMiddleware</code></li>
+                            <li>这会破坏 Harness 其他依赖文件系统的能力</li>
+                            <li>可能导致运行时错误，排查困难</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>正确做法</h4>
+                        <ul>
+                            <li>用 <code>excluded_tools</code> 隐藏模型可见的工具接口</li>
+                            <li>中间件保留在原位，其他功能不受影响</li>
+                            <li>需要时可以通过配置档案随时恢复</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>设计原则：</strong>Harness 的能力之间有依赖关系。隐藏工具接口是"关闭可见性"，移除中间件是"拆除基础设施"。前者安全可逆，后者危险不可控。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Filesystem permissions ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件权限</h2>
+                <h4>声明式规则控制 Agent 可以读写哪些文件和目录</h4>
+                <p>权限规则在创建 Agent 时通过 <code>permissions=</code> 参数传入，按声明顺序评估，首次匹配生效。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>规则结构</h4>
+                        <ul>
+                            <li><code>operations</code>：<code>"read"</code> 或 <code>"write"</code></li>
+                            <li><code>paths</code>：glob 模式匹配路径</li>
+                            <li><code>mode</code>：<code>"allow"</code> 或 <code>"deny"</code></li>
+                            <li>如果没有规则匹配，默认允许操作</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>典型用法</h4>
+                        <ul>
+                            <li>将 Agent 限制在 <code>/workspace/</code> 目录中</li>
+                            <li>保护敏感文件（如 <code>.env</code>、凭证文件）</li>
+                            <li>为子 Agent 设置比父 Agent 更窄的访问权限</li>
+                            <li>阻止 Agent 修改自身配置或代码</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>权限规则不适用于沙箱后端——沙箱通过 <code>execute</code> 工具支持任意命令执行，需要使用后端策略钩子来控制。如需自定义验证逻辑，请使用 <code>add_policy_hooks</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Task delegation ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>任务委派</h2>
+                <h4>主 Agent 创建临时子 Agent 处理隔离的多步骤任务</h4>
+                <p>白话：主 Agent 接到一个复杂任务，它不必自己干完所有步骤。它可以调用 <code>task</code> 工具，创建一个"临时工"（子 Agent）去干，自己继续做其他事。临时工干完活只交一份最终报告，中间过程不污染主 Agent 的工作台。</p>
+                <p>主 Agent 拥有 <code>task</code> 工具，调用时创建一个具有独立上下文的全新 Agent 实例，自主执行完毕后返回单一结果报告。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>上下文隔离</h4>
+                        <p>子 Agent 的工作不会污染主 Agent 的上下文。大量中间步骤在子 Agent 中消化，主 Agent 只看到最终结果。</p>
+                    </div>
+                    <div class="card">
+                        <h4>并行执行</h4>
+                        <p>多个子 Agent 可以并发运行，充分利用计算资源，加快整体任务完成速度。</p>
+                    </div>
+                    <div class="card">
+                        <h4>专业化分工</h4>
+                        <p>子 Agent 可以拥有不同的工具和配置。一个做代码审查，一个做测试，各司其职。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Token 效率</h4>
+                        <p>大量子任务的上下文被压缩为一个最终报告，主 Agent 的上下文窗口不被撑爆。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>子 Agent 是无状态的：</strong>它不能发送多条消息，只能执行完毕后返回一份报告。如果你需要多轮交互，应该在主 Agent 层面处理。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8b: Running without subagents ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>不使用子 Agent 运行</h2>
+                <h4>在没有 task 工具的情况下运行 Agent</h4>
+                <p>某些场景下你可能不希望 Agent 自行委派任务——例如在简单任务中避免额外开销，或需要完全控制执行流程。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>禁用方式</h4>
+                        <ul>
+                            <li>通过 <code>HarnessProfile</code> 的 <code>excluded_tools</code> 移除 <code>task</code> 工具</li>
+                            <li>不要通过 <code>subagents=</code> 传入同步子 Agent</li>
+                            <li>异步子 Agent <strong>不受影响</strong>，仍然正常工作</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>禁止的做法</h4>
+                        <ul>
+                            <li>不要尝试通过 <code>excluded_middleware</code> 移除 <code>SubAgentMiddleware</code></li>
+                            <li>这是被<strong>故意禁止</strong>的——移除中间件会破坏 Harness 的其他依赖</li>
+                            <li>正确做法是隐藏工具接口，而非拆除底层中间件</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>设计原则：</strong>与隐藏文件系统工具的思路一致——用 <code>excluded_tools</code> 关闭"可见性"，而非用 <code>excluded_middleware</code> 拆除"基础设施"。异步子 Agent 不受同步子 Agent 配置的影响，仍然可以正常使用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Context management ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>上下文管理</h2>
+                <h4>在 Token 限制内处理长时间运行任务，同时保留关键信息</h4>
+                <p>Harness 自动管理上下文，使 Deep Agent 能够在 Token 限制内持续工作。四大机制协同运作：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>输入上下文</h4>
+                        <p>系统提示、Memory、Skills 和工具提示共同塑造 Agent 启动时的知识范围。这些构成了 Agent 的"初始认知"。</p>
+                    </div>
+                    <div class="card">
+                        <h4>自动压缩</h4>
+                        <p>内置的卸载和摘要功能让上下文在任务执行过程中始终在窗口限制内。旧信息被摘要，新信息保留原样。</p>
+                    </div>
+                    <div class="card">
+                        <h4>子 Agent 隔离</h4>
+                        <p>繁重的工作被隔离在子 Agent 中，仅返回结果给主 Agent。这是最有效的上下文压缩手段。</p>
+                    </div>
+                    <div class="card">
+                        <h4>长期记忆</h4>
+                        <p>通过虚拟文件系统实现跨线程的持久化存储。Agent 在不同对话中可以访问之前积累的知识。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心价值：</strong>支持超过单个上下文窗口的多步骤任务，保持最相关的信息在作用域内，无需手动裁剪。通过自动摘要和卸载大幅减少 Token 消耗。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/06-harness-2.png" alt="图：四大上下文管理协作流程" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Code execution ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>代码执行</h2>
+                <h4>两种执行方式：沙箱后端（Shell）和解释器（QuickJS）</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>沙箱后端 — <code>execute</code> 工具</h4>
+                        <ul>
+                            <li>在隔离环境中执行 Shell 命令</li>
+                            <li>支持安装依赖、运行测试、调用 CLI</li>
+                            <li>可访问操作系统文件系统</li>
+                            <li>实现 <code>SandboxBackendProtocolV2</code> 时自动启用</li>
+                            <li><strong>适合：</strong>需要完整系统操作能力的场景</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>解释器 — <code>eval</code> 工具</h4>
+                        <ul>
+                            <li>在限定的 QuickJS 运行时中运行 JavaScript</li>
+                            <li>不支持 Shell 访问、包安装</li>
+                            <li>不支持文件系统和网络访问</li>
+                            <li>确定性执行，安全可控</li>
+                            <li><strong>适合：</strong>循环、批量处理、数据转换</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 选择指南：
+// - 需要安装依赖、运行测试 → 沙箱后端
+// - 需要循环处理、数据转换 → 解释器
+// - 需要编程式工具调用     → 解释器
+// - 需要操作系统文件系统   → 沙箱后端</code></pre>
+                <div class="warning">
+                    <strong>安全提示：</strong>沙箱后端提供的是隔离环境，但仍可执行任意 Shell 命令。在生产环境中，务必配合权限规则和策略钩子使用，限制可执行的命令范围。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/06-harness-3.png" alt="图：沙箱与解释器双轨执行" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Human-in-the-loop ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>人工介入</h2>
+                <h4>在指定工具调用处暂停执行，等待人工审批或修改</h4>
+                <p>Harness 可以在特定工具调用前暂停 Agent，让人工确认后才继续。这个功能通过 <code>interrupt_on</code> 参数启用。</p>
+                <pre><code class="language-python">from deepagents import create_deep_agent
+
+# 在指定工具调用前暂停 Agent，等待人工审批后继续
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    interrupt_on={
+        "edit_file": True,   # 每次编辑文件前暂停（支持审批/拒绝/编辑参数）
+        "write_file": True,  # 每次写入文件前暂停
+    }
+)</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>配置方式</h4>
+                        <ul>
+                            <li>将 <code>interrupt_on</code> 传给 <code>create_deep_agent</code></li>
+                            <li>参数是工具名称到中断配置的映射</li>
+                            <li>暂停后可以提供审批消息或修改工具输入</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>为破坏性操作设置安全门控</li>
+                            <li>执行昂贵 API 调用前的用户验证</li>
+                            <li>交互式调试和实时指导 Agent 行为</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>按需启用：</strong>人工介入不是全有或全无。你可以只对特定工具启用，让 Agent 在高风险操作前停下来，低风险操作自动执行。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Skills ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>技能系统</h2>
+                <h4>渐进式加载的领域知识和专门工作流</h4>
+                <p>Skills 遵循 Agent Skills 标准，每个技能是一个包含 <code>SKILL.md</code> 的目录，提供指令、元数据和附加资源。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>渐进式展示</h4>
+                        <ul>
+                            <li>Agent 启动时只读取 <code>SKILL.md</code> 的 frontmatter</li>
+                            <li>判断对当前任务有用时才加载完整内容</li>
+                            <li>不相关的技能不消耗 Token</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>与 Memory 的区别</h4>
+                        <ul>
+                            <li>Memory 始终加载，Skill 按需加载</li>
+                            <li>Memory 存偏好和约定，Skill 存操作指南</li>
+                            <li>Memory 跨对话持久化，Skill 提供即时能力</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>技能内容</h4>
+                        <ul>
+                            <li><code>SKILL.md</code> 包含指令和元数据</li>
+                            <li>可包含额外脚本和参考文档</li>
+                            <li>可包含模板和其他资源文件</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>核心优势</h4>
+                        <ul>
+                            <li>按需加载，减少 Token 消耗</li>
+                            <li>模块化、可复用的 Agent 能力</li>
+                            <li>提供专业知识而不污染系统提示</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Memory ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>记忆系统</h2>
+                <h4>持久化上下文文件，跨对话保持一致的 Agent 行为</h4>
+                <p>Memory 文件通常包含编码风格、偏好设置、约定和指南，帮助 Agent 理解你的代码库并遵循偏好。</p>
+                <pre><code class="language-javascript">// Memory 使用 AGENTS.md 文件格式
+// 记忆文件在每次调用时都会加载（与 Skills 的按需加载不同）
+const agent = create_deep_agent({
+    model: "anthropic:claude-sonnet-4-6",
+    memory: [
+        "./AGENTS.md",             // 项目级偏好（编码风格、常用命令等）
+        "./docs/conventions.md",   // 编码约定（命名规则、目录结构等）
+    ]
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>工作原理</h4>
+                        <ul>
+                            <li>使用 <code>AGENTS.md</code> 文件提供持久化上下文</li>
+                            <li>记忆文件始终被加载（与 Skills 的渐进式不同）</li>
+                            <li>文件存储在 Agent 的后端中</li>
+                            <li>Agent 可以根据交互更新记忆</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>典型内容</h4>
+                        <ul>
+                            <li>用户偏好：语言风格、代码风格</li>
+                            <li>项目指南：架构约定、命名规则</li>
+                            <li>领域知识：业务术语、常用模式</li>
+                            <li>反馈积累：Agent 从交互中学到的经验</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>始终可用：</strong>与 Skills 的"按需加载"不同，Memory 文件在每次对话中都完整加载，确保 Agent 行为在不同会话间保持一致。适用于"每次都需要知道"的信息。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Harness profiles ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置档案</h2>
+                <h4>按提供者或模型声明配置包，切换模型不改代码</h4>
+                <p>Harness 配置档案（<code>HarnessProfile</code>）是声明式的配置包，在模型确定后自动应用。你不需要为每个 Agent 单独写设置代码。</p>
+                <pre><code class="language-python">from deepagents import HarnessProfile, register_harness_profile
+
+# 提供者级别配置——对 openai 的所有模型生效
+register_harness_profile(
+    "openai",                                   # 只写提供者名称，不指定具体模型
+    HarnessProfile(
+        system_prompt_adjustment="请用简洁的中文回答。",  # 追加到系统提示末尾
+        excluded_tools=frozenset({"execute"}),           # 所有 openai 模型都禁用 Shell 执行
+    )
+)
+
+# 模型级别配置——仅对特定模型生效，会与提供者级别配置合并
+register_harness_profile(
+    "openai:gpt-5.4",                           # 提供者:模型 格式，更精细的控制
+    HarnessProfile(
+        system_prompt_adjustment="你是一个专业的代码审查助手。",  # 覆盖提供者级别的调整
+    )
+)</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>工作原理</h4>
+                        <ul>
+                            <li>以提供者名称或 <code>provider:model</code> 键注册</li>
+                            <li><code>create_deep_agent</code> 自动查找并应用</li>
+                            <li>提供者级和模型级配置合并生效</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>核心用途</h4>
+                        <ul>
+                            <li>集中管理默认配置和工具覆盖</li>
+                            <li>切换模型时调用代码保持不变</li>
+                            <li>通过入口点发布可复用的配置插件</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>Harness 是长时间运行 Agent 的工程化基础设施</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>八大核心能力</h4>
+                        <ul>
+                            <li><strong>规划</strong>：write_todos 追踪任务状态</li>
+                            <li><strong>文件系统</strong>：可插拔后端的六大操作</li>
+                            <li><strong>权限</strong>：声明式规则，首次匹配</li>
+                            <li><strong>子 Agent</strong>：上下文隔离、并行执行</li>
+                            <li><strong>上下文管理</strong>：自动压缩、长期记忆</li>
+                            <li><strong>代码执行</strong>：沙箱 + 解释器双模式</li>
+                            <li><strong>人工介入</strong>：按工具粒度的审批门控</li>
+                            <li><strong>配置档案</strong>：声明式、可合并的配置包</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>两个附加能力</h4>
+                        <ul>
+                            <li><strong>Skills</strong>（技能）：渐进式展示，按需加载领域知识和工作流。用 <code>SKILL.md</code> 定义，只在相关时才加载。</li>
+                            <li><strong>Memory</strong>（记忆）：始终加载的持久化上下文。用 <code>AGENTS.md</code> 定义，跨对话保持一致行为。</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li>模型选择与配置</li>
+                            <li>上下文工程深入</li>
+                            <li>后端系统详解</li>
+                            <li>子 Agent 高级用法</li>
+                            <li>沙箱与解释器</li>
+                            <li>权限与安全</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Harness 不是让 Agent "更聪明"，而是让 Agent "更可控"。它提供的规划、权限、上下文管理、人工介入等能力，让长时间运行的 Agent 从"能跑"变成"可靠运行"。
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

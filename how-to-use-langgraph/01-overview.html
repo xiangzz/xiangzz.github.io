@@ -6,6 +6,7 @@
     <title>认识 LangGraph</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🕸️</text></svg>">
     <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
 </head>
 <body>
     <main id="presentation">
@@ -97,33 +98,48 @@
                 <h2>LangGraph 是什么</h2>
                 <h4>一个低级编排框架和运行时，用于构建长时间运行的、有状态的智能体</h4>
                 <p>说白了，LangGraph 帮你把一个复杂的 AI 任务拆成<strong>一个个节点</strong>（函数），用<strong>边</strong>（条件分支）连起来，再给它们一个共享的<strong>状态笔记本</strong>。整个执行过程可追踪、可暂停、可恢复。已被 Klarna、Uber、J.P. Morgan 等公司投入生产使用。</p>
-                <pre><code><span style="color: var(--text-muted);">// 安装依赖</span>
+                <div class="ai-diagram">
+                    <h4>图：Hello World StateGraph——最简有向无环图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一条从左到右的横向流程，共 3 个节点，用粗箭头依次连接
+                    - 节点 1（圆形，绿色边框，标注 START）：起点——图的入口，接收用户输入
+                    - 节点 2（圆角矩形，橙色边框，标注 mock_llm）：LLM 节点——接收 State（messages），返回 AI 回复，内部示意 { messages: [{ role: "ai", content: "hello world" }] }
+                    - 节点 3（圆形，红色边框，标注 END）：终点——图的出口，返回最终结果
+                    - 在流程下方画一个共享状态对象（虚线圆角矩形，蓝色边框，标注 State / messages），用虚线双向箭头连接到 mock_llm 节点，表示该节点读写共享状态
+                    - 各元素关系：START → mock_llm → END 是线性串联的有向边；State 对象与 mock_llm 节点之间是读写关系（虚线）
+                    - 关键标注：在 START 上方标注 invoke({ messages: [...] })，在 END 下方标注 result.messages 最后一条即 AI 回复
+                    - 配色建议：浅米色背景，节点使用白色填充，START 绿色边框，mock_llm 橙色（#D06519）边框，END 红色边框，State 蓝色虚线边框，箭头使用深灰色，说明文字用深灰色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色、小到看不清的文字
+                    </p>
+                </div>
+                <pre><code class="language-javascript">// 安装依赖
 $ npm install @langchain/langgraph @langchain/core
 
-<span style="color: var(--text-muted);">// Hello World —— 最简 StateGraph</span>
-<span style="color: var(--primary-color);">import</span> { StateSchema, MessagesValue, GraphNode, StateGraph, START, END } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+// Hello World —— 最简 StateGraph
+import { StateSchema, MessagesValue, GraphNode, StateGraph, START, END } from "@langchain/langgraph";
 
-<span style="color: var(--primary-color);">const</span> State = <span style="color: var(--primary-color);">new</span> StateSchema({
+const State = new StateSchema({
   messages: MessagesValue,
 });
 
-<span style="color: var(--text-muted);">// 定义一个节点：接收状态，返回更新</span>
-<span style="color: var(--primary-color);">const</span> mockLlm: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> State&gt; = (state) =&gt; {
-  <span style="color: var(--primary-color);">return</span> { messages: [{ role: <span style="color: var(--success-color);">"ai"</span>, content: <span style="color: var(--success-color);">"hello world"</span> }] };
+// 定义一个节点：接收状态，返回更新
+const mockLlm: GraphNode&lt;typeof State&gt; = (state) =&gt; {
+  return { messages: [{ role: "ai", content: "hello world" }] };
 };
 
-<span style="color: var(--text-muted);">// 构建图：起点 → 节点 → 终点</span>
-<span style="color: var(--primary-color);">const</span> graph = <span style="color: var(--primary-color);">new</span> StateGraph(State)
-  .addNode(<span style="color: var(--success-color);">"mock_llm"</span>, mockLlm)
-  .addEdge(START, <span style="color: var(--success-color);">"mock_llm"</span>)
-  .addEdge(<span style="color: var(--success-color);">"mock_llm"</span>, END)
+// 构建图：起点 → 节点 → 终点
+const graph = new StateGraph(State)
+  .addNode("mock_llm", mockLlm)
+  .addEdge(START, "mock_llm")
+  .addEdge("mock_llm", END)
   .compile();
 
-<span style="color: var(--text-muted);">// 运行</span>
-<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> graph.invoke({
-  messages: [{ role: <span style="color: var(--success-color);">"user"</span>, content: <span style="color: var(--success-color);">"hi!"</span> }]
+// 运行
+const result = await graph.invoke({
+  messages: [{ role: "user", content: "hi!" }]
 });
-<span style="color: var(--text-muted);">// result.messages 最后一条: { role: "ai", content: "hello world" }</span></code></pre>
+// result.messages 最后一条: { role: "ai", content: "hello world" }</code></pre>
                 <div class="warning">
                     <strong>如果看到报错：</strong>
                     <ul>
@@ -251,12 +267,38 @@ $ npm install @langchain/langgraph @langchain/core
                 <h2>第一步：拆步骤</h2>
                 <h4>把工作流映射为离散步骤——每个节点只做一件事</h4>
                 <p>假设你要构建一个<strong>邮件处理智能体</strong>，需求如下：</p>
-                <pre><code><span style="color: var(--text-muted);">智能体应该：</span>
-<span style="color: var(--text-muted);">- 阅读收到的客户邮件</span>
-<span style="color: var(--text-muted);">- 按紧急程度和主题进行分类</span>
-<span style="color: var(--text-muted);">- 搜索相关文档以回答问题</span>
-<span style="color: var(--text-muted);">- 起草适当的回复</span>
-<span style="color: var(--text-muted);">- 将复杂问题升级给人工处理</span></code></pre>
+                <div class="ai-diagram">
+                    <h4>图：邮件处理智能体——工作流全景</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一条从上到下的纵向流程图，共 8 个节点，用箭头依次连接
+                    - 节点 1（圆形，绿色边框，标注 START）：入口
+                    - 节点 2（圆角矩形，蓝色边框，标注 Read Email）：读取邮件——提取并解析客户邮件内容
+                    - 节点 3（圆角矩形，紫色边框，标注 Classify Intent）：分类——用 LLM 按紧急程度和主题分类
+                    - 从 Classify Intent 分出三条条件边（用菱形判断标记，标注"条件路由"）：
+                      - 左分支 → 节点 4a（圆角矩形，蓝色边框，标注 Doc Search）：文档搜索——在知识库查询相关信息
+                      - 中分支 → 节点 4b（圆角矩形，橙色边框，标注 Bug Track）：Bug 跟踪——在跟踪系统中创建 Bug
+                      - 右分支 → 节点 4c（圆角矩形，灰色边框，标注 Human Review）：人工审核——升级给人工处理
+                    - 节点 4a 和 4b 的箭头汇聚到节点 5（圆角矩形，紫色边框，标注 Draft Reply）：起草回复——生成适当的回复邮件
+                    - 从 Draft Reply 分出两条条件边：
+                      - 一条 → Send Reply（已确认无需人工）
+                      - 一条 → Human Review（需要人工审批）
+                    - Human Review 的输出可回到 Draft Reply（修改后重新起草）或到 Send Reply
+                    - 节点 6（圆角矩形，橙色边框，标注 Send Reply）：发送回复——发送邮件
+                    - 节点 7（圆形，红色边框，标注 END）：终点
+                    - 在流程左侧画一个共享状态对象（虚线圆角矩形，蓝色边框，标注 State），用虚线连接到所有节点
+                    - 各元素关系：START → Read Email → Classify Intent →（条件分支）→ Doc Search / Bug Track → Draft Reply →（条件分支）→ Send Reply → END；Human Review 可回到 Draft Reply 或直达 Send Reply
+                    - 关键标注：条件分支处用菱形标记"条件路由"，汇聚处标注"合并"；每个节点内标注名称和一句话说明
+                    - 配色建议：浅米色背景，LLM 节点紫色（#7C3AED）边框，数据节点蓝色（#0284C7）边框，操作节点橙色（#D06519）边框，人工节点灰色边框，START 绿色，END 红色，State 蓝色虚线，箭头深灰色
+                    - 画面比例：9:16（纵向）
+                    - 避免：过度装饰、3D 效果、杂乱的颜色、小到看不清的文字
+                    </p>
+                </div>
+                <pre><code class="language-javascript">智能体应该：
+- 阅读收到的客户邮件
+- 按紧急程度和主题进行分类
+- 搜索相关文档以回答问题
+- 起草适当的回复
+- 将复杂问题升级给人工处理</code></pre>
                 <p>拆成节点之后，每个节点就是一个<strong>只做一件事的函数</strong>：</p>
                 <table>
                     <thead>
@@ -284,7 +326,7 @@ $ npm install @langchain/langgraph @langchain/core
                 <h2>第二步：分类型</h2>
                 <h4>判断每个节点属于哪种类型——决定了实现方式</h4>
                 <p>拆完步骤之后，你需要搞清楚每个节点<strong>到底在做什么</strong>。不同的类型，实现方式完全不同。</p>
-                <div class="card-grid">
+                <div class="card-grid cols-2">
                     <div class="card" style="border-top: 3px solid #7C3AED;">
                         <h4>LLM 步骤</h4>
                         <p>需要理解、分析、生成文本或做推理决策。</p>
@@ -341,28 +383,28 @@ $ npm install @langchain/langgraph @langchain/core
                         </ul>
                     </div>
                 </div>
-                <pre><code><span style="color: var(--primary-color);">import</span> { StateSchema } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
-<span style="color: var(--primary-color);">import</span> * <span style="color: var(--primary-color);">as</span> z <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"zod"</span>;
+                <pre><code class="language-javascript">import { StateSchema } from "@langchain/langgraph";
+import * as z from "zod";
 
-<span style="color: var(--text-muted);">// 定义邮件分类结构</span>
-<span style="color: var(--primary-color);">const</span> EmailClassificationSchema = z.object({
-  intent: z.enum([<span style="color: var(--success-color);">"question"</span>, <span style="color: var(--success-color);">"bug"</span>, <span style="color: var(--success-color);">"billing"</span>, <span style="color: var(--success-color);">"feature"</span>, <span style="color: var(--success-color);">"complex"</span>]),
-  urgency: z.enum([<span style="color: var(--success-color);">"low"</span>, <span style="color: var(--success-color);">"medium"</span>, <span style="color: var(--success-color);">"high"</span>, <span style="color: var(--success-color);">"critical"</span>]),
+// 定义邮件分类结构
+const EmailClassificationSchema = z.object({
+  intent: z.enum(["question", "bug", "billing", "feature", "complex"]),
+  urgency: z.enum(["low", "medium", "high", "critical"]),
   topic: z.string(),
   summary: z.string(),
 });
 
-<span style="color: var(--text-muted);">// 邮件智能体的状态——存原始数据，不存格式化后的提示词</span>
-<span style="color: var(--primary-color);">const</span> EmailAgentState = <span style="color: var(--primary-color);">new</span> StateSchema({
-  <span style="color: var(--text-muted);">// 原始邮件数据</span>
+// 邮件智能体的状态——存原始数据，不存格式化后的提示词
+const EmailAgentState = new StateSchema({
+  // 原始邮件数据
   emailContent: z.string(),
   senderEmail: z.string(),
   emailId: z.string(),
-  <span style="color: var(--text-muted);">// 分类结果（下游多个节点需要）</span>
+  // 分类结果（下游多个节点需要）
   classification: EmailClassificationSchema.optional(),
-  <span style="color: var(--text-muted);">// 原始搜索/API 结果（重新获取代价高）</span>
+  // 原始搜索/API 结果（重新获取代价高）
   searchResults: z.array(z.string()).optional(),
-  <span style="color: var(--text-muted);">// 生成的内容</span>
+  // 生成的内容
   responseText: z.string().optional(),
 });</code></pre>
                 <div class="key-point">
@@ -377,20 +419,20 @@ $ npm install @langchain/langgraph @langchain/core
                 <h2>第四步：写节点</h2>
                 <h4>节点就是一个函数——接收当前状态，返回对状态的更新</h4>
                 <p>说白了，每个节点就是 <code>(state) =&gt; { return { key: newValue } }</code>。返回值会<strong>合并</strong>到状态里，传给下一个节点。</p>
-                <pre><code><span style="color: var(--text-muted);">// 分类节点：调用 LLM 分析邮件意图</span>
-<span style="color: var(--primary-color);">const</span> classifyIntent: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> EmailAgentState&gt; = <span style="color: var(--primary-color);">async</span> (state) =&gt; {
-  <span style="color: var(--primary-color);">const</span> prompt = <span style="color: var(--success-color);">`请分析以下邮件的意图和紧急程度：
+                <pre><code class="language-javascript">// 分类节点：调用 LLM 分析邮件意图
+const classifyIntent: GraphNode&lt;typeof EmailAgentState&gt; = async (state) =&gt; {
+  const prompt = `请分析以下邮件的意图和紧急程度：
 邮件内容：${state.emailContent}
-发件人：${state.senderEmail}`</span>;
+发件人：${state.senderEmail}`;
 
-  <span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> llm.invoke(prompt);
-  <span style="color: var(--primary-color);">return</span> { classification: result };
+  const result = await llm.invoke(prompt);
+  return { classification: result };
 };
 
-<span style="color: var(--text-muted);">// 文档搜索节点：从知识库查询</span>
-<span style="color: var(--primary-color);">const</span> searchDocs: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> EmailAgentState&gt; = <span style="color: var(--primary-color);">async</span> (state) =&gt; {
-  <span style="color: var(--primary-color);">const</span> results = <span style="color: var(--primary-color);">await</span> knowledgeBase.search(state.classification?.topic);
-  <span style="color: var(--primary-color);">return</span> { searchResults: results };
+// 文档搜索节点：从知识库查询
+const searchDocs: GraphNode&lt;typeof EmailAgentState&gt; = async (state) =&gt; {
+  const results = await knowledgeBase.search(state.classification?.topic);
+  return { searchResults: results };
 };</code></pre>
                 <h4>错误处理策略——不同错误，不同解法</h4>
                 <table>
@@ -424,11 +466,11 @@ $ npm install @langchain/langgraph @langchain/core
                         </tr>
                     </tbody>
                 </table>
-                <pre><code><span style="color: var(--text-muted);">// 给容易出网络问题的节点加重试策略</span>
+                <pre><code class="language-javascript">// 给容易出网络问题的节点加重试策略
 workflow.addNode(
-  <span style="color: var(--success-color);">"searchDocumentation"</span>,
+  "searchDocumentation",
   searchDocumentation,
-  { retryPolicy: { maxAttempts: <span style="color: var(--primary-color);">3</span>, initialInterval: <span style="color: var(--primary-color);">1.0</span> } }
+  { retryPolicy: { maxAttempts: 3, initialInterval: 1.0 } }
 );</code></pre>
             </div>
         </section>
@@ -456,27 +498,27 @@ workflow.addNode(
                         <p><code>return new Command({ goto: "nodeX" })</code></p>
                     </div>
                 </div>
-                <pre><code><span style="color: var(--primary-color);">import</span> { MemorySaver, StateGraph, START, END } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+                <pre><code class="language-javascript">import { MemorySaver, StateGraph, START, END } from "@langchain/langgraph";
 
-<span style="color: var(--text-muted);">// 创建图并连线</span>
-<span style="color: var(--primary-color);">const</span> workflow = <span style="color: var(--primary-color);">new</span> StateGraph(EmailAgentState)
-  <span style="color: var(--text-muted);">// 添加节点</span>
-  .addNode(<span style="color: var(--success-color);">"readEmail"</span>, readEmail)
-  .addNode(<span style="color: var(--success-color);">"classifyIntent"</span>, classifyIntent)
-  .addNode(<span style="color: var(--success-color);">"searchDocumentation"</span>, searchDocumentation, {
-    retryPolicy: { maxAttempts: <span style="color: var(--primary-color);">3</span> }  <span style="color: var(--text-muted);">// 瞬态故障自动重试</span>
+// 创建图并连线
+const workflow = new StateGraph(EmailAgentState)
+  // 添加节点
+  .addNode("readEmail", readEmail)
+  .addNode("classifyIntent", classifyIntent)
+  .addNode("searchDocumentation", searchDocumentation, {
+    retryPolicy: { maxAttempts: 3 }  // 瞬态故障自动重试
   })
-  .addNode(<span style="color: var(--success-color);">"draftResponse"</span>, draftResponse)
-  .addNode(<span style="color: var(--success-color);">"humanReview"</span>, humanReview)
-  .addNode(<span style="color: var(--success-color);">"sendReply"</span>, sendReply)
-  <span style="color: var(--text-muted);">// 连线——只连必要的边</span>
-  .addEdge(START, <span style="color: var(--success-color);">"readEmail"</span>)
-  .addEdge(<span style="color: var(--success-color);">"readEmail"</span>, <span style="color: var(--success-color);">"classifyIntent"</span>)
-  .addEdge(<span style="color: var(--success-color);">"sendReply"</span>, END);
+  .addNode("draftResponse", draftResponse)
+  .addNode("humanReview", humanReview)
+  .addNode("sendReply", sendReply)
+  // 连线——只连必要的边
+  .addEdge(START, "readEmail")
+  .addEdge("readEmail", "classifyIntent")
+  .addEdge("sendReply", END);
 
-<span style="color: var(--text-muted);">// 用 checkpointer 编译，启用持久化</span>
-<span style="color: var(--primary-color);">const</span> memory = <span style="color: var(--primary-color);">new</span> MemorySaver();
-<span style="color: var(--primary-color);">const</span> app = workflow.compile({ checkpointer: memory });</code></pre>
+// 用 checkpointer 编译，启用持久化
+const memory = new MemorySaver();
+const app = workflow.compile({ checkpointer: memory });</code></pre>
                 <div class="key-point">
                     <strong>图结构非常精简：</strong>因为路由逻辑通过条件边和 Command 对象在节点内部完成。你只需要连"必要的边"，其余的由节点自己决定去哪。这让控制流显式且可追踪。
                 </div>
@@ -489,13 +531,13 @@ workflow.addNode(
                 <h2>动手练习</h2>
                 <h4>设计一个简单的文档处理智能体</h4>
                 <p>现在轮到你了。停下来，用刚学的五步法设计一个<strong>文档处理智能体</strong>。需求如下：</p>
-                <pre><code><span style="color: var(--text-muted);">智能体应该：</span>
-<span style="color: var(--text-muted);">1. 接收用户上传的文档（纯文本）</span>
-<span style="color: var(--text-muted);">2. 分析文档类型（合同、报告、邮件、其他）</span>
-<span style="color: var(--text-muted);">3. 提取关键信息（日期、金额、人名等）</span>
-<span style="color: var(--text-muted);">4. 生成结构化摘要</span>
-<span style="color: var(--text-muted);">5. 如果信息不确定，暂停询问用户</span>
-<span style="color: var(--text-muted);">6. 输出最终的 JSON 结果</span></code></pre>
+                <pre><code class="language-javascript">智能体应该：
+1. 接收用户上传的文档（纯文本）
+2. 分析文档类型（合同、报告、邮件、其他）
+3. 提取关键信息（日期、金额、人名等）
+4. 生成结构化摘要
+5. 如果信息不确定，暂停询问用户
+6. 输出最终的 JSON 结果</code></pre>
                 <div class="practice-container">
                     <div class="practice-step">
                         <h3>任务 1：拆节点</h3>
@@ -545,34 +587,34 @@ workflow.addNode(
                         <tr><td><code>generateSummary</code></td><td>LLM</td><td>生成结构化摘要</td><td>→ END</td></tr>
                     </tbody>
                 </table>
-                <pre><code><span style="color: var(--primary-color);">import</span> { StateSchema, StateGraph, START, END, MemorySaver } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
-<span style="color: var(--primary-color);">import</span> * <span style="color: var(--primary-color);">as</span> z <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"zod"</span>;
+                <pre><code class="language-javascript">import { StateSchema, StateGraph, START, END, MemorySaver } from "@langchain/langgraph";
+import * as z from "zod";
 
-<span style="color: var(--text-muted);">// 状态设计——只存原始数据</span>
-<span style="color: var(--primary-color);">const</span> DocState = <span style="color: var(--primary-color);">new</span> StateSchema({
-  rawText: z.string(),                         <span style="color: var(--text-muted);">// 原始文档文本</span>
-  docType: z.string().optional(),              <span style="color: var(--text-muted);">// 文档类型</span>
-  extractedInfo: z.record(z.any()).optional(),  <span style="color: var(--text-muted);">// 提取的关键信息</span>
-  needsConfirmation: z.boolean().optional(),    <span style="color: var(--text-muted);">// 是否需要用户确认</span>
-  finalJson: z.string().optional(),            <span style="color: var(--text-muted);">// 最终 JSON 输出</span>
+// 状态设计——只存原始数据
+const DocState = new StateSchema({
+  rawText: z.string(),                         // 原始文档文本
+  docType: z.string().optional(),              // 文档类型
+  extractedInfo: z.record(z.any()).optional(),  // 提取的关键信息
+  needsConfirmation: z.boolean().optional(),    // 是否需要用户确认
+  finalJson: z.string().optional(),            // 最终 JSON 输出
 });
 
-<span style="color: var(--text-muted);">// 构建图</span>
-<span style="color: var(--primary-color);">const</span> docAgent = <span style="color: var(--primary-color);">new</span> StateGraph(DocState)
-  .addNode(<span style="color: var(--success-color);">"receiveDoc"</span>, receiveDoc)
-  .addNode(<span style="color: var(--success-color);">"classifyDoc"</span>, classifyDoc)
-  .addNode(<span style="color: var(--success-color);">"extractInfo"</span>, extractInfo)
-  .addNode(<span style="color: var(--success-color);">"confirmInfo"</span>, confirmInfo)
-  .addNode(<span style="color: var(--success-color);">"generateSummary"</span>, generateSummary)
-  .addEdge(START, <span style="color: var(--success-color);">"receiveDoc"</span>)
-  .addEdge(<span style="color: var(--success-color);">"receiveDoc"</span>, <span style="color: var(--success-color);">"classifyDoc"</span>)
-  .addEdge(<span style="color: var(--success-color);">"classifyDoc"</span>, <span style="color: var(--success-color);">"extractInfo"</span>)
-  .addConditionalEdges(<span style="color: var(--success-color);">"extractInfo"</span>, (state) =&gt; {
-    <span style="color: var(--primary-color);">return</span> state.needsConfirmation ? <span style="color: var(--success-color);">"confirmInfo"</span> : <span style="color: var(--success-color);">"generateSummary"</span>;
+// 构建图
+const docAgent = new StateGraph(DocState)
+  .addNode("receiveDoc", receiveDoc)
+  .addNode("classifyDoc", classifyDoc)
+  .addNode("extractInfo", extractInfo)
+  .addNode("confirmInfo", confirmInfo)
+  .addNode("generateSummary", generateSummary)
+  .addEdge(START, "receiveDoc")
+  .addEdge("receiveDoc", "classifyDoc")
+  .addEdge("classifyDoc", "extractInfo")
+  .addConditionalEdges("extractInfo", (state) =&gt; {
+    return state.needsConfirmation ? "confirmInfo" : "generateSummary";
   })
-  .addEdge(<span style="color: var(--success-color);">"confirmInfo"</span>, <span style="color: var(--success-color);">"generateSummary"</span>)
-  .addEdge(<span style="color: var(--success-color);">"generateSummary"</span>, END)
-  .compile({ checkpointer: <span style="color: var(--primary-color);">new</span> MemorySaver() });</code></pre>
+  .addEdge("confirmInfo", "generateSummary")
+  .addEdge("generateSummary", END)
+  .compile({ checkpointer: new MemorySaver() });</code></pre>
                 <div class="key-point">
                     <strong>你的方案可能不一样——这很正常。</strong>关键不是"答案是否一致"，而是你能不能解释清楚：为什么这么拆节点、为什么状态里放这些字段、为什么这里用条件边。五步法是一种思维方式，不是唯一标准答案。
                 </div>
@@ -657,6 +699,8 @@ workflow.addNode(
         <button id="next-btn">下一页 →</button>
     </div>
 
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
     <script src="./js/slide.js"></script>
     <script src="./js/nav.js"></script>
 </body>

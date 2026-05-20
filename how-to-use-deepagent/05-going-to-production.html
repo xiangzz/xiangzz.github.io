@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>走向生产环境</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 05 章</div>
+            <h1>走向生产环境</h1>
+            <p>通过持久化内存、沙箱、弹性中间件和部署选项，将深度 Agent 推向生产环境</p>
+            <strong>从"本地跑通"到"线上可信赖"的关键一步</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你的 Agent 在本地跑得很好，但上线之后会遇到什么？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>本地原型的困境</h4>
+                        <ul>
+                            <li>多用户并发访问，<strong>状态互相串</strong></li>
+                            <li>用户身份不明，<strong>没有认证和授权</strong></li>
+                            <li>Agent 执行代码直接影响宿主机，<strong>安全风险极大</strong></li>
+                            <li>LLM 调用失败、网络超时，<strong>没有重试和回退机制</strong></li>
+                            <li>每次对话从零开始，<strong>无法记住用户偏好</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>生产环境的解法</h4>
+                        <ul>
+                            <li><strong>多租户隔离</strong>：按 Thread / User / Assistant 划分作用域</li>
+                            <li><strong>认证 + RBAC</strong>：自定义认证、授权处理器、角色权限</li>
+                            <li><strong>沙箱隔离</strong>：代码在容器中运行，宿主机不受影响</li>
+                            <li><strong>弹性中间件</strong>：重试、回退、限流、PII 脱敏</li>
+                            <li><strong>持久化内存</strong>：跨对话保留信息，随时间个性化</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心问题：</strong>本地开发只考虑"能不能跑"，生产环境要回答"多用户怎么隔离、崩了怎么恢复、敏感数据怎么保护、前端怎么接入"。本章帮你逐一解决这些问题。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Core concepts ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三个核心概念</h2>
+                <h4>Thread、User、Assistant 决定了信息如何共享和访问</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Thread（线程）</h4>
+                        <p>一次单独的对话。消息历史和临时文件默认作用于<strong>线程范围内</strong>，不会跨线程保留。</p>
+                        <p><span class="tag tag-info">作用域最小</span></p>
+                    </div>
+                    <div class="card">
+                        <h4>User（用户）</h4>
+                        <p>与你的 Agent 交互的人。内存和文件可以是某个用户私有的，也可以在用户之间共享。身份认证来自你的认证层。</p>
+                        <p><span class="tag tag-primary">推荐默认按用户隔离</span></p>
+                    </div>
+                    <div class="card">
+                        <h4>Assistant（助手）</h4>
+                        <p>一个配置好的 Agent 实例。内存和文件可以绑定到某个助手，也可以在所有助手之间共享。</p>
+                        <p><span class="tag tag-warning">多个助手时可按助手划分</span></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>记住这个三角关系：</strong>Thread 是单次对话的边界，User 是人的边界，Assistant 是 Agent 实例的边界。后面所有的内存划分、沙箱隔离、认证授权，都基于这三个概念展开。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/05-going-to-production-1.png" alt="图：Thread、User、Assistant 三角关系与数据作用域" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Deployment ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>部署方案</h2>
+                <h4>Deep Agents 的两种托管部署路径</h4>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>Managed Deep Agents</h4>
+                        <p>API 优先的运行时，在 LangSmith 中创建、运行和运维深度 Agent。私有预览版。</p>
+                        <ul>
+                            <li>自动配置 assistants、threads、runs、store、checkpointer</li>
+                            <li>开箱即用的认证、Webhook、定时任务、可观测性</li>
+                            <li>可通过 MCP 或 A2A 暴露你的 Agent</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>LangSmith Deployment</h4>
+                        <p>自定义应用代码、路由、认证时的选择。完整的 Agent Server API。</p>
+                        <ul>
+                            <li>需要 <code>langgraph.json</code> 配置文件</li>
+                            <li>支持自定义 Docker 步骤和认证处理器</li>
+                            <li>适合需要完全控制权的团队</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// langgraph.json —— 告诉部署平台如何构建和运行你的应用
+{
+  "dependencies": ["."],          // 安装当前目录作为包（读取 package.json 中的依赖）
+  "graphs": {
+    "agent": "./src/agent.ts:agent"  // graph ID → 文件路径:导出变量名
+  },
+  "env": ".env"                   // 构建时注入的 .env 文件（包含 API Key 等）
+}</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>字段</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>dependencies</code></td>
+                            <td>要安装的包。<code>["."]</code> 将当前目录作为包安装（从 <code>requirements.txt</code>、<code>pyproject.toml</code> 或 <code>package.json</code> 读取）。</td>
+                        </tr>
+                        <tr>
+                            <td><code>graphs</code></td>
+                            <td>将 graph ID 映射到其代码位置。格式为 <code>"&lt;id&gt;": "./&lt;file&gt;:&lt;variable&gt;"</code>，其中 <code>&lt;id&gt;</code> 是 API 调用时使用的名称，<code>&lt;variable&gt;</code> 是从文件导出的已编译 graph 或构造函数。</td>
+                        </tr>
+                        <tr>
+                            <td><code>env</code></td>
+                            <td>包含环境变量（API 密钥、密钥）的 <code>.env</code> 文件路径。这些变量在构建时设置，在运行时可用。</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>注意：</strong><code>langgraph.json</code> 在本地开发（<code>langgraph dev</code>）和生产部署中都是必需的。它位于项目根目录。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Multi-tenant ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多租户架构</h2>
+                <h4>当你的 Agent 服务多个用户时，需要处理三个核心问题</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>1. 验证身份</h4>
+                        <p>用户是谁？自定义认证（Clerk、Supabase 或匿名）建立身份。认证成功后，用户的身份信息可用于划分数据作用域。</p>
+                    </div>
+                    <div class="card">
+                        <h4>2. 控制访问</h4>
+                        <p>用户能访问什么？授权处理器在认证后运行，可以添加所有者标签、返回资源过滤器、或返回 HTTP 403 拒绝未授权操作。</p>
+                    </div>
+                    <div class="card">
+                        <h4>3. 管理凭证</h4>
+                        <p>Agent 代理用户执行操作时用什么凭证？OAuth 2.0 流程、沙箱认证代理、工作区密钥——三种方式按需选择。</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 授权处理器示例：为资源添加所有者标签
+// 用户只能看到自己的资源，实现多租户隔离
+const authHandler = async (ctx) => {
+  return {
+    filters: { owner: ctx.user.identity },  // 按用户身份过滤资源
+    // 返回 HTTP 403 可拒绝未授权操作
+  };
+};</code></pre>
+                <div class="key-point">
+                    <strong>三层认证模型：</strong>终端用户认证（谁在用）、Agent 代理用户认证（Agent 代表谁操作）、团队 RBAC（谁能部署和管理）。三层各司其职，互不干扰。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/05-going-to-production-2.png" alt="图：三层认证模型" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Auth & RBAC ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>认证与授权</h2>
+                <h4>团队 RBAC 与终端用户授权是两套独立体系</h4>
+                <table>
+                    <thead>
+                        <tr><th>角色</th><th>权限</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Workspace Admin</strong></td>
+                            <td>完整权限，包括设置和成员管理</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Workspace Editor</strong></td>
+                            <td>创建和修改资源，但不能删除 runs 或管理成员</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Workspace Viewer</strong></td>
+                            <td>只读访问</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>团队 RBAC（管理 Agent）</h4>
+                        <ul>
+                            <li>控制<strong>谁可以部署、配置、监控</strong> Agent</li>
+                            <li>管理你的团队成员权限</li>
+                            <li>企业版支持自定义角色和细粒度权限</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>终端用户授权（使用 Agent）</h4>
+                        <ul>
+                            <li>控制<strong>用户能访问哪些数据</strong></li>
+                            <li>thread、assistant、store 命名空间级别的过滤</li>
+                            <li>由授权处理器在每次请求时执行</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>CLI 快捷方式：</strong><code>deepagents.toml</code> 中的 <code>[auth]</code> 部分会自动配置 Clerk、Supabase 或匿名认证。<code>[frontend]</code> 部分复用相同配置控制内置聊天 UI 的访问权限。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: User credentials ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>用户凭证管理</h2>
+                <h4>Agent 代表用户调用外部 API 时，凭证怎么传？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Agent Auth（推荐）</h4>
+                        <p>托管 OAuth 2.0 流程。首次使用时 Agent 会中断执行并展示授权页面 URL，用户认证后自动恢复。令牌自动存储和刷新。</p>
+                    </div>
+                    <div class="card">
+                        <h4>沙箱认证代理</h4>
+                        <p>拦截沙箱的出站请求并自动注入认证头。API 密钥永远不会出现在沙箱代码、环境变量或日志中。</p>
+                    </div>
+                    <div class="card">
+                        <h4>工作区密钥</h4>
+                        <p>所有用户共享的 API 密钥（如 LLM 提供商密钥），存储在 LangSmith 工作区设置中，运行时作为环境变量可用。</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// Agent Auth —— 托管 OAuth 2.0 流程，代表用户调用外部 API
+import { Client } from "@langchain/auth";
+
+const authClient = new Client();
+
+const authResult = await authClient.authenticate({
+  provider: "github",                                  // OAuth 提供商
+  scopes: ["repo", "read:org"],                        // 请求的权限范围
+  userId: runtime.serverInfo.user.identity,            // 用户身份标识
+});
+// authResult.token 可直接用于调用 GitHub API，令牌自动存储和刷新</code></pre>
+                <div class="warning">
+                    <strong>安全警告：</strong>避免通过环境变量或文件上传将密钥传入沙箱。Agent 可以读取沙箱内任何可访问的文件或环境变量。认证代理可以将密钥完全排除在沙箱之外。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Async & Persistence ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>异步与持久化</h2>
+                <h4>LLM 应用是 I/O 密集型的，异步 + 持久化是生产标配</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>异步编程要点</h4>
+                        <ul>
+                            <li><strong>创建异步工具</strong>：原生 async 避免线程开销</li>
+                            <li><strong>异步中间件</strong>：用 <code>abefore_agent</code> 而非 <code>before_agent</code></li>
+                            <li><strong>异步资源生命周期</strong>：创建沙箱、连接 MCP 服务器都涉及网络调用</li>
+                        </ul>
+                        <p><code>ainvoke</code>、<code>astream</code>、<code>abefore_agent</code> —— 同步方法前加 <code>a</code> 前缀</p>
+                    </div>
+                    <div class="after">
+                        <h4>持久化执行</h4>
+                        <ul>
+                            <li>每一步自动<strong>检查点保存</strong>状态</li>
+                            <li>被故障、超时暂停的运行<strong>从最后状态恢复</strong></li>
+                            <li>支持<strong>无限期中断</strong>：暂停几天后恢复</li>
+                            <li><strong>时间旅行</strong>：回退到任意检查点重放</li>
+                            <li>敏感操作的<strong>审计追踪和恢复点</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>为什么持久化对深度 Agent 特别重要？</strong>深度 Agent 会产生许多子 Agent，运行时间长。中途的故障不会丢失已完成的工作——另一个 worker 会从最新的检查点继续执行。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Memory ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>内存管理</h2>
+                <h4>没有内存，每次对话都从零开始。内存让 Agent 跨对话保留信息</h4>
+                <table>
+                    <thead>
+                        <tr><th>作用域</th><th>命名空间</th><th>用例</th><th>示例</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>用户 + 助手</strong>（推荐）</td>
+                            <td><code>(assistant_id, user_id)</code></td>
+                            <td>每个用户在每个助手中的私有内存</td>
+                            <td>"我偏好简洁的回复"</td>
+                        </tr>
+                        <tr>
+                            <td><strong>助手</strong></td>
+                            <td><code>(assistant_id)</code></td>
+                            <td>同一个助手所有用户共享的指令</td>
+                            <td>"帖子字数上限 280 字"</td>
+                        </tr>
+                        <tr>
+                            <td><strong>用户</strong></td>
+                            <td><code>(user_id)</code></td>
+                            <td>跨助手的用户全局配置</td>
+                            <td>时区、沟通偏好</td>
+                        </tr>
+                        <tr>
+                            <td><strong>组织</strong></td>
+                            <td><code>(org_id)</code></td>
+                            <td>所有用户和助手的只读策略</td>
+                            <td>"永远不透露内部定价"</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>安全提醒：</strong>共享内存（助手、用户或组织作用域）是提示注入的攻击向量。如果一个用户可以写入另一个用户对话所读取的内存，恶意用户就可以在该共享状态中注入指令。在适当的地方强制只读访问。例如，使组织范围的策略只能通过应用代码写入，而不是由 Agent 本身写入。使用<a href="/oss/javascript/deepagents/permissions">权限</a>来声明式地拒绝写入共享路径，或使用<a href="/oss/javascript/deepagents/backends#add-policy-hooks">后端策略钩子</a>进行自定义验证逻辑。
+                </div>
+                <div class="key-point">
+                    <strong>推荐默认值：</strong>按用户 + 助手划分命名空间。大多数应用只部署一个助手，这样每个用户有完全独立的内存空间。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Memory configuration ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>内存配置代码</h2>
+                <h4>用 CompositeBackend 同时提供线程临时空间和跨线程持久内存</h4>
+                <pre><code class="language-javascript">import {
+  createDeepAgent,
+  CompositeBackend,
+  StateBackend,
+  StoreBackend,
+} from "deepagents";
+
+// 推荐配置：用 CompositeBackend 组合临时空间和持久内存
+// 默认路径用 StateBackend（线程临时空间），/memories/ 路径用 StoreBackend（跨线程持久化）
+export const agent = createDeepAgent({
+  backend: new CompositeBackend(
+    new StateBackend(),              // 默认后端：线程范围临时空间，线程结束后清理
+    {
+      "/memories/": new StoreBackend({
+        namespace: (rt) => [
+          rt.serverInfo.assistantId,   // 第一级：按助手隔离
+          rt.serverInfo.user.identity, // 第二级：按用户隔离
+        ],
+      }),
+    },
+  ),
+  systemPrompt: `你拥有持久化内存，位于 /memories/。
+在每次对话开始时读取 /memories/instructions.txt，
+获取积累的知识和偏好。
+当你学到应该持久化的内容时，更新该文件。`,
+});</code></pre>
+                <div class="info-block">
+                    <strong>版本要求：</strong><code>rt.serverInfo</code> 和 <code>rt.executionInfo</code> 命名空间模式需要 <code>deepagents&gt;=1.9.0</code>。
+                </div>
+                <div class="info-block">
+                    <strong>CLI 快捷方式：</strong>如果使用 <code>deepagents deploy</code> 部署，每用户可写内存是内置的：项目根目录下的 <code>user/AGENTS.md</code> 模板会自动按已认证用户划分作用域。有关按子 Agent 隔离的命名空间，请参阅<a href="/oss/javascript/deepagents/deploy#subagents">子 Agent</a> 文档。
+                </div>
+                <h4>命名空间配置的三种变体</h4>
+                <pre><code class="language-javascript">// 1. 助手级别：同一个助手所有用户共享
+new StoreBackend({
+  namespace: (rt) => [rt.serverInfo.assistantId],  // 只按助手 ID 划分
+});
+// 适用场景：共享指令或知识（"始终以正式语气回复"）</code></pre>
+                <pre><code class="language-javascript">// 2. 用户级别：内存跟随用户跨所有助手
+new StoreBackend({
+  namespace: (rt) => [rt.serverInfo.user.identity],  // 只按用户身份划分
+});
+// 适用场景：全局用户配置（姓名、时区、沟通偏好）</code></pre>
+                <pre><code class="language-javascript">// 3. 组织级别：所有用户和助手共享（通常只读，防止提示注入）
+new StoreBackend({
+  namespace: (rt) => [rt.context.orgId],  // 按组织 ID 划分
+});
+// 适用场景：合规规则、品牌指南等组织策略</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>StateBackend</h4>
+                        <p>线程范围的临时空间。文件通过 checkpointer 在线程内多轮之间持久化，但不跨线程共享。每步检查点保存，避免写大文件。</p>
+                    </div>
+                    <div class="card">
+                        <h4>StoreBackend</h4>
+                        <p>跨对话存活的持久存储。通过命名空间工厂按用户、助手或组织划分作用域。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>危险：</strong><code>FilesystemBackend</code> 和 <code>LocalShellBackend</code> 直接访问宿主机。不要在已部署的 Agent 中使用它们。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Execution environment ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>执行环境</h2>
+                <h4>根据你的 Agent 是否需要执行代码，选择文件系统或沙箱</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>文件系统后端</h4>
+                        <p>只需要读写文件的 Agent。</p>
+                        <ul>
+                            <li><code>StateBackend</code>：线程范围临时空间</li>
+                            <li><code>StoreBackend</code>：跨线程持久存储</li>
+                            <li><code>CompositeBackend</code>：两者混合</li>
+                        </ul>
+                        <p><span class="tag tag-info">轻量级，适合大多数场景</span></p>
+                    </div>
+                    <div class="after">
+                        <h4>沙箱后端</h4>
+                        <p>需要运行代码的 Agent。隔离容器 + <code>execute</code> 工具。</p>
+                        <ul>
+                            <li>支持 shell 命令、安装包、执行文件 I/O</li>
+                            <li>Agent 代码崩溃只影响沙箱，宿主机不受影响</li>
+                            <li>支持 Modal、Daytona、Deno 等提供商</li>
+                        </ul>
+                        <p><span class="tag tag-warning">需要代码执行时使用</span></p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>CLI 快捷方式：</strong>在 <code>deepagents.toml</code> 的 <code>[sandbox]</code> 下声明沙箱提供商、模板和镜像——构建器会自动安装对应的包并连接沙箱。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Sandbox lifecycle ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>沙箱生命周期</h2>
+                <h4>关键决策：每次对话新建沙箱，还是对话之间共享？</h4>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>线程范围（最常见）</h4>
+                        <p>每次对话一个沙箱。同一线程内复用，新线程从干净状态开始。</p>
+                        <p><strong>适合：</strong>数据分析机器人，每次都从干净环境开始。</p>
+                        <p><span class="tag tag-success">隔离性最好</span></p>
+                    </div>
+                    <div class="card">
+                        <h4>助手范围</h4>
+                        <p>所有对话共享一个沙箱。文件、安装的包在对话间持久化。</p>
+                        <p><strong>适合：</strong>编程助手，跨对话维护克隆的仓库和依赖。</p>
+                        <p><span class="tag tag-warning">需注意磁盘增长</span></p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>为什么使用异步 Graph 工厂？</strong>沙箱创建需要 <code>thread_id</code> 或 <code>assistant_id</code> 来查找或创建正确的沙箱。Graph 工厂不接收完整的 <code>Runtime</code>（没有 <code>server_info</code> 或 <code>execution_info</code>），而是接受 <code>RunnableConfig</code> 并从 <code>config["configurable"]</code> 读取 <code>thread_id</code> 和 <code>assistant_id</code>。工厂是异步的，因为沙箱创建是一个 I/O 密集型操作，且需要仅在调用时可用的每次运行信息。
+                </div>
+                <pre><code class="language-javascript">// 线程范围沙箱 —— 每个对话独立沙箱，新线程从干净状态开始
+import { Daytona } from "@daytonaio/sdk";
+import { DaytonaSandbox } from "@langchain/daytona";
+import { createDeepAgent } from "deepagents";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+
+const client = new Daytona();
+
+// 异步 graph 工厂：每次运行时动态创建 Agent（因为需要 thread_id 来查找/创建沙箱）
+export async function agent(config: LangGraphRunnableConfig) {
+  const threadId = config.configurable?.thread_id as string;
+  let sandbox;
+  try {
+    // 先尝试查找已有沙箱（同一线程内复用）
+    sandbox = await client.findOne({ labels: { thread_id: threadId } });
+  } catch {
+    // 没有找到则创建新沙箱，打上 thread_id 标签以便后续复用
+    sandbox = await client.create({
+      labels: { thread_id: threadId },
+      autoDeleteInterval: 3600, // TTL: 空闲 1 小时后自动清理
+    });
+  }
+  return createDeepAgent({
+    model: "google_genai:gemini-3.1-pro-preview",
+    backend: await DaytonaSandbox.fromId(sandbox.id),  // 将沙箱作为文件系统后端
+  });
+}</code></pre>
+                <h4 style="margin-top: 1.5rem;">助手范围沙箱</h4>
+                <p>所有对话共享一个沙箱。Graph 工厂从配置中读取助手 ID，因此同一助手上的每个线程都返回到相同的环境。文件、安装的包和克隆的仓库在对话之间持久化。</p>
+                <pre><code class="language-javascript">// 助手范围沙箱 —— 所有对话共享同一个沙箱，文件和依赖跨对话持久化
+import { Daytona } from "@daytonaio/sdk";
+import { DaytonaSandbox } from "@langchain/daytona";
+import { createDeepAgent } from "deepagents";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+
+const client = new Daytona();
+
+// 按 assistant_id 查找沙箱：同一助手的所有线程复用同一沙箱
+export async function agent(config: LangGraphRunnableConfig) {
+  const assistantId = config.configurable?.assistant_id as string;
+  let sandbox;
+  try {
+    sandbox = await client.findOne({ labels: { assistant_id: assistantId } });
+  } catch {
+    // 首次使用时创建，后续对话直接复用
+    sandbox = await client.create({ labels: { assistant_id: assistantId } });
+  }
+  return createDeepAgent({
+    model: "google_genai:gemini-3.1-pro-preview",
+    backend: await DaytonaSandbox.fromId(sandbox.id),
+  });
+}</code></pre>
+                <div class="warning">
+                    <strong>助手范围注意：</strong>沙箱会随时间积累文件和状态。请配置 TTL、使用快照定期重置，或实现清理逻辑，防止磁盘和内存无限增长。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/05-going-to-production-3.png" alt="图：线程范围 vs 助手范围沙箱生命周期" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Sandbox client SDK ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>沙箱客户端 SDK</h2>
+                <h4>部署后，使用 SDK 从应用代码调用 Agent。作用域划分在 Agent 工厂中处理</h4>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>线程范围客户端</h4>
+                        <p>每个线程有自己的沙箱。同一线程内后续消息复用同一个沙箱，新线程总是从干净状态开始。</p>
+                    </div>
+                    <div class="card">
+                        <h4>助手范围客户端</h4>
+                        <p>所有线程共享一个沙箱。文件和安装的包在对话之间持久化，适合克隆仓库等场景。</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 线程范围客户端 —— 每个对话独立的沙箱
+import { Client } from "@langchain/langgraph-sdk";
+
+const client = new Client({
+  apiUrl: "&lt;DEPLOYMENT_URL&gt;",          // 部署后的 Agent 服务器地址
+  apiKey: "&lt;LANGSMITH_API_KEY&gt;"         // LangSmith API 密钥
+});
+
+// 对话 1：安装 pandas 并分析数据
+const thread1 = await client.threads.create();  // 创建新线程（对应一个新沙箱）
+for await (const chunk of client.runs.stream(
+  thread1.thread_id, "agent",                   // 指定线程 ID 和 graph 名称
+  { input: { messages: [{ role: "human",
+      content: "安装 pandas 并分析 sales_data.csv" }] } },
+)) {
+  console.log(chunk.data);                      // 流式输出每个步骤的结果
+}
+
+// 同一对话内的后续消息 — pandas 仍然已安装（同一线程复用同一沙箱）
+for await (const chunk of client.runs.stream(
+  thread1.thread_id, "agent",                   // 复用 thread1 的线程 ID
+  { input: { messages: [{ role: "human",
+      content: "现在绘制结果图表" }] } },
+)) {
+  console.log(chunk.data);
+}
+
+// 对话 2：全新沙箱 — pandas 未安装（新线程 = 新沙箱 = 干净环境）
+const thread2 = await client.threads.create();
+for await (const chunk of client.runs.stream(
+  thread2.thread_id, "agent",
+  { input: { messages: [{ role: "human",
+      content: "安装了哪些包？" }] } },
+)) {
+  console.log(chunk.data);
+}</code></pre>
+                <pre><code class="language-javascript">// 助手范围客户端 —— 所有对话共享沙箱，文件和依赖跨对话持久化
+
+// 对话 1：克隆并设置项目（这些操作的结果会保留在共享沙箱中）
+const thread1 = await client.threads.create();
+for await (const chunk of client.runs.stream(
+  thread1.thread_id, "agent",
+  { input: { messages: [{ role: "human",
+      content: "克隆 https://github.com/org/repo 并安装依赖" }] } },
+)) {
+  console.log(chunk.data);
+}
+
+// 对话 2：仓库和依赖仍然存在（因为共享同一助手级别的沙箱）
+const thread2 = await client.threads.create();
+for await (const chunk of client.runs.stream(
+  thread2.thread_id, "agent",
+  { input: { messages: [{ role: "human",
+      content: "运行测试套件并修复任何失败" }] } },
+)) {
+  console.log(chunk.data);
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Sandbox sync middleware ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件同步中间件</h2>
+                <h4>使用 before_agent / after_agent 钩子在沙箱边界之间移动文件</h4>
+                <pre><code class="language-javascript">import { createMiddleware } from "langchain";
+import { createDeepAgent, CompositeBackend, StoreBackend } from "deepagents";
+import { DaytonaSandbox } from "@langchain/daytona";
+
+function safeFilename(key: string): string {
+  const name = key.split("/").pop()!;
+  // 防止路径遍历攻击：拒绝包含 .. 或通配符的文件名
+  if (name.includes("..") || /[*?]/.test(name)) {
+    throw new Error(`Invalid key: ${key}`);
+  }
+  return name;
+}
+
+// 创建文件同步中间件：在 Store（持久存储）和沙箱之间双向同步文件
+const createSandboxSyncMiddleware = (backend: CompositeBackend) => {
+  return createMiddleware({
+    name: "SandboxSyncMiddleware",
+    beforeAgent: async (state, runtime) => {
+      // Agent 循环开始前：从 Store 读取技能和内存 → 上传到沙箱
+      const userId = runtime.serverInfo.user.identity;
+      const store = runtime.store;
+      const encoder = new TextEncoder();
+      const files: [string, Uint8Array][] = [];
+      // 收集该用户的所有技能文件
+      for (const item of await store.search(["skills", userId])) {
+        const name = safeFilename(item.key);
+        files.push([`/skills/${name}`, encoder.encode(item.value.content)]);
+      }
+      // 收集该用户的所有内存文件
+      for (const item of await store.search(["memories", userId])) {
+        const name = safeFilename(item.key);
+        files.push([`/memories/${name}`, encoder.encode(item.value.content)]);
+      }
+      if (files.length > 0) {
+        await backend.uploadFiles(files);  // 批量上传到沙箱
+      }
+    },
+    afterAgent: async (state, runtime) => {
+      // Agent 循环结束后：从沙箱下载更新的内存 → 同步回 Store
+      const userId = runtime.serverInfo.user.identity;
+      const store = runtime.store;
+      const items = await store.search(["memories", userId]);
+      const results = await backend.downloadFiles(
+        items.map((item) => `/memories/${item.key}`),  // 下载沙箱中的内存文件
+      );
+      const decoder = new TextDecoder();
+      for (const result of results) {
+        if (result.content) {
+          await store.put(
+            ["memories", userId],                    // 命名空间：按用户隔离
+            result.path.split("/").pop()!,           // 文件名
+            { content: decoder.decode(result.content) }, // 更新后的内容
+          );
+        }
+      }
+    },
+  });
+};
+
+// 后端配置：默认路径走沙箱，/skills/ 和 /memories/ 走持久化 Store
+const backend = new CompositeBackend(
+  await DaytonaSandbox.fromId(sandbox.id),  // 默认：沙箱后端
+  {
+    "/skills/": new StoreBackend({           // /skills/ 路径 → 持久化存储
+      namespace: (rt) => ["skills", rt.serverInfo.user.identity],
+    }),
+    "/memories/": new StoreBackend({         // /memories/ 路径 → 持久化存储
+      namespace: (rt) => ["memories", rt.serverInfo.user.identity],
+    }),
+  },
+);
+
+export const agent = createDeepAgent({
+  backend,
+  middleware: [createSandboxSyncMiddleware(backend)],
+});</code></pre>
+                <div class="key-point">
+                    <strong>工作原理：</strong><code>beforeAgent</code> 钩子在每次 Agent 循环开始前，将 Store 中的技能脚本和内存文件上传到沙箱。<code>afterAgent</code> 钩子在循环结束后，将沙箱中更新的内存下载并同步回 Store。这样 Agent 在沙箱内就能访问到最新的持久化数据。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/05-going-to-production-4.png" alt="图：文件同步中间件时序" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Sandbox file transfer & secrets ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件与密钥</h2>
+                <h4>沙箱是隔离的容器，数据和密钥需要专门机制进出</h4>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>文件传输</h4>
+                        <p>使用 <code>upload_files()</code> 和 <code>download_files()</code> 在沙箱边界之间移动数据。</p>
+                        <ul>
+                            <li><strong>运行前上传</strong>：用户文件、技能脚本、配置、持久化内存</li>
+                            <li><strong>完成后下载</strong>：生成的报告、图表、导出文件</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>密钥管理</h4>
+                        <p>沙箱内无法访问宿主机环境变量。两种方式提供密钥：</p>
+                        <ul>
+                            <li><strong>认证代理</strong>（推荐）：自动注入认证头，密钥不出沙箱</li>
+                            <li><strong>工作区密钥</strong>：Agent 服务器使用的共享密钥。如果通过 CLI 部署，<code>deepagents.toml</code> 旁的 <code>.env</code> 文件会随构建包上传，用于 Agent 服务器密钥；认证代理仅用于沙箱代码调用的内容。</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 认证代理配置 —— 拦截沙箱的出站请求并自动注入认证头
+// API 密钥永远不会出现在沙箱代码、环境变量或日志中
+{
+  "proxy_config": {
+    "rules": [
+      {
+        "name": "openai-api",                           // 规则名称
+        "match_hosts": ["api.openai.com"],               // 匹配目标主机
+        "inject_headers": {
+          "Authorization": "Bearer ${OPENAI_API_KEY}"    // 自动注入 API Key
+        }
+      },
+      {
+        "name": "anthropic-api",
+        "match_hosts": ["api.anthropic.com"],
+        "inject_headers": {
+          "x-api-key": "${ANTHROPIC_API_KEY}"
+        }
+      }
+    ]
+  }
+}</code></pre>
+                <div class="key-point">
+                    <strong>认证代理的优势：</strong>API 密钥永远不会出现在沙箱代码、环境变量或日志中。代理根据目标主机添加正确的凭证，沙箱代码只需正常调用外部 API。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Guardrails overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>防护机制</h2>
+                <h4>生产环境的 Agent 自主运行，需要两层保护机制</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>权限（声明式）</h4>
+                        <p>控制 Agent 可以<strong>读取或写入</strong>哪些文件和目录。将 Agent 隔离到工作目录、保护敏感文件、强制只读内存。</p>
+                        <p><span class="tag tag-primary">声明式规则</span></p>
+                    </div>
+                    <div class="card">
+                        <h4>中间件（钩子式）</h4>
+                        <p>包装模型和工具调用的钩子。用于<strong>速率限制、错误处理、数据隐私</strong>。在每次调用前后执行策略。</p>
+                        <p><span class="tag tag-warning">编程式控制</span></p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 中间件生命周期钩子
+// before_model     → 模型调用前
+// wrap_model_call  → 包装模型调用
+// wrap_tool_call   → 包装工具调用
+// after_model      → 模型调用后
+// before_agent     → Agent 循环开始前
+// after_agent      → Agent 循环结束后</code></pre>
+                <div class="info-block">
+                    <strong>注意：</strong>自定义中间件目前不能通过 <code>deepagents deploy</code> 配置。要使用中间件，请通过 LangSmith Deployment 直接部署你的 Agent 模块。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/05-going-to-production-5.png" alt="图：权限与中间件双层防护" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Rate limiting & Error handling ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>限流与容错</h2>
+                <h4>防止 Agent 无限循环耗尽预算，优雅处理各类错误</h4>
+                <pre><code class="language-javascript">// 速率限制 —— 防止 Agent 无限循环耗尽预算
+import {
+  createAgent,
+  modelCallLimitMiddleware,
+  toolCallLimitMiddleware,
+} from "langchain";
+
+const agent = createAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  middleware: [
+    modelCallLimitMiddleware({ runLimit: 50 }),   // 单次运行最多 50 次模型调用
+    toolCallLimitMiddleware({ runLimit: 200 }),    // 单次运行最多 200 次工具调用
+  ],
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>runLimit（每轮次）</h4>
+                        <p>限制<strong>单次调用</strong>内的调用次数，每个轮次重置。</p>
+                        <p><code>runLimit: 50</code> — 每轮最多 50 次模型调用</p>
+                    </div>
+                    <div class="after">
+                        <h4>threadLimit（跨对话）</h4>
+                        <p>限制<strong>整个对话</strong>的累计调用次数（需要 checkpointer）。</p>
+                        <p><code>threadLimit: 500</code> — 整个对话最多 500 次模型调用</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 错误处理 —— 重试 + 回退 + 工具级重试，确保生产环境稳定性
+import {
+  createAgent,
+  modelFallbackMiddleware,
+  modelRetryMiddleware,
+  toolRetryMiddleware,
+} from "langchain";
+
+const agent = createAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  middleware: [
+    // 模型调用重试：超时、5xx 时自动重试（指数退避）
+    modelRetryMiddleware({
+      maxRetries: 3,          // 最多重试 3 次
+      backoffFactor: 2.0,     // 退避倍数：1s → 2s → 4s
+      initialDelayMs: 1000,   // 首次重试前等待 1 秒
+    }),
+    // 模型回退：主模型完全宕机时自动切换到备用模型
+    modelFallbackMiddleware("gpt-5.4"),
+    // 工具级重试：仅对可能因瞬态故障失败的工具重试
+    toolRetryMiddleware({
+      maxRetries: 2,
+      tools: ["search", "fetch_url"],       // 只重试这两个工具
+      retryOn: [TimeoutError, TypeError],   // 只在超时或类型错误时重试
+    }),
+  ],
+});</code></pre>
+                <div class="key-point">
+                    <strong>原则：</strong>瞬态故障（网络超时）自动重试，LLM 可恢复错误反馈给模型，需要人工的错误暂停 Agent。不要对所有工具无差别重试——<code>read_file</code> 失败重试没意义，但超时的 Web 搜索值得重试。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 18: Data privacy ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>数据隐私</h2>
+                <h4>在数据到达模型或被存储之前，检测和处理 PII</h4>
+                <pre><code class="language-javascript">// PII 脱敏中间件 —— 在数据到达模型之前拦截和处理敏感信息
+import { createAgent, piiMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  middleware: [
+    piiMiddleware("email", { strategy: "redact", applyToInput: true }),       // 邮箱替换为 [REDACTED_EMAIL]
+    piiMiddleware("credit_card", { strategy: "mask", applyToInput: true }),   // 信用卡部分遮盖如 ****-1234
+  ],
+});</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>四种脱敏策略</h4>
+                        <table>
+                            <thead><tr><th>策略</th><th>效果</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>redact</code></td><td>替换为 <code>[REDACTED_EMAIL]</code></td></tr>
+                                <tr><td><code>mask</code></td><td>部分遮盖，如 <code>****-1234</code></td></tr>
+                                <tr><td><code>hash</code></td><td>确定性哈希</td></tr>
+                                <tr><td><code>block</code></td><td>直接抛出错误</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>自定义检测器</h4>
+                        <p>除了内置的电子邮件、信用卡检测，你还可以为特定领域的模式编写自定义检测器。</p>
+                        <p>例如：身份证号、手机号、内部员工 ID 等。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>关键点：</strong>PII 中间件在数据到达模型或被存储之前拦截和处理。<code>applyToInput: true</code> 确保用户输入中的敏感信息在发送给 LLM 之前就被处理。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 19: Frontend ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>前端接入</h2>
+                <h4>用 useStream 将你的 UI 连接到已部署的 Agent</h4>
+                <pre><code class="language-javascript">// React 前端接入 —— 用 useStream 钩子连接已部署的 Agent
+import { useStream } from "@langchain/react";
+
+function App() {
+  const stream = useStream({
+    apiUrl: "https://your-deployment.langsmith.dev",  // 部署后的服务器地址
+    assistantId: "agent",                              // langgraph.json 中定义的 graph ID
+    reconnectOnMount: true,    // 页面刷新后自动恢复流式连接，不丢失进度
+    fetchStateHistory: true,   // 挂载时加载完整线程历史，返回用户能看到之前的消息
+  });
+}</code></pre>
+                <pre><code class="language-javascript">// 提交消息给 Agent —— 深度 Agent 需要较高的递归限制
+stream.submit(
+  { messages: [{ type: "human", content: text }] },
+  {
+    streamSubgraphs: true,               // 流式传输子 Agent 的执行进度
+    config: { recursionLimit: 10000 },   // 深度 Agent 会产生大量子 Agent，需要高递归上限
+  },
+);</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>useStream 功能</h4>
+                        <ul>
+                            <li>实时流式传输消息、子 Agent 进度、自定义状态</li>
+                            <li>支持 React、Vue、Svelte、Angular</li>
+                            <li>自动重连：刷新页面不丢失进度</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>内置聊天 UI</h4>
+                        <ul>
+                            <li>部署 URL 的 <code>/app</code> 路径自动挂载</li>
+                            <li>开箱即用的流式传输、线程选择、子 Agent 面板</li>
+                            <li>内置 Clerk/Supabase/匿名认证</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>reconnectOnMount 很重要：</strong>用户在 Agent 工作时刷新页面，会看到 Agent 继续执行而不是空白屏幕。fetchStateHistory 则确保返回的用户能看到之前的消息。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 20: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>从本地原型到生产部署，你掌握了所有关键环节</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li><strong>三个核心概念</strong>：Thread、User、Assistant 决定数据作用域</li>
+                            <li><strong>部署方案</strong>：Managed Deep Agents 与 LangSmith Deployment</li>
+                            <li><strong>多租户架构</strong>：认证、授权、RBAC、用户凭证管理</li>
+                            <li><strong>异步与持久化</strong>：I/O 密集型场景的标配</li>
+                            <li><strong>内存管理</strong>：四种作用域划分 + CompositeBackend 配置</li>
+                            <li><strong>执行环境</strong>：文件系统 vs 沙箱，线程 vs 助手范围</li>
+                            <li><strong>防护机制</strong>：限流、容错、PII 脱敏中间件</li>
+                            <li><strong>前端接入</strong>：useStream + 重连 + 子 Agent 流式</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>生产检查清单</h4>
+                        <ul>
+                            <li>用户身份认证是否配置？</li>
+                            <li>数据是否按 Thread/User/Assistant 隔离？</li>
+                            <li>Agent 执行环境是否沙箱化？</li>
+                            <li>是否配置了重试和回退中间件？</li>
+                            <li>是否设置了模型和工具调用限制？</li>
+                            <li>PII 数据是否在发送前脱敏？</li>
+                            <li>前端是否支持重连和历史恢复？</li>
+                            <li>共享内存是否防止了提示注入？</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心理念：</strong>生产环境不是"能跑就行"，而是要让 Agent 在多用户、长时间、不可预期的条件下依然<strong>安全、可控、可恢复</strong>。每一步检查点、每一个中间件、每一层认证，都是这个目标的保障。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 21: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./04-comparison.html">上一章：Deep Agents 对比</a></li>
+                            <li><a href="./06-harness.html">下一章：Harness 深入理解</a></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关主题</h4>
+                        <ul>
+                            <li><a href="./13-permissions.html">权限控制</a> — 声明式文件访问规则</li>
+                            <li><a href="./14-memory.html">内存深入</a> — 长期内存与知识库</li>
+                            <li><a href="./16-sandboxes.html">沙箱指南</a> — 提供商设置与生命周期</li>
+                            <li><a href="./12-human-in-the-loop.html">人机协作</a> — 审批与中断机制</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 官方文档</a></li>
+                            <li><a href="https://smith.langchain.com/">LangSmith</a> — 调试和部署平台</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">Deep Agents GitHub</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

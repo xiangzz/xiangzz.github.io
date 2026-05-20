@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端沙箱 IDE</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🖥️</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 24 章</div>
+            <h1>前端沙箱 IDE</h1>
+            <p>构建类似 IDE 的 UI，用于由沙箱环境支持的编码代理</p>
+            <strong>从"聊天窗口"到"完整开发环境"的关键升级</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>聊天窗口困局</h2>
+                <h4>编码代理需要的不仅仅是一个聊天窗口——它需要 IDE 体验</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>纯聊天模式的困境</h4>
+                        <ul>
+                            <li>代理写的代码全在消息气泡里，<strong>没有文件浏览器</strong></li>
+                            <li>想看修改了什么？只能逐条翻消息——<strong>没有差异视图</strong></li>
+                            <li>代理运行代码的输出散落各处，<strong>无法集中查看</strong></li>
+                            <li>多个文件被修改时，<strong>没有全局变更概览</strong></li>
+                            <li>用户无法实时看到代理在做什么，<strong>缺少透明度</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>沙箱 IDE 的解法</h4>
+                        <ul>
+                            <li>连接沙箱环境，提供<strong>文件树侧边栏</strong></li>
+                            <li>实时同步文件变更，展示<strong>统一差异视图</strong></li>
+                            <li>三面板布局：<strong>文件树 + 代码查看器 + 聊天</strong></li>
+                            <li>变更文件摘要，一目了然<strong>增删行数统计</strong></li>
+                            <li>代理工作时实时刷新，<strong>IDE 体验丝滑</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>编码代理处理的是"文件"——创建、修改、运行——但纯聊天界面无法直观展示这些操作。沙箱 IDE 将代理连接到隔离的执行环境，并通过文件浏览器、差异面板和实时同步，让用户像用 VS Code 一样与代理协作。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Architecture overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三层架构</h2>
+                <h4>沙箱模式由三个层次协同工作</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>1. 深度代理 + 沙箱后端</h4>
+                        <p>代理自动从沙箱获取文件系统工具：<code>read_file</code>、<code>write_file</code>、<code>edit_file</code>、<code>execute</code>。无需手动配置工具，后端自动注入。</p>
+                        <p><span class="tag tag-success">自动工具注入</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>2. 自定义 API 服务器</h4>
+                        <p>通过 <code>langgraph.json</code> 的 <code>http.app</code> 字段暴露 Hono 应用，提供前端可以调用的文件浏览端点。代理后端和 API 共享同一个沙箱解析逻辑。</p>
+                        <p><span class="tag tag-warning">Hono 路由层</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>3. IDE 前端</h4>
+                        <p>三面板布局——文件树、代码/差异查看器、聊天面板。使用 <code>useStream</code> 进行代理对话，通过自定义 API 端点浏览文件。代理工作时实时同步。</p>
+                        <p><span class="tag tag-primary">实时同步 UI</span></p>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/24-frontend-sandbox-1.png" alt="图：沙箱 IDE 架构——三层数据流" class="ai-diagram-img">
+                <div class="key-point">
+                    <strong>关键设计：</strong>代理后端和 API 服务器共享同一个 <code>getOrCreateSandboxForThread</code> 函数，通过线程元数据中的沙箱 ID 作为唯一可信来源，确保两者始终解析到同一个沙箱。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Sandbox lifecycle ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>沙箱生命周期</h2>
+                <h4>理解作用域策略——决定了谁共享沙箱、沙箱存活多久</h4>
+                <table>
+                    <thead>
+                        <tr><th>作用域</th><th>隔离级别</th><th>适用场景</th><th>持久化</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>线程级（推荐）</strong></td>
+                            <td>每线程独立沙箱</td>
+                            <td>大多数应用，对话间完全隔离</td>
+                            <td>线程删除时清理</td>
+                        </tr>
+                        <tr>
+                            <td><strong>代理级</strong></td>
+                            <td>同助手共享</td>
+                            <td>持久项目环境，跨对话保留变更</td>
+                            <td>助手存在时持久</td>
+                        </tr>
+                        <tr>
+                            <td><strong>用户级</strong></td>
+                            <td>每用户独立</td>
+                            <td>需要自定义身份验证和用户标识</td>
+                            <td>用户账户存在时持久</td>
+                        </tr>
+                        <tr>
+                            <td><strong>会话级</strong></td>
+                            <td>前端会话</td>
+                            <td>演示或原型开发，无 LangGraph 线程</td>
+                            <td>浏览器会话内</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-javascript">// 线程级作用域——从线程元数据读取沙箱 ID
+import { getConfig } from "@langchain/langgraph";
+
+function getSandboxBackendForThread() {
+  // getConfig() 在运行时获取当前 LangGraph 调用的配置
+  const config = getConfig();
+  // 从 configurable 中读取线程 ID，用于沙箱隔离
+  const threadId = config.configurable?.thread_id;
+  return getOrCreateSandboxForThread(threadId);
+}
+
+// 代理级作用域——同助手共享一个沙箱
+function getSandboxBackendForAssistant() {
+  const config = getConfig();
+  // 使用 assistant_id 作为沙箱标识，同助手共享环境
+  const assistantId = config.metadata?.assistant_id;
+  return getOrCreateSandboxForAssistant(assistantId);
+}
+
+// 用户级作用域——每个用户拥有独立沙箱
+function getSandboxBackendForUser() {
+  const config = getConfig();
+  // 使用 user_id 实现用户间的沙箱隔离
+  const userId = config.configurable?.user_id;
+  return getOrCreateSandboxForUser(userId);
+}
+
+// 会话级——前端生成随机 ID，浏览器关闭后丢失
+const sessionId = crypto.randomUUID();
+fetch(`/api/sandbox/tree?sessionId=${sessionId}`);</code></pre>
+                <div class="warning">
+                    <strong>不要在模块级别创建沙箱！</strong>那样会在所有线程之间共享，且可能过期。应该在运行时通过 <code>getConfig()</code> 按线程解析沙箱，确保隔离和安全。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/24-frontend-sandbox-2.png" alt="图：四种沙箱作用域策略对比" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Thread-scoped sandbox detail ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>线程级解析</h2>
+                <h4>推荐方式——每个对话拥有独立的沙箱环境</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/24-frontend-sandbox-3.png" alt="图：线程级沙箱解析时序" class="ai-diagram-img">
+                <div class="comparison">
+                    <div class="before">
+                        <h4>优势</h4>
+                        <ul>
+                            <li>对话间完全隔离——一个线程中的文件更改不影响另一个</li>
+                            <li>沙箱状态在页面重新加载后依然存在（同一线程 = 同一沙箱）</li>
+                            <li>清理简单：线程删除时，沙箱一并删除</li>
+                            <li>唯一可信来源：线程元数据中的沙箱 ID，不需要内存缓存</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>核心逻辑</h4>
+                        <ul>
+                            <li>沙箱 ID 存储在线程的 <code>metadata.sandbox_id</code></li>
+                            <li>首次运行时创建沙箱并写入元数据</li>
+                            <li>后续运行时从元数据读取并重连</li>
+                            <li>代理后端和 API 服务器共享同一解析函数</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Setting up the agent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>设置代理</h2>
+                <h4>选择沙箱提供者并按线程解析——避免模块级状态</h4>
+                <h4 style="margin-top: 0.5em;">选择沙箱提供者——基本创建方式</h4>
+                <pre><code class="language-javascript">// 最简方式：使用 LangSmith 沙箱
+import { createDeepAgent, LangSmithSandbox } from "deepagents";
+
+// 创建一个新的沙箱实例（LangSmith 托管的隔离容器）
+const sandbox = await LangSmithSandbox.create();
+
+// 创建代理并绑定沙箱后端
+export const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",  // 指定使用的 LLM 模型
+  backend: sandbox,                               // 沙箱作为文件系统和执行后端
+  systemPrompt: "You are an expert developer working on a project in /app.",
+});
+// 创建后代理自动获得以下工具：
+// read_file, write_file, edit_file, ls, glob, grep, execute</code></pre>
+                <h4 style="margin-top: 1em;">按线程解析——生产环境推荐</h4>
+                <pre><code class="language-javascript">import { createDeepAgent, LangSmithSandbox } from "deepagents";
+import { getConfig } from "@langchain/langgraph";
+
+// 按线程获取或创建沙箱——核心解析逻辑
+async function getOrCreateSandboxForThread(threadId) {
+  const client = new Client({ apiUrl: "http://localhost:2024" });
+  // 通过线程 ID 获取线程对象，从中读取已保存的沙箱 ID
+  const thread = await client.threads.get(threadId);
+  const sandboxId = thread.metadata?.sandbox_id;
+
+  if (sandboxId) {
+    // 已有沙箱：重新连接到同一实例
+    return new LangSmithSandbox({
+      sandbox: await new SandboxClient().getSandbox(sandboxId),
+    });
+  }
+
+  // 首次运行：创建新沙箱并初始化项目文件
+  const sandbox = await LangSmithSandbox.create({
+    templateName: "my-template",   // 基于预配置的容器镜像创建
+  });
+  await seedSandbox(sandbox);      // 上传初始项目文件
+  // 将沙箱 ID 持久化到线程元数据，确保后续运行能重连
+  await client.threads.update(threadId, {
+    metadata: { sandbox_id: sandbox.id },
+  });
+  return sandbox;
+}
+
+// 运行时按线程解析的沙箱——不在模块级创建
+const sandbox = new LangSmithSandbox({
+  // resolve 函数在每次 Agent 运行时调用，动态获取对应线程的沙箱
+  resolve: async () => {
+    const config = getConfig();
+    const threadId = config.configurable?.thread_id;
+    if (!threadId) throw new Error("No thread_id");
+    return getOrCreateSandboxForThread(threadId);
+  },
+});
+
+export const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  backend: sandbox,    // 传入支持动态解析的沙箱实例
+  systemPrompt: "You are an expert developer working on a project in /app.",
+});</code></pre>
+                <div class="key-point">
+                    <strong>代理自动获得工具：</strong>文件系统工具（<code>read_file</code>、<code>write_file</code>、<code>edit_file</code>、<code>ls</code>、<code>glob</code>、<code>grep</code>）和 <code>execute</code> 工具。无需额外配置，后端自动注入。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Seeding the sandbox ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>初始化沙箱</h2>
+                <h4>在代理运行之前，用项目文件填充沙箱</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>上传初始文件</h4>
+                        <p>使用 <code>uploadFiles</code> 将项目骨架填充到沙箱中。从空沙箱开始会让人困惑，上传可运行的起始项目让用户和代理立即拥有上下文。</p>
+                    </div>
+                    <div class="after">
+                        <h4>安装依赖</h4>
+                        <p>上传 <code>package.json</code> 后运行 <code>sandbox.execute("cd /app && npm install")</code>，在代理启动前安装好依赖。</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 定义要上传到沙箱的初始项目文件
+const SEED_FILES = {
+  "package.json": JSON.stringify({
+    name: "my-app",
+    version: "1.0.0"
+  }, null, 2),
+  "src/index.js": 'console.log("Hello");',
+};
+
+// 将文件内容编码为二进制并上传到沙箱的 /app 目录
+const encoder = new TextEncoder();
+await sandbox.uploadFiles(
+  Object.entries(SEED_FILES).map(([path, content]) => [
+    `/app/${path}`,                    // 沙箱内的目标路径
+    encoder.encode(content),           // 将字符串编码为 Uint8Array
+  ]),
+);
+
+// 在沙箱中执行 npm install 安装依赖
+await sandbox.execute("cd /app && npm install");</code></pre>
+                <div class="info-block">
+                    <strong>LangSmith 沙箱注意：</strong>容器镜像和资源限制来自沙箱快照。创建沙箱时传入 <code>templateName</code>，<code>uploadFiles</code> 在运行时在该镜像基础上填充或更新项目文件。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: API server ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件浏览 API</h2>
+                <h4>通过 Hono 应用暴露沙箱文件系统给前端</h4>
+                <pre><code class="language-javascript">// src/api/app.ts —— 自定义 Hono API 服务器
+import { Hono } from "hono";
+import { getOrCreateSandboxForThread } from "./utils.js";
+
+export const app = new Hono();
+
+// 获取文件树：列出沙箱中指定目录的文件和子目录
+app.get("/api/sandbox/:threadId/tree", async (c) => {
+  const threadId = c.req.param("threadId");
+  const rootPath = c.req.query("filePath") || "/app"; // 默认浏览 /app 目录
+
+  // 根据线程 ID 获取对应的沙箱实例
+  const sandbox = await getOrCreateSandboxForThread(threadId);
+  // 在沙箱中执行 find 命令，获取文件类型、大小和路径
+  const result = await sandbox.execute(
+    `find '${rootPath}' -printf '%y\\t%s\\t%p\\n' 2>/dev/null | sort`,
+  );
+
+  // 解析 find 命令的输出，构建文件树结构
+  const entries = result.output.trim().split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [typeChar, sizeStr, fullPath] = line.split("\t");
+      return {
+        name: fullPath.split("/").pop(),           // 文件/目录名
+        type: typeChar === "d" ? "directory" : "file", // 区分文件和目录
+        path: fullPath,                            // 完整路径
+        size: parseInt(sizeStr, 10) || 0,          // 文件大小（字节）
+      };
+    });
+
+  return c.json({ path: rootPath, entries, sandboxId: sandbox.id });
+});
+
+// 获取文件内容：读取沙箱中单个文件的内容
+app.get("/api/sandbox/:threadId/file", async (c) => {
+  const threadId = c.req.param("threadId");
+  const filePath = c.req.query("filePath");
+  if (!filePath) return c.json({ error: "filePath is required" }, 400);
+
+  const sandbox = await getOrCreateSandboxForThread(threadId);
+  // 从沙箱下载文件（返回二进制内容）
+  const results = await sandbox.downloadFiles([filePath]);
+  const file = results[0];
+  if (file.error) return c.json({ error: file.error }, 404);
+
+  // 将二进制内容解码为文本返回
+  const content = new TextDecoder().decode(file.content);
+  return c.json({ path: filePath, content });
+});</code></pre>
+                <div class="warning">
+                    <strong>路由优先级：</strong><code>http.app</code> 中定义的自定义路由优先于默认的 LangGraph 路由。不要意外覆盖 <code>/threads</code> 或 <code>/runs</code> 等内置端点。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: langgraph.json ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置部署</h2>
+                <h4>同时注册代理图和 API 服务器</h4>
+                <pre><code class="language-json">{
+  "node_version": "22",         // Node.js 运行时版本
+  "graphs": {
+    // 注册代理图：键名是 assistant ID，值指向导出 agent 变量的文件
+    "coding_agent": "./src/agents/my-agent.ts:agent"
+  },
+  "env": ".env",                // 环境变量文件
+  "http": {
+    // 自定义 HTTP 路由：Hono 应用在默认路由旁运行
+    "app": "./src/api/app.ts:app"
+  }
+}</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>graphs 字段</h4>
+                        <p>注册代理图，键名是 assistant ID，值指向导出 <code>agent</code> 的文件路径。前端通过 <code>assistantId: "coding_agent"</code> 引用。</p>
+                    </div>
+                    <div class="card">
+                        <h4>http.app 字段</h4>
+                        <p>告诉 LangGraph 平台在默认路由旁边提供你的自定义 Hono 路由。本地开发时地址是 <code>http://localhost:2024</code>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>两者共享同一个沙箱：</strong>代理后端和 API 服务器都调用 <code>getOrCreateSandboxForThread</code>，通过线程元数据中的沙箱 ID 确保一致性。不需要内存缓存。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Thread creation ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>线程创建</h2>
+                <h4>页面加载时创建线程并持久化到 sessionStorage</h4>
+                <pre><code class="language-javascript">const THREAD_KEY = "sandbox-thread-id";  // sessionStorage 存储键
+
+function IDEPreview() {
+  // 尝试从 sessionStorage 恢复之前的线程 ID（页面刷新后重连）
+  const [threadId, setThreadId] = useState(
+    () => sessionStorage.getItem(THREAD_KEY),
+  );
+
+  // 线程 ID 变更时同步更新 sessionStorage
+  const updateThreadId = useCallback((id) => {
+    setThreadId(id);
+    if (id) sessionStorage.setItem(THREAD_KEY, id);
+    else sessionStorage.removeItem(THREAD_KEY);
+  }, []);
+
+  // 建立与 Agent 的流式连接，绑定到指定线程
+  const stream = useStream({
+    apiUrl: AGENT_URL,
+    assistantId: "coding_agent",    // langgraph.json 中注册的图名
+    threadId,                       // 指定线程 ID，实现会话延续
+    onThreadId: updateThreadId,     // 当 LangGraph 返回线程 ID 时回调
+  });
+
+  // 首次挂载时，如果没有线程则创建新线程
+  useEffect(() => {
+    if (threadId) return;
+    stream.client.threads.create()
+      .then((t) => updateThreadId(t.thread_id));
+  }, [stream.client, threadId, updateThreadId]);
+
+  // 使用线程 ID 获取沙箱文件树和文件内容
+  const { tree, files } = useSandboxFiles(threadId);
+}
+
+// "新线程"按钮——清除当前线程，触发新线程和沙箱创建
+function handleNewThread() {
+  stream.switchThread(null);
+  updateThreadId(null);
+}</code></pre>
+                <div class="key-point">
+                    <strong>为什么用 sessionStorage：</strong>页面重新加载时会重新连接到同一线程和沙箱，而不是创建新的。这样用户刷新页面后不会丢失工作状态。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: File state management ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件状态管理</h2>
+                <h4>跟踪两个快照：原始状态和当前状态</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>获取文件树</h4>
+                        <p>通过 API 端点获取沙箱中的文件结构，过滤掉 <code>node_modules</code> 等干扰目录。</p>
+                    </div>
+                    <div class="after">
+                        <h4>获取文件内容</h4>
+                        <p>通过 API 端点获取单个文件的内容，用于代码查看器和差异对比。</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">const AGENT_URL = "http://localhost:2024";
+
+// 获取沙箱中的文件树结构
+async function fetchTree(threadId) {
+  // 调用自定义 API 端点，路径中包含线程 ID 以定位沙箱
+  const res = await fetch(
+    `${AGENT_URL}/api/sandbox/${encodeURIComponent(threadId)}` +
+    `/tree?filePath=/app`,
+  );
+  const data = await res.json();
+  // 过滤掉 node_modules 等干扰目录，保持文件树简洁
+  return data.entries.filter(
+    (e) => !e.path.includes("node_modules")
+  );
+}
+
+// 获取沙箱中单个文件的内容
+async function fetchFile(threadId, path) {
+  const res = await fetch(
+    `${AGENT_URL}/api/sandbox/${encodeURIComponent(threadId)}` +
+    `/file?filePath=${encodeURIComponent(path)}`,
+  );
+  const data = await res.json();
+  return data.content ?? null;  // 文件不存在时返回 null
+}</code></pre>
+                <div class="info-block">
+                    <strong>线程 ID 包含在 API URL 中</strong>，确保请求始终访问正确的沙箱。每次代理运行前快照当前文件内容，运行后与快照对比以识别变更。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Real-time file sync ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实时文件同步</h2>
+                <h4>代理工作时实时更新文件，而不是等运行结束</h4>
+                <p>关键在于监听流消息中的 <code>ToolMessage</code>，当文件修改工具完成时立即刷新。</p>
+                <pre><code class="language-javascript">import { useStream } from "@langchain/react";
+import { ToolMessage, AIMessage } from "langchain";
+
+// 这些工具会修改文件，完成后需要刷新 UI
+const FILE_MUTATING_TOOLS = new Set([
+  "write_file", "edit_file", "execute"
+]);
+
+export function IDEPreview() {
+  const stream = useStream({
+    apiUrl: AGENT_URL,
+    assistantId: "coding_agent",
+  });
+
+  // 记录已处理的工具调用 ID，避免重复刷新
+  const processedIds = useRef(new Set());
+
+  useEffect(() => {
+    // 第一遍：从 AI 消息中提取文件修改相关的工具调用信息
+    const toolCallMap = new Map();
+    for (const msg of stream.messages) {
+      if (!AIMessage.isInstance(msg)) continue;
+      for (const tc of msg.tool_calls ?? []) {
+        if (tc.id && FILE_MUTATING_TOOLS.has(tc.name)) {
+          toolCallMap.set(tc.id, { name: tc.name, args: tc.args });
+        }
+      }
+    }
+
+    // 第二遍：当 ToolMessage 出现时（工具执行完毕），立即刷新对应文件
+    for (const msg of stream.messages) {
+      if (!ToolMessage.isInstance(msg)) continue;
+      const id = msg.id ?? msg.tool_call_id;
+      if (!id || processedIds.current.has(id)) continue;
+
+      const call = toolCallMap.get(msg.tool_call_id);
+      if (!call) continue;
+      processedIds.current.add(id);
+
+      // 根据工具类型选择刷新策略
+      if (call.name === "write_file" || call.name === "edit_file") {
+        refreshSingleFile(call.args.path);  // 只刷新被修改的文件
+      } else if (call.name === "execute") {
+        refreshAllFiles();  // Shell 命令可能修改任何文件，全量刷新
+      }
+    }
+  }, [stream.messages]);
+}</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>Vue 实现</h4>
+                        <pre><code class="language-javascript">import { useStream } from "@langchain/vue";
+import { ToolMessage, AIMessage } from "langchain";
+import { watch } from "vue";
+
+const stream = useStream({
+  apiUrl: AGENT_URL,
+  assistantId: "coding_agent",
+});
+const processedIds = new Set();
+
+// Vue 中使用 watch 监听消息变化（deep: true 深度监听）
+watch(() => stream.messages.value, (messages) => {
+  // 从 AI 消息中提取文件修改相关的工具调用
+  const toolCallMap = new Map();
+  for (const msg of messages) {
+    if (AIMessage.isInstance(msg)) {
+      for (const tc of msg.tool_calls ?? []) {
+        if (tc.id &amp;&amp; FILE_MUTATING_TOOLS.has(tc.name))
+          toolCallMap.set(tc.id, { name: tc.name, args: tc.args });
+      }
+    }
+  }
+  // 当工具执行完毕时，根据工具类型刷新文件
+  for (const msg of messages) {
+    if (!ToolMessage.isInstance(msg)) continue;
+    const id = msg.id ?? msg.tool_call_id;
+    if (!id || processedIds.has(id)) continue;
+    const call = toolCallMap.get(msg.tool_call_id);
+    if (!call) continue;
+    processedIds.add(id);
+    if (call.name === "write_file" || call.name === "edit_file")
+      refreshSingleFile(call.args.path);
+    else if (call.name === "execute") refreshAllFiles();
+  }
+}, { deep: true });</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Svelte 实现</h4>
+                        <pre><code class="language-javascript">import { useStream } from "@langchain/svelte";
+import { ToolMessage, AIMessage } from "langchain";
+
+const processedIds = new Set();
+const { messages, submit } = useStream({
+  apiUrl: AGENT_URL,
+  assistantId: "coding_agent",
+});
+
+// Svelte 5 中使用 $effect 响应式追踪 store 变化
+$effect(() => {
+  const msgs = $messages;  // $ 前缀自动订阅 store
+  // 从 AI 消息中提取文件修改相关的工具调用
+  const toolCallMap = new Map();
+  for (const msg of msgs) {
+    if (AIMessage.isInstance(msg)) {
+      for (const tc of msg.tool_calls ?? []) {
+        if (tc.id &amp;&amp; FILE_MUTATING_TOOLS.has(tc.name))
+          toolCallMap.set(tc.id, { name: tc.name, args: tc.args });
+      }
+    }
+  }
+  // 当工具执行完毕时，根据工具类型刷新文件
+  for (const msg of msgs) {
+    if (!ToolMessage.isInstance(msg)) continue;
+    const id = msg.id ?? msg.tool_call_id;
+    if (!id || processedIds.has(id)) continue;
+    const call = toolCallMap.get(msg.tool_call_id);
+    if (!call) continue;
+    processedIds.add(id);
+    if (call.name === "write_file" || call.name === "edit_file")
+      refreshSingleFile(call.args.path);
+    else if (call.name === "execute") refreshAllFiles();
+  }
+});</code></pre>
+                    </div>
+                </div>
+                <div class="card" style="margin-top: 0.75em;">
+                    <h4>Angular 实现</h4>
+                    <pre><code class="language-javascript">import { Component, effect } from "@angular/core";
+import { useStream } from "@langchain/angular";
+import { ToolMessage, AIMessage } from "langchain";
+
+@Component({
+  selector: "app-ide-preview",
+  template: `&lt;!-- ... --&gt;`,
+})
+  // Angular 中 useStream 返回 Signal，通过 effect 追踪变化
+export class IdePreviewComponent {
+  stream = useStream({
+    apiUrl: AGENT_URL,
+    assistantId: "coding_agent",
+  });
+  private processedIds = new Set&lt;string&gt;();
+
+  constructor() {
+      // Angular effect 在 Signal 值变化时自动触发
+    effect(() => {
+      const messages = this.stream.messages();  // Signal 函数调用获取当前值
+      // 从 AI 消息中提取文件修改相关的工具调用
+      const toolCallMap = new Map();
+      for (const msg of messages) {
+        if (AIMessage.isInstance(msg)) {
+          for (const tc of msg.tool_calls ?? []) {
+            if (tc.id &amp;&amp; FILE_MUTATING_TOOLS.has(tc.name))
+              toolCallMap.set(tc.id, { name: tc.name, args: tc.args });
+          }
+        }
+      }
+      // 当工具执行完毕时，根据工具类型刷新文件
+      for (const msg of messages) {
+        if (!ToolMessage.isInstance(msg)) continue;
+        const id = msg.id ?? msg.tool_call_id;
+        if (!id || this.processedIds.has(id)) continue;
+        const call = toolCallMap.get(msg.tool_call_id);
+        if (!call) continue;
+        this.processedIds.add(id);
+        if (call.name === "write_file" || call.name === "edit_file")
+          this.refreshSingleFile(call.args.path);
+        else if (call.name === "execute") this.refreshAllFiles();
+      }
+    });
+  }
+}</code></pre>
+                </div>
+                <div class="key-point">
+                    <strong>三种触发刷新的工具：</strong><code>write_file</code> 和 <code>edit_file</code> 只刷新对应文件（精确高效），<code>execute</code> 刷新全部文件（因为 Shell 命令可能修改任何文件）。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Detect changes ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>检测文件变更</h2>
+                <h4>对比原始快照和当前状态，识别代理修改了什么</h4>
+                <pre><code class="language-javascript">// 对比原始快照和当前状态，检测 Agent 修改了哪些文件
+function detectChanges(current, original) {
+  const changed = new Set();
+
+  // 检查新增或内容发生变化的文件
+  for (const [path, content] of Object.entries(current)) {
+    if (original[path] !== content) changed.add(path);
+  }
+
+  // 检查被 Agent 删除的文件（原快照中存在但当前不存在）
+  for (const path of Object.keys(original)) {
+    if (!(path in current)) changed.add(path);
+  }
+
+  return changed;
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>变更文件摘要</h4>
+                        <p>显示所有修改文件的摘要，包含行级别的增删计数。类似于 <code>git status</code>——给用户一个快速概览：</p>
+                        <ul>
+                            <li>文件路径</li>
+                            <li><span style="color: #22c55e;">+N</span> 新增行数</li>
+                            <li><span style="color: #ef4444;">-N</span> 删除行数</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>差异视图展示</h4>
+                        <p>当用户点击代理修改过的文件时，<strong>默认显示差异视图</strong>而不是完整代码。这才是用户关心的内容。</p>
+                        <p>各框架差异库：</p>
+                        <table style="width:100%; font-size:0.85em;">
+                            <thead>
+                                <tr><th>框架</th><th>库</th><th>组件</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>React</td>
+                                    <td><a href="https://diffs.com" target="_blank"><code>@pierre/diffs</code></a></td>
+                                    <td><code>&lt;FileDiff&gt;</code> + <code>parseDiffFromFile</code></td>
+                                </tr>
+                                <tr>
+                                    <td>Vue</td>
+                                    <td><a href="https://github.com/MrWangJustToDo/git-diff-view" target="_blank"><code>@git-diff-view/vue</code></a></td>
+                                    <td><code>&lt;DiffView&gt;</code> + <code>generateDiffFile</code></td>
+                                </tr>
+                                <tr>
+                                    <td>Svelte</td>
+                                    <td><a href="https://github.com/MrWangJustToDo/git-diff-view" target="_blank"><code>@git-diff-view/svelte</code></a></td>
+                                    <td><code>&lt;DiffView&gt;</code> + <code>generateDiffFile</code></td>
+                                </tr>
+                                <tr>
+                                    <td>Angular</td>
+                                    <td><a href="https://github.com/rars/ngx-diff" target="_blank"><code>ngx-diff</code></a></td>
+                                    <td><code>&lt;ngx-unified-diff&gt;</code> [<code>[before]</code> <code>[after]</code>]</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Displaying diffs ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>渲染差异视图</h2>
+                <h4>使用框架对应的差异库渲染统一差异</h4>
+                <pre><code class="language-javascript">// React 示例：使用 @pierre/diffs 渲染统一差异视图
+import { FileDiff } from "@pierre/diffs/react";
+import { parseDiffFromFile } from "@pierre/diffs";
+
+function DiffPanel({ original, current, fileName }) {
+  // 将修改前后的文件内容传给差异解析器
+  const diff = parseDiffFromFile(
+    { name: fileName, contents: original },   // 修改前的文件
+    { name: fileName, contents: current },    // 修改后的文件
+  );
+
+  return (
+    &lt;FileDiff
+      fileDiff={diff}
+      options={{
+        theme: "github-dark",      // 深色主题
+        diffStyle: "unified",      // 统一差异格式（而非并排）
+        diffIndicators: "bars"     // 用竖线标记变更区域
+      }}
+    /&gt;
+  );
+}
+
+// 变更文件摘要组件：显示所有被修改文件的增删行数
+function ChangedFilesSummary({ changedFiles, files, originalFiles, onSelect }) {
+  const stats = [...changedFiles].map((path) => {
+    const oldLines = (originalFiles[path] ?? "").split("\n");
+    const newLines = (files[path] ?? "").split("\n");
+    return { path, additions, deletions };
+  });
+
+  return (
+    &lt;div&gt;
+      &lt;h3&gt;{stats.length} 个文件已变更&lt;/h3&gt;
+      {stats.map((file) =&gt; (
+        // 点击文件名切换差异视图
+        &lt;button key={file.path} onClick={() =&gt; onSelect(file.path)}&gt;
+          {file.path}
+          &lt;span className="text-green-400"&gt;+{file.additions}&lt;/span&gt;
+          &lt;span className="text-red-400"&gt;-{file.deletions}&lt;/span&gt;
+        &lt;/button&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="key-point">
+                    <strong>差异优先原则：</strong>已变更文件默认显示差异视图，未变更文件显示完整代码。VS Code 风格的文件图标（使用 <code>@iconify-json/vscode-icons</code>），修改过的文件上显示橙色圆点。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Three-panel layout ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三面板布局</h2>
+                <h4>文件树 + 代码/差异查看器 + 聊天——并排排列</h4>
+                <table>
+                    <thead>
+                        <tr><th>面板</th><th>宽度</th><th>用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>文件树</strong></td>
+                            <td>固定 208px</td>
+                            <td>浏览沙箱文件，查看变更指示（橙色圆点），VS Code 风格图标</td>
+                        </tr>
+                        <tr>
+                            <td><strong>代码 / 差异</strong></td>
+                            <td>弹性填充</td>
+                            <td>查看文件内容或统一差异。选择已修改文件自动切换到差异标签页</td>
+                        </tr>
+                        <tr>
+                            <td><strong>聊天</strong></td>
+                            <td>固定 320px</td>
+                            <td>与代理交互，发送指令，查看回复</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-javascript">// 三面板布局：文件树 + 代码查看器 + 聊天
+&lt;div className="flex h-screen"&gt;
+  {/* 左侧：文件树侧边栏，固定 208px 宽度 */}
+  &lt;div className="w-52 shrink-0"&gt;
+    &lt;FileTree /&gt;
+    &lt;ChangedFilesSummary /&gt;
+  &lt;/div&gt;
+
+  {/* 中间：代码/差异查看器，flex-1 自动填充剩余空间 */}
+  &lt;CodePanel /* flex-1 */ /&gt;
+
+  {/* 右侧：聊天面板，固定 320px 宽度 */}
+  &lt;div className="w-80 shrink-0"&gt;
+    &lt;ChatPanel /&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</code></pre>
+                <div class="info-block">
+                    <strong>交互细节：</strong>文件树显示 VS Code 风格图标（使用 <code>@iconify-json/vscode-icons</code>），修改过的文件上显示橙色圆点。选择已修改的文件会自动切换到差异标签页。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Use cases ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>使用场景</h2>
+                <h4>在以下情况下，沙箱是合适的选择</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>编码代理</h4>
+                        <p>需要创建、修改和运行代码，且需要超越聊天的可视化界面。代理在沙箱中执行，前端实时展示文件变更。</p>
+                        <p><span class="tag tag-primary">核心场景</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>代码审查工作流</h4>
+                        <p>代理建议代码更改，用户在接受前审查差异。变更文件摘要提供类似 <code>git status</code> 的快速概览。</p>
+                        <p><span class="tag tag-success">安全可控</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>教学与学习应用</h4>
+                        <p>AI 助手帮助用户逐步构建项目，在上下文中展示更改。学生可以实时看到 AI 的每一步操作。</p>
+                        <p><span class="tag tag-warning">渐进式</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>原型设计工具</h4>
+                        <p>用户用自然语言描述功能，实时观看代理实现。从想法到可运行代码的快速迭代。</p>
+                        <p><span class="tag tag-info">快速迭代</span></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Best practices ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践</h2>
+                <h4>生产环境中的关键建议</h4>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>沙箱管理</h4>
+                        <ul>
+                            <li><strong>使用线程级作用域沙箱</strong>，将沙箱 ID 存储在线程元数据中，通过 <code>getConfig()</code> 运行时解析</li>
+                            <li><strong>共享 <code>getOrCreateSandboxForThread</code></strong>，代理后端和 API 服务器用同一函数解析沙箱</li>
+                            <li><strong>持久化 <code>threadId</code> 到 <code>sessionStorage</code></strong>，页面重新加载时重连到同一线程和沙箱</li>
+                            <li><strong>用真实项目初始化沙箱</strong>，从空沙箱开始会让人困惑</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>前端体验</h4>
+                        <ul>
+                            <li><strong>每个工具调用时同步文件</strong>，不要只在运行结束时刷新，让 IDE 有实时感</li>
+                            <li><strong>已变更文件默认显示差异</strong>，用户点击修改过的文件时首先显示差异</li>
+                            <li><strong>只读操作显示简洁摘要</strong>，如"读取 router.js 第 1-42 行"，不在聊天中显示完整输出</li>
+                            <li><strong>过滤 <code>node_modules</code></strong>，没人想浏览数千个依赖文件</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心理念：</strong>沙箱 IDE 的目标是让用户像使用本地 IDE 一样与编码代理协作——实时、透明、可控。每个设计决策都应该服务于这个目标。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 18: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了沙箱 IDE 的完整构建方法</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>沙箱 IDE 的<strong>三层架构</strong>：代理 + API 服务器 + 前端</li>
+                            <li><strong>四种作用域策略</strong>：线程级、代理级、用户级、会话级</li>
+                            <li>通过 <code>getConfig()</code> 在运行时<strong>按线程解析沙箱</strong></li>
+                            <li>使用 Hono 构建<strong>文件浏览 API</strong></li>
+                            <li>通过监听 <code>ToolMessage</code> 实现<strong>实时文件同步</strong></li>
+                            <li>三面板布局：<strong>文件树 + 差异查看器 + 聊天</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>关键设计原则</h4>
+                        <ul>
+                            <li>线程元数据中的沙箱 ID 是<strong>唯一可信来源</strong></li>
+                            <li>代理后端和 API 服务器<strong>共享解析函数</strong></li>
+                            <li>每个工具调用时刷新，<strong>不等运行结束</strong></li>
+                            <li>已变更文件<strong>默认显示差异</strong></li>
+                            <li>用真实项目初始化沙箱，<strong>不从空白开始</strong></li>
+                            <li>过滤干扰目录，保持<strong>文件树简洁</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>沙箱 IDE 将编码代理从"聊天工具"升级为"开发环境"。用户不再需要逐条翻消息看代码——他们可以像用 VS Code 一样浏览文件、查看差异、审查变更。这种体验的差距，正是"玩具"和"产品"之间的距离。
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

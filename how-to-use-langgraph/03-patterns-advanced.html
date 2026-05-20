@@ -6,6 +6,7 @@
     <title>03 工作流模式（下）— LangGraph 教程</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎭</text></svg>">
     <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
     <style>
         .ai-diagram {
             background: linear-gradient(135deg, #FDFBF7 0%, #F6F1EA 100%);
@@ -206,14 +207,14 @@
             <div class="slide-content">
                 <h2>Send 动态分发</h2>
                 <h4>核心 API：<code>Send</code> 类</h4>
-                <pre><code>import { StateGraph, StateSchema, ReducedValue, GraphNode, Send, START, END } from "@langchain/langgraph";</code></pre>
+                <pre><code class="language-javascript">import { StateGraph, StateSchema, ReducedValue, GraphNode, Send, START, END } from "@langchain/langgraph";</code></pre>
 
                 <p><code>Send</code> 让你从条件边函数里<strong>动态地</strong>把任务分发到指定节点。每次 <code>new Send("节点名", { 数据 })</code> 就创建一个独立的工作者调用。</p>
 
-                <pre><code><span style="color: var(--text-muted);">// 条件边路由函数 —— 返回 Send 数组，每个 Send 创建一个工作者</span>
+                <pre><code class="language-javascript">// 条件边路由函数 —— 返回 Send 数组，每个 Send 创建一个工作者
 const assignWorkers: ConditionalEdgeRouter&lt;typeof State, "llmCall"&gt; = (state) =&gt; {
-  <span style="color: var(--text-muted);">// state.sections 是编排者 LLM 拆分出的子任务列表</span>
-  <span style="color: var(--text-muted);">// 有几个 section，就创建几个工作者</span>
+  // state.sections 是编排者 LLM 拆分出的子任务列表
+  // 有几个 section，就创建几个工作者
   return state.sections.map(
     (section) =&gt; new Send("llmCall", { section })
   );
@@ -222,16 +223,16 @@ const assignWorkers: ConditionalEdgeRouter&lt;typeof State, "llmCall"&gt; = (sta
                 <h4>为什么需要 <code>ReducedValue</code>？</h4>
                 <p>多个工作者并行运行，每个都往同一个 state 字段写结果。如果用普通字段，后者会覆盖前者。<code>ReducedValue</code> 用 reducer 函数把所有工作者的结果<strong>合并</strong>到一个数组里。</p>
 
-                <pre><code><span style="color: var(--text-muted);">// 用 ReducedValue 定义一个会"累积"的字段</span>
+                <pre><code class="language-javascript">// 用 ReducedValue 定义一个会"累积"的字段
 const State = new StateSchema({
   topic: z.string(),
   sections: z.array(z.object({
     title: z.string(),
     description: z.string(),
   })),
-  <span style="color: #059669;">completedSections</span>: new ReducedValue(
+  completedSections: new ReducedValue(
     z.array(z.object({ title: z.string(), content: z.string() })),
-    <span style="color: var(--text-muted);">// reducer: 把新结果追加到已有数组</span>
+    // reducer: 把新结果追加到已有数组
     (existing, update) =&gt; [...(existing ?? []), ...update],
   ),
   finalReport: z.string(),
@@ -249,7 +250,7 @@ const State = new StateSchema({
         <section class="slide">
             <div class="slide-content">
                 <h2>编排模式代码</h2>
-                <pre><code>import { StateGraph, StateSchema, ReducedValue, GraphNode, Send, START, END } from "@langchain/langgraph";
+                <pre><code class="language-javascript">import { StateGraph, StateSchema, ReducedValue, GraphNode, Send, START, END } from "@langchain/langgraph";
 import * as z from "zod";
 
 const State = new StateSchema({
@@ -262,7 +263,7 @@ const State = new StateSchema({
   finalReport: z.string(),
 });
 
-<span style="color: var(--text-muted);">// 编排者：分析任务，拆分成子任务列表</span>
+// 编排者：分析任务，拆分成子任务列表
 const orchestrator: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   const structLlm = llm.withStructuredOutput(
     z.object({ sections: z.array(z.object({
@@ -277,9 +278,9 @@ const orchestrator: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   return { sections: result.sections };
 };
 
-<span style="color: var(--text-muted);">// 工作者：根据子任务描述生成内容（会被 Send 动态创建多次）</span>
+// 工作者：根据子任务描述生成内容（会被 Send 动态创建多次）
 const llmCall: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
-  const section = state.sections[0]; <span style="color: var(--text-muted);">// Send 传入单个 section</span>
+  const section = state.sections[0]; // Send 传入单个 section
   const msg = await llm.invoke(
     `Write a section: "${section.title}" covering: ${section.description}`
   );
@@ -294,7 +295,7 @@ const llmCall: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
         <section class="slide">
             <div class="slide-content">
                 <h2>编排图构建</h2>
-                <pre><code><span style="color: var(--text-muted);">// 综合者：把所有工作者生成的内容合成最终报告</span>
+                <pre><code class="language-javascript">// 综合者：把所有工作者生成的内容合成最终报告
 const synthesizer: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   const parts = state.completedSections
     .map((s) =&gt; `## ${s.title}\n${s.content}`)
@@ -305,22 +306,22 @@ const synthesizer: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   return { finalReport: msg.content as string };
 };
 
-<span style="color: var(--text-muted);">// 条件边：编排者 → 动态分派工作者</span>
+// 条件边：编排者 → 动态分派工作者
 const assignWorkers = (state) =&gt; {
   return state.sections.map(
     (section) =&gt; new Send("llmCall", { sections: [section] })
   );
 };
 
-<span style="color: var(--text-muted);">// 构建图</span>
+// 构建图
 const orchestratorWorkflow = new StateGraph(State)
   .addNode("orchestrator", orchestrator)
   .addNode("llmCall", llmCall)
   .addNode("synthesizer", synthesizer)
   .addEdge(START, "orchestrator")
-  <span style="color: #059669;">// 关键：条件边用 Send 动态创建多个 llmCall 实例</span>
+  // 关键：条件边用 Send 动态创建多个 llmCall 实例
   .addConditionalEdges("orchestrator", assignWorkers, ["llmCall"])
-  <span style="color: #059669;">// 所有工作者完成后汇入综合者</span>
+  // 所有工作者完成后汇入综合者
   .addEdge("llmCall", "synthesizer")
   .addEdge("synthesizer", END)
   .compile();
@@ -381,10 +382,10 @@ const result = await orchestratorWorkflow.invoke({
         <section class="slide">
             <div class="slide-content">
                 <h2>评估优化代码</h2>
-                <pre><code>import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
+                <pre><code class="language-javascript">import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
 import * as z from "zod";
 
-<span style="color: var(--text-muted);">// 评估结果 Schema</span>
+// 评估结果 Schema
 const FeedbackSchema = z.object({
   grade: z.enum(["funny", "not funny"]).describe("Evaluation grade"),
   feedback: z.string().describe("Feedback for improvement"),
@@ -397,7 +398,7 @@ const State = new StateSchema({
   funnyOrNot: z.string(),
 });
 
-<span style="color: var(--text-muted);">// 生成者：写笑话（如果之前有反馈，就参考反馈改进）</span>
+// 生成者：写笑话（如果之前有反馈，就参考反馈改进）
 const llmCallGenerator: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   const prompt = state.feedback
     ? `Write a joke about ${state.topic}. Improve based on feedback: ${state.feedback}`
@@ -406,7 +407,7 @@ const llmCallGenerator: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   return { joke: msg.content as string };
 };
 
-<span style="color: var(--text-muted);">// 评估者：判断笑话好不好笑</span>
+// 评估者：判断笑话好不好笑
 const llmCallEvaluator: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   const evaluator = llm.withStructuredOutput(FeedbackSchema);
   const result = await evaluator.invoke(
@@ -418,7 +419,7 @@ const llmCallEvaluator: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   };
 };
 
-<span style="color: var(--text-muted);">// 条件边：合格 → 结束，不合格 → 带反馈重来</span>
+// 条件边：合格 → 结束，不合格 → 带反馈重来
 const routeJoke: ConditionalEdgeRouter&lt;typeof State, "llmCallGenerator"&gt; = (state) =&gt; {
   return state.funnyOrNot === "funny" ? "Accepted" : "Rejected";
 };</code></pre>
@@ -431,20 +432,20 @@ const routeJoke: ConditionalEdgeRouter&lt;typeof State, "llmCallGenerator"&gt; =
         <section class="slide">
             <div class="slide-content">
                 <h2>评估优化图构建</h2>
-                <pre><code><span style="color: var(--text-muted);">// 构建评估优化工作流</span>
+                <pre><code class="language-javascript">// 构建评估优化工作流
 const optimizerWorkflow = new StateGraph(State)
   .addNode("llmCallGenerator", llmCallGenerator)
   .addNode("llmCallEvaluator", llmCallEvaluator)
   .addEdge(START, "llmCallGenerator")
   .addEdge("llmCallGenerator", "llmCallEvaluator")
-  <span style="color: #059669;">// 评估者之后：合格结束，不合格循环</span>
+  // 评估者之后：合格结束，不合格循环
   .addConditionalEdges("llmCallEvaluator", routeJoke, {
     Accepted: END,
-    Rejected: "llmCallGenerator",    <span style="color: var(--text-muted);">// 带反馈回到生成者</span>
+    Rejected: "llmCallGenerator",    // 带反馈回到生成者
   })
   .compile();
 
-<span style="color: var(--text-muted);">// 测试</span>
+// 测试
 const result = await optimizerWorkflow.invoke({
   topic: "Cats",
   joke: "",
@@ -458,14 +459,14 @@ console.log("Feedback received:", result.feedback);</code></pre>
                     <strong>防止无限循环：</strong>如果 LLM 始终无法通过评估，这个循环会一直转下去。实际项目中应该加一个<strong>最大重试次数</strong>——在 state 里加一个 <code>attempts</code> 计数器，条件边里检查是否超过阈值。
                 </div>
 
-                <pre><code><span style="color: var(--text-muted);">// 安全改进版：限制最大重试 3 次</span>
+                <pre><code class="language-javascript">// 安全改进版：限制最大重试 3 次
 const MAX_ATTEMPTS = 3;
 
 const routeJokeSafe: ConditionalEdgeRouter&lt;typeof State, "llmCallGenerator"&gt; = (state) =&gt; {
   if (state.funnyOrNot === "funny" || (state.attempts ?? 0) &gt;= MAX_ATTEMPTS) {
-    return "Accepted";   <span style="color: var(--text-muted);">// 合格或超限 → 结束</span>
+    return "Accepted";   // 合格或超限 → 结束
   }
-  return "Rejected";     <span style="color: var(--text-muted);">// 不合格 → 重试</span>
+  return "Rejected";     // 不合格 → 重试
 };</code></pre>
             </div>
         </section>
@@ -513,7 +514,7 @@ const routeJokeSafe: ConditionalEdgeRouter&lt;typeof State, "llmCallGenerator"&g
                     <div class="card">
                         <h4>ToolNode</h4>
                         <p>LangGraph 预置的工具执行节点。它自动解析 LLM 输出中的 <code>tool_calls</code>，调用对应工具，把结果追加到 <code>messages</code>。</p>
-                        <pre><code>import { ToolNode } from "@langchain/langgraph/prebuilt";</code></pre>
+                        <pre><code class="language-javascript">import { ToolNode } from "@langchain/langgraph/prebuilt";</code></pre>
                     </div>
                     <div class="card">
                         <h4>shouldContinue</h4>
@@ -521,12 +522,12 @@ const routeJokeSafe: ConditionalEdgeRouter&lt;typeof State, "llmCallGenerator"&g
                     </div>
                 </div>
 
-                <pre><code><span style="color: var(--text-muted);">// 条件边：检查是否需要继续调用工具</span>
+                <pre><code class="language-javascript">// 条件边：检查是否需要继续调用工具
 const shouldContinue: ConditionalEdgeRouter&lt;typeof State, "toolNode"&gt; = (state) =&gt; {
   const lastMessage = state.messages.at(-1);
-  <span style="color: var(--text-muted);">// 最后一条消息有 tool_calls → 执行工具</span>
+  // 最后一条消息有 tool_calls → 执行工具
   if (lastMessage?.tool_calls?.length) return "toolNode";
-  <span style="color: var(--text-muted);">// 没有 tool_calls → LLM 已经给出最终回答，结束</span>
+  // 没有 tool_calls → LLM 已经给出最终回答，结束
   return END;
 };</code></pre>
 
@@ -542,12 +543,12 @@ const shouldContinue: ConditionalEdgeRouter&lt;typeof State, "toolNode"&gt; = (s
         <section class="slide">
             <div class="slide-content">
                 <h2>智能体代码</h2>
-                <pre><code>import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter, Messages, START, END } from "@langchain/langgraph";
+                <pre><code class="language-javascript">import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter, Messages, START, END } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { tool } from "langchain";
 import * as z from "zod";
 
-<span style="color: var(--text-muted);">// 定义工具</span>
+// 定义工具
 const multiply = tool(({ a, b }) =&gt; a * b, {
   name: "multiply", description: "Multiply two numbers",
   schema: z.object({ a: z.number(), b: z.number() }),
@@ -557,21 +558,21 @@ const add = tool(({ a, b }) =&gt; a + b, {
   schema: z.object({ a: z.number(), b: z.number() }),
 });
 
-<span style="color: var(--text-muted);">// LLM 绑定工具</span>
+// LLM 绑定工具
 const llmWithTools = llm.bindTools([multiply, add]);
 
-<span style="color: var(--text-muted);">// State 只需要一个 messages 数组</span>
+// State 只需要一个 messages 数组
 const State = new StateSchema({
-  messages: Messages({}),   <span style="color: var(--text-muted);">// 内置 Messages 注解</span>
+  messages: Messages({}),   // 内置 Messages 注解
 });
 
-<span style="color: var(--text-muted);">// LLM 节点：调用带工具的 LLM</span>
+// LLM 节点：调用带工具的 LLM
 const llmCall: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   const response = await llmWithTools.invoke(state.messages);
   return { messages: [response] };
 };
 
-<span style="color: var(--text-muted);">// 条件边：检查是否继续调用工具</span>
+// 条件边：检查是否继续调用工具
 const shouldContinue: ConditionalEdgeRouter&lt;typeof State, "toolNode"&gt; = (state) =&gt; {
   const lastMessage = state.messages.at(-1);
   if (lastMessage?.tool_calls?.length) return "toolNode";
@@ -586,26 +587,26 @@ const shouldContinue: ConditionalEdgeRouter&lt;typeof State, "toolNode"&gt; = (s
         <section class="slide">
             <div class="slide-content">
                 <h2>智能体图构建</h2>
-                <pre><code><span style="color: var(--text-muted);">// 工具执行节点</span>
+                <pre><code class="language-javascript">// 工具执行节点
 const toolNode = new ToolNode([multiply, add]);
 
-<span style="color: var(--text-muted);">// 构建智能体工作流</span>
+// 构建智能体工作流
 const agentWorkflow = new StateGraph(State)
   .addNode("llmCall", llmCall)
   .addNode("toolNode", toolNode)
   .addEdge(START, "llmCall")
-  <span style="color: #059669;">// LLM 之后检查是否有工具调用</span>
+  // LLM 之后检查是否有工具调用
   .addConditionalEdges("llmCall", shouldContinue, ["toolNode", END])
-  <span style="color: #059669;">// 工具执行完后回到 LLM 继续判断</span>
+  // 工具执行完后回到 LLM 继续判断
   .addEdge("toolNode", "llmCall")
   .compile();
 
-<span style="color: var(--text-muted);">// 测试：让智能体计算 (3 + 5) * 2</span>
+// 测试：让智能体计算 (3 + 5) * 2
 const result = await agentWorkflow.invoke({
   messages: [{ role: "user", content: "What is (3 + 5) * 2?" }],
 });
 console.log(result.messages.at(-1).content);
-<span style="color: var(--text-muted);">// 智能体会自动：调用 add(3,5) → 得到 8 → 调用 multiply(8,2) → 得到 16 → 输出结果</span></code></pre>
+// 智能体会自动：调用 add(3,5) → 得到 8 → 调用 multiply(8,2) → 得到 16 → 输出结果</code></pre>
 
                 <div class="card-grid" style="margin-top: 16px;">
                     <div class="card">
@@ -777,7 +778,7 @@ console.log(result.messages.at(-1).content);
         <section class="slide">
             <div class="slide-content">
                 <h2>参考答案</h2>
-                <pre><code>import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
+                <pre><code class="language-javascript">import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
 import * as z from "zod";
 
 const MAX_ATTEMPTS = 3;
@@ -796,7 +797,7 @@ const State = new StateSchema({
   finalReport: z.string(),
 });
 
-<span style="color: var(--text-muted);">// 搜索节点：模拟搜索（实际项目中替换为真实搜索 API）</span>
+// 搜索节点：模拟搜索（实际项目中替换为真实搜索 API）
 const search: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   const prompt = state.feedback
     ? `Research "${state.topic}" more thoroughly. Previous feedback: ${state.feedback}`
@@ -808,7 +809,7 @@ const search: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   };
 };
 
-<span style="color: var(--text-muted);">// 评估节点：判断搜索结果是否充分</span>
+// 评估节点：判断搜索结果是否充分
 const evaluate: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   const evaluator = llm.withStructuredOutput(EvalResult);
   const result = await evaluator.invoke(
@@ -817,7 +818,7 @@ const evaluate: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   return { sufficient: result.sufficient, feedback: result.feedback };
 };
 
-<span style="color: var(--text-muted);">// 综合节点：生成最终报告</span>
+// 综合节点：生成最终报告
 const synthesize: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   const msg = await llm.invoke(
     `Write a research summary based on:\n${state.searchResults}`
@@ -825,7 +826,7 @@ const synthesize: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   return { finalReport: msg.content as string };
 };
 
-<span style="color: var(--text-muted);">// 条件边：充分或超限 → 综合，否则 → 重试</span>
+// 条件边：充分或超限 → 综合，否则 → 重试
 const routeEvaluation: ConditionalEdgeRouter&lt;typeof State, "search"&gt; = (state) =&gt; {
   if (state.sufficient || (state.attempts ?? 0) &gt;= MAX_ATTEMPTS) return "Pass";
   return "Fail";
@@ -945,6 +946,8 @@ const workflow = new StateGraph(State)
         </div>
     </main>
 
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
     <script src="./js/slide.js"></script>
     <script src="./js/nav.js"></script>
 </body>

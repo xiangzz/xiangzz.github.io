@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后端（Backends）</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🗄️</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 09 章</div>
+            <h1>后端（Backends）</h1>
+            <p>为 Deep Agents 选择和配置文件系统后端，实现虚拟文件系统与策略控制</p>
+            <strong>从"默认存储"到"可插拔后端架构"的关键一步</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要后端</h2>
+                <h4>你的 Agent 产生的文件应该存在哪里？不同的任务需要不同的答案</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>只用默认存储的困境</h4>
+                        <ul>
+                            <li>所有文件只能存在线程状态里，<strong>跨线程不共享</strong></li>
+                            <li>想访问本地文件？做不到——<strong>没有本地磁盘后端</strong></li>
+                            <li>想区分"临时草稿"和"长期记忆"？<strong>只有一种存储</strong></li>
+                            <li>需要连接 S3、数据库等外部存储？<strong>无法扩展</strong></li>
+                            <li>Agent 乱改敏感文件？<strong>没有策略拦截</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>可插拔后端的解法</h4>
+                        <ul>
+                            <li><strong>StateBackend</strong>：线程作用域，临时草稿本</li>
+                            <li><strong>FilesystemBackend</strong>：访问本地磁盘文件</li>
+                            <li><strong>StoreBackend</strong>：跨线程持久化长期记忆</li>
+                            <li><strong>CompositeBackend</strong>：按路径路由到不同后端</li>
+                            <li><strong>自定义后端</strong>：S3、Postgres、任何你想要的存储</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心理念：</strong>Deep Agents 通过 <code>ls</code>、<code>read_file</code>、<code>write_file</code>、<code>edit_file</code>、<code>glob</code>、<code>grep</code> 等工具暴露文件系统接口。这些工具通过<strong>可插拔的后端</strong>运行——你决定数据存在哪里、怎么存。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Backend overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>后端全景图</h2>
+                <h4>七种内置后端，覆盖从临时草稿到生产部署的全部场景</h4>
+                <table>
+                    <thead>
+                        <tr><th>后端</th><th>存储位置</th><th>跨线程</th><th>适用场景</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>StateBackend</strong></td>
+                            <td>线程状态</td>
+                            <td>否</td>
+                            <td>临时草稿、中间结果</td>
+                        </tr>
+                        <tr>
+                            <td><strong>FilesystemBackend</strong></td>
+                            <td>本地磁盘</td>
+                            <td>是</td>
+                            <td>本地项目、CI 沙箱</td>
+                        </tr>
+                        <tr>
+                            <td><strong>LocalShellBackend</strong></td>
+                            <td>本地磁盘 + Shell</td>
+                            <td>是</td>
+                            <td>编码助手、开发工具</td>
+                        </tr>
+                        <tr>
+                            <td><strong>StoreBackend</strong></td>
+                            <td>LangGraph Store</td>
+                            <td>是</td>
+                            <td>长期记忆、跨会话数据</td>
+                        </tr>
+                        <tr>
+                            <td><strong>ContextHubBackend</strong></td>
+                            <td>LangSmith Hub</td>
+                            <td>是</td>
+                            <td>Hub 仓库文件系统</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Sandbox</strong></td>
+                            <td>隔离环境</td>
+                            <td>否</td>
+                            <td>安全执行代码</td>
+                        </tr>
+                        <tr>
+                            <td><strong>CompositeBackend</strong></td>
+                            <td>路由到多个后端</td>
+                            <td>视配置</td>
+                            <td>混合存储需求</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>架构关系：</strong>文件系统工具（<code>ls</code>、<code>read_file</code> 等）统一调用后端接口，后端决定数据实际存在哪里。<code>read_file</code> 在所有后端中原生支持图片、PDF、音频、视频等二进制文件。
+                </div>
+                <h3>架构关系图</h3>
+                <pre><code class="language-mermaid">graph TB
+    Tools[文件系统工具] --&gt; Backend[后端]
+    Backend --&gt; State[State]
+    Backend --&gt; Disk[文件系统]
+    Backend --&gt; Store[Store]
+    Backend --&gt; ContextHub[Context Hub]
+    Backend --&gt; Sandbox[沙箱]
+    Backend --&gt; LocalShell[本地 Shell]
+    Backend --&gt; Composite[组合]
+    Backend --&gt; Custom[自定义]
+    Composite --&gt; Router{路由}
+    Router --&gt; State
+    Router --&gt; Disk
+    Router --&gt; Store
+    Router --&gt; ContextHub
+    Sandbox --&gt; Execute["+ execute 工具"]
+    LocalShell --&gt; Execute["+ execute 工具"]</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: StateBackend ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>StateBackend</h2>
+                <h4>默认后端——线程作用域的临时草稿本</h4>
+                <p>白话：StateBackend 就像你桌面上的"草稿纸"——写在上面的东西，这条对话里随时能翻到，但换一个对话窗口就看不到了。</p>
+                <p>这是 Deep Agent 的默认文件系统后端。文件存储在当前线程的 LangGraph Agent 状态中，通过检查点在同一线程的多次交互间持久化。<strong>文件不会跨线程共享。</strong></p>
+                <pre><code class="language-javascript">import { createDeepAgent, StateBackend } from "deepagents";
+
+// 默认就是 StateBackend，无需显式指定
+const agent = createDeepAgent();
+
+// 等价于显式指定
+const agent2 = createDeepAgent({
+  backend: new StateBackend(),
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>Agent 写入中间结果的<strong>临时草稿本</strong></li>
+                            <li>自动淘汰大型工具输出，Agent 可逐段重新读取</li>
+                            <li>Supervisor 与子 Agent 之间共享文件</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>注意事项</h4>
+                        <ul>
+                            <li>设计为在图中使用，图外调用方法不会生效</li>
+                            <li>子 Agent 写入的文件在状态中持续存在</li>
+                            <li>文件对同一线程的 Supervisor 和其他子 Agent 可用</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>在图运行之外直接调用后端方法（如 <code>state_backend.upload_files(...)</code>）不会生效，直到图执行时才会应用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: FilesystemBackend ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>FilesystemBackend</h2>
+                <h4>让 Agent 访问本地磁盘——真实文件的读写</h4>
+                <p>白话：StateBackend 是草稿纸，FilesystemBackend 就是真实的文件夹。Agent 可以读你电脑上的文件、修改代码、保存结果——就像你亲手在做。</p>
+                <p>FilesystemBackend 在可配置的 <code>root_dir</code> 下读取和写入真实文件。你可以设置 <code>virtualMode: true</code> 来沙箱化路径，阻止 <code>..</code>、<code>~</code> 以及根目录外的绝对路径。</p>
+                <pre><code class="language-javascript">import { createDeepAgent, FilesystemBackend } from "deepagents";
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  backend: new FilesystemBackend({
+    rootDir: ".",         // 根目录，Agent 的文件操作限制在此目录下
+    virtualMode: true,    // 启用路径沙箱化，阻止 .. 和绝对路径逃逸
+  }),
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>本地项目开发（编码助手、开发工具）</li>
+                            <li>CI/CD 流水线</li>
+                            <li>挂载的持久卷</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>安全特性</h4>
+                        <ul>
+                            <li>安全的路径解析，防止符号链接遍历</li>
+                            <li>可用 ripgrep 进行快速 <code>grep</code></li>
+                            <li><code>virtualMode: true</code> 限制在 <code>root_dir</code> 内</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>安全风险：</strong>
+                    <ul>
+                        <li>Agent 可以读取任何可访问的文件，包括密钥（API 密钥、凭据、<code>.env</code> 文件）</li>
+                        <li>结合网络工具，密钥可能通过 <strong>SSRF 攻击</strong>被泄露</li>
+                        <li>文件修改是<strong>永久性且不可逆的</strong></li>
+                    </ul>
+                    <strong>推荐的安全措施：</strong>
+                    <ol>
+                        <li>启用 <a href="./12-human-in-the-loop.html">Human-in-the-Loop (HITL) 中间件</a>来审查敏感操作</li>
+                        <li>从可访问的文件系统路径中排除密钥（尤其在 CI/CD 中）</li>
+                        <li>在需要文件系统交互的生产环境中使用沙箱后端</li>
+                        <li><strong>始终</strong>在 <code>root_dir</code> 下使用 <code>virtualMode: true</code> 以启用基于路径的访问限制（阻止 <code>..</code>、<code>~</code> 以及根目录外的绝对路径）。注意，默认设置（<code>virtualMode: false</code>）即使设置了 <code>root_dir</code> 也不提供任何安全保障。</li>
+                    </ol>
+                    <p>不适用于 Web 服务器或 HTTP API——请改用 <code>StateBackend</code>、<code>StoreBackend</code> 或沙箱后端。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: LocalShellBackend ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>LocalShellBackend</h2>
+                <h4>在 FilesystemBackend 基础上增加 Shell 命令执行能力</h4>
+                <p>LocalShellBackend 在 FilesystemBackend 之上扩展了 <code>execute</code> 工具，允许 Agent 在宿主机上运行 Shell 命令。命令直接使用 <code>subprocess.run(shell=True)</code> 运行，<strong>没有沙箱隔离</strong>。</p>
+                <pre><code class="language-javascript">import { createDeepAgent, LocalShellBackend } from "deepagents";
+
+const backend = new LocalShellBackend({
+  workingDirectory: ".",   // Shell 命令的执行目录
+  env: { PATH: "/usr/bin:/bin" },  // 限制可用的环境变量，避免泄露宿主环境
+});
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  backend,  // Agent 获得文件读写 + Shell 命令执行能力
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>配置参数</h4>
+                        <ul>
+                            <li><code>timeout</code>：命令超时（默认 120 秒）</li>
+                            <li><code>maxOutputBytes</code>：输出限制（默认 100KB）</li>
+                            <li><code>env</code>：自定义环境变量</li>
+                            <li><code>inheritEnv</code>：是否继承宿主环境</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>本地编码助手和开发工具</li>
+                            <li>信任 Agent 时的快速开发迭代</li>
+                            <li>具有适当密钥管理的 CI/CD 流水线</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>极度危险：</strong>
+                    <p>此后端授予 Agent 直接的文件系统读写权限<strong>以及</strong>宿主机上不受限制的 Shell 执行权限。</p>
+                    <ul>
+                        <li>Agent 可以以你的用户权限执行<strong>任意 Shell 命令</strong></li>
+                        <li>Agent 可以读取任何可访问的文件，包括<strong>密钥</strong>（API 密钥、凭据、<code>.env</code> 文件）</li>
+                        <li>密钥可能被暴露</li>
+                        <li>文件修改和命令执行是<strong>永久性且不可逆的</strong></li>
+                        <li>命令直接在你的宿主机系统上运行</li>
+                        <li>命令可以消耗<strong>无限的 CPU、内存、磁盘</strong></li>
+                    </ul>
+                    <strong>推荐的安全措施：</strong>
+                    <ol>
+                        <li>启用 <a href="./12-human-in-the-loop.html">Human-in-the-Loop (HITL) 中间件</a>在执行前审查和批准操作。<strong>强烈推荐</strong>。</li>
+                        <li>仅在专用开发环境中运行。<strong>切勿在共享或生产系统上使用。</strong></li>
+                        <li>在需要 Shell 执行的生产环境中使用沙箱后端。</li>
+                    </ol>
+                    <p><strong>注意：</strong>启用 Shell 后，<code>virtualMode</code> 不提供安全保障（命令可访问系统任何路径）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: StoreBackend ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>StoreBackend</h2>
+                <h4>跨线程持久化——Agent 的长期记忆存储</h4>
+                <p>白话：如果说 StateBackend 是草稿纸，那 StoreBackend 就是文件柜——今天写进去的东西，明天打开另一个对话窗口还能读到。</p>
+                <p>StoreBackend 将文件存储在 LangGraph <code>BaseStore</code> 中，实现跨线程的持久化。非常适合存储长期记忆或在多次执行中适用的指令。</p>
+                <pre><code class="language-javascript">import { createDeepAgent, StoreBackend } from "deepagents";
+import { InMemoryStore } from "@langchain/langgraph";
+
+// 本地开发用 InMemoryStore（内存存储）；部署到 LangSmith 时自动提供
+const store = new InMemoryStore();
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  backend: new StoreBackend({
+    // namespace 工厂函数：按用户身份隔离，每个用户有独立存储空间
+    namespace: (rt) => [rt.serverInfo.user.identity],
+  }),
+  store,  // 必须传入 store 实例，StoreBackend 依赖它读写数据
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>使用 LangGraph store 运行时（Redis、Postgres 等）</li>
+                            <li>通过 LangSmith Deployment 部署 Agent</li>
+                            <li>需要跨线程共享的长期数据</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>数据隔离</h4>
+                        <ul>
+                            <li><code>namespace</code> 参数控制数据隔离</li>
+                            <li>多用户部署必须设置命名空间工厂</li>
+                            <li>按用户、助手或线程隔离数据</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>部署到 LangSmith Deployment 时，省略 <code>store</code> 参数，平台会自动为 Agent 配置存储。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Namespace factories ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>命名空间工厂</h2>
+                <h4>控制 StoreBackend 数据隔离的关键机制</h4>
+                <p>命名空间工厂接收 LangGraph <code>Runtime</code> 对象，返回字符串元组作为 store 命名空间。使用它在用户、租户或助手之间隔离数据。</p>
+                <pre><code class="language-javascript">import { StoreBackend } from "deepagents";
+
+// 按用户隔离：每个用户独立的存储空间，多用户部署必须用这种方式
+const byUser = new StoreBackend({
+  namespace: (rt) => [rt.serverInfo.user.identity],  // 用用户 ID 作为命名空间
+});
+
+// 按助手隔离：同一助手的所有用户共享数据
+const byAssistant = new StoreBackend({
+  namespace: (rt) => [rt.serverInfo.assistantId],  // 用助手 ID 作为命名空间
+});
+
+// 按线程隔离：存储限定在单个对话范围，对话结束数据就不共享了
+const byThread = new StoreBackend({
+  namespace: (rt) => [rt.executionInfo.threadId],  // 用线程 ID 作为命名空间
+});</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>Runtime 属性</th><th>提供的信息</th><th>典型用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>rt.context</code></td>
+                            <td>用户提供的上下文（如 <code>user_id</code>）</td>
+                            <td>自定义隔离维度</td>
+                        </tr>
+                        <tr>
+                            <td><code>rt.serverInfo</code></td>
+                            <td>助手 ID、图 ID、认证用户</td>
+                            <td>按用户或助手隔离</td>
+                        </tr>
+                        <tr>
+                            <td><code>rt.executionInfo</code></td>
+                            <td>线程 ID、运行 ID、检查点 ID</td>
+                            <td>按会话隔离</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>版本要求：</strong><code>Runtime</code> 参数在 <code>deepagents&gt;=1.9.1</code> 中可用。早期的 1.9.x 版本传递的是 <code>BackendContext</code> 包装器。<code>rt.serverInfo</code> 和 <code>rt.executionInfo</code> 需要 <code>deepagents&gt;=1.9.0</code>。
+                </div>
+                <div class="warning">
+                    <strong>重要变更：</strong><code>namespace</code> 参数在 v1.9.0 将变为<strong>必填</strong>。新代码请始终显式设置。命名空间组件只能包含字母数字、连字符、下划线、点号等，通配符会被拒绝以防注入。
+                </div>
+                <div class="key-point">
+                    <strong>组合命名空间：</strong>你可以组合多个组件来创建更具体的作用域——例如 <code>(user_id, thread_id)</code> 用于按用户按对话隔离，或附加后缀如 <code>"filesystem"</code> 来区分同一作用域使用多个 store 命名空间的情况。
+                </div>
+                <div class="info-block">
+                    <strong>Legacy 默认行为：</strong>当未提供命名空间工厂时，旧版默认使用 LangGraph 配置元数据中的 <code>assistant_id</code>。这意味着同一助手的所有用户共享相同的存储。对于多用户的生产部署，请始终提供命名空间工厂。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: ContextHubBackend ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>ContextHubBackend</h2>
+                <h4>LangSmith Hub 仓库作为文件系统——无需额外配置 Store</h4>
+                <p>ContextHubBackend 将文件存储在 LangSmith Hub 仓库中。使用 <code>owner/name</code> 或 <code>name</code> 格式的仓库标识符来构造它。无需配置单独的 LangGraph Store。</p>
+                <pre><code class="language-javascript">import { createDeepAgent, ContextHubBackend } from "deepagents";
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  // 传入 Hub 仓库名（owner/name 或 name 格式），无需额外配置 Store
+  backend: new ContextHubBackend("my-agent"),
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>工作原理</h4>
+                        <ul>
+                            <li>首次使用时惰性拉取 Hub 仓库树</li>
+                            <li>从内存缓存中提供读取服务</li>
+                            <li>写入和编辑作为 Hub 提交持久化</li>
+                            <li>使用乐观的父提交写入机制</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>无需单独配置 Store 的 LangSmith 原生存储</li>
+                            <li>需要文件变更的提交历史</li>
+                            <li>受益于版本追踪的工作流</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>使用前：</strong>请确保已设置 <code>LANGSMITH_API_KEY</code> 环境变量。如果另一个写入者先更新了仓库，你的写入可能失败——冲突时需重新拉取并重试。仅支持 UTF-8 文本文件。
+                </div>
+                <div class="info-block">
+                    <strong>行为和限制：</strong>如果仓库不存在，首次拉取视为空；首次成功写入可以创建仓库。<code>upload_files()</code> 接受 UTF-8 文本，非 UTF-8 文件会被拒绝。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: CompositeBackend ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>CompositeBackend</h2>
+                <h4>路由器——按路径前缀将文件操作分发到不同后端</h4>
+                <p>CompositeBackend 是最灵活的后端。它根据路径前缀将文件操作路由到不同后端，让你同时使用多种存储策略。</p>
+                <pre><code class="language-javascript">import {
+  createDeepAgent,
+  CompositeBackend,
+  StateBackend,
+  StoreBackend,
+} from "deepagents";
+import { InMemoryStore } from "@langchain/langgraph";
+
+const store = new InMemoryStore();
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  backend: new CompositeBackend(
+    // 第一个参数：默认后端，未匹配路径前缀的文件操作走这里
+    new StateBackend(),  // 线程作用域，临时草稿
+    // 第二个参数：路由表，键是路径前缀，值是对应的后端
+    {
+      "/memories/": new StoreBackend({  // /memories/ 下的文件走跨线程持久化
+        namespace: () => ["memories"],
+      }),
+    },
+  ),
+  store,  // StoreBackend 依赖的 LangGraph 存储
+});</code></pre>
+                <div class="key-point">
+                    <strong>路由行为：</strong><code>/workspace/plan.md</code> 走 StateBackend（线程作用域），<code>/memories/agent.md</code> 走 StoreBackend（跨线程持久化）。<code>ls</code>、<code>glob</code>、<code>grep</code> 会聚合所有后端的结果并显示原始路径前缀。更长的前缀优先匹配。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/09-backends-1.png" alt="图：CompositeBackend 路由分发" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Backend comparison ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>后端对比总结</h2>
+                <h4>一表看清七种后端的核心差异，帮你做出正确选择</h4>
+                <table>
+                    <thead>
+                        <tr><th>后端</th><th>持久化范围</th><th>execute 工具</th><th>安全隔离</th><th>推荐用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>StateBackend</strong></td>
+                            <td>线程内</td>
+                            <td>否</td>
+                            <td>天然隔离</td>
+                            <td>默认选择、临时文件</td>
+                        </tr>
+                        <tr>
+                            <td><strong>FilesystemBackend</strong></td>
+                            <td>本地磁盘</td>
+                            <td>否</td>
+                            <td>需 virtualMode</td>
+                            <td>本地开发、CI</td>
+                        </tr>
+                        <tr>
+                            <td><strong>LocalShellBackend</strong></td>
+                            <td>本地磁盘</td>
+                            <td><strong>是</strong></td>
+                            <td>无隔离</td>
+                            <td>受控开发环境</td>
+                        </tr>
+                        <tr>
+                            <td><strong>StoreBackend</strong></td>
+                            <td>跨线程</td>
+                            <td>否</td>
+                            <td>命名空间隔离</td>
+                            <td>长期记忆、多用户</td>
+                        </tr>
+                        <tr>
+                            <td><strong>ContextHubBackend</strong></td>
+                            <td>Hub 仓库</td>
+                            <td>否</td>
+                            <td>Hub 权限</td>
+                            <td>LangSmith 原生</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Sandbox</strong></td>
+                            <td>隔离环境</td>
+                            <td><strong>是</strong></td>
+                            <td>沙箱隔离</td>
+                            <td>安全执行代码</td>
+                        </tr>
+                        <tr>
+                            <td><strong>CompositeBackend</strong></td>
+                            <td>混合</td>
+                            <td>视路由</td>
+                            <td>视配置</td>
+                            <td>复杂混合需求</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>选型建议：</strong>大多数场景从 <code>StateBackend</code>（默认）开始。需要跨线程数据时加 <code>StoreBackend</code>。本地开发用 <code>FilesystemBackend</code>。混合需求用 <code>CompositeBackend</code> 路由。生产环境优先考虑<strong>沙箱后端</strong>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Specifying a backend ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>指定后端</h2>
+                <h4>一个参数搞定——将后端实例传给 createDeepAgent</h4>
+                <p>将后端实例传递给 <code>createDeepAgent({ backend: ... })</code> 即可。文件系统中间件将其用于所有工具操作。如果省略，默认为 <code>new StateBackend()</code>。</p>
+                <pre><code class="language-javascript">// 方式 1：省略 backend 参数，默认使用 StateBackend（线程内临时存储）
+const agent1 = createDeepAgent();
+
+// 方式 2：指定 FilesystemBackend，访问本地磁盘文件
+const agent2 = createDeepAgent({
+  backend: new FilesystemBackend({ rootDir: ".", virtualMode: true }),
+});
+
+// 方式 3：使用 CompositeBackend 按路径路由到不同后端
+const agent3 = createDeepAgent({
+  backend: new CompositeBackend(
+    new StateBackend(),  // 默认后端
+    {
+      "/memories/": new StoreBackend({  // /memories/ 走持久化存储
+        namespace: () => ["memories"],
+      }),
+    },
+  ),
+  store,  // StoreBackend 需要 store 实例
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>后端协议版本</h4>
+                        <ul>
+                            <li>后端必须实现 <code>BackendProtocolV1</code> 或 <code>BackendProtocolV2</code></li>
+                            <li>V1 后端会自动适配为 V2，无需代码更改</li>
+                            <li>框架在运行时通过 <code>adaptBackendProtocol()</code> 自动处理</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>路由示例行为</h4>
+                        <ul>
+                            <li><code>/workspace/plan.md</code> → StateBackend</li>
+                            <li><code>/memories/agent.md</code> → FilesystemBackend</li>
+                            <li><code>ls</code>、<code>glob</code> 聚合所有后端结果</li>
+                            <li>更长的前缀优先匹配</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Virtual filesystem ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>虚拟文件系统</h2>
+                <h4>构建自定义后端，将 S3 或 Postgres 映射为文件系统</h4>
+                <p>你可以构建自定义后端，将远程或数据库文件系统映射到 Agent 的工具命名空间。所有路径都是绝对路径（<code>/x/y.txt</code>），你决定如何映射到存储键或数据库行。</p>
+                <pre><code class="language-javascript">import {
+  type BackendProtocolV2,
+  type LsResult, type ReadResult, type ReadRawResult, type GrepResult,
+  type GlobResult, type WriteResult, type EditResult,
+} from "deepagents";
+
+class S3Backend implements BackendProtocolV2 {
+  constructor(private bucket: string, private prefix = "") {}
+
+  // 将虚拟路径转为 S3 对象键，加上前缀
+  private key(path: string): string {
+    return `${this.prefix}${path}`;
+  }
+
+  async ls(path: string): Promise&lt;LsResult&gt; {
+    // 列出 key(path) 下的对象；返回 { files: [...] }
+  }
+  async read(filePath: string, offset?: number, limit?: number): Promise&lt;ReadResult&gt; {
+    // 从 S3 获取对象内容；文本返回 string，二进制返回 Uint8Array
+  }
+  async readRaw(filePath: string): Promise&lt;ReadRawResult&gt; {
+    // 返回 { data: FileData }，含时间戳等元信息
+  }
+
+  async grep(pattern: string, path?: string | null, glob?: string | null): Promise&lt;GrepResult&gt; {
+    // 搜索文本文件；跳过二进制文件；返回 { matches: [...] }
+  }
+
+  async glob(pattern: string, path = "/"): Promise&lt;GlobResult&gt; {
+    // 相对于 path 应用 glob 模式匹配；返回 { files: [...] }
+  }
+
+  async write(filePath: string, content: string): Promise&lt;WriteResult&gt; {
+    // 写入对象；外部后端返回 { path, filesUpdate: null }
+  }
+
+  async edit(filePath: string, oldString: string, newString: string, replaceAll?: boolean): Promise&lt;EditResult&gt; {
+    // 先 read → 替换 oldString 为 newString → write 回去
+  }
+}</code></pre>
+                <div class="key-point">
+                    <strong>设计指南：</strong>高效实现 <code>ls</code> 和 <code>glob</code>（优先用服务端过滤）。外部持久化后端的 <code>write</code>/<code>edit</code> 应返回 <code>filesUpdate: null</code>。所有查询方法必须返回结构化 Result 对象，通过 <code>mimeType</code> 支持二进制文件。
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Postgres 风格映射</h4>
+                        <p>表结构：<code>files(path text PRIMARY KEY, content text, mime_type text, created_at timestamptz, modified_at timestamptz)</code></p>
+                        <ul>
+                            <li><code>ls</code> 使用 <code>WHERE path LIKE $1 || '%'</code> → 返回 <code>LsResult</code></li>
+                            <li><code>glob</code> 在 SQL 中过滤或先获取再本地应用 glob → 返回 <code>GlobResult</code></li>
+                            <li><code>grep</code> 按扩展名或最后修改时间获取候选行，扫描行（跳过 <code>mime_type</code> 为二进制的行）→ 返回 <code>GrepResult</code></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>设计要点</h4>
+                        <ul>
+                            <li>路径是绝对路径（<code>/x/y.txt</code>），你决定如何映射到存储键或数据库行</li>
+                            <li>使用 <code>ls</code> 和 <code>glob</code> 作为方法名</li>
+                            <li>外部持久化后端的 <code>write</code>/<code>edit</code> 返回 <code>filesUpdate: null</code></li>
+                            <li>通过返回带有适当 <code>mimeType</code> 的 <code>Uint8Array</code> 内容来支持二进制文件</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Protocol reference ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>后端协议详解</h2>
+                <h4>BackendProtocolV2 规定的七个必需方法</h4>
+                <div class="info-block">
+                    <strong>V1 协议（BackendProtocol）：</strong>在 1.9.0 版本之前，仅支持 <code>BackendProtocol</code>（现在的 <code>BackendProtocolV1</code>）。V1 的辅助类型使用不同的字段名：<code>LsResult(error, entries)</code>、<code>ReadResult(error, file_data)</code>、<code>GrepResult(error, matches)</code>、<code>WriteResult(error, path, files_update)</code>、<code>EditResult(error, path, files_update, occurrences)</code>。<code>FileData</code> V1 格式包含 <code>content</code>（str）、<code>encoding</code>（<code>"utf-8"</code> 或 <code>"base64"</code>）、<code>created_at</code>、<code>modified_at</code>。
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>方法</th><th>返回类型</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>ls(path)</code></td>
+                            <td><code>LsResult</code></td>
+                            <td>列出目录内容（非递归），按 path 排序</td>
+                        </tr>
+                        <tr>
+                            <td><code>read(filePath, offset, limit)</code></td>
+                            <td><code>ReadResult</code></td>
+                            <td>读取文件；二进制返回 Uint8Array</td>
+                        </tr>
+                        <tr>
+                            <td><code>readRaw(filePath)</code></td>
+                            <td><code>ReadRawResult</code></td>
+                            <td>读取原始 FileData（含时间戳）</td>
+                        </tr>
+                        <tr>
+                            <td><code>grep(pattern, path, glob)</code></td>
+                            <td><code>GrepResult</code></td>
+                            <td>搜索文本内容，跳过二进制文件</td>
+                        </tr>
+                        <tr>
+                            <td><code>glob(pattern, path)</code></td>
+                            <td><code>GlobResult</code></td>
+                            <td>按 glob 模式匹配文件</td>
+                        </tr>
+                        <tr>
+                            <td><code>write(filePath, content)</code></td>
+                            <td><code>WriteResult</code></td>
+                            <td>仅创建语义；冲突时返回 error</td>
+                        </tr>
+                        <tr>
+                            <td><code>edit(filePath, old, new, replaceAll)</code></td>
+                            <td><code>EditResult</code></td>
+                            <td>强制唯一性；支持 replaceAll</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>结果类型一览</h4>
+                        <table>
+                            <thead><tr><th>类型</th><th>成功字段</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>ReadResult</code></td><td>content, mimeType</td></tr>
+                                <tr><td><code>LsResult</code></td><td>files (FileInfo[])</td></tr>
+                                <tr><td><code>GrepResult</code></td><td>matches (GrepMatch[])</td></tr>
+                                <tr><td><code>WriteResult</code></td><td>path</td></tr>
+                                <tr><td><code>EditResult</code></td><td>path, occurrences</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>沙箱扩展</h4>
+                        <p><code>SandboxBackendProtocolV2</code> 额外提供：</p>
+                        <ul>
+                            <li><code>execute(command)</code>：在沙箱中运行 Shell 命令</li>
+                            <li><code>readonly id</code>：沙箱实例的唯一标识符</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>可选方法</h4>
+                        <ul>
+                            <li><code>uploadFiles(files: Array&lt;[string, Uint8Array]&gt;)</code>：上传多个文件（用于沙箱后端）</li>
+                            <li><code>downloadFiles(paths: string[])</code>：下载多个文件（用于沙箱后端）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>V1 适配工具</h4>
+                        <ul>
+                            <li><code>adaptBackendProtocol(v1Backend)</code>：将 V1 后端适配为 V2</li>
+                            <li><code>adaptSandboxProtocol(v1Sandbox)</code>：将 V1 沙箱适配为 V2</li>
+                        </ul>
+                        <pre><code class="language-javascript">import { adaptBackendProtocol, adaptSandboxProtocol } from "deepagents";
+
+// 将 V1 后端适配为 V2，使旧实现可以在新框架中使用
+const v2Backend = adaptBackendProtocol(v1Backend);
+const v2Sandbox = adaptSandboxProtocol(v1Sandbox);</code></pre>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>框架会自动适配传递给 <code>createDeepAgent()</code> 的 V1 后端。仅当直接调用协议方法时才需要手动适配。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Permissions ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>权限控制</h2>
+                <h4>声明式控制 Agent 可以读写哪些文件和目录</h4>
+                <p>权限应用于内置的文件系统工具，并在后端被调用<strong>之前</strong>进行评估。这意味着即使后端支持访问，权限规则也能阻止不安全的操作。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>权限的工作位置</h4>
+                        <ul>
+                            <li>在文件系统工具层执行，先于后端调用</li>
+                            <li>基于路径的允许/拒绝规则</li>
+                            <li>支持规则排序和优先级</li>
+                            <li>支持子 Agent 权限继承</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>与后端的配合</h4>
+                        <ul>
+                            <li>权限在 CompositeBackend 路由之前评估</li>
+                            <li>被拒绝的操作不会到达后端</li>
+                            <li>适合控制敏感目录的访问</li>
+                            <li>详细配置请参阅权限指南</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>权限 vs 策略钩子：</strong>权限适合简单的"允许/拒绝"规则（如"禁止读写 <code>/secrets/</code>"）。如果需要更复杂的逻辑（速率限制、审计日志、内容检查），请使用策略钩子。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Policy hooks - subclass ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>策略钩子：子类</h2>
+                <h4>通过子类化后端来实现自定义验证逻辑</h4>
+                <p>当权限的"允许/拒绝"不够用时，你可以通过子类化后端来拦截写操作、添加审计日志或执行内容检查。以下示例阻止选定前缀下的写入和编辑：</p>
+                <pre><code class="language-javascript">import { FilesystemBackend, type WriteResult, type EditResult } from "deepagents";
+
+class GuardedBackend extends FilesystemBackend {
+  private denyPrefixes: string[];
+
+  constructor({ denyPrefixes, ...options }) {
+    super(options);
+    // 确保前缀以 "/" 结尾，避免匹配歧义
+    this.denyPrefixes = denyPrefixes.map(
+      p => p.endsWith("/") ? p : p + "/"
+    );
+  }
+
+  // 拦截写入操作，禁止在指定前缀路径下创建文件
+  async write(filePath: string, content: string): Promise&lt;WriteResult&gt; {
+    if (this.denyPrefixes.some(p => filePath.startsWith(p))) {
+      return { error: `Writes are not allowed under ${filePath}` };
+    }
+    return super.write(filePath, content);  // 通过检查，调用父类方法执行写入
+  }
+
+  // 拦截编辑操作，禁止在指定前缀路径下修改文件
+  async edit(filePath: string, oldString: string, newString: string, replaceAll = false): Promise&lt;EditResult&gt; {
+    if (this.denyPrefixes.some(p => filePath.startsWith(p))) {
+      return { error: `Edits are not allowed under ${filePath}` };
+    }
+    return super.edit(filePath, oldString, newString, replaceAll);  // 通过检查，调用父类
+  }
+}</code></pre>
+                <div class="key-point">
+                    <strong>子类方式的优点：</strong>直接继承后端的所有方法，只需覆写需要拦截的方法。适合与特定后端紧密耦合的策略。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Policy hooks - wrapper ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>策略钩子：包装器</h2>
+                <h4>通用包装器——适用于任何后端的策略拦截</h4>
+                <p>如果你需要在<strong>任意后端</strong>上应用策略，包装器模式比子类更灵活。它不依赖具体的后端实现，可以组合使用。</p>
+                <pre><code class="language-javascript">import { type BackendProtocolV2, type WriteResult, type EditResult } from "deepagents";
+
+class PolicyWrapper implements BackendProtocolV2 {
+  private denyPrefixes: string[];
+
+  // inner 是被包装的后端实例，可以是任何实现了 BackendProtocolV2 的后端
+  constructor(private inner: BackendProtocolV2, denyPrefixes = []) {
+    this.denyPrefixes = denyPrefixes.map(
+      p => p.endsWith("/") ? p : p + "/"
+    );
+  }
+
+  private isDenied(path: string): boolean {
+    return this.denyPrefixes.some(p => path.startsWith(p));
+  }
+
+  // 读取类方法直接透传给内部后端，不加任何拦截
+  ls(path) { return this.inner.ls(path); }
+  read(filePath, offset?, limit?) { return this.inner.read(filePath, offset, limit); }
+  grep(pattern, path?, glob?) { return this.inner.grep(pattern, path, glob); }
+  glob(pattern, path?) { return this.inner.glob(pattern, path); }
+
+  // 写入类方法加拦截：检查路径是否在禁止列表中
+  async write(filePath, content): Promise&lt;WriteResult&gt; {
+    if (this.isDenied(filePath)) return { error: "Writes not allowed" };
+    return this.inner.write(filePath, content);  // 未被禁止，委托给内部后端
+  }
+  async edit(filePath, old, newStr, replaceAll?): Promise&lt;EditResult&gt; {
+    if (this.isDenied(filePath)) return { error: "Edits not allowed" };
+    return this.inner.edit(filePath, old, newStr, replaceAll);
+  }
+}</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>子类方式</h4>
+                        <ul>
+                            <li>与特定后端耦合</li>
+                            <li>覆写方法，调用 super</li>
+                            <li>适合 FilesystemBackend 等具体后端</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>包装器方式</h4>
+                        <ul>
+                            <li>与后端解耦，适用于任意后端</li>
+                            <li>组合使用，可多层包装</li>
+                            <li>适合跨后端的统一策略</li>
+                        </ul>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/09-backends-2.png" alt="图：子类方式与包装器方式对比" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 18: Multimodal files ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多模态文件支持</h2>
+                <h4>V2 后端原生支持图片、音频、视频、PDF 等二进制文件</h4>
+                <p>当 <code>read()</code> 遇到二进制文件（通过扩展名判断 MIME 类型）时，返回包含 <code>Uint8Array</code> 内容和相应 <code>mimeType</code> 的 <code>ReadResult</code>。文本文件返回 <code>string</code> 内容。</p>
+                <div class="info-block">
+                    <strong>版本要求：</strong>多模态文件支持（PDF、音频、视频）需要 <code>deepagents&gt;=1.9.0</code>。
+                </div>
+                <pre><code class="language-javascript">const result = await backend.read("/workspace/screenshot.png");
+
+if (result.error) {
+  console.error(result.error);  // 读取失败，输出错误信息
+} else if (result.content instanceof Uint8Array) {
+  // 二进制文件 —— content 是 Uint8Array，mimeType 标识文件类型
+  console.log(`Binary file: ${result.mimeType}`);  // 例如 "image/png"
+} else {
+  // 文本文件 —— content 是 string 类型
+  console.log(`Text file: ${result.mimeType}`);     // 例如 "text/plain"
+}</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>类别</th><th>扩展名</th><th>MIME 类型</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>图片</strong></td><td><code>.png</code>, <code>.jpg</code>/<code>.jpeg</code>, <code>.gif</code>, <code>.webp</code>, <code>.svg</code>, <code>.heic</code>, <code>.heif</code></td><td><code>image/png</code>, <code>image/jpeg</code>, <code>image/gif</code>, <code>image/webp</code>, <code>image/svg+xml</code>, <code>image/heic</code>, <code>image/heif</code></td></tr>
+                        <tr><td><strong>音频</strong></td><td><code>.mp3</code>, <code>.wav</code>, <code>.aiff</code>, <code>.aac</code>, <code>.ogg</code>, <code>.flac</code></td><td><code>audio/mpeg</code>, <code>audio/wav</code>, <code>audio/aiff</code>, <code>audio/aac</code>, <code>audio/ogg</code>, <code>audio/flac</code></td></tr>
+                        <tr><td><strong>视频</strong></td><td><code>.mp4</code>, <code>.webm</code>, <code>.mpeg</code>/<code>.mpg</code>, <code>.mov</code>, <code>.avi</code>, <code>.flv</code>, <code>.wmv</code>, <code>.3gpp</code></td><td><code>video/mp4</code>, <code>video/webm</code>, <code>video/mpeg</code>, <code>video/quicktime</code>, <code>video/x-msvideo</code>, <code>video/x-flv</code>, <code>video/x-ms-wmv</code>, <code>video/3gpp</code></td></tr>
+                        <tr><td><strong>文档</strong></td><td><code>.pdf</code>, <code>.ppt</code>, <code>.pptx</code></td><td><code>application/pdf</code>, <code>application/vnd.ms-powerpoint</code>, <code>application/vnd.openxmlformats-officedocument.presentationml.presentation</code></td></tr>
+                        <tr><td><strong>文本</strong></td><td><code>.txt</code>, <code>.html</code>, <code>.json</code>, <code>.js</code>, <code>.ts</code>, <code>.py</code> 等</td><td><code>text/plain</code>, <code>text/html</code>, <code>application/json</code> 等</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>FileData 格式：</strong>V2 使用 <code>{ content: string | Uint8Array, mimeType, created_at, modified_at }</code>。框架透明处理 V1（行数组）和 V2 格式。
+                </div>
+                <pre><code class="language-javascript">type FileData =
+  // 当前格式 (v2)
+  | {
+      content: string | Uint8Array; // string 用于文本，Uint8Array 用于二进制
+      mimeType: string;             // 例如 "text/plain", "image/png"
+      created_at: string;           // ISO 8601 时间戳
+      modified_at: string;          // ISO 8601 时间戳
+    }
+  // 旧版格式 (v1)
+  | {
+      content: string[];            // 行数组
+      created_at: string;           // ISO 8601 时间戳
+      modified_at: string;          // ISO 8601 时间戳
+    };</code></pre>
+                <div class="warning">
+                    <strong>向后兼容：</strong>后端在从状态或存储中读取时可能遇到任一格式。框架会透明地处理两种格式。新的写入默认使用 v2 格式。在旧版读取器需要旧版格式的滚动部署期间，可以向后端构造函数传递 <code>fileFormat: "v1"</code>（例如 <code>new StoreBackend({ fileFormat: "v1" })</code>）。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 19: Migration guide ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>迁移指南</h2>
+                <h4>从后端工厂模式迁移到直接实例模式</h4>
+                <p>从 <code>deepagents</code> 1.9.0 起，后端工厂模式已<strong>弃用</strong>。现在后端通过内部辅助函数解析运行时上下文，你可以直接传递实例。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>之前（已弃用）</h4>
+                        <pre><code class="language-javascript">// 工厂函数包装
+const agent = createDeepAgent({
+  backend: (config) => new CompositeBackend(
+    new StateBackend(config),
+    {
+      "/memories/": new StoreBackend(config, {
+        namespace: (rt) => [rt.serverInfo.user.identity],
+      }),
+    },
+  ),
+});</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>之后（推荐）</h4>
+                        <pre><code class="language-javascript">// 直接传递实例
+const agent = createDeepAgent({
+  backend: new CompositeBackend(
+    new StateBackend(),
+    {
+      "/memories/": new StoreBackend({
+        namespace: (rt) => [rt.serverInfo.user.identity],
+      }),
+    },
+  ),
+});</code></pre>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>BackendContext 迁移</h4>
+                        <ul>
+                            <li>工厂参数从 <code>BackendContext</code> 变为 <code>Runtime</code></li>
+                            <li><code>ctx.runtime.context.userId</code> → <code>rt.serverInfo.user.identity</code></li>
+                            <li><code>ctx.state</code> 没有直接替代方案</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>V1 到 V2 方法重命名</h4>
+                        <ul>
+                            <li><code>lsInfo</code> → <code>ls</code></li>
+                            <li><code>grepRaw</code> → <code>grep</code></li>
+                            <li><code>globInfo</code> → <code>glob</code></li>
+                            <li>返回类型从裸数组变为 Result 对象</li>
+                        </ul>
+                    </div>
+                </div>
+                <h4>已弃用的 API</h4>
+                <table>
+                    <thead>
+                        <tr><th>已弃用项</th><th>替代方案</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>BackendFactory</code> 类型</td><td>直接传递后端实例</td></tr>
+                        <tr><td><code>BackendRuntime</code> 接口</td><td>后端在内部解析上下文</td></tr>
+                        <tr><td><code>StateBackend(runtime, options?)</code> 构造函数重载</td><td><code>new StateBackend(options?)</code></td></tr>
+                        <tr><td><code>StoreBackend(stateAndStore, options?)</code> 构造函数重载</td><td><code>new StoreBackend(options?)</code></td></tr>
+                        <tr><td><code>WriteResult</code> 和 <code>EditResult</code> 上的 <code>filesUpdate</code> 字段</td><td>状态写入现在由后端在内部处理</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>兼容性：</strong>工厂模式在运行时仍然可用（会发出弃用警告）。框架会自动适配传递给 <code>createDeepAgent()</code> 的 V1 后端。直接调用协议方法时需手动使用 <code>adaptBackendProtocol()</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 20: Chapter review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>后端是 Deep Agents 文件系统的灵魂——你控制数据存在哪里</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>核心知识点</h4>
+                        <ul>
+                            <li>七种内置后端覆盖从临时到生产的全部场景</li>
+                            <li><strong>StateBackend</strong> 是默认选择，线程作用域</li>
+                            <li><strong>StoreBackend</strong> 实现跨线程持久化</li>
+                            <li><strong>CompositeBackend</strong> 按路径路由到不同后端</li>
+                            <li>自定义后端只需实现 <code>BackendProtocolV2</code> 七个方法</li>
+                            <li>权限在工具层评估，策略钩子在方法层拦截</li>
+                            <li>V2 后端原生支持图片、音频、视频等二进制文件</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>子 Agent</strong>：多 Agent 协作与任务分发</li>
+                            <li><strong>异步子 Agent</strong>：并行执行多个子任务</li>
+                            <li><strong>人机交互</strong>：HITL 中间件与审批流程</li>
+                            <li><strong>权限系统</strong>：细粒度的文件访问控制</li>
+                            <li><strong>记忆管理</strong>：短期 + 长期记忆的最佳实践</li>
+                            <li><strong>沙箱</strong>：安全隔离的代码执行环境</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>后端不是"选一个就用到底"的单选题。通过 <code>CompositeBackend</code> 路由 + 权限控制 + 策略钩子的组合，你可以为 Agent 构建一个<strong>安全、灵活、可扩展</strong>的虚拟文件系统。先用默认后端起步，随着需求增长逐步引入更复杂的配置。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 21: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./10-subagents.html">下一章：子 Agent</a> — 多 Agent 协作与任务分发</li>
+                            <li><a href="./13-permissions.html">权限系统</a> — 细粒度文件访问控制的完整指南</li>
+                            <li><a href="./16-sandboxes.html">沙箱</a> — 安全隔离的代码执行环境</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 官方文档</a> — 完整 API 参考</li>
+                            <li><a href="https://smith.langchain.com/">LangSmith</a> — 可视化调试和部署平台</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">Deep Agents GitHub</a> — 源码和示例</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关概念</h4>
+                        <ul>
+                            <li><a href="./14-memory.html">记忆管理</a> — StoreBackend 的典型应用场景</li>
+                            <li><a href="./12-human-in-the-loop.html">人机交互</a> — 配合 LocalShellBackend 使用的安全策略</li>
+                            <li><a href="./06-harness.html">Harness</a> — 后端配置的运行时入口</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

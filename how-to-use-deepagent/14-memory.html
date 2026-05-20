@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记忆（Memory）</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 14 章</div>
+            <h1>记忆（Memory）</h1>
+            <p>为 Deep Agents 构建的 Agent 添加持久化记忆，使其能够在跨对话中学习和改进</p>
+            <strong>从"无状态的问答机器"到"能记住一切的伙伴"的关键一步</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你有没有试过让 Agent 记住用户上次说过的话？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>无记忆 Agent 的困境</h4>
+                        <ul>
+                            <li>每次对话都是"新来的"，<strong>不记得用户偏好</strong></li>
+                            <li>学到的经验全丢了，<strong>同样的错误反复犯</strong></li>
+                            <li>上下文一结束就消失，<strong>无法跨会话积累知识</strong></li>
+                            <li>所有用户看到一样的 Agent，<strong>没有个性化体验</strong></li>
+                            <li>组织级的合规规则？只能写死在提示词里，<strong>无法动态更新</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agents 的解法</h4>
+                        <ul>
+                            <li>基于<strong>文件系统</strong>的记忆机制，Agent 以文件形式读写记忆</li>
+                            <li><strong>可插拔后端</strong>控制记忆存储位置（内存、Store、磁盘）</li>
+                            <li>记忆分<strong>作用域</strong>：Agent 级别、用户级别、组织级别</li>
+                            <li>支持<strong>后台整合</strong>：空闲时自动回顾对话、提取关键事实</li>
+                            <li>声明式<strong>只读控制</strong>，防止共享记忆被恶意修改</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>没有记忆的 Agent 就像一个"金鱼脑"助手——每次对话都要从头介绍自己。当然这只是比喻——实际上"记忆"是存储在文件系统中的文件，Agent 通过后端支持的读写 API 来保持跨对话上下文。Deep Agents 将记忆作为一等公民，让 Agent 能在跨对话中持续学习、积累经验、提供个性化服务。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Prerequisites ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你需要会什么</h4>
+                        <ul>
+                            <li>了解 Deep Agents 的基本概念（<code>createDeepAgent</code>、后端、工具）</li>
+                            <li>了解 LangGraph 的 State 和 Store 概念</li>
+                            <li>TypeScript 基础（函数、类型、async/await）</li>
+                            <li>了解文件路径和命名空间的概念</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该能</h4>
+                        <ul>
+                            <li>说清短期记忆和长期记忆的区别</li>
+                            <li>为 Agent 配置 Agent 级别、用户级别记忆</li>
+                            <li>实现跨对话的情景记忆搜索</li>
+                            <li>配置后台整合 Agent 和 Cron 定时任务</li>
+                            <li>理解只读 vs 可写记忆的安全考量</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章不会深入</h4>
+                        <ul>
+                            <li>上下文工程的详细机制（见第 08 章）</li>
+                            <li>权限系统的完整配置（见第 13 章）</li>
+                            <li>后端的详细实现（见第 09 章）</li>
+                            <li>技能（Skills）的深入用法（见第 15 章）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>关键区分：</strong>本章讲的是<strong>长期记忆</strong>（跨对话持久化）。短期记忆（单次会话中的对话历史）由 Agent 状态自动管理，详见上下文工程章节。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: How memory works ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工作原理</h2>
+                <h4>三步走：指向记忆文件 → Agent 读取 → Agent 更新</h4>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. 指向记忆文件</h4>
+                        <p>创建 Agent 时通过 <code>memory=</code> 参数传入文件路径，通过 <code>skills=</code> 传入技能文件。后端控制文件的实际存储位置。</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. Agent 读取记忆</h4>
+                        <p>启动时加载到系统提示，或对话过程中按需读取。技能文件用按需加载：先读描述，匹配到任务时才读全文。</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. Agent 更新记忆</h4>
+                        <p>学习到新信息时，用 <code>edit_file</code> 工具更新记忆文件。可在对话中即时更新，也可通过后台整合在对话间更新。</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+
+const agent = createDeepAgent({
+  memory: ["/memories/AGENTS.md"],  // Agent 启动时加载到系统提示的记忆文件
+  skills: ["/skills/"],             // 按需加载的技能目录
+  backend: new CompositeBackend(
+    new StateBackend(),              // 默认后端用于临时状态
+    {
+      // 记忆文件路由到 StoreBackend，支持持久化
+      "/memories/": new StoreBackend({
+        namespace: (rt) => [rt.serverInfo.assistantId],  // 按 Agent ID 隔离
+      }),
+      // 技能文件也用 StoreBackend，支持跨线程共享
+      "/skills/": new StoreBackend({
+        namespace: (rt) => [rt.serverInfo.assistantId],  // 同一 Agent 共享
+      }),
+    },
+  ),
+});</code></pre>
+                <div class="key-point">
+                    <strong>核心思路：</strong>记忆的本质是"Agent 可读写的文件"。你控制文件存在哪里（后端）、谁能看到什么（命名空间）、Agent 能不能改（权限）。记忆不是黑盒，而是你可以审查和管理的文件。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Short-term vs Long-term ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>记忆分类</h2>
+                <h4>短期记忆管"这一次对话"，长期记忆管"所有对话"</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>短期记忆（Short-term）</h4>
+                        <ul>
+                            <li><strong>范围</strong>：单个对话线程（thread）内</li>
+                            <li><strong>内容</strong>：对话历史、临时文件、中间结果</li>
+                            <li><strong>生命周期</strong>：对话结束即结束</li>
+                            <li><strong>实现</strong>：通过 Checkpoint 自动管理</li>
+                            <li><strong>类比</strong>：你的"工作记忆"，打电话时记得对方说了什么</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>长期记忆（Long-term）</h4>
+                        <ul>
+                            <li><strong>范围</strong>：跨对话线程、跨会话</li>
+                            <li><strong>内容</strong>：用户偏好、学到的知识、技能、策略</li>
+                            <li><strong>生命周期</strong>：永久持久化，直到被删除或更新</li>
+                            <li><strong>实现</strong>：通过 Memory Store + 文件系统管理</li>
+                            <li><strong>类比</strong>：你的"笔记本"，打电话之前就写好了笔记</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>记忆的三个子类型</h4>
+                        <table>
+                            <thead><tr><th>类型</th><th>存什么</th><th>示例</th></tr></thead>
+                            <tbody>
+                                <tr><td><strong>情景记忆</strong></td><td>过往经历的完整记录</td><td>过去的对话、调试过程</td></tr>
+                                <tr><td><strong>程序性记忆</strong></td><td>可复用的指令和技能</td><td>Skill 文件、操作流程</td></tr>
+                                <tr><td><strong>语义记忆</strong></td><td>事实和偏好</td><td>"用户喜欢简洁回答"</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>它们怎么协作</h4>
+                        <ul>
+                            <li><strong>情景记忆</strong>提供上下文——"上次怎么做的"</li>
+                            <li><strong>程序性记忆</strong>提供能力——"应该怎么做"</li>
+                            <li><strong>语义记忆</strong>提供知识——"什么是已知的"</li>
+                            <li>三者在 Deep Agents 中都通过<strong>文件系统</strong>统一管理</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>记忆架构示意：</strong>短期记忆通过 Checkpoint 限定在<strong>单个线程</strong>范围内；长期记忆通过 Store <strong>跨线程</strong>持久保存。Checkpoint 负责单个对话的快照，Store 负责跨对话的持久化存储，二者共同构成 Deep Agents 的完整记忆体系。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/14-memory-1.png" alt="图：短期记忆与长期记忆双层架构" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Scoped memory overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>作用域</h2>
+                <h4>通过命名空间控制记忆的"可见范围"——谁能看到什么</h4>
+                <p>Deep Agents 通过<strong>后端的命名空间</strong>来控制记忆的作用域。不同的命名空间策略决定了记忆的共享范围：</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>Agent 级别记忆</h4>
+                        <p>所有用户共享同一份记忆文件。Agent 通过每次对话积累个性和知识。</p>
+                        <p><strong>命名空间：</strong><code>(assistant_id,)</code></p>
+                        <p><strong>适合：</strong>Agent 自我改进、积累专业知识</p>
+                        <p><span class="tag tag-primary">跨用户共享</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>用户级别记忆</h4>
+                        <p>每个用户拥有独立的记忆文件。用户之间完全隔离。</p>
+                        <p><strong>命名空间：</strong><code>(user_id,)</code></p>
+                        <p><strong>适合：</strong>个性化服务、用户偏好管理</p>
+                        <p><span class="tag tag-info">按用户隔离</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>组织级别记忆</h4>
+                        <p>组织内所有成员共享的策略和知识。通常设为只读。</p>
+                        <p><strong>命名空间：</strong><code>(org_id,)</code></p>
+                        <p><strong>适合：</strong>合规策略、共享知识库</p>
+                        <p><span class="tag tag-success">跨用户共享 + 只读</span></p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>安全提醒：</strong>如果一个用户可以写入另一个用户读取的记忆，恶意用户可能向共享状态注入指令。默认使用用户作用域，共享记忆务必设为只读。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/14-memory-2.png" alt="图：三级记忆作用域" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Agent-scoped memory ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Agent 级别</h2>
+                <h4>赋予 Agent 自己的持久化身份——它随时间不断演进</h4>
+                <p>Agent 级别记忆在<strong>所有用户之间共享</strong>，因此 Agent 会通过每一次对话积累自己的个性、知识和偏好。随着与用户的交互，它会不断深化专业知识、优化方法，并记住哪些做法有效。命名空间设为 <code>(assistant_id,)</code>，意味着该 Agent 的每一次对话都读写同一个记忆文件。<strong>当拥有写入权限时</strong>，它还可以学习和更新 <strong>Skill</strong>。</p>
+                <pre><code class="language-javascript">import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+
+const agent = createDeepAgent({
+  memory: ["/memories/AGENTS.md"],
+  skills: ["/skills/"],
+  backend: new CompositeBackend(
+    new StateBackend(),
+    {
+      "/memories/": new StoreBackend({
+        // assistantId 作为命名空间，所有用户共享同一份记忆
+        namespace: (rt) => [rt.serverInfo.assistantId],
+      }),
+      "/skills/": new StoreBackend({
+        // 同理，所有用户共享同一份技能
+        namespace: (rt) => [rt.serverInfo.assistantId],
+      }),
+    },
+  ),
+});</code></pre>
+                <div class="info-block">
+                    <strong>版本兼容：</strong>访问 <code>rt.serverInfo</code> 需要 <code>deepagents &gt;= 1.9.0</code>。在较旧版本中，请从 <code>getConfig().metadata.assistantId</code> 读取 assistant ID。
+                </div>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>初始化记忆内容</h4>
+                        <pre><code class="language-javascript">import { InMemoryStore } from "@langchain/langgraph";
+import { createFileData } from "deepagents";
+
+const store = new InMemoryStore();
+
+// 向 Store 中写入初始记忆
+await store.put(
+  ["my-agent"],
+  "/memories/AGENTS.md",
+  createFileData(`## Response style
+- Keep responses concise
+- Use code examples where possible
+`),
+);</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>跨线程验证记忆</h4>
+                        <pre><code class="language-javascript">// 线程 1：Agent 学习偏好
+const config1 = { configurable: {
+  thread_id: uuidv4()
+}};
+await agent.invoke({
+  messages: [{
+    role: "user",
+    content: "I prefer detailed explanations."
+  }],
+}, config1);
+
+// 线程 2：Agent 记住了偏好
+const config2 = { configurable: {
+  thread_id: uuidv4()
+}};
+await agent.invoke({
+  messages: [{
+    role: "user",
+    content: "Explain transformers."
+  }],
+}, config2);</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>工作方式：</strong>线程 1 中 Agent 学习了"用户喜欢详细解释"，自动写入记忆文件。线程 2 中 Agent 读取记忆，在新对话中应用该偏好。两个线程共享同一个 Store 命名空间。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: User-scoped memory ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>用户级别</h2>
+                <h4>为每个用户提供独立的记忆文件——个性化服务的基石</h4>
+                <p>命名空间设为 <code>(user_id,)</code>，每个用户获得一份隔离的记忆文件副本。用户 A 的偏好永远不会泄露到用户 B 的对话中。</p>
+                <pre><code class="language-javascript">import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+
+const agent = createDeepAgent({
+  memory: ["/memories/preferences.md"],
+  skills: ["/skills/"],
+  backend: new CompositeBackend(
+    new StateBackend(),
+    {
+      "/memories/": new StoreBackend({
+        // user.identity 作为命名空间，每个用户独立一份记忆
+        namespace: (rt) => [rt.serverInfo.user.identity],
+      }),
+      "/skills/": new StoreBackend({
+        // 同理，每个用户独立一份技能
+        namespace: (rt) => [rt.serverInfo.user.identity],
+      }),
+    },
+  ),
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>Alice 的记忆</h4>
+                        <pre><code class="language-javascript">await store.put(
+  ["user-alice"],
+  "/memories/preferences.md",
+  createFileData(`## Preferences
+- Likes concise bullet points
+- Prefers Python examples
+`)
+);</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>Bob 的记忆</h4>
+                        <pre><code class="language-javascript">await store.put(
+  ["user-bob"],
+  "/memories/preferences.md",
+  createFileData(`## Preferences
+- Likes detailed explanations
+- Prefers TypeScript examples
+`)
+);</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>完全隔离：</strong>部署后，每个经过身份验证的请求会将 <code>rt.serverInfo.user.identity</code> 解析为调用用户。Alice 只能看到自己的偏好，Bob 也一样。核心指令保持不变，只有记忆文件因人而异。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Advanced dimensions ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>高级维度</h2>
+                <h4>记忆不只是"存取"——六个维度决定你的记忆策略</h4>
+                <table>
+                    <thead>
+                        <tr><th>维度</th><th>回答的问题</th><th>可选值</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>持续时间</strong></td>
+                            <td>记忆保持多久？</td>
+                            <td>短期（单次对话） / 长期（跨对话）</td>
+                        </tr>
+                        <tr>
+                            <td><strong>信息类型</strong></td>
+                            <td>存储什么类型的信息？</td>
+                            <td>情景（过往经历） / 程序性（指令技能） / 语义（事实）</td>
+                        </tr>
+                        <tr>
+                            <td><strong>作用域</strong></td>
+                            <td>谁可以查看和修改？</td>
+                            <td>用户级别 / Agent 级别 / 组织级别</td>
+                        </tr>
+                        <tr>
+                            <td><strong>更新策略</strong></td>
+                            <td>记忆何时写入？</td>
+                            <td>对话过程中（默认） / 对话之间（后台整合）</td>
+                        </tr>
+                        <tr>
+                            <td><strong>检索方式</strong></td>
+                            <td>记忆如何读取？</td>
+                            <td>加载到提示中（默认） / 按需读取（如 Skill）</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Agent 权限</strong></td>
+                            <td>Agent 是否可以写入？</td>
+                            <td>读写（默认） / 只读（共享策略）</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>选择策略：</strong>大多数应用只需要用户级别的读写记忆。当出现特定需求（合规、低延迟、多 Agent）时，再按维度逐一调整。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Episodic memory ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>情景记忆</h2>
+                <h4>让 Agent 回忆"过去是怎么解决问题的"——不只是学到了什么</h4>
+                <p>情景记忆存储<strong>完整的对话上下文</strong>：发生了什么、顺序如何、结果怎样。Deep Agents 已通过 Checkpoint 机制自动保存每一段对话。要让过去的对话可搜索，可以把线程搜索封装为一个工具：</p>
+                <pre><code class="language-javascript">import { Client } from "@langchain/langgraph-sdk";
+import { tool } from "@langchain/core/tools";
+
+const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
+
+const searchPastConversations = tool(
+  async ({ query }, runtime) => {
+    // 从运行时上下文获取用户 ID，而非作为参数传入——防止用户伪造身份
+    const userId = runtime.serverInfo.user.identity;
+    // 按用户 ID 搜索历史对话线程，最多返回 5 条
+    const threads = await client.threads.search({
+      metadata: { userId },
+      limit: 5,
+    });
+    const results = [];
+    for (const thread of threads) {
+      const history = await client.threads.getHistory(thread.threadId);
+      results.push(history);
+    }
+    return JSON.stringify(results);
+  },
+  {
+    name: "search_past_conversations",
+    description: "Search past conversations for relevant context.",
+  }
+);</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>按用户搜索</h4>
+                        <pre><code class="language-javascript">const userThreads = await client.threads.search({
+  metadata: { userId },
+  limit: 5,
+});</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>按组织搜索</h4>
+                        <pre><code class="language-javascript">const orgThreads = await client.threads.search({
+  metadata: { orgId },
+  limit: 5,
+});</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>典型场景：</strong>编程 Agent 可以回顾过去的调试会话，直接跳到可能的根本原因。通过调整元数据过滤器，你可以按用户或组织限定搜索范围。<code>user_id</code> 从运行时上下文中获取，而非作为参数传入——防止用户伪造身份访问他人记忆。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Organization memory + Read-only ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>组织级记忆</h2>
+                <h4>跨用户共享的策略和知识——通常是只读的</h4>
+                <p>组织级别记忆使用组织范围的命名空间，用于对组织内所有用户和 Agent 生效的策略或知识。它通常是<strong>只读</strong>的，以防止提示注入。</p>
+                <pre><code class="language-javascript">const agent = createDeepAgent({
+  memory: [
+    "/memories/preferences.md",  // 用户级：按用户隔离，可读写
+    "/policies/compliance.md",   // 组织级：所有人共享，通常只读
+  ],
+  backend: new CompositeBackend(
+    new StateBackend(),
+    {
+      // 用户偏好：按用户身份隔离存储
+      "/memories/": new StoreBackend({
+        namespace: (rt) => [rt.serverInfo.user.identity],
+      }),
+      // 组织策略：按组织 ID 共享，通过权限配置为只读
+      "/policies/": new StoreBackend({
+        namespace: (rt) => [rt.context.orgId],
+      }),
+    },
+  ),
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>写入组织记忆</h4>
+                        <pre><code class="language-javascript">import { Client } from "@langchain/langgraph-sdk";
+import { createFileData } from "deepagents";
+
+const client = new Client({
+  apiUrl: "<DEPLOYMENT_URL>"
+});
+
+await client.store.putItem(
+  [orgId],
+  "/compliance.md",
+  createFileData(`## Compliance policies
+- Never disclose internal pricing
+- Always include disclaimers
+  on financial advice
+`),
+);</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>读写 vs 只读</h4>
+                        <table>
+                            <thead><tr><th>权限</th><th>场景</th><th>方式</th></tr></thead>
+                            <tbody>
+                                <tr><td><strong>读写</strong></td><td>用户偏好、Agent 自学</td><td>Agent 通过内置 <code>edit_file</code> 工具更新文件</td></tr>
+                                <tr><td><strong>只读</strong></td><td>组织策略、合规规则</td><td>通过应用代码或 <strong>Store API</strong> 填充；使用权限（Permissions）拒绝特定路径写入，或使用策略钩子（Policy Hooks）进行自定义验证逻辑</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>安全注意事项：</strong>如果用户可以写入他人读取的记忆，恶意用户可能注入指令。降低风险的三个手段：(1) 默认使用用户作用域 <code>(user_id)</code>；(2) 共享策略用只读记忆（通过应用代码填充，而非 Agent）；(3) 在 Agent 写入共享记忆之前添加人工审核——使用<strong>中断（interrupt）</strong>来要求人工批准对敏感路径的写入。对于自定义验证逻辑（速率限制、审计日志、内容检查），可使用后端<strong>策略钩子（Policy Hooks）</strong>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Background consolidation ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>后台整合</h2>
+                <h4>让 Agent 在"空闲时"回顾对话、提取关键事实——零延迟记忆升级</h4>
+                <p>默认方式是<strong>热路径</strong>（对话中即时写入记忆）。另一种方式是<strong>后台整合</strong>——有时也被称为<strong>休眠期计算（sleep time compute）</strong>：一个独立的 Deep Agent 在对话之间审查最近的对话，提取关键事实并合并到记忆中。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>热路径（默认）</h4>
+                        <ul>
+                            <li><strong>优点：</strong>记忆立即可用，对用户透明</li>
+                            <li><strong>缺点：</strong>增加延迟，Agent 需要多任务处理</li>
+                            <li><strong>适合：</strong>大多数应用场景</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>后台整合</h4>
+                        <ul>
+                            <li><strong>优点：</strong>无面向用户的延迟，可综合多次对话</li>
+                            <li><strong>缺点：</strong>记忆要下次对话才可用，需要额外 Agent</li>
+                            <li><strong>适合：</strong>需要降低延迟或提高记忆质量时</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="flow-diagram">
+                    <h4>图：后台整合工作流</h4>
+                    <div class="key-point">
+                        <p><strong>工作流程说明：</strong></p>
+                        <ol>
+                            <li><strong>Cron 定时任务</strong>（紫色，定时触发）按固定计划驱动整合流程</li>
+                            <li><strong>整合 Agent</strong>（蓝色，处理核心）被触发后，从 Memory Store 读取近期对话（Conversation 1、Conversation 2）的历史记录</li>
+                            <li><strong>整合 Agent</strong> 审查对话内容，提取关键事实，合并去重后写入 <strong>Memory Store</strong>（橙色，记忆存储）</li>
+                            <li>下一次用户对话时，Agent 从 Store 中读取更新后的记忆，立即可用</li>
+                        </ol>
+                        <p style="margin-top:8px;">整个过程对用户透明——用户在对话中零延迟，记忆在"休眠期"自动完成升级。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>整合频率：</strong>选一个反映用户实际交互频率的节奏。日流量稳定的聊天产品可每几小时整合一次；每周只用几次的工具每天或每周运行即可。频率远高于对话频率只是浪费 token。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/14-memory-3.png" alt="图：热路径与后台整合并行工作流" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Consolidation Agent + Cron ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>整合 Agent</h2>
+                <h4>一个独立的 Deep Agent——读取最近对话、提取事实、合并到记忆</h4>
+                <pre><code class="language-javascript">// src/consolidation-agent.ts
+import { createDeepAgent } from "deepagents";
+import { Client } from "@langchain/langgraph-sdk";
+import { tool } from "@langchain/core/tools";
+
+const sdkClient = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
+
+const searchRecentConversations = tool(
+  async ({ query }, runtime) => {
+    const userId = runtime.serverInfo.user.identity;
+    // 回溯 6 小时内的对话，与 Cron 间隔匹配
+    const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+    const threads = await sdkClient.threads.search({
+      metadata: { userId },       // 按用户筛选
+      updatedAfter: since,         // 只查找最近 6 小时内更新的线程
+      limit: 20,                   // 最多获取 20 条
+    });
+    // 遍历每个线程，获取完整对话历史
+    const conversations = [];
+    for (const thread of threads) {
+      const history = await sdkClient.threads.getHistory(thread.threadId);
+      conversations.push(history.values.messages);
+    }
+    return JSON.stringify(conversations);
+  },
+  {
+    name: "search_recent_conversations",
+    description: "Search this user's conversations updated in the last 6 hours.",
+  }
+);
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  systemPrompt: `Review recent conversations and update the user's memory file.
+Merge new facts, remove outdated information, and keep it concise.`,
+  tools: [searchRecentConversations],
+});
+
+export { agent };</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>langgraph.json 配置</h4>
+                        <pre><code class="language-json">{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./src/agent.ts:agent",
+    "consolidation_agent":
+      "./src/consolidation-agent.ts:agent"
+  },
+  "env": ".env"
+}</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Cron 定时触发</h4>
+                        <pre><code class="language-javascript">import { Client } from "@langchain/langgraph-sdk";
+
+const client = new Client({
+  apiUrl: "<DEPLOYMENT_URL>"
+});
+
+const cronJob = await client.crons.create(
+  "consolidation_agent",
+  {
+    schedule: "0 */6 * * *",  // 每 6 小时
+    input: { messages: [{
+      role: "user",
+      content: "Consolidate recent memories."
+    }] },
+  },
+);</code></pre>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>时区注意：</strong>所有 Cron 计划都以 <strong>UTC</strong> 时区解释。请在设置定时任务时注意时区换算。有关管理和删除 Cron Job 的详细信息，请参阅 LangSmith Cron Jobs 文档。
+                </div>
+                <div class="warning">
+                    <strong>同步窗口：</strong>Cron 间隔必须与整合 Agent 的回溯窗口匹配。上面每 6 小时运行一次（<code>0 */6 * * *</code>），Agent 回溯 <code>6 * 60 * 60 * 1000</code>（6 小时）。如果 Cron 运行频率高于回溯窗口，会重复处理；低于则遗漏记忆。
+                </div>
+                <div class="info-block">
+                    <strong>深入阅读：</strong>关于部署带有后台进程的 Agent 的更多信息，请参阅<strong>上线生产环境</strong>章节。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Concurrency + Multi-agent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>并发与隔离</h2>
+                <h4>多线程写入和多 Agent 共存的注意事项</h4>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>并发写入</h4>
+                        <p>多个线程可以并行写入记忆，但对<strong>同一文件</strong>的并发写入可能导致"最后写入胜出"冲突。</p>
+                        <ul>
+                            <li>用户级记忆冲突率低（用户通常一次一个对话）</li>
+                            <li>Agent/组织级记忆可用后台整合序列化写入</li>
+                            <li>按主题拆分为独立文件可减少争用</li>
+                            <li>LLM 通常能从写入失败中恢复</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>多 Agent 隔离</h4>
+                        <p>共享部署中为每个 Agent 提供独立记忆，在命名空间中添加 <code>assistant_id</code>：</p>
+                        <pre><code class="language-javascript">new StoreBackend({
+  // 多维度命名空间：先按 Agent 再按用户隔离
+  // 避免不同 Agent 的记忆互相污染
+  namespace: (rt) => [
+    rt.serverInfo.assistantId,
+    rt.serverInfo.user.identity,
+  ],
+})</code></pre>
+                        <p>如果只需按 Agent 隔离，单独使用 <code>assistant_id</code> 即可。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>审计手段：</strong>使用 LangSmith Tracing 来审计 Agent 写入记忆的内容。每次文件写入都会在 Trace 中显示为一个工具调用——你可以追踪 Agent 到底改了什么。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Exercise ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>设计一个带记忆的技术支持 Agent——综合运用作用域、情景记忆和后台整合</h4>
+                <p>现在轮到你了。停下来，思考如何用 Deep Agents 构建一个<strong>带持久化记忆的技术支持 Agent</strong>。需求如下：</p>
+                <pre><code class="language-javascript">智能体应该：
+1. 记住每个用户的偏好（语言、回答风格、常见问题）
+2. 搜索过去的对话历史来回答重复问题
+3. 从每次对话中学习新的解决方案
+4. 每个用户的记忆完全隔离
+5. 组织级的合规策略不可被 Agent 修改
+6. 每 4 小时自动整合最近的对话</code></pre>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>任务 1：设计作用域</h3>
+                        <ul>
+                            <li>哪些记忆用用户级别？哪些用组织级别？</li>
+                            <li>命名空间应该怎么设置？</li>
+                            <li>哪些记忆需要设为只读？</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 2：配置后端</h3>
+                        <ul>
+                            <li>需要几个 StoreBackend？各自用什么命名空间？</li>
+                            <li>CompositeBackend 的路径映射怎么设计？</li>
+                            <li>初始记忆文件包含什么内容？</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 3：设计整合</h3>
+                        <ul>
+                            <li>整合 Agent 的回溯窗口设多久？</li>
+                            <li>Cron 的执行频率怎么匹配？</li>
+                            <li>整合 Agent 的系统提示词应该怎么写？</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>先画出作用域图——哪些文件归谁管、谁能读、谁能写。然后对照需求逐一验证：用户隔离做到了吗？组织策略安全吗？整合频率合理吗？
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Reference answer ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <h4>一种可行的设计方案——三级作用域 + 后台整合</h4>
+                <pre><code class="language-javascript">import { v4 as uuidv4 } from "uuid";
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend, createFileData } from "deepagents";
+import { InMemoryStore } from "@langchain/langgraph";
+
+const store = new InMemoryStore();
+
+// 初始化组织级只读策略（由应用代码写入，Agent 不可修改）
+await store.put(
+  ["my-org"],                                   // 组织级命名空间
+  "/policies/compliance.md",                     // 文件路径
+  createFileData(`## Support Policies
+- Never share user data between accounts
+- Always include SLA timelines in responses
+- Escalate billing issues to human agents
+`),
+);
+
+const agent = createDeepAgent({
+  memory: [
+    "/memories/preferences.md",   // 用户级：按用户隔离，可读写
+    "/policies/compliance.md",    // 组织级：只读策略，需配合权限配置
+  ],
+  backend: new CompositeBackend(
+    new StateBackend(),
+    {
+      // 用户偏好：按用户身份隔离
+      "/memories/": new StoreBackend({
+        namespace: (rt) => [rt.serverInfo.user.identity],
+      }),
+      // 组织策略：按组织 ID 共享
+      "/policies/": new StoreBackend({
+        namespace: (rt) => [rt.context.orgId],
+      }),
+    },
+  ),
+  store,
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>作用域设计</h4>
+                        <table>
+                            <thead><tr><th>路径</th><th>作用域</th><th>权限</th><th>内容</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>/memories/</code></td><td>用户级</td><td>读写</td><td>偏好、历史学习</td></tr>
+                                <tr><td><code>/policies/</code></td><td>组织级</td><td>只读</td><td>合规策略</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="after">
+                        <h4>整合 Agent 配置</h4>
+                        <pre><code class="language-javascript">// Cron：每 4 小时运行
+await client.crons.create(
+  "consolidation_agent",
+  {
+    schedule: "0 */4 * * *",
+    input: { messages: [{
+      role: "user",
+      content: "Consolidate."
+    }] },
+  },
+);
+
+// 回溯窗口：4 小时（与 Cron 匹配）
+const since = new Date(
+  Date.now() - 4 * 60 * 60 * 1000
+);</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>设计要点：</strong>用户偏好用用户级命名空间隔离；组织策略用组织级命名空间共享，且设为只读防止注入；整合 Agent 的回溯窗口与 Cron 频率严格匹配。三者各司其职，互不干扰。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了 Deep Agents 记忆系统的完整用法</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>记忆的本质是<strong>Agent 可读写的文件</strong>，通过后端控制存储</li>
+                            <li>短期记忆（单次对话）vs 长期记忆（跨对话持久化）</li>
+                            <li>三种记忆类型：<strong>情景、程序性、语义</strong></li>
+                            <li>三种作用域：<strong>Agent 级别、用户级别、组织级别</strong></li>
+                            <li>通过<strong>命名空间</strong>控制记忆的可见范围</li>
+                            <li><strong>后台整合</strong>让 Agent 在空闲时回顾对话、提取事实</li>
+                            <li>共享记忆务必设为<strong>只读</strong>，防止提示注入</li>
+                            <li>Cron 间隔必须与整合 Agent 的<strong>回溯窗口匹配</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>技能（Skills）</strong> — 可复用的程序性记忆模块</li>
+                            <li><strong>沙箱</strong> — 隔离执行代码的安全环境</li>
+                            <li><strong>解释器</strong> — 在内存中运行 JavaScript</li>
+                            <li><strong>上线生产</strong> — 部署、监控、扩展最佳实践</li>
+                            <li><strong>前端集成</strong> — 在 Web 应用中使用 Deep Agents</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>记忆让 Agent 从"无状态的计算器"变成"有经验的伙伴"。Deep Agents 的记忆设计不是黑盒，而是基于文件系统的、可审查的、可管理的。你控制存储位置、可见范围和写入权限——Agent 只负责读写。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 18: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./15-skills.html">下一章：技能（Skills）</a> — 程序性记忆的深入用法</li>
+                            <li><a href="./13-permissions.html">权限系统</a> — 只读控制的声明式配置</li>
+                            <li><a href="./09-backends.html">后端详解</a> — StoreBackend 的完整参数</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://www.npmjs.com/package/deepagents">deepagents npm 包</a> — 安装和 API 参考</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">GitHub 仓库</a> — 源码和示例</li>
+                            <li><a href="https://smith.langchain.com/">LangSmith</a> — 追踪记忆写入的审计平台</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关概念</h4>
+                        <ul>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph 持久化</a> — Checkpoint 和 Store 机制</li>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph Cron Jobs</a> — 定时任务配置</li>
+                            <li>上下文工程 — 短期记忆的详细管理策略</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

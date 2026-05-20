@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>权限控制</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 13 章</div>
+            <h1>权限控制</h1>
+            <p>用声明式规则精确控制 Agent 的文件系统访问范围</p>
+            <strong>从"全权委托"到"最小权限"的安全实践</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你敢让 Agent 直接操作整个文件系统吗？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>无权限控制的危险</h4>
+                        <ul>
+                            <li>Agent 可以<strong>随意读取</strong> .env、密钥等敏感文件</li>
+                            <li>一次幻觉就可能<strong>覆盖重要配置</strong>或源代码</li>
+                            <li>子 Agent 继承父 Agent 的全部权限，<strong>权限只增不减</strong></li>
+                            <li>出事后只能事后排查日志，<strong>无法预防</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>声明式权限的好处</h4>
+                        <ul>
+                            <li>用几行配置<strong>精确限定</strong> Agent 可读写的路径</li>
+                            <li>规则按声明顺序评估，<strong>第一条匹配即生效</strong></li>
+                            <li>子 Agent 可以设定<strong>独立权限</strong>，最小化暴露面</li>
+                            <li>与后端策略钩子配合，实现<strong>审计日志</strong>和内容检查</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>Agent 的内置文件系统工具默认拥有完全访问权。当你的 Agent 接触生产环境或敏感数据时，权限控制就是最后一道防线。Deep Agents 提供的声明式权限系统让你用最少的配置获得最大的安全保障。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Prerequisites ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>前置知识</h4>
+                        <ul>
+                            <li>了解 Deep Agents 的基本架构（已完成第 1-9 章）</li>
+                            <li>熟悉 <code>createDeepAgent</code> 的基本用法</li>
+                            <li>了解内置文件系统工具：<code>ls</code>、<code>read_file</code>、<code>write_file</code> 等</li>
+                            <li>了解 Glob 模式的基础语法（<code>**</code>、<code>*</code>）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该能</h4>
+                        <ul>
+                            <li>用 <code>FilesystemPermission</code> 规则限制文件访问</li>
+                            <li>理解"首次匹配生效"的评估机制</li>
+                            <li>为子 Agent 设置独立的权限策略</li>
+                            <li>在 CompositeBackend 中正确使用权限</li>
+                            <li>知道何时用权限、何时用后端策略钩子</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>适用范围</h4>
+                        <ul>
+                            <li>权限<strong>仅适用于</strong>内置文件系统工具</li>
+                            <li>自定义工具和 MCP 工具不受权限控制</li>
+                            <li>沙箱后端的 <code>execute</code> 工具不受限制</li>
+                            <li>需要 <code>deepagents>=1.9.1</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>重要提醒：</strong>权限只控制内置文件系统工具（<code>ls</code>、<code>read_file</code>、<code>glob</code>、<code>grep</code>、<code>write_file</code>、<code>edit_file</code>）。如果你需要控制自定义工具或做内容检查，请使用后端策略钩子。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Basic usage ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>基本用法</h2>
+                <h4>用几行代码禁止 Agent 写入任何文件</h4>
+                <p>将 <code>FilesystemPermission</code> 规则列表传递给 <code>createDeepAgent</code> 的 <code>permissions</code> 参数。规则按声明顺序评估，第一条匹配的规则生效。如果没有任何规则匹配，操作被<strong>允许</strong>。</p>
+                <pre><code class="language-javascript">const agent = createDeepAgent({
+  model,
+  backend,
+  permissions: [
+    {
+      operations: ["write"],    // 只限制写操作（read 不受影响）
+      paths: ["/**"],           // /** 匹配所有路径
+      mode: "deny",             // 拒绝该操作
+    },
+  ],
+});
+// Agent 现在只能读取文件，不能写入或修改任何文件</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>宽松默认值</h4>
+                        <p>不传 <code>permissions</code> 参数时，Agent 的所有文件系统操作默认<strong>全部允许</strong>。这适合快速原型开发。</p>
+                    </div>
+                    <div class="after">
+                        <h4>显式声明</h4>
+                        <p>一旦传入权限规则，只有匹配 <code>mode: "allow"</code> 的操作才被允许。建议在生产环境中<strong>始终显式声明权限</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心思路：</strong>默认是"全部允许"，加上规则后才有限制。设计规则时，建议先写一条"全部拒绝"兜底，再在上面叠加具体的允许规则——这就是白名单策略。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Rule structure ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>规则结构</h2>
+                <h4>每条 FilesystemPermission 包含三个字段</h4>
+                <table>
+                    <thead>
+                        <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>operations</code></td>
+                            <td><code>("read" | "write")[]</code></td>
+                            <td><code>"read"</code> 涵盖 <code>ls</code>、<code>read_file</code>、<code>glob</code>、<code>grep</code>；<code>"write"</code> 涵盖 <code>write_file</code>、<code>edit_file</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>paths</code></td>
+                            <td><code>string[]</code></td>
+                            <td>Glob 模式匹配文件路径。支持 <code>**</code> 递归匹配和 <code>{a,b}</code> 交替匹配</td>
+                        </tr>
+                        <tr>
+                            <td><code>mode</code></td>
+                            <td><code>"allow" | "deny"</code></td>
+                            <td>匹配时是允许还是拒绝。默认为 <code>"allow"</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>operations 详解</h4>
+                        <table>
+                            <thead><tr><th>操作值</th><th>覆盖的工具</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>"read"</code></td><td><code>ls</code>、<code>read_file</code>、<code>glob</code>、<code>grep</code></td></tr>
+                                <tr><td><code>"write"</code></td><td><code>write_file</code>、<code>edit_file</code></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>paths 规则</h4>
+                        <ul>
+                            <li>必须是<strong>绝对路径</strong>（以 <code>/</code> 开头）</li>
+                            <li>不能包含 <code>..</code> 或 <code>~</code></li>
+                            <li>无效路径会在构建时抛出错误</li>
+                            <li>示例：<code>["/workspace/**"]</code>、<code>["/workspace/.env"]</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>常见错误：</strong>路径必须是绝对路径。写 <code>paths: ["src/**"]</code> 会直接报错，正确写法是 <code>paths: ["/workspace/src/**"]</code>。另外 <code>..</code> 和 <code>~</code> 也不支持——用明确的绝对路径代替。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Example - isolate workspace ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>隔离工作区</h2>
+                <h4>只允许 Agent 在指定目录下读写</h4>
+                <p>最常见的场景：把 Agent 限制在一个工作区目录内，拒绝所有外部访问。这是"白名单 + 兜底拒绝"的经典模式。</p>
+                <pre><code class="language-javascript">const agent = createDeepAgent({
+  model,
+  backend,
+  permissions: [
+    // 第 1 条：允许在 /workspace/ 目录下读写（具体允许在前）
+    {
+      operations: ["read", "write"],
+      paths: ["/workspace/**"],      // ** 匹配任意层级的子目录
+      mode: "allow",
+    },
+    // 第 2 条：拒绝所有其他路径的读写（兜底规则）
+    {
+      operations: ["read", "write"],
+      paths: ["/**"],              // 捕获所有未被前面规则匹配的路径
+      mode: "deny",
+    },
+  ],
+});</code></pre>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/13-permissions-1.png" alt="图：规则匹配流程——请求如何被评估" class="ai-diagram-img">
+                <div class="key-point">
+                    <strong>规则顺序很关键：</strong>第一条匹配的规则决定结果。所以"具体的允许规则"必须写在"宽泛的拒绝规则"前面。如果把顺序反过来，<code>/workspace/**</code> 的拒绝会先匹配到，允许规则永远不会生效。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Example - protect files ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>保护敏感文件</h2>
+                <h4>拒绝访问特定文件，允许其余工作区操作</h4>
+                <p>实际开发中，工作区里总有几个敏感文件：<code>.env</code>、密钥目录、示例数据等。你需要允许 Agent 读写工作区，但<strong>排除</strong>这些危险路径。</p>
+                <pre><code class="language-javascript">const agent = createDeepAgent({
+  model,
+  backend,
+  permissions: [
+    // 第 1 条：拒绝访问 .env 和 examples 目录（具体拒绝在前）
+    {
+      operations: ["read", "write"],
+      paths: ["/workspace/.env", "/workspace/examples/**"],  // 精确匹配敏感路径
+      mode: "deny",
+    },
+    // 第 2 条：允许工作区其余部分的读写
+    {
+      operations: ["read", "write"],
+      paths: ["/workspace/**"],
+      mode: "allow",
+    },
+    // 第 3 条：拒绝所有工作区以外的访问
+    {
+      operations: ["read", "write"],
+      paths: ["/**"],
+      mode: "deny",
+    },
+  ],
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>错误顺序</h4>
+                        <pre><code class="language-javascript">// 先允许 /workspace/**
+// 再拒绝 /workspace/.env
+// → .env 的拒绝永远不会被评估
+// 因为 /workspace/** 先匹配了！</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>正确顺序</h4>
+                        <pre><code class="language-javascript">// 先拒绝 /workspace/.env
+// 再允许 /workspace/**
+// → .env 被拒绝，其余被允许</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>调试技巧：</strong>如果发现权限规则没有按预期生效，首先检查规则顺序。在代码中把规则当作一个 for 循环来理解——从上到下，第一个匹配就 break。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Rule order deep dive ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>规则顺序对比</h2>
+                <h4>顺序决定一切——用一个完整的正反例来说明</h4>
+                <pre><code class="language-javascript">// ✅ 正确：具体规则在前，宽泛规则在后
+const correctPermissions: FilesystemPermission[] = [
+  // 先拒绝敏感文件
+  { operations: ["read", "write"], paths: ["/workspace/.env"], mode: "deny" },
+  // 再允许工作区
+  { operations: ["read", "write"], paths: ["/workspace/**"], mode: "allow" },
+  // 最后兜底拒绝
+  { operations: ["read", "write"], paths: ["/**"], mode: "deny" },
+];
+
+// ❌ 错误：宽泛规则在前，具体规则被"遮蔽"
+const incorrectPermissions: FilesystemPermission[] = [
+  // 先允许工作区——.env 也被匹配了！
+  { operations: ["read", "write"], paths: ["/workspace/**"], mode: "allow" },
+  // 这条拒绝永远不会对 .env 生效
+  { operations: ["read", "write"], paths: ["/workspace/.env"], mode: "deny" },
+  // 兜底拒绝
+  { operations: ["read", "write"], paths: ["/**"], mode: "deny" },
+];</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>请求路径</th><th>正确顺序结果</th><th>错误顺序结果</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>/workspace/.env</code></td><td><strong style="color:red">deny</strong></td><td><strong style="color:green">allow</strong>（危险！）</td></tr>
+                        <tr><td><code>/workspace/src/index.ts</code></td><td><strong style="color:green">allow</strong></td><td><strong style="color:green">allow</strong></td></tr>
+                        <tr><td><code>/etc/passwd</code></td><td><strong style="color:red">deny</strong></td><td><strong style="color:red">deny</strong></td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>黄金法则：</strong>从最具体的规则开始，逐渐过渡到最宽泛的规则。就像防火墙规则一样——先写精确的拒绝，再写宽泛的允许，最后用一条"全部拒绝"兜底。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Read-only memory ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>只读记忆</h2>
+                <h4>让 Agent 读取记忆但不能修改——组织级策略的典型场景</h4>
+                <p>想象一下：公司维护了一个共享知识库，所有 Agent 可以查阅，但<strong>只允许应用代码更新</strong>。用权限规则轻松实现：</p>
+                <pre><code class="language-javascript">const store = new InMemoryStore();
+const agent = createDeepAgent({
+  model,
+  backend: new CompositeBackend(new StateBackend(), {
+    "/memories/": new StoreBackend({
+      namespace: (rt) => [rt.serverInfo.user.identity],
+    }),
+    "/policies/": new StoreBackend({
+      namespace: (rt) => [rt.context.orgId],
+    }),
+  }),
+  permissions: [
+    // 禁止写入记忆和策略目录
+    {
+      operations: ["write"],
+      paths: ["/memories/**", "/policies/**"],
+      mode: "deny",
+    },
+  ],
+  store,
+});
+// Agent 可以读取 /memories/ 和 /policies/ 下的内容
+// 但不能修改它们</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>组织范围的知识库——全员可读，仅管理员可写</li>
+                            <li>共享的策略文件——Agent 可以参考但不能篡改</li>
+                            <li>只读的参考文档——防止 Agent 意外覆盖</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>为什么不直接用 mode: "allow"?</h4>
+                        <ul>
+                            <li>默认就是全部允许，所以只需要<strong>显式拒绝写入</strong></li>
+                            <li>读取操作不受影响，保持默认允许</li>
+                            <li>简单、明确、不容易出错</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Deny all ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>完全禁止访问</h2>
+                <h4>阻止所有读写——最严格的基线配置</h4>
+                <p>某些场景下你需要一个"什么都做不了"的 Agent 作为起点，然后根据需要逐步放开权限。</p>
+                <pre><code class="language-javascript">const agent = createDeepAgent({
+  model,
+  backend,
+  permissions: [
+    {
+      operations: ["read", "write"],  // 同时限制读和写
+      paths: ["/**"],          // /** 匹配所有路径
+      mode: "deny",            // 拒绝所有读写操作
+    },
+  ],
+});
+// Agent 的文件系统工具完全不可用
+// 可以在此基础上叠加 allow 规则逐步放开</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>什么时候用</h4>
+                        <ul>
+                            <li>审计 Agent：只需要审查代码，不需要读写文件</li>
+                            <li>分析 Agent：只需要接收输入参数，不需要文件系统</li>
+                            <li>作为子 Agent 的<strong>安全基线</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>如何逐步放开</h4>
+                        <pre><code class="language-javascript">permissions: [
+  // 在 deny all 之前
+  // 插入具体的 allow 规则
+  {
+    operations: ["read"],
+    paths: ["/workspace/**"],
+    mode: "allow",
+  },
+  // 兜底拒绝
+  {
+    operations: ["read", "write"],
+    paths: ["/**"],
+    mode: "deny",
+  },
+]</code></pre>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>设计思路：</strong>安全领域有个原则叫"默认拒绝"（deny by default）。先拒绝一切，再按需允许——比"默认允许，发现问题再补拒绝"要安全得多。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: SubAgent permissions ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子 Agent 权限</h2>
+                <h4>子 Agent 默认继承父 Agent 权限，但可以完全替换</h4>
+                <p>子 Agent 的权限机制有三个要点：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>默认继承</h4>
+                        <p>如果不设置 <code>permissions</code>，子 Agent <strong>完全继承</strong>父 Agent 的权限规则。</p>
+                    </div>
+                    <div class="card">
+                        <h4>完全替换</h4>
+                        <p>在子 Agent 规范中设置 <code>permissions</code>，会<strong>完全替换</strong>（不是合并）父级规则。</p>
+                    </div>
+                    <div class="card">
+                        <h4>空数组 = 无限制</h4>
+                        <p>设置 <code>permissions: []</code> 表示<strong>无任何限制</strong>。省略则继承父级。</p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">const agent = createDeepAgent({
+  model,
+  backend,
+  permissions: [
+    { operations: ["read", "write"], paths: ["/workspace/**"], mode: "allow" },
+    { operations: ["read", "write"], paths: ["/**"], mode: "deny" },
+  ],
+  subagents: [
+    {
+      name: "auditor",
+      description: "只读代码审查员",
+      systemPrompt: "Review the code for issues.",
+      // 完全替换父级权限——只允许读取工作区
+      permissions: [
+        { operations: ["write"], paths: ["/**"], mode: "deny" },
+        { operations: ["read"], paths: ["/workspace/**"], mode: "allow" },
+        { operations: ["read"], paths: ["/**"], mode: "deny" },
+      ],
+    },
+  ],
+});</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>子 Agent 的 <code>permissions</code> 是替换而非合并。如果你想让子 Agent 比父 Agent 权限更严格，需要在子 Agent 的规则中完整声明所有约束。没有"在父级基础上追加"的机制。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Composite backend ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>组合后端权限</h2>
+                <h4>使用 CompositeBackend 时，权限路径必须限定在路由前缀内</h4>
+                <p>CompositeBackend 把不同的路径路由到不同的后端。权限路径必须限定在已注册的路由前缀之下，否则会在构建时抛出错误。</p>
+                <pre><code class="language-javascript">const sandbox = new StateBackend();
+const memoriesBackend = new StateBackend();
+const composite = new CompositeBackend(sandbox, {
+  "/memories/": memoriesBackend,  // 只注册了 /memories/ 路由
+});
+
+// ✅ 正确：路径限定在路由前缀内
+const agent = createDeepAgent({
+  model,
+  backend: composite,
+  permissions: [
+    { operations: ["write"], paths: ["/memories/**"], mode: "deny" },
+  ],
+});
+
+// ❌ 错误：/workspace/ 不在路由范围内
+createDeepAgent({
+  model,
+  backend: composite,
+  permissions: [
+    { operations: ["write"], paths: ["/workspace/**"], mode: "deny" },
+  ],
+  // → 构建时报错！
+});
+
+// ❌ 错误：/** 匹配所有路径，包含超出路由范围的路径
+createDeepAgent({
+  model,
+  backend: composite,
+  permissions: [{ operations: ["read"], paths: ["/**"], mode: "deny" }],
+  // → 构建时报错！
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>为什么会报错？</h4>
+                        <p>沙箱后端通过 <code>execute</code> 工具支持任意命令执行。仅靠路径限制无法防止通过 Shell 命令绕过权限。将权限限定在特定路由后端上可以避免此冲突。</p>
+                    </div>
+                    <div class="after">
+                        <h4>解决方法</h4>
+                        <p>确保权限路径对应的目录已被注册为路由。如果需要控制 <code>/workspace/</code>，先把它注册为路由前缀，再设置权限。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>安全设计原则：</strong>CompositeBackend 的权限限定是一种深度防御措施。它确保每条权限规则都有一个对应的后端来执行，防止出现"规则声明了但没有后端去执行"的安全空洞。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Permissions vs Policy Hooks ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>权限与策略钩子</h2>
+                <h4>知道何时用权限规则、何时用后端策略钩子</h4>
+                <table>
+                    <thead>
+                        <tr><th>维度</th><th>permissions 权限规则</th><th>后端策略钩子</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>控制范围</strong></td>
+                            <td>仅内置文件系统工具</td>
+                            <td>所有工具（含自定义和 MCP 工具）</td>
+                        </tr>
+                        <tr>
+                            <td><strong>控制维度</strong></td>
+                            <td>基于路径的允许/拒绝</td>
+                            <td>自定义验证逻辑</td>
+                        </tr>
+                        <tr>
+                            <td><strong>典型用途</strong></td>
+                            <td>限制文件读写范围</td>
+                            <td>速率限制、审计日志、内容检查</td>
+                        </tr>
+                        <tr>
+                            <td><strong>配置方式</strong></td>
+                            <td>声明式 JSON 配置</td>
+                            <td>编程式钩子函数</td>
+                        </tr>
+                        <tr>
+                            <td><strong>灵活性</strong></td>
+                            <td>中等——路径匹配</td>
+                            <td>高——任意代码逻辑</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>用 permissions 的场景</h4>
+                        <ul>
+                            <li>"Agent 只能在 <code>/workspace/</code> 下操作"</li>
+                            <li>"禁止修改 <code>.env</code> 文件"</li>
+                            <li>"子 Agent 只能读不能写"</li>
+                            <li>"隔离工作区，拒绝外部访问"</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>用策略钩子的场景</h4>
+                        <ul>
+                            <li>"每次写入操作记录审计日志"</li>
+                            <li>"每分钟最多执行 10 次文件操作"</li>
+                            <li>"检查写入内容是否包含密钥"</li>
+                            <li>"控制自定义工具的访问权限"</li>
+                        </ul>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/13-permissions-1.png" alt="图：深度防御分层架构" class="ai-diagram-img">
+                <div class="info-block">
+                    <strong>最佳实践：</strong>两者可以同时使用。权限规则负责粗粒度的路径控制，策略钩子负责细粒度的逻辑验证。先设权限做"第一道门"，再用钩子做"第二道检查"。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Quick reference ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>速查清单</h2>
+                <h4>5 个常用权限模式——直接复制使用</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>1. 只读模式</h4>
+                        <pre><code class="language-javascript">permissions: [
+  { operations: ["write"],
+    paths: ["/**"], mode: "deny" },
+]</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>2. 隔离工作区</h4>
+                        <pre><code class="language-javascript">permissions: [
+  { operations: ["read", "write"],
+    paths: ["/workspace/**"],
+    mode: "allow" },
+  { operations: ["read", "write"],
+    paths: ["/**"], mode: "deny" },
+]</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>3. 保护敏感文件</h4>
+                        <pre><code class="language-javascript">permissions: [
+  { operations: ["read", "write"],
+    paths: ["/workspace/.env"],
+    mode: "deny" },
+  { operations: ["read", "write"],
+    paths: ["/workspace/**"],
+    mode: "allow" },
+  { operations: ["read", "write"],
+    paths: ["/**"], mode: "deny" },
+]</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>4. 只读记忆</h4>
+                        <pre><code class="language-javascript">permissions: [
+  { operations: ["write"],
+    paths: ["/memories/**"],
+    mode: "deny" },
+]</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>记住顺序：</strong>具体拒绝 → 宽泛允许 → 全部拒绝。只要记住这个顺序，权限规则就不会出问题。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>权限控制是 Agent 安全的最后一道防线</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>用 <code>FilesystemPermission</code> 声明式控制文件访问</li>
+                            <li>规则按声明顺序评估，<strong>首次匹配即生效</strong></li>
+                            <li>默认策略是"全部允许"，需显式添加限制</li>
+                            <li>子 Agent 的 <code>permissions</code> 是<strong>替换而非合并</strong></li>
+                            <li>CompositeBackend 中路径必须限定在路由前缀内</li>
+                            <li>权限控制路径，策略钩子控制逻辑</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>设计原则</h4>
+                        <ul>
+                            <li><strong>默认拒绝</strong>：先 deny all，再按需 allow</li>
+                            <li><strong>具体在前</strong>：敏感路径的拒绝规则放在宽泛允许之前</li>
+                            <li><strong>最小权限</strong>：只给 Agent 完成任务所需的最少权限</li>
+                            <li><strong>深度防御</strong>：权限 + 策略钩子配合使用</li>
+                            <li><strong>生产必用</strong>：任何接触敏感数据的场景都应配置权限</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>权限控制不是可选的加分项，而是生产环境中 Agent 安全的底线。花 5 分钟配置权限规则，可以避免日后数小时的安全事故排查。从今天起，养成"创建 Agent 时第一件事就设权限"的习惯。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./14-memory.html">下一章：记忆管理</a> -- 短期记忆 + 长期记忆 + 语义搜索</li>
+                            <li><a href="./10-subagents.html">子 Agent</a> -- 理解子 Agent 如何继承和替换权限</li>
+                            <li><a href="./09-backends.html">后端系统</a> -- 后端策略钩子的完整用法</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/deepagents/permissions">Deep Agents 权限文档</a> -- 完整 API 参考</li>
+                            <li><a href="https://smith.langchain.com/">LangSmith</a> -- 可视化追踪和调试</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">GitHub 仓库</a> -- 源码和示例</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关概念</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/deepagents/sandboxes">沙箱后端</a> -- execute 工具不受权限控制的原因</li>
+                            <li><a href="https://docs.langchain.com/deepagents/backends">后端策略钩子</a> -- 超越路径匹配的高级控制</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

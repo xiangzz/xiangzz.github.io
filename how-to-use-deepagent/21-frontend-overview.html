@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端概览</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 21 章</div>
+            <h1>前端概览</h1>
+            <p>构建能够实时展示子 Agent 流、任务进度和沙箱的 UI</p>
+            <strong>从"纯后端 Agent"到"可视化交互体验"的关键一步</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你有没有试过在前端展示 Deep Agent 的工作过程？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>裸用 Agent API 的困境</h4>
+                        <ul>
+                            <li>用户只能看到最终结果，<strong>中间过程全黑盒</strong></li>
+                            <li>多个子 Agent 同时运行时，<strong>不知道谁在干什么</strong></li>
+                            <li>任务规划散落在对话历史中，<strong>没有结构化的进度展示</strong></li>
+                            <li>代码执行结果只返回文本，<strong>无法呈现文件变更和差异</strong></li>
+                            <li>流式输出全靠手写 SSE 解析，<strong>没有统一的连接管理</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agent 前端的解法</h4>
+                        <ul>
+                            <li><code>useStream</code> 统一管理流式连接，<strong>消息实时到达</strong></li>
+                            <li><code>stream.subagents</code> 追踪每个子 Agent 状态，<strong>进度一目了然</strong></li>
+                            <li><code>stream.values.todos</code> 同步待办列表，<strong>任务规划可视化</strong></li>
+                            <li>沙箱模式提供文件浏览器 + 代码查看器 + diff 面板</li>
+                            <li>基于 LangGraph 运行时，<strong>API 完全一致</strong>，学习成本为零</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>当你的 Agent 从"回答问题"进化到"完成项目"——规划、搜索、编码、测试——用户需要的不只是最终结果，而是实时了解 Agent 在做什么、做到了哪一步、遇到了什么。前端模式就是解决"可见性"和"交互性"的方案。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Doc Index ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文档索引</h2>
+                <h4>获取完整的文档索引，发现所有可用页面</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>文档索引地址</h4>
+                        <p><a href="https://docs.langchain.com/llms.txt" target="_blank" rel="noopener noreferrer">https://docs.langchain.com/llms.txt</a></p>
+                        <p>在进一步探索之前，使用此文件发现所有可用页面。</p>
+                    </div>
+                    <div class="card">
+                        <h4>使用方式</h4>
+                        <p>将文档索引通过 MCP 连接到 Claude、VSCode 等工具，获取实时解答。</p>
+                        <p>索引文件包含了所有可用文档页面的完整列表，是探索 API 的起点。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>建议：</strong>开始开发前先查阅文档索引，了解所有可用的 API 和工具，避免重复造轮子。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Architecture ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>协调者-工作者</h2>
+                <h4>Deep Agent 采用 coordinator-worker 架构——主 Agent 规划，子 Agent 执行</h4>
+                <p>说白了，协调者负责<strong>拆任务</strong>，工作者负责<strong>干活</strong>。在前端，<code>useStream</code> 同时展示协调者的消息和每个子 Agent 的流式状态。</p>
+                <div class="flow-description">
+                    <h4>数据流说明</h4>
+                    <ul>
+                        <li><strong>stream</strong>：后端 <code>createDeepAgent()</code> 将流式事件推送给前端 <code>useStream()</code>，包含协调者消息和子 Agent 状态</li>
+                        <li><strong>submit</strong>：前端 <code>useStream()</code> 将用户输入提交给后端 <code>createDeepAgent()</code>，触发新一轮任务规划</li>
+                        <li><strong>delegate</strong>：后端协调者将任务委派给子 Agent A 和 B，两者在隔离环境中并行执行</li>
+                        <li><strong>result</strong>：子 Agent A 和 B 将执行结果返回给协调者，由协调者汇总后流式推送给前端</li>
+                    </ul>
+                </div>
+                <div class="card-grid" style="margin-top: 15px;">
+                    <div class="card" style="background: #E5F4FF; border-top: 3px solid #006DDD;">
+                        <h4>前端（useStream）</h4>
+                        <p>蓝色节点 — 负责渲染消息、子 Agent 状态、待办列表和沙箱内容。</p>
+                        <p><span class="tag" style="background: #006DDD; color: white;">接收 stream 事件</span></p>
+                    </div>
+                    <div class="card" style="background: #F6FFDB; border-top: 3px solid #6E8900;">
+                        <h4>后端（createDeepAgent）</h4>
+                        <p>绿色节点 — 协调者，负责任务规划、委派子 Agent、汇总结果。</p>
+                        <p><span class="tag" style="background: #6E8900; color: white;">核心调度引擎</span></p>
+                    </div>
+                    <div class="card" style="background: #EBD0F0; border-top: 3px solid #885270;">
+                        <h4>子 Agent（Subagent）</h4>
+                        <p>紫色节点 — 工作者，在隔离环境中执行具体任务，返回结果。</p>
+                        <p><span class="tag" style="background: #885270; color: white;">隔离执行单元</span></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>关键认知：</strong>前端只跟 <code>useStream</code> 打交道。不管是协调者消息还是子 Agent 状态，都通过 <code>useStream</code> 的扩展属性获取。你不需要额外建立 WebSocket 连接。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/21-frontend-overview-1.png" alt="图：coordinator-worker 数据流架构" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: createDeepAgent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建 Deep Agent</h2>
+                <h4>后端只需一行 createDeepAgent，即可启用子 Agent 机制</h4>
+                <p>创建方式与普通 Agent 类似，但多了一个 <code>subagents</code> 配置项，用于声明可用的子 Agent 类型。</p>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+const agent = createDeepAgent({
+  tools: [getWeather],          // 主 Agent 可用的工具列表
+  system: "You are a helpful assistant",  // 主 Agent 的系统指令
+  subagents: [
+    {
+      name: "researcher",       // 子 Agent 类型名称
+      description: "Research assistant",  // 描述什么任务应该委派给它
+    },
+  ],
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>createAgent（普通）</h4>
+                        <ul>
+                            <li>单一 Agent，自己完成所有工作</li>
+                            <li>上下文会随任务增长越来越大</li>
+                            <li>适合简单的一问一答场景</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>createDeepAgent（深度）</h4>
+                        <ul>
+                            <li>协调者 + 多个子 Agent 协作</li>
+                            <li>每个子 Agent 上下文隔离，不会互相干扰</li>
+                            <li>适合多步骤、多任务的复杂场景</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong><code>subagents</code> 只声明子 Agent 的名称和描述，不需要传具体的实现。子 Agent 由运行时根据任务自动创建和管理。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: useStream connection ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>连接前端</h2>
+                <h4>使用 useStream 连接后端，获取完整的 Deep Agent 状态</h4>
+                <p>前端用 <code>useStream</code> 与后端通信，方式和 <code>createAgent</code> 完全一致。但 Deep Agent 提供了额外的状态属性。</p>
+                <pre><code class="language-javascript">import { useStream } from "@langchain/react";
+
+function App() {
+  const stream = useStream(typeof agent === "undefined" ? {} : {
+    apiUrl: "http://localhost:2024",   // LangGraph Server 地址
+    assistantId: "agent",              // Agent 的唯一标识
+  });
+
+  // Deep Agent 特有状态（普通 Agent 没有）
+  const todos = stream.values?.todos;       // 待办任务列表，由 write_todos 工具驱动
+  const subagents = stream.subagents;       // 所有子 Agent 的实时状态 Map
+
+  return (
+    &lt;div&gt;
+      {/* 渲染协调者消息 */}
+      {stream.messages.map(msg =&gt; &lt;Message key={msg.id} data={msg} /&gt;)}
+
+      {/* 渲染子 Agent 卡片 */}
+      {subagents?.map(sub =&gt; &lt;SubagentCard key={sub.id} data={sub} /&gt;)}
+
+      {/* 渲染待办列表 */}
+      {todos &amp;&amp; &lt;TodoList items={todos} /&gt;}
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="key-point">
+                    <strong>三个核心属性：</strong><code>stream.messages</code>（协调者消息）、<code>stream.subagents</code>（子 Agent 状态）、<code>stream.values.todos</code>（待办列表）。这三个属性覆盖了 Deep Agent 前端 90% 的渲染需求。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: subagent streaming ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子 Agent 流式</h2>
+                <h4>实时展示每个子 Agent 的执行内容、进度和结果</h4>
+                <p>当协调者委派任务给子 Agent 时，<code>stream.subagents</code> 会实时更新。每个子 Agent 包含名称、状态和流式输出内容。</p>
+                <pre><code class="language-javascript">// 子 Agent 状态结构示例
+const subagent = {
+  id: "sub_001",
+  name: "researcher",          // 子 Agent 类型名称
+  status: "running",           // running | completed | error
+  taskId: "task_003",          // 关联的任务 ID
+  messages: [                  // 该子 Agent 的流式消息
+    { role: "assistant", content: "正在搜索相关文档..." },
+    { role: "assistant", content: "找到 3 篇相关论文，正在分析..." },
+  ],
+};</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>可折叠卡片模式</h4>
+                        <p>每个子 Agent 渲染为一张可折叠的卡片，点击展开查看详细输出。折叠时只显示名称和状态。</p>
+                        <p><span class="tag tag-primary">推荐 UI 模式</span></p>
+                    </div>
+                    <div class="card">
+                        <h4>进度追踪</h4>
+                        <p>通过 <code>status</code> 字段显示运行/完成/错误三种状态，配合动画让用户感知实时性。</p>
+                        <p><span class="tag tag-info">状态驱动渲染</span></p>
+                    </div>
+                    <div class="card">
+                        <h4>内容过滤</h4>
+                        <p>使用 <code>filterSubagentMessages</code> 工具函数过滤出特定子 Agent 的消息，避免混入协调者消息。</p>
+                        <p><span class="tag tag-success">消息隔离</span></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Todo list ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>待办列表</h2>
+                <h4>通过与 Agent 状态同步的实时待办列表跟踪任务进度</h4>
+                <p>协调者使用内置的 <code>write_todos</code> 工具来规划任务。前端通过 <code>stream.values.todos</code> 获取这些待办事项并实时渲染。</p>
+                <pre><code class="language-javascript">// 待办列表数据结构示例
+const todos = [
+  { id: "todo_1", content: "搜索用户相关资料", status: "completed" },
+  { id: "todo_2", content: "分析搜索结果并整理要点", status: "in_progress" },
+  { id: "todo_3", content: "编写最终报告", status: "pending" },
+];
+
+// 在 React 组件中渲染
+// æ¸²æå¾ååè¡¨ï¼ç¶æé©±å¨å¾æ 
+function TodoList({ items }) {
+  return (
+    &lt;div className="todo-list"&gt;
+      &lt;h3&gt;任务规划&lt;/h3&gt;
+      {items.map(todo =&gt; (
+        &lt;div key={todo.id} className={`todo-item ${todo.status}`}&gt;
+          {todo.status === "completed" &amp;&amp; &lt;span&gt;✓&lt;/span&gt;}
+          {todo.status === "in_progress" &amp;&amp; &lt;span&gt;⟳&lt;/span&gt;}
+          {todo.status === "pending" &amp;&amp; &lt;span&gt;○&lt;/span&gt;}
+          &lt;span&gt;{todo.content}&lt;/span&gt;
+        &lt;/div&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="key-point">
+                    <strong>数据驱动 UI：</strong>待办列表完全由后端 Agent 状态驱动。Agent 每次调用 <code>write_todos</code> 更新规划时，前端自动重新渲染。你不需要手动管理状态同步。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Sandbox ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>沙箱模式</h2>
+                <h4>构建类 IDE 的 UI，包含文件浏览器、代码查看器和差异面板</h4>
+                <p>当子 Agent 在沙箱中执行代码时，前端可以渲染一个完整的 IDE 体验，让用户看到文件变更和代码差异。</p>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>文件浏览器</h4>
+                        <p>以树形结构展示沙箱中的所有文件和目录，支持点击查看文件内容。</p>
+                        <pre><code class="language-javascript">// 文件树数据结构
+const fileTree = [
+  { type: "dir", name: "src",
+    children: [
+      { type: "file", name: "index.ts" },
+      { type: "file", name: "utils.ts" },
+    ]
+  },
+  { type: "file", name: "package.json" },
+];</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>差异面板</h4>
+                        <p>展示文件的新增、修改和删除，用红绿色标注增删行，类似 Git diff。</p>
+                        <pre><code class="language-javascript">// 差异数据结构
+const diff = {
+  file: "src/index.ts",
+  changes: [
+    { type: "add", line: 5,
+      content: "import { serve } from './server';" },
+    { type: "remove", line: 3,
+      content: "const port = 3000;" },
+  ],
+};</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>沙箱模式需要后端配置沙箱后端（如 E2B 或 Docker）。如果未配置沙箱，子 Agent 的文件操作会在本地文件系统执行，此时文件浏览器和差异面板将无法展示实时变更。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: filterSubagentMessages ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>消息过滤</h2>
+                <h4>使用 filterSubagentMessages 从消息流中提取特定子 Agent 的内容</h4>
+                <p>在复杂场景中，协调者和多个子 Agent 的消息混合在一起。<code>filterSubagentMessages</code> 帮你按子 Agent ID 过滤，实现消息隔离渲染。</p>
+                <pre><code class="language-javascript">import { useStream, filterSubagentMessages } from "@langchain/react";
+
+function SubagentPanel({ subagentId }) {
+  const stream = useStream({
+    apiUrl: "http://localhost:2024",
+    assistantId: "agent",
+  });
+
+  // 从混合消息流中过滤出指定子 Agent 的消息
+  const messages = filterSubagentMessages(
+    stream.messages,  // 完整的消息流
+    subagentId        // 目标子 Agent 的 ID
+  );
+
+  return (
+    &lt;div className="subagent-panel"&gt;
+      {messages.map(msg =&gt; (
+        &lt;div key={msg.id} className="message"&gt;
+          {msg.content}
+        &lt;/div&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么需要过滤</h4>
+                        <ul>
+                            <li>协调者的规划消息 vs 子 Agent 的执行消息，<strong>语义不同</strong></li>
+                            <li>不同子 Agent 的消息需要<strong>分别渲染</strong>在各自的卡片中</li>
+                            <li>避免所有消息堆叠在一起，用户<strong>看不清谁在说什么</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>典型渲染策略</h4>
+                        <ul>
+                            <li>协调者消息 → 主聊天窗口</li>
+                            <li>子 Agent 消息 → 折叠卡片内流式展示</li>
+                            <li>待办列表 → 侧边栏或顶部固定区域</li>
+                            <li>文件变更 → 底部 diff 面板</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Complete example ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>完整示例</h2>
+                <h4>把所有前端模式组合起来——消息 + 子 Agent + 待办 + 沙箱</h4>
+                <pre><code class="language-javascript">import { useStream, filterSubagentMessages } from "@langchain/react";
+import { createDeepAgent } from "deepagents";
+
+// 1. 后端创建 Deep Agent
+const agent = createDeepAgent({
+  tools: [searchTool, codeTool],  // ä¸» Agent å¯ç¨çå·¥å·
+  subagents: [
+    { name: "researcher", description: "搜索和分析" },
+    { name: "coder", description: "编写和执行代码" },
+  ],
+});
+
+// 2. 前端组件：通过 useStream 获取 Deep Agent 的完整状态
+function DeepAgentUI() {
+  const stream = useStream({
+    apiUrl: "http://localhost:2024",
+    assistantId: "agent",
+  });
+
+  const todos = stream.values?.todos;
+  const subagents = stream.subagents ?? [];
+
+  return (
+    &lt;div className="deep-agent-ui"&gt;
+      {/* 主消息区 */}
+      &lt;ChatPanel messages={stream.messages} /&gt;
+
+      {/* 子 Agent 卡片区 */}
+      {subagents.map(sub =&gt; (
+        &lt;SubagentCard key={sub.id} subagent={sub}
+          messages={filterSubagentMessages(stream.messages, sub.id)}
+        /&gt;
+      ))}
+
+      {/* 待办列表侧边栏 */}
+      {todos &amp;&amp; &lt;TodoListSidebar items={todos} /&gt;}
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="key-point">
+                    <strong>组合而非堆叠：</strong>四个前端模式不是孤立的，而是可以灵活组合。最小实现只需要 <code>stream.messages</code>，然后根据需求逐步添加子 Agent 卡片、待办列表和沙箱面板。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Three patterns overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三大模式总览</h2>
+                <h4>Deep Agent 前端提供三个核心模式，覆盖从简单到复杂的所有场景</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #006DDD;">
+                        <h4>子 Agent 流式传输</h4>
+                        <p>展示专门的子 Agent，支持流式内容、进度跟踪和可折叠卡片。</p>
+                        <ul>
+                            <li>实时渲染每个子 Agent 的输出</li>
+                            <li>可折叠/展开的卡片 UI</li>
+                            <li>状态驱动：running / completed / error</li>
+                        </ul>
+                        <p><span class="tag tag-primary">详见第 22 章</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #6E8900;">
+                        <h4>待办列表</h4>
+                        <p>通过与 Agent 状态同步的实时待办列表跟踪 Agent 进度。</p>
+                        <ul>
+                            <li>自动同步 <code>stream.values.todos</code></li>
+                            <li>completed / in_progress / pending 三种状态</li>
+                            <li>用户可见 Agent 的规划思路</li>
+                        </ul>
+                        <p><span class="tag tag-success">详见第 23 章</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>沙箱</h4>
+                        <p>构建类 IDE 的 UI，包含文件浏览器、代码查看器和差异面板。</p>
+                        <ul>
+                            <li>树形文件浏览器</li>
+                            <li>语法高亮的代码查看器</li>
+                            <li>红绿 diff 面板</li>
+                        </ul>
+                        <p><span class="tag tag-warning">详见第 24 章</span></p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>渐进式采用：</strong>你可以从最简单的消息渲染开始，逐步添加子 Agent 卡片，再加待办列表，最后上沙箱。不需要一次性实现所有模式。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/21-frontend-overview-2.png" alt="图：前端三大模式渐进式定位" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: LangChain compatibility ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>生态兼容性</h2>
+                <h4>Deep Agent 构建在 LangGraph 运行时之上，与 LangChain 前端模式完全兼容</h4>
+                <p>LangChain 前端模式——包括 Markdown 消息渲染、工具调用展示、人在回路（Human-in-the-Loop）——<strong>同样适用于 Deep Agent</strong>。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>LangChain 前端模式</h4>
+                        <ul>
+                            <li><strong>Markdown 消息</strong>：格式化渲染 AI 回复中的代码块、列表、链接</li>
+                            <li><strong>工具调用</strong>：展示 Agent 调用了哪些工具、传了什么参数</li>
+                            <li><strong>人在回路</strong>：Agent 请求用户确认时，前端展示确认按钮</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agent 扩展</h4>
+                        <ul>
+                            <li><strong>子 Agent 状态</strong>：<code>stream.subagents</code> 追踪多个并行 Agent</li>
+                            <li><strong>待办列表</strong>：<code>stream.values.todos</code> 实时同步任务规划</li>
+                            <li><strong>沙箱内容</strong>：文件树 + diff 面板展示代码变更</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// useStream 的核心 API 对比
+// LangChain 模式                    // Deep Agent 扩展
+stream.messages                  → stream.subagents
+stream.values                    → stream.values.todos
+stream.submit(input)             → filterSubagentMessages()</code></pre>
+                <div class="key-point">
+                    <strong>零额外学习成本：</strong>因为 Deep Agent 构建在相同的 LangGraph 运行时之上，<code>useStream</code> 提供了相同的核心 API。你已经会用的 LangChain 前端知识，全部可以直接复用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Practice ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>构建一个最小化的 Deep Agent 前端</h4>
+                <p>现在轮到你了。停下来，用刚学的知识构建一个最小可用的 Deep Agent 前端界面。</p>
+                <pre><code class="language-javascript">// 练习目标：
+// 1. 创建一个 Deep Agent（后端）
+// 2. 用 useStream 连接它（前端）
+// 3. 渲染协调者消息
+// 4. 渲染子 Agent 卡片（可折叠）
+// 5. 渲染待办列表（显示任务进度）
+
+// 后端模板
+import { createDeepAgent } from "deepagents";
+
+const agent = createDeepAgent({
+  tools: [],                      // 添加你的工具
+  subagents: [
+    { name: "helper", description: "通用助手" },
+  ],
+});</code></pre>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>任务 1：最小前端</h3>
+                        <ul>
+                            <li>用 <code>useStream</code> 连接后端，渲染 <code>stream.messages</code></li>
+                            <li>实现一个简单的消息列表组件</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 2：子 Agent 卡片</h3>
+                        <ul>
+                            <li>遍历 <code>stream.subagents</code>，为每个子 Agent 渲染卡片</li>
+                            <li>实现折叠/展开交互</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 3：待办列表</h3>
+                        <ul>
+                            <li>从 <code>stream.values.todos</code> 读取待办事项</li>
+                            <li>根据 status 显示不同的图标和样式</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>先实现任务 1 确保消息能正常渲染，再逐步添加子 Agent 卡片和待办列表。渐进式开发比一次性写完所有功能更高效。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了 Deep Agent 前端的全貌</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>Deep Agent 采用<strong>协调者-工作者</strong>架构，主 Agent 规划，子 Agent 执行</li>
+                            <li>前端使用 <code>useStream</code> 统一管理流式连接</li>
+                            <li>三个核心属性：<code>messages</code>、<code>subagents</code>、<code>todos</code></li>
+                            <li>三大前端模式：子 Agent 流式、待办列表、沙箱</li>
+                            <li><code>filterSubagentMessages</code> 实现消息隔离渲染</li>
+                            <li>与 LangChain 前端模式<strong>完全兼容</strong>，零额外学习成本</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>第 22 章</strong>：子 Agent 流式传输——详细实现可折叠卡片和进度追踪</li>
+                            <li><strong>第 23 章</strong>：待办列表——实时同步 Agent 任务规划的完整方案</li>
+                            <li><strong>第 24 章</strong>：沙箱——类 IDE 的文件浏览器、代码查看器和 diff 面板</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Deep Agent 前端的核心思想是<strong>"数据驱动 UI"</strong>。后端 Agent 的状态变化通过 <code>useStream</code> 自动同步到前端，你只需要声明式地渲染数据，不需要手动管理任何状态同步逻辑。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./22-frontend-subagent-streaming.html">下一章：子 Agent 流式传输</a> — 实现可折叠卡片和进度追踪</li>
+                            <li><a href="./23-frontend-todo-list.html">待办列表</a> — 实时同步 Agent 任务规划</li>
+                            <li><a href="./24-frontend-sandbox.html">沙箱</a> — 类 IDE 的文件和代码展示</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>前置章节回顾</h4>
+                        <ul>
+                            <li><a href="./19-event-streaming.html">事件流</a> — 理解流式事件的数据结构</li>
+                            <li><a href="./20-streaming.html">流式处理</a> — useStream 的基础用法</li>
+                            <li><a href="./10-subagents.html">子 Agent</a> — 后端子 Agent 机制详解</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 官方文档</a> — 完整的 API 参考</li>
+                            <li><a href="https://github.com/langchain-ai/langgraphjs">GitHub 仓库</a> — 源码和示例</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

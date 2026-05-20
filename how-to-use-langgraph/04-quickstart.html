@@ -6,6 +6,7 @@
     <title>04 快速上手</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>">
     <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
     <style>
         .card-grid {
             display: flex;
@@ -62,7 +63,7 @@
                         <h4>你需要有</h4>
                         <ul>
                             <li>Node.js 18+ 和 npm</li>
-                            <li>一个 Anthropic API Key</li>
+                            <li>一个 DeepSeek API Key</li>
                             <li>读过前三章（至少了解节点、边、状态的概念）</li>
                         </ul>
                     </div>
@@ -84,14 +85,14 @@
             <div class="slide-content">
                 <h2>项目初始化</h2>
                 <h4>三步创建项目并安装依赖</h4>
-                <pre><code><span style="color: var(--text-muted);"># 创建项目目录</span>
+                <pre><code class="language-javascript"># 创建项目目录
 $ mkdir calculator-agent && cd calculator-agent
 $ npm init -y
 
-<span style="color: var(--text-muted);"># 安装核心依赖</span>
-$ npm install @langchain/langgraph @langchain/core @langchain/anthropic zod
+# 安装核心依赖
+$ npm install @langchain/langgraph @langchain/core @langchain/deepseek zod
 
-<span style="color: var(--text-muted);"># 安装 TypeScript（如果还没装）</span>
+# 安装 TypeScript（如果还没装）
 $ npm install -D typescript tsx</code></pre>
                 <div class="card-grid">
                     <div class="card">
@@ -99,8 +100,8 @@ $ npm install -D typescript tsx</code></pre>
                         <p>图编排框架：StateGraph、StateSchema、MessagesValue 等</p>
                     </div>
                     <div class="card">
-                        <h4>@langchain/anthropic</h4>
-                        <p>Claude 模型集成：ChatAnthropic</p>
+                        <h4>@langchain/deepseek</h4>
+                        <p>DeepSeek 模型集成：ChatDeepSeek</p>
                     </div>
                     <div class="card">
                         <h4>zod</h4>
@@ -108,7 +109,7 @@ $ npm install -D typescript tsx</code></pre>
                     </div>
                 </div>
                 <div class="warning">
-                    <strong>API Key：</strong>运行前设置环境变量。<code>export ANTHROPIC_API_KEY=sk-ant-...</code>，或者创建 <code>.env</code> 文件。别把 Key 硬编码在代码里。
+                    <strong>API Key：</strong>运行前设置环境变量。<code>export DEEPSEEK_API_KEY=sk-...</code>，或者创建 <code>.env</code> 文件。别把 Key 硬编码在代码里。
                 </div>
             </div>
         </section>
@@ -118,53 +119,53 @@ $ npm install -D typescript tsx</code></pre>
             <div class="slide-content">
                 <h2>定义工具</h2>
                 <h4>用 tool() + zod 创建三个数学工具</h4>
-                <pre><code><span style="color: var(--primary-color);">import</span> { ChatAnthropic } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/anthropic"</span>;
-<span style="color: var(--primary-color);">import</span> { tool } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/tools"</span>;
-<span style="color: var(--primary-color);">import</span> * <span style="color: var(--primary-color);">as</span> z <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"zod"</span>;
+                <pre><code class="language-javascript">import { ChatDeepSeek } from "@langchain/deepseek";
+import { tool } from "@langchain/core/tools";
+import * as z from "zod";
 
-<span style="color: var(--primary-color);">const</span> model = <span style="color: var(--primary-color);">new</span> ChatAnthropic({
-  model: <span style="color: var(--success-color);">"claude-sonnet-4-6"</span>,
-  temperature: <span style="color: var(--primary-color);">0</span>,
+const model = new ChatDeepSeek({
+  model: "deepseek-chat",
+  temperature: 0,
 });
 
-<span style="color: var(--text-muted);">// 加法工具</span>
-<span style="color: var(--primary-color);">const</span> add = tool(({ a, b }) => a + b, {
-  name: <span style="color: var(--success-color);">"add"</span>,
-  description: <span style="color: var(--success-color);">"Add two numbers"</span>,
+// 加法工具
+const add = tool(({ a, b }) => a + b, {
+  name: "add",
+  description: "Add two numbers",
   schema: z.object({
-    a: z.number().describe(<span style="color: var(--success-color);">"First number"</span>),
-    b: z.number().describe(<span style="color: var(--success-color);">"Second number"</span>),
+    a: z.number().describe("First number"),
+    b: z.number().describe("Second number"),
   }),
 });
 
-<span style="color: var(--text-muted);">// 乘法工具</span>
-<span style="color: var(--primary-color);">const</span> multiply = tool(({ a, b }) => a * b, {
-  name: <span style="color: var(--success-color);">"multiply"</span>,
-  description: <span style="color: var(--success-color);">"Multiply two numbers"</span>,
+// 乘法工具
+const multiply = tool(({ a, b }) => a * b, {
+  name: "multiply",
+  description: "Multiply two numbers",
   schema: z.object({
-    a: z.number().describe(<span style="color: var(--success-color);">"First number"</span>),
-    b: z.number().describe(<span style="color: var(--success-color);">"Second number"</span>),
+    a: z.number().describe("First number"),
+    b: z.number().describe("Second number"),
   }),
 });
 
-<span style="color: var(--text-muted);">// 除法工具</span>
-<span style="color: var(--primary-color);">const</span> divide = tool(({ a, b }) => a / b, {
-  name: <span style="color: var(--success-color);">"divide"</span>,
-  description: <span style="color: var(--success-color);">"Divide two numbers"</span>,
+// 除法工具
+const divide = tool(({ a, b }) => a / b, {
+  name: "divide",
+  description: "Divide two numbers",
   schema: z.object({
-    a: z.number().describe(<span style="color: var(--success-color);">"First number"</span>),
-    b: z.number().describe(<span style="color: var(--success-color);">"Second number"</span>),
+    a: z.number().describe("First number"),
+    b: z.number().describe("Second number"),
   }),
 });
 
-<span style="color: var(--text-muted);">// 按名称索引工具，绑定到模型</span>
-<span style="color: var(--primary-color);">const</span> toolsByName = { [add.name]: add, [multiply.name]: multiply, [divide.name]: divide };
-<span style="color: var(--primary-color);">const</span> tools = Object.values(toolsByName);
-<span style="color: var(--primary-color);">const</span> modelWithTools = model.bindTools(tools);</code></pre>
+// 按名称索引工具，绑定到模型
+const toolsByName = { [add.name]: add, [multiply.name]: multiply, [divide.name]: divide };
+const tools = Object.values(toolsByName);
+const modelWithTools = model.bindTools(tools);</code></pre>
                 <div class="warning">
                     <strong>如果你看到报错：</strong>
                     <ul>
-                        <li><code>AuthenticationError</code> 或 <code>Could not find API key</code> → 确认已设置 <code>ANTHROPIC_API_KEY</code> 环境变量：<code>$ export ANTHROPIC_API_KEY=sk-ant-...</code></li>
+                        <li><code>AuthenticationError</code> 或 <code>Could not find API key</code> → 确认已设置 <code>DEEPSEEK_API_KEY</code> 环境变量：<code>$ export DEEPSEEK_API_KEY=sk-...</code></li>
                         <li><code>NotFoundError: model "xxx" not found</code> → 检查模型名称拼写是否正确，或尝试换一个可用模型</li>
                     </ul>
                 </div>
@@ -197,17 +198,17 @@ $ npm install -D typescript tsx</code></pre>
                     - 避免：过度装饰、3D 效果
                     </p>
                 </div>
-                <pre><code><span style="color: var(--primary-color);">import</span> {
+                <pre><code class="language-javascript">import {
   StateGraph, StateSchema, MessagesValue, ReducedValue,
   GraphNode, ConditionalEdgeRouter, START, END,
-} <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+} from "@langchain/langgraph";
 
-<span style="color: var(--primary-color);">const</span> MessagesState = <span style="color: var(--primary-color);">new</span> StateSchema({
-  <span style="color: var(--text-muted);">// 消息历史 — 内置追加 reducer，新消息自动拼到末尾</span>
+const MessagesState = new StateSchema({
+  // 消息历史 — 内置追加 reducer，新消息自动拼到末尾
   messages: MessagesValue,
-  <span style="color: var(--text-muted);">// LLM 调用计数 — 自定义 reducer，每次 +1</span>
-  llmCalls: <span style="color: var(--primary-color);">new</span> ReducedValue(
-    z.number().default(<span style="color: var(--primary-color);">0</span>),
+  // LLM 调用计数 — 自定义 reducer，每次 +1
+  llmCalls: new ReducedValue(
+    z.number().default(0),
     { reducer: (x, y) => x + y }
   ),
 });</code></pre>
@@ -229,18 +230,18 @@ $ npm install -D typescript tsx</code></pre>
             <div class="slide-content">
                 <h2>模型节点</h2>
                 <h4>调用 LLM，把回复追加到消息历史</h4>
-                <pre><code><span style="color: var(--primary-color);">import</span> { SystemMessage } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/messages"</span>;
+                <pre><code class="language-javascript">import { SystemMessage } from "@langchain/core/messages";
 
-<span style="color: var(--primary-color);">const</span> llmCall: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> MessagesState&gt; = <span style="color: var(--primary-color);">async</span> (state) => {
-  <span style="color: var(--primary-color);">const</span> response = <span style="color: var(--primary-color);">await</span> modelWithTools.invoke([
-    <span style="color: var(--primary-color);">new</span> SystemMessage(
-      <span style="color: var(--success-color);">"You are a helpful assistant tasked with performing arithmetic on a set of inputs."</span>
+const llmCall: GraphNode&lt;typeof MessagesState&gt; = async (state) => {
+  const response = await modelWithTools.invoke([
+    new SystemMessage(
+      "You are a helpful assistant tasked with performing arithmetic on a set of inputs."
     ),
     ...state.messages,
   ]);
-  <span style="color: var(--primary-color);">return</span> {
-    messages: [response],  <span style="color: var(--text-muted);">// MessagesValue 自动追加</span>
-    llmCalls: <span style="color: var(--primary-color);">1</span>,            <span style="color: var(--text-muted);">// ReducedValue 累加 +1</span>
+  return {
+    messages: [response],  // MessagesValue 自动追加
+    llmCalls: 1,            // ReducedValue 累加 +1
   };
 };</code></pre>
                 <div class="key-point">
@@ -254,25 +255,25 @@ $ npm install -D typescript tsx</code></pre>
             <div class="slide-content">
                 <h2>工具节点</h2>
                 <h4>执行模型请求的工具调用，把结果追加到消息历史</h4>
-                <pre><code><span style="color: var(--primary-color);">import</span> { AIMessage, ToolMessage } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/messages"</span>;
+                <pre><code class="language-javascript">import { AIMessage, ToolMessage } from "@langchain/core/messages";
 
-<span style="color: var(--primary-color);">const</span> toolNode: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> MessagesState&gt; = <span style="color: var(--primary-color);">async</span> (state) => {
-  <span style="color: var(--primary-color);">const</span> lastMessage = state.messages.at(-<span style="color: var(--primary-color);">1</span>);
+const toolNode: GraphNode&lt;typeof MessagesState&gt; = async (state) => {
+  const lastMessage = state.messages.at(-1);
 
-  <span style="color: var(--text-muted);">// 安全检查：最后一条必须是 AI 消息</span>
-  <span style="color: var(--primary-color);">if</span> (lastMessage == <span style="color: var(--primary-color);">null</span> || !AIMessage.isInstance(lastMessage)) {
-    <span style="color: var(--primary-color);">return</span> { messages: [] };
+  // 安全检查：最后一条必须是 AI 消息
+  if (lastMessage == null || !AIMessage.isInstance(lastMessage)) {
+    return { messages: [] };
   }
 
-  <span style="color: var(--text-muted);">// 逐个执行工具调用</span>
-  <span style="color: var(--primary-color);">const</span> result: ToolMessage[] = [];
-  <span style="color: var(--primary-color);">for</span> (<span style="color: var(--primary-color);">const</span> toolCall <span style="color: var(--primary-color);">of</span> lastMessage.tool_calls ?? []) {
-    <span style="color: var(--primary-color);">const</span> tool = toolsByName[toolCall.name];
-    <span style="color: var(--primary-color);">const</span> observation = <span style="color: var(--primary-color);">await</span> tool.invoke(toolCall);
+  // 逐个执行工具调用
+  const result: ToolMessage[] = [];
+  for (const toolCall of lastMessage.tool_calls ?? []) {
+    const tool = toolsByName[toolCall.name];
+    const observation = await tool.invoke(toolCall);
     result.push(observation);
   }
 
-  <span style="color: var(--primary-color);">return</span> { messages: result };
+  return { messages: result };
 };</code></pre>
                 <div class="info-block">
                     <strong>流程：</strong>模型说"我要调用 add(3, 4)"→ toolNode 执行 add → 返回结果 7 → 追加为 ToolMessage → 模型看到结果后决定下一步。
@@ -285,23 +286,23 @@ $ npm install -D typescript tsx</code></pre>
             <div class="slide-content">
                 <h2>结束判断</h2>
                 <h4>条件边：模型还要调工具吗？</h4>
-                <pre><code><span style="color: var(--primary-color);">const</span> shouldContinue: ConditionalEdgeRouter&lt;
-  <span style="color: var(--primary-color);">typeof</span> MessagesState, <span style="color: var(--success-color);">"toolNode"</span>
+                <pre><code class="language-javascript">const shouldContinue: ConditionalEdgeRouter&lt;
+  typeof MessagesState, "toolNode"
 &gt; = (state) => {
-  <span style="color: var(--primary-color);">const</span> lastMessage = state.messages.at(-<span style="color: var(--primary-color);">1</span>);
+  const lastMessage = state.messages.at(-1);
 
-  <span style="color: var(--text-muted);">// 不是 AI 消息 → 结束</span>
-  <span style="color: var(--primary-color);">if</span> (!lastMessage || !AIMessage.isInstance(lastMessage)) {
-    <span style="color: var(--primary-color);">return</span> END;
+  // 不是 AI 消息 → 结束
+  if (!lastMessage || !AIMessage.isInstance(lastMessage)) {
+    return END;
   }
 
-  <span style="color: var(--text-muted);">// AI 请求了工具调用 → 去执行工具</span>
-  <span style="color: var(--primary-color);">if</span> (lastMessage.tool_calls?.length) {
-    <span style="color: var(--primary-color);">return</span> <span style="color: var(--success-color);">"toolNode"</span>;
+  // AI 请求了工具调用 → 去执行工具
+  if (lastMessage.tool_calls?.length) {
+    return "toolNode";
   }
 
-  <span style="color: var(--text-muted);">// AI 没有请求工具 → 回复用户，结束</span>
-  <span style="color: var(--primary-color);">return</span> END;
+  // AI 没有请求工具 → 回复用户，结束
+  return END;
 };</code></pre>
                 <div class="key-point">
                     <strong>条件边的逻辑：</strong>看完最后一条消息。如果 AI 说了"我要调工具"，就去 toolNode；如果 AI 直接给了答案，就结束。
@@ -314,12 +315,12 @@ $ npm install -D typescript tsx</code></pre>
             <div class="slide-content">
                 <h2>组装智能体</h2>
                 <h4>把所有零件拼成一个完整的图</h4>
-                <pre><code><span style="color: var(--primary-color);">const</span> agent = <span style="color: var(--primary-color);">new</span> StateGraph(MessagesState)
-  .addNode(<span style="color: var(--success-color);">"llmCall"</span>, llmCall)
-  .addNode(<span style="color: var(--success-color);">"toolNode"</span>, toolNode)
-  .addEdge(START, <span style="color: var(--success-color);">"llmCall"</span>)
-  .addConditionalEdges(<span style="color: var(--success-color);">"llmCall"</span>, shouldContinue, [<span style="color: var(--success-color);">"toolNode"</span>, END])
-  .addEdge(<span style="color: var(--success-color);">"toolNode"</span>, <span style="color: var(--success-color);">"llmCall"</span>)
+                <pre><code class="language-javascript">const agent = new StateGraph(MessagesState)
+  .addNode("llmCall", llmCall)
+  .addNode("toolNode", toolNode)
+  .addEdge(START, "llmCall")
+  .addConditionalEdges("llmCall", shouldContinue, ["toolNode", END])
+  .addEdge("toolNode", "llmCall")
   .compile();</code></pre>
                 <div class="ai-diagram">
                     <h4>图：完整的智能体执行流程</h4>
@@ -350,22 +351,22 @@ $ npm install -D typescript tsx</code></pre>
             <div class="slide-content">
                 <h2>运行测试</h2>
                 <h4>用一句话启动智能体</h4>
-                <pre><code><span style="color: var(--primary-color);">import</span> { HumanMessage } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/messages"</span>;
+                <pre><code class="language-javascript">import { HumanMessage } from "@langchain/core/messages";
 
-<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> agent.invoke({
-  messages: [<span style="color: var(--primary-color);">new</span> HumanMessage(<span style="color: var(--success-color);">"Add 3 and 4."</span>)],
+const result = await agent.invoke({
+  messages: [new HumanMessage("Add 3 and 4.")],
 });
 
-<span style="color: var(--text-muted);">// 打印完整的消息历史</span>
-<span style="color: var(--primary-color);">for</span> (<span style="color: var(--primary-color);">const</span> message <span style="color: var(--primary-color);">of</span> result.messages) {
-  console.log(<span style="color: var(--success-color);">`[${message.type}]: ${message.text}`</span>);
+// 打印完整的消息历史
+for (const message of result.messages) {
+  console.log(`[${message.type}]: ${message.text}`);
 }</code></pre>
-                <pre><code><span style="color: var(--text-muted);"># 预期输出：</span>
+                <pre><code class="language-javascript"># 预期输出：
 [human]: Add 3 and 4.
 [ai]: [调用 add 工具, a=3, b=4]
 [tool]: 7
 [ai]: The answer is 7.
-<span style="color: var(--text-muted);"># llmCalls: 2（模型被调用了两次）</span></code></pre>
+# llmCalls: 2（模型被调用了两次）</code></pre>
                 <div class="info-block">
                     <strong>发生了什么：</strong>用户说"Add 3 and 4"→ 模型决定调用 add(3,4) → 工具返回 7 → 模型看到结果，回答"The answer is 7"。模型被调用了两次（第一次决定调工具，第二次生成最终答案）。
                 </div>
@@ -380,7 +381,7 @@ $ npm install -D typescript tsx</code></pre>
                     <div class="card" style="border-top: 3px solid #B45309;">
                         <h4>API Key 报错</h4>
                         <p><strong>症状：</strong><code>AuthenticationError: Invalid API Key</code></p>
-                        <p><strong>修复：</strong>检查环境变量 <code>ANTHROPIC_API_KEY</code> 是否设置正确。</p>
+                        <p><strong>修复：</strong>检查环境变量 <code>DEEPSEEK_API_KEY</code> 是否设置正确。</p>
                     </div>
                     <div class="card" style="border-top: 3px solid #B45309;">
                         <h4>工具名找不到</h4>
@@ -421,35 +422,35 @@ $ npm install -D typescript tsx</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h2>参考答案</h2>
-                <pre><code><span style="color: var(--text-muted);">// 减法工具</span>
-<span style="color: var(--primary-color);">const</span> subtract = tool(({ a, b }) => a - b, {
-  name: <span style="color: var(--success-color);">"subtract"</span>,
-  description: <span style="color: var(--success-color);">"Subtract b from a"</span>,
+                <pre><code class="language-javascript">// 减法工具
+const subtract = tool(({ a, b }) => a - b, {
+  name: "subtract",
+  description: "Subtract b from a",
   schema: z.object({
-    a: z.number().describe(<span style="color: var(--success-color);">"First number"</span>),
-    b: z.number().describe(<span style="color: var(--success-color);">"Second number"</span>),
+    a: z.number().describe("First number"),
+    b: z.number().describe("Second number"),
   }),
 });
 
-<span style="color: var(--text-muted);">// 乘方工具</span>
-<span style="color: var(--primary-color);">const</span> power = tool(({ a, b }) => Math.pow(a, b), {
-  name: <span style="color: var(--success-color);">"power"</span>,
-  description: <span style="color: var(--success-color);">"Raise a to the power of b"</span>,
+// 乘方工具
+const power = tool(({ a, b }) => Math.pow(a, b), {
+  name: "power",
+  description: "Raise a to the power of b",
   schema: z.object({
-    a: z.number().describe(<span style="color: var(--success-color);">"Base"</span>),
-    b: z.number().describe(<span style="color: var(--success-color);">"Exponent"</span>),
+    a: z.number().describe("Base"),
+    b: z.number().describe("Exponent"),
   }),
 });
 
-<span style="color: var(--text-muted);">// 更新工具注册</span>
-<span style="color: var(--primary-color);">const</span> toolsByName = {
+// 更新工具注册
+const toolsByName = {
   [add.name]: add,
   [multiply.name]: multiply,
   [divide.name]: divide,
   [subtract.name]: subtract,
   [power.name]: power,
 };
-<span style="color: var(--primary-color);">const</span> modelWithTools = model.bindTools(Object.values(toolsByName));</code></pre>
+const modelWithTools = model.bindTools(Object.values(toolsByName));</code></pre>
                 <div class="key-point">
                     <strong>关键点：</strong>只需要添加工具定义并重新绑定。图的拓扑结构完全不变——llmCall 和 toolNode 的代码一行都不用改。
                 </div>
@@ -517,6 +518,8 @@ $ npm install -D typescript tsx</code></pre>
         <span id="slide-counter"></span>
         <button id="next-btn">下一页 →</button>
     </div>
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
     <script src="./js/slide.js"></script>
     <script src="./js/nav.js"></script>
 </body>

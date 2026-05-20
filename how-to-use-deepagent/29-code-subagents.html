@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code 中的 Subagent</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 29 章</div>
+            <h1>Code 中的 Subagent</h1>
+            <p>用 AGENTS.md 文件定义自定义子代理，让 Deep Agents Code 委派专门任务</p>
+            <strong>从"SDK 编码"到"声明式配置"的轻量之路</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你已经知道子代理好用——但在 Code 模式下怎么定义它们？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>SDK 方式的局限</h4>
+                        <ul>
+                            <li>必须写 JavaScript/TypeScript 代码来定义子代理</li>
+                            <li>每次修改提示词都要<strong>改代码、重新部署</strong></li>
+                            <li>团队中非开发人员<strong>无法参与调优</strong>提示词</li>
+                            <li>配置和逻辑<strong>混在一起</strong>，难以单独审查</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>AGENTS.md 的解法</h4>
+                        <ul>
+                            <li>用 Markdown 文件<strong>声明式定义</strong>子代理</li>
+                            <li>修改提示词只需<strong>编辑文本文件</strong>，无需动代码</li>
+                            <li>团队中任何人都能<strong>审阅和调整</strong>提示词</li>
+                            <li>YAML frontmatter + Markdown 正文，<strong>结构清晰</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心价值：</strong>AGENTS.md 让子代理的定义从"写代码"变成"写文档"。你只需要一个 Markdown 文件就能声明子代理的名称、描述、模型和系统提示词——Deep Agents Code 自动加载并注册。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: File locations ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件位置</h2>
+                <h4>子代理的定义文件放在哪里？项目级和用户级两条路径</h4>
+                <p>每个子代理位于<strong>自己的文件夹</strong>中，包含一个 <code>AGENTS.md</code> 文件：</p>
+                <pre><code class="language-text"># 项目级——随项目代码一起版本管理
+.deepagents/agents/{subagent-name}/AGENTS.md
+
+# 用户级——个人专属子代理，跨项目可用
+~/.deepagents/{agent}/agents/{subagent-name}/AGENTS.md</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>项目级（推荐）</h4>
+                        <ul>
+                            <li>放在 <code>.deepagents/agents/</code> 下</li>
+                            <li><strong>随项目提交到 Git</strong>，团队共享</li>
+                            <li>适合与项目业务强相关的子代理</li>
+                            <li>优先级<strong>高于</strong>用户级同名子代理</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>用户级</h4>
+                        <ul>
+                            <li>放在 <code>~/.deepagents/{agent}/agents/</code> 下</li>
+                            <li><strong>个人专属</strong>，不随项目走</li>
+                            <li>适合个人偏好类子代理</li>
+                            <li>被同名项目级子代理<strong>覆盖</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>优先级规则：</strong>项目级 subagent 会覆盖同名的用户级 subagent。如果你在项目中定义了一个名为 <code>researcher</code> 的子代理，它会取代你用户目录下同名的那个。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/29-code-subagents-1.png" alt="图：项目级与用户级子代理文件优先级" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: AGENTS.md file format ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件格式</h2>
+                <h4>YAML frontmatter 声明元数据，Markdown 正文作为系统提示词</h4>
+                <p>一个完整的 <code>AGENTS.md</code> 文件由两部分组成：</p>
+                <pre><code class="language-markdown">---
+name: researcher                                    # 子代理的唯一标识符
+description: Research topics on the web before writing content  # 主代理据此决定何时委派
+model: anthropic:claude-haiku-4-5-20251001          # 可选：指定小模型以降低成本
+---
+
+You are a research assistant with access to web search.
+
+## Your Process
+1. Search for relevant information
+2. Summarize findings clearly</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Frontmatter（必填）</h4>
+                        <ul>
+                            <li><code>name</code> — 子代理的唯一标识符</li>
+                            <li><code>description</code> — 功能描述，主代理据此决定何时委派</li>
+                            <li><code>model</code> — 可选，覆盖主代理模型</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>Markdown 正文</h4>
+                        <ul>
+                            <li>正文成为子代理的 <code>system_prompt</code></li>
+                            <li>支持完整的 Markdown 格式</li>
+                            <li>可包含工作流程、输出格式等指令</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>与 SDK SubAgent 字段对应：</strong><code>name</code> 和 <code>description</code> 对应字典规范中的必填字段；Markdown 正文对应 <code>systemPrompt</code>；<code>model</code> 是 Code 模式特有的扩展字段。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Model override ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模型覆盖</h2>
+                <h4>用 model 字段为子代理指定不同的模型——省成本、提速度</h4>
+                <p><code>model</code> 是 <code>AGENTS.md</code> 特有的可选字段，使用 <code>provider:model-name</code> 格式：</p>
+                <pre><code class="language-markdown">---
+name: general-purpose                                       # 与内置子代理同名，覆盖它
+description: General-purpose agent for research and multi-step tasks
+model: anthropic:claude-haiku-4-5-20251001                  # 使用 Haiku 降低成本
+---
+
+You are a general-purpose assistant.
+Complete the task efficiently and return a concise summary.</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>不设 model（继承主代理）</h4>
+                        <ul>
+                            <li>子代理使用与主代理<strong>相同的模型</strong></li>
+                            <li>适合需要强大推理能力的任务</li>
+                            <li>成本与主代理调用<strong>一致</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>设置 model（覆盖主代理）</h4>
+                        <ul>
+                            <li>子代理使用<strong>指定的小模型</strong></li>
+                            <li>适合简单、重复性的委派任务</li>
+                            <li><strong>大幅降低</strong> token 成本</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>高性价比策略：</strong>主代理用强模型做高层协调，简单委派任务路由到便宜的小模型。一行 <code>model</code> 配置就能实现成本和性能的最佳平衡。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Override general-purpose ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>覆盖内置代理</h2>
+                <h4>用 AGENTS.md 替换默认的 general-purpose 子代理——零代码实现</h4>
+                <p>Deep Agents Code 内置了一个 <code>general-purpose</code> 子代理。你可以通过定义同名子代理来<strong>覆盖</strong>它：</p>
+                <pre><code class="language-markdown">---
+name: general-purpose                                       # 与内置子代理同名，实现覆盖
+description: General-purpose agent for research and multi-step tasks
+model: anthropic:claude-haiku-4-5-20251001                  # 指定便宜的小模型
+---
+
+You are a general-purpose assistant.
+Complete the task efficiently and return a concise summary.</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>覆盖效果</h4>
+                        <ul>
+                            <li>所有原本路由到内置 general-purpose 的任务<strong>自动转向</strong>你的版本</li>
+                            <li>使用指定的<strong>小模型</strong>执行，降低成本</li>
+                            <li>自定义提示词让输出更<strong>符合项目需求</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>典型场景</h4>
+                        <ul>
+                            <li>主代理用 Claude Opus 做规划</li>
+                            <li>委派给 general-purpose 时走 Haiku</li>
+                            <li>日常任务成本降低 <strong>80%+</strong></li>
+                            <li>关键决策仍由强模型把关</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>如何生效：</strong>将文件放在 <code>.deepagents/agents/general-purpose/AGENTS.md</code>，Deep Agents Code 启动时自动加载并替换内置版本。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Limitations ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>当前限制</h2>
+                <h4>AGENTS.md 能做什么、不能做什么——了解边界才能用好它</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>AGENTS.md 支持的字段</h4>
+                        <ul>
+                            <li><code>name</code> — 子代理名称（必填）</li>
+                            <li><code>description</code> — 功能描述（必填）</li>
+                            <li><code>model</code> — 模型覆盖（可选）</li>
+                            <li>Markdown 正文 — 系统提示词</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>暂不支持的字段</h4>
+                        <ul>
+                            <li><code>tools</code> — 工具配置</li>
+                            <li><code>middleware</code> — 中间件</li>
+                            <li><code>interrupt_on</code> — 中断配置</li>
+                            <li><code>skills</code> — 技能加载</li>
+                            <li><code>responseFormat</code> — 结构化输出</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>AGENTS.md 方式</h4>
+                        <ul>
+                            <li>适合<strong>快速定义</strong>子代理</li>
+                            <li>自动<strong>继承</strong>主代理的工具</li>
+                            <li>无法精细控制工具和中间件</li>
+                            <li><span class="tag tag-primary">声明式、零代码</span></li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>SDK 方式</h4>
+                        <ul>
+                            <li>适合<strong>完全控制</strong>子代理行为</li>
+                            <li>可自定义工具、中间件、技能等</li>
+                            <li>需要编写和部署代码</li>
+                            <li><span class="tag tag-warning">编程式、全功能</span></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>重要提示：</strong>异步子代理目前在 Deep Agents Code 中<strong>尚不可用</strong>。通过 <code>AGENTS.md</code> 定义的自定义子代理会<strong>继承主代理的工具</strong>——无法通过 frontmatter 限制或扩展工具集。如需完全控制，请直接使用 SDK。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Practical example ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战演练</h2>
+                <h4>从零创建一个项目级子代理——三步搞定</h4>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. 创建目录</h4>
+                        <p>在项目中新建子代理文件夹</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. 编写 AGENTS.md</h4>
+                        <p>填写 frontmatter 和提示词</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. 启动验证</h4>
+                        <p>运行 Code 代理，确认加载</p>
+                    </div>
+                </div>
+                <pre><code class="language-text"># 第一步：创建子代理目录（目录名即子代理标识）
+mkdir -p .deepagents/agents/researcher
+
+# 第二步：创建 AGENTS.md 文件（YAML frontmatter + Markdown 正文）
+cat > .deepagents/agents/researcher/AGENTS.md << 'EOF'
+---
+name: researcher
+description: >
+  Performs in-depth web research on technical topics.
+  Use when you need comprehensive information requiring
+  multiple searches and source verification.
+model: anthropic:claude-haiku-4-5-20251001
+---
+
+You are a meticulous research assistant with access to web search tools.
+
+## Your Workflow
+1. Decompose the research question into searchable queries
+2. Execute searches systematically
+3. Cross-reference findings across sources
+4. Synthesize a comprehensive but concise summary
+
+## Output Format
+- Executive Summary (2-3 sentences)
+- Key Findings (bullet points with sources)
+- Confidence Level (high/medium/low)
+- Recommended Next Steps
+
+Keep your response under 500 words to maintain context efficiency.
+EOF
+
+# 第三步：提交到 Git，让团队成员也能使用该子代理
+git add .deepagents/agents/researcher/AGENTS.md
+git commit -m "feat: add researcher subagent"</code></pre>
+                <div class="key-point">
+                    <strong>验证方式：</strong>启动 Deep Agents Code 后，向主代理提问一个需要调研的问题。如果主代理自动将任务委派给 <code>researcher</code> 子代理，说明配置生效。你也可以检查日志中的 <code>lc_agent_name</code> 元数据来确认。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Multiple subagents ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多代理组合</h2>
+                <h4>定义多个子代理，各司其职——完整的项目级配置示例</h4>
+                <pre><code class="language-text">.deepagents/agents/
+├── researcher/
+│   └── AGENTS.md       # 深度调研，用便宜模型
+├── code-reviewer/
+│   └── AGENTS.md       # 代码审查，用强模型
+├── translator/
+│   └── AGENTS.md       # 文档翻译，用便宜模型
+└── general-purpose/
+    └── AGENTS.md       # 覆盖内置通用代理</code></pre>
+                <pre><code class="language-markdown"># .deepagents/agents/code-reviewer/AGENTS.md
+---
+name: code-reviewer                                    # 子代理名称
+description: >
+  Reviews code changes for bugs, security issues,
+  and best practices. Use for PR reviews and code audits.
+model: anthropic:claude-opus-4-7                       # 代码审查需要强推理能力，用 Opus
+---
+
+You are a senior code reviewer. Focus on:
+1. Correctness and edge cases
+2. Security vulnerabilities
+3. Performance implications
+4. Code style and maintainability
+
+Rate each finding as critical/warning/info.
+Provide specific fix suggestions.</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>模型分配策略</h4>
+                        <ul>
+                            <li><strong>researcher</strong> → Haiku（低成本、多搜索）</li>
+                            <li><strong>code-reviewer</strong> → Opus（高推理、深分析）</li>
+                            <li><strong>translator</strong> → Haiku（语言任务、低成本）</li>
+                            <li><strong>general-purpose</strong> → Haiku（日常委派）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>提示词设计要点</h4>
+                        <ul>
+                            <li>明确<strong>工作流程</strong>步骤</li>
+                            <li>指定<strong>输出格式</strong>和长度限制</li>
+                            <li>描述要具体到<strong>何时使用</strong></li>
+                            <li>控制输出长度以<strong>节省上下文</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/29-code-subagents-2.png" alt="图：多子代理编排与模型分配" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Troubleshooting ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见问题</h2>
+                <h4>子代理没加载？没被调用？模型没生效？逐个排查</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>子代理未被加载</h4>
+                        <ul>
+                            <li>检查文件路径是否正确：<code>.deepagents/agents/{name}/AGENTS.md</code></li>
+                            <li>确认文件名是 <code>AGENTS.md</code>（不是 <code>agent.md</code>）</li>
+                            <li>确认 frontmatter 格式正确，<code>name</code> 和 <code>description</code> 必填</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D97706;">
+                        <h4>子代理未被调用</h4>
+                        <ul>
+                            <li><code>description</code> 太模糊，主代理不知何时委派</li>
+                            <li>在主代理提示词中<strong>明确指示</strong>委派策略</li>
+                            <li>确保描述中包含<strong>具体的触发条件</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>模型覆盖未生效</h4>
+                        <ul>
+                            <li>检查 <code>model</code> 格式：<code>provider:model-name</code></li>
+                            <li>确认 provider 拼写正确（如 <code>anthropic</code> 而非 <code>Anthropic</code>）</li>
+                            <li>确认模型名称拼写正确且 API 可用</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>YAML 解析错误</h4>
+                        <ul>
+                            <li>确保 frontmatter 用 <code>---</code> 正确包裹</li>
+                            <li>多行描述用 <code>&gt;</code> 或 <code>|</code> 折叠</li>
+                            <li>检查是否有<strong>特殊字符</strong>未转义</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>调试技巧：</strong>在 LangSmith 中查看 <code>lc_agent_name</code> 元数据，确认子代理是否被正确加载和调用。如果元数据中没有出现你定义的子代理名称，说明配置文件未被识别。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Chapter review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>AGENTS.md 是 Deep Agents Code 中定义子代理的声明式方案</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>用 <code>AGENTS.md</code> 文件<strong>声明式定义</strong>子代理——零代码</li>
+                            <li><strong>项目级</strong>优先于<strong>用户级</strong>的加载规则</li>
+                            <li><code>model</code> 字段实现<strong>高性价比</strong>模型分配</li>
+                            <li>覆盖内置 <code>general-purpose</code> 子代理的方法</li>
+                            <li>当前限制：<strong>不支持</strong> tools、middleware 等高级配置</li>
+                            <li>需要完全控制时，回退到 <strong>SDK 方式</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>Code Providers</strong>：模型提供商的配置和切换</li>
+                            <li><strong>Code Configuration</strong>：Code 模式的全局配置项</li>
+                            <li><strong>Code MCP Tools</strong>：集成外部工具到 Code 代理</li>
+                            <li><strong>Code Data Locations</strong>：所有配置文件的路径规范</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>AGENTS.md 是"够用就好"的哲学体现。对于大多数场景——定义名称、描述、提示词和模型——它已经足够。当你需要精细控制工具、中间件或技能时，再升级到 SDK 方式。两种方式可以共存，按需选择。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./30-code-providers.html">下一章：Code Providers</a> -- 模型提供商配置</li>
+                            <li><a href="./10-subagents.html">第 10 章：子代理（Subagents）</a> -- SDK 方式完整参考</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/deepagents/code/subagents">Deep Agents Code Subagents</a> -- 官方 API 参考</li>
+                            <li><a href="https://docs.langchain.com/deepagents/subagents">Subagent 规范</a> -- SubAgent 字典完整规范</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">GitHub 仓库</a> -- 源码和示例</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关概念</h4>
+                        <ul>
+                            <li><a href="./33-code-data-locations.html">Code Data Locations</a> -- 所有文件路径规范</li>
+                            <li><a href="./15-skills.html">第 15 章：技能系统</a> -- 为子代理加载技能</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

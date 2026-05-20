@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>子代理流式渲染</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 22 章</div>
+            <h1>子代理流式渲染</h1>
+            <p>将协调器消息与子 Agent 流式输出分别渲染，展示可折叠进度卡片</p>
+            <strong>从"交错混乱"到"井然有序"的前端流式渲染方案</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>消息流混乱</h2>
+                <h4>协调器派出子 Agent 后，前端会收到什么？</h4>
+                <p>当协调器 Agent 派生出研究员、分析师、撰稿人等多个子 Agent 时，每个子 Agent 生成的 token 会<strong>交错</strong>出现在同一个消息流中。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>不过滤的混乱</h4>
+                        <ul>
+                            <li>协调器的推理 + 子 Agent 的输出<strong>混在一起</strong></li>
+                            <li>用户看到的内容<strong>上下文跳跃</strong>，难以阅读</li>
+                            <li>无法知道哪段文字来自哪个子 Agent</li>
+                            <li>无法为每个子 Agent 独立展示进度</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>过滤后的清晰</h4>
+                        <ul>
+                            <li><code>stream.messages</code> 只含协调器消息</li>
+                            <li>子 Agent 内容通过 <code>stream.subagents</code> 独立访问</li>
+                            <li>用 <code>getSubagentsByMessage</code> 精确关联</li>
+                            <li>每个子 Agent 渲染为<strong>可折叠进度卡片</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心思路：</strong>设置 <code>filterSubagentMessages: true</code>，将子 Agent 的 token 从主消息流中剥离。协调器的推理与各专家的工作成果<strong>各归其位</strong>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Architecture Overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>数据流架构</h2>
+                <h4>从后端 Agent 到前端 UI 的完整数据流</h4>
+                <p>整个渲染方案涉及三个关键角色的协作：</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>后端 Agent</h4>
+                        <p>协调器 + 子 Agent 在 LangGraph 中运行。</p>
+                        <p>通过 <code>streamSubgraphs: true</code> 启用子图流式传输。</p>
+                        <p><span class="tag tag-primary">LangGraph Server</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>useStream Hook</h4>
+                        <p>前端通过 <code>useStream</code> 连接 Agent API。</p>
+                        <p>设置 <code>filterSubagentMessages: true</code> 分离消息。</p>
+                        <p><span class="tag tag-info">@langchain/react</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>UI 组件</h4>
+                        <p><code>MessageWithSubagents</code> 渲染协调器消息。</p>
+                        <p><code>SubagentCard</code> 渲染每个子 Agent 的进度卡片。</p>
+                        <p><span class="tag tag-success">React 组件</span></p>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 数据流：后端 → useStream → UI 组件
+LangGraph Server
+  ↓ streamSubgraphs: true
+useStream({ filterSubagentMessages: true })
+  ↓ stream.messages → 协调器消息
+  ↓ stream.subagents → 子 Agent 数据
+  ↓ getSubagentsByMessage(msgId) → 按消息关联
+MessageWithSubagents → SubagentCard</code></pre>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/22-frontend-subagent-streaming-1.png" alt="图：后端 Agent 到前端 UI 数据流" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Setup useStream ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置 useStream</h2>
+                <h4>一行配置开启子 Agent 消息过滤</h4>
+                <p>使用 <code>useStream</code> 连接 LangGraph Agent API，传入 <code>typeof myAgent</code> 获得类型安全的状态访问。</p>
+                <pre><code class="language-javascript">import { useStream } from "@langchain/react";
+import type { myAgent } from "./agent";
+
+const AGENT_URL = "http://localhost:2024";
+
+export function DeepAgentChat() {
+  const stream = useStream&lt;typeof myAgent&gt;({
+    apiUrl: AGENT_URL,                              // LangGraph Server å°å
+    assistantId: "deep_agent_subagent_cards",       // Agent æ è¯
+    filterSubagentMessages: true,  // å³é®ï¼å¼å¯åå­ Agent token ä»ä¸»æ¶æ¯æµä¸­å¥ç¦»关键配置
+  });
+
+  return (
+    &lt;div&gt;
+      {stream.messages.map((msg) =&gt; (
+        &lt;MessageWithSubagents
+          key={msg.id}
+          message={msg}
+          subagents={stream.getSubagentsByMessage(msg.id)}
+        /&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>关键参数</h4>
+                        <ul>
+                            <li><code>apiUrl</code>：LangGraph Server 地址</li>
+                            <li><code>assistantId</code>：Agent 的唯一标识</li>
+                            <li><code>filterSubagentMessages</code>：开启子 Agent 过滤</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>类型安全</h4>
+                        <ul>
+                            <li>传入 <code>typeof myAgent</code> 泛型参数</li>
+                            <li><code>stream.messages</code> 自动获得正确的消息类型</li>
+                            <li>编译时捕获状态字段错误</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Submit with streamSubgraphs ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>提交与流式</h2>
+                <h4>启用子图流式传输并设置递归限制</h4>
+                <p>提交消息时需要启用 <code>streamSubgraphs</code>，否则前端收不到子 Agent 的中间输出。</p>
+                <pre><code class="language-javascript">// 提交用户消息，同时启用子图流式传输
+stream.submit(
+  { messages: [{ type: "human", content: text }] },  // 用户输入
+  { streamSubgraphs: true }  // 必须开启，否则前端收不到子 Agent 的中间输出
+);</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>streamSubgraphs</h4>
+                        <p>设为 <code>true</code> 后，LangGraph 会推送每个子图的实时输出。如果不开启，子 Agent 的中间 token 不会到达前端。</p>
+                    </div>
+                    <div class="card">
+                        <h4>递归限制</h4>
+                        <p>Deep Agents 默认递归限制为 <strong>10,000</strong>，对多数多专家配置已足够。如有需要可通过 <code>config.recursion_limit</code> 覆盖。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>常见问题：</strong>如果前端收不到子 Agent 的流式数据，检查两件事：(1) <code>streamSubgraphs</code> 是否设为 <code>true</code>；(2) 后端 Agent 是否使用了子图结构（<code>task</code> 工具派生子 Agent）。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: SubagentStreamInterface ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>核心接口</h2>
+                <h4>SubagentStreamInterface——每个子 Agent 的元数据容器</h4>
+                <p>每个子 Agent 都暴露一个 <code>SubagentStreamInterface</code> 对象，包含任务描述、状态、消息流和时间信息。</p>
+                <pre><code class="language-javascript">interface SubagentStreamInterface {
+  id: string;                                        // 子 Agent 实例的唯一标识
+  status: "pending" | "running" | "complete" | "error";  // 生命周期状态
+  messages: BaseMessage[];                           // 子 Agent 的流式消息，实时更新
+  result: string | undefined;                        // 最终输出，仅 complete 时可用
+  toolCall: {                                        // 触发此子 Agent 的 task 工具调用
+    id: string;
+    name: string;
+    args: {
+      description: string;      // 任务描述
+      subagent_type: string;     // 专家类型名称
+      [key: string]: unknown;
+    };
+  };
+  startedAt: number | undefined;     // 启动时间戳
+  completedAt: number | undefined;   // 完成时间戳
+}</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>属性</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>id</code></td><td>子 Agent 实例的唯一标识</td></tr>
+                        <tr><td><code>status</code></td><td>生命周期：<code>pending</code> → <code>running</code> → <code>complete</code> 或 <code>error</code></td></tr>
+                        <tr><td><code>messages</code></td><td>子 Agent 自身的消息流，实时更新</td></tr>
+                        <tr><td><code>result</code></td><td>最终输出，仅 <code>complete</code> 时可用</td></tr>
+                        <tr><td><code>toolCall.args</code></td><td>任务描述 + 专家类型名称</td></tr>
+                        <tr><td><code>startedAt / completedAt</code></td><td>执行时间戳，用于计算耗时</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: getSubagentsByMessage ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>关联消息</h2>
+                <h4>getSubagentsByMessage——将子 Agent 精确挂到对应的协调器消息下方</h4>
+                <p>协调器的一条 AI 消息可能同时派生多个子 Agent。通过消息 ID 查询，可以将这些子 Agent 的卡片<strong>精确地</strong>渲染在触发它们的协调器消息之后。</p>
+                <pre><code class="language-javascript">// 获取某条消息派生的所有子 Agent
+const turnSubagents = stream.getSubagentsByMessage(msg.id);
+// 返回 SubagentStreamInterface[]
+// 如果该消息没有派生任何子 Agent，返回空数组</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>渲染逻辑</h4>
+                        <pre><code class="language-javascript">{stream.messages.map((msg) =&gt; (
+  &lt;MessageWithSubagents
+    key={msg.id}
+    message={msg}
+    subagents={
+      stream.getSubagentsByMessage(msg.id)
+    }
+  /&gt;
+))}</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>布局效果</h4>
+                        <ul>
+                            <li>协调器消息正常渲染</li>
+                            <li>如果该消息派生了子 Agent，在下方渲染缩进的卡片组</li>
+                            <li>左侧用蓝色竖线标记"这些是子任务"</li>
+                            <li>没有派生子 Agent 的消息不受影响</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>设计精妙之处：</strong>不是按"全局顺序"排列所有消息，而是按"谁派生了谁"来组织。这让 UI 与 Agent 的思维结构完全对齐。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: SubagentCard Component ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>卡片组件</h2>
+                <h4>SubagentCard——展示专家名称、任务描述、流式内容和耗时</h4>
+                <p>每个子 Agent 用一张可折叠卡片呈现。卡片头部显示专家类型、任务描述和状态，展开后显示实时内容或最终结果。</p>
+                <pre><code class="language-javascript">import { AIMessage } from "@langchain/core/messages";
+
+function SubagentCard({ subagent }: { subagent: SubagentStreamInterface }) {
+  const [expanded, setExpanded] = useState(true);
+
+  // ä» task å·¥å·è°ç¨åæ°ä¸­æåä¸å®¶ç±»ååä»»å¡æè¿°
+  const title = subagent.toolCall?.args?.subagent_type
+    ?? `Agent ${subagent.id}`;
+  const description = subagent.toolCall?.args?.description ?? "";
+
+  // 取子 Agent 最后一条 AI 消息作为流式内容
+  const lastAIMessage = subagent.messages
+    .filter(AIMessage.isInstance).at(-1);
+
+  const displayContent =
+    subagent.status === "complete"
+      ? subagent.result
+      : typeof lastAIMessage?.content === "string"
+        ? lastAIMessage.content : "";
+
+  const elapsed = getElapsedTime(
+    subagent.startedAt, subagent.completedAt
+  );
+
+  return (
+    &lt;div className="rounded-lg border bg-white shadow-sm"&gt;
+      {/* 头部：专家名 + 描述 + 状态 + 耗时 */}
+      {/* 内容：流式文本或最终结果 */}
+      {/* 运行中时末尾显示闪烁光标 */}
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="warning">
+                    <strong>注意内容来源：</strong><code>status === "complete"</code> 时用 <code>subagent.result</code>，否则用 <code>lastAIMessage.content</code>。不要始终用 <code>messages</code>，因为完成时消息可能不包含最终结果。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Status Icons & Badges ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>状态指示</h2>
+                <h4>StatusIcon + StatusBadge——一眼识别子 Agent 生命周期</h4>
+                <p>一致的视觉指示器帮助用户立即了解每个子 Agent 当前处于哪个阶段。</p>
+                <pre><code class="language-javascript">function StatusIcon({ status }: { status: SubagentStreamInterface["status"] }) {
+  switch (status) {
+    case "pending":  return &lt;span className="text-gray-400"&gt;○&lt;/span&gt;;
+    case "running":  return &lt;span className="animate-spin text-blue-500"&gt;◉&lt;/span&gt;;
+    case "complete": return &lt;span className="text-green-500"&gt;✓&lt;/span&gt;;
+    case "error":    return &lt;span className="text-red-500"&gt;✕&lt;/span&gt;;
+  }
+}
+
+function StatusBadge({ status }: { status: SubagentStreamInterface["status"] }) {
+  const styles = {
+    pending:  "bg-gray-100 text-gray-600",
+    running:  "bg-blue-100 text-blue-700",
+    complete: "bg-green-100 text-green-700",
+    error:    "bg-red-100 text-red-700",
+  };
+  return (
+    &lt;span className={`rounded-full px-2 py-0.5
+      text-xs font-medium ${styles[status]}`}&gt;
+      {status}
+    &lt;/span&gt;
+  );
+}</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>状态</th><th>图标</th><th>徽章颜色</th><th>含义</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>pending</code></td><td>○ 灰色</td><td>灰色</td><td>已创建，等待执行</td></tr>
+                        <tr><td><code>running</code></td><td>◉ 蓝色旋转</td><td>蓝色</td><td>正在生成输出</td></tr>
+                        <tr><td><code>complete</code></td><td>✓ 绿色</td><td>绿色</td><td>执行完成，结果可用</td></tr>
+                        <tr><td><code>error</code></td><td>✕ 红色</td><td>红色</td><td>执行出错</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Progress Tracking ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>进度追踪</h2>
+                <h4>SubagentProgress——让用户知道"完成了几个"</h4>
+                <p>当有多个子 Agent 并行工作时，一个进度条 + 计数器能显著减少用户的焦虑感。</p>
+                <pre><code class="language-javascript">function SubagentProgress({ subagents }: { subagents: SubagentStreamInterface[] }) {
+  // 统计已完成的子 Agent 数量（error 不计入）
+  const completed = subagents
+    .filter((s) => s.status === "complete").length;
+  const total = subagents.length;
+  // 计算完成百分比，整数取整避免小数
+  const percentage = total > 0
+    ? Math.round((completed / total) * 100) : 0;
+
+  return (
+    &lt;div className="space-y-1"&gt;
+      &lt;div className="flex items-center justify-between
+        text-xs text-gray-500"&gt;
+        &lt;span&gt;子 Agent 进度&lt;/span&gt;
+        &lt;span&gt;{completed}/{total} 已完成&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;div className="h-2 overflow-hidden
+        rounded-full bg-gray-200"&gt;
+        &lt;div className="h-full rounded-full bg-blue-500
+          transition-all duration-300"
+          style={{ width: `${percentage}%` }} /&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>设计要点</h4>
+                        <ul>
+                            <li><code>completed/total</code> 格式直观</li>
+                            <li>进度条用 CSS transition 平滑过渡</li>
+                            <li>放在卡片组顶部，一眼看到全局进度</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>边界情况</h4>
+                        <ul>
+                            <li>total 为 0 时不显示进度条</li>
+                            <li>百分比整数取整，避免小数</li>
+                            <li>error 状态不计入 completed</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Elapsed Time ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>耗时计算</h2>
+                <h4>getElapsedTime——展示每个子 Agent 的执行时间</h4>
+                <p>耗时数据帮助用户了解性能特征，也便于识别哪个子 Agent 是瓶颈。</p>
+                <pre><code class="language-javascript">function getElapsedTime(startedAt: number | undefined, completedAt: number | undefined) {
+  if (!startedAt) return null;  // 尚未启动，不显示耗时
+  // 运行中用 Date.now() 作为终点，每次重渲染自动更新
+  const end = completedAt ?? Date.now();
+  const seconds = Math.round((end - startedAt) / 1000);
+
+  // 超过 60 秒切换为"分+秒"格式
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+// 使用：
+const elapsed = getElapsedTime(
+  subagent.startedAt,
+  subagent.completedAt
+);</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>运行中</h4>
+                        <p><code>completedAt</code> 为 <code>undefined</code>，自动用 <code>Date.now()</code> 作为终点。每次组件重渲染，耗时都会更新——形成<strong>实时计时</strong>效果。</p>
+                    </div>
+                    <div class="column">
+                        <h4>已完成</h4>
+                        <p><code>completedAt</code> 有值，直接算出差值，显示固定耗时。超过 60 秒自动切换为"分 + 秒"格式。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>小技巧：</strong>由于 <code>useStream</code> 持续推送更新，子 Agent 卡片会频繁重渲染。<code>Date.now()</code> 在每次渲染时取值，自然形成动态计时——无需额外 <code>setInterval</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: MessageWithSubagents ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>组装消息</h2>
+                <h4>MessageWithSubagents——协调器消息 + 子 Agent 卡片的布局模式</h4>
+                <p>这是最关键的布局组件：渲染协调器消息，如果该消息派生了子 Agent，则在下方用蓝色竖线包裹卡片组。</p>
+                <pre><code class="language-javascript">function MessageWithSubagents({ message, subagents }: { message: BaseMessage; subagents: SubagentStreamInterface[] }) {
+  if (message.type === "human") {
+    return &lt;HumanMessage content={message.content} /&gt;;
+  }
+
+  return (
+    &lt;div className="space-y-3"&gt;
+      {/* 协调器消息内容 */}
+      {message.content && (
+        &lt;div className="prose prose-sm max-w-none"&gt;
+          {message.content}
+        &lt;/div&gt;
+      )}
+
+      {/* 子 Agent 卡片组 */}
+      {subagents.length > 0 && (
+        &lt;div className="ml-4 space-y-3
+          border-l-2 border-blue-200 pl-4"&gt;
+          &lt;SubagentProgress subagents={subagents} /&gt;
+          {subagents.map((subagent) =&gt; (
+            &lt;SubagentCard
+              key={subagent.id}
+              subagent={subagent}
+            /&gt;
+          ))}
+        &lt;/div&gt;
+      )}
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="key-point">
+                    <strong>布局精髓：</strong><code>ml-4</code> + <code>border-l-2 border-blue-200</code> + <code>pl-4</code> 创建了一个缩进的蓝色竖线区域。视觉上清晰表达"这些子任务属于上方那条协调器消息"。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Synthesis Indicator ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>综合指示</h2>
+                <h4>SynthesisIndicator——子 Agent 全部完成后，协调器正在综合结果</h4>
+                <p>所有子 Agent 完成后，协调器需要时间将它们的结果综合为最终响应。此时应显示清晰的指示器，避免用户误以为 Agent 已停滞。</p>
+                <pre><code class="language-javascript">function SynthesisIndicator({ subagents, isLoading }: { subagents: SubagentStreamInterface[]; isLoading: boolean }) {
+  // 判断所有子 Agent 是否都已结束（无论成功或失败）
+  const allComplete =
+    subagents.length > 0 &&
+    subagents.every((s) =>
+      s.status === "complete" || s.status === "error"
+    );
+
+  // 只有全部完成且仍在加载时才显示（协调器正在综合结果）
+  if (!allComplete || !isLoading) return null;
+
+  return (
+    &lt;div className="flex items-center gap-2
+      rounded-lg bg-purple-50 px-4 py-2
+      text-sm text-purple-700"&gt;
+      &lt;span className="animate-spin"&gt;⟳&lt;/span&gt;
+      正在综合 {subagents.length} 个子 Agent
+      {subagents.length !== 1 ? "们" : ""}的结果...
+    &lt;/div&gt;
+  );
+}</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>没有指示器</h4>
+                        <ul>
+                            <li>所有子 Agent 显示"已完成"</li>
+                            <li>页面看起来"卡住了"</li>
+                            <li>用户不知道协调器在做什么</li>
+                            <li>可能重复提交请求</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>有指示器</h4>
+                        <ul>
+                            <li>紫色提示"正在综合结果..."</li>
+                            <li>旋转图标暗示"还在工作"</li>
+                            <li>用户安心等待最终响应</li>
+                            <li>配合子 Agent 数量给出预期</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="tip">
+                    <strong>提示：</strong>综合阶段在复杂的多专家工作流中可能需要数秒。一个清晰的"正在综合结果..."指示器可以防止用户误以为 Agent 已经停滞。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Access all subagents ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>全局访问</h2>
+                <h4>通过 stream.subagents 一次性访问所有子 Agent</h4>
+                <p>除了按消息查找，你还可以用 <code>stream.subagents</code> 获取全部子 Agent 的 Map，用于构建全局仪表盘或进度汇总。</p>
+                <pre><code class="language-javascript">// 访问所有子 Agent（subagents 是 Map，需转为数组）
+const allSubagents = [...stream.subagents.values()];
+
+// 按状态分类，用于构建全局仪表盘
+const running  = allSubagents.filter(s => s.status === "running");
+const completed = allSubagents.filter(s => s.status === "complete");
+const errors   = allSubagents.filter(s => s.status === "error");
+
+// 构建全局摘要
+const summary = `
+  总计: ${allSubagents.length} 个子 Agent
+  运行中: ${running.length}
+  已完成: ${completed.length}
+  出错: ${errors.length}
+`;</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>按消息查找</h4>
+                        <p><code>getSubagentsByMessage(msgId)</code></p>
+                        <p>适合：消息级渲染，子 Agent 卡片紧跟协调器消息。</p>
+                    </div>
+                    <div class="card">
+                        <h4>全局访问</h4>
+                        <p><code>stream.subagents.values()</code></p>
+                        <p>适合：全局进度指示器、仪表盘、汇总面板。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong><code>stream.subagents</code> 返回的是 <code>Map</code> 对象，需要用 <code>[...map.values()]</code> 或 <code>Array.from()</code> 转为数组才能使用 <code>filter</code> 等数组方法。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Debug unfiltered output ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>调试技巧</h2>
+                <h4>开发阶段可临时关闭过滤，查看原始交错输出</h4>
+                <p>当你怀疑子 Agent 的 token 没有正确流转时，可以将 <code>filterSubagentMessages</code> 临时设为 <code>false</code>。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>过滤模式（生产用）</h4>
+                        <pre><code class="language-javascript">useStream({
+  filterSubagentMessages: true
+});
+// stream.messages → 只有协调器消息
+// 子 Agent 内容在 stream.subagents 中</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>原始模式（调试用）</h4>
+                        <pre><code class="language-javascript">useStream({
+  filterSubagentMessages: false
+});
+// stream.messages → 所有消息交错
+// 可以看到子 Agent 的原始输出顺序</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>仅在开发环境使用！</strong>原始模式会产生协调器和子 Agent token 交错混杂的不可读内容，不适合展示给最终用户。生产环境务必保持 <code>true</code>。
+                </div>
+                <div class="key-point">
+                    <strong>调试流程：</strong>先用原始模式确认数据流通 → 再切回过滤模式验证 UI 渲染。两步走，快速定位问题是在后端还是前端。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Use Cases ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>使用场景</h2>
+                <h4>哪些工作流最适合子 Agent 卡片式渲染？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>深度研究</h4>
+                        <p>协调器派遣研究员调查问题的不同方面，然后综合他们的发现。每个研究员一张卡片，任务描述清晰可见。</p>
+                    </div>
+                    <div class="card">
+                        <h4>多专家分析</h4>
+                        <p>法律、金融、技术等领域专家各自贡献观点。用户能同时看到各专家的实时输出，不会混淆。</p>
+                    </div>
+                    <div class="card">
+                        <h4>复杂任务分解</h4>
+                        <p>规划器将大型任务分解为子任务，每个子任务分配给专业工作者。进度条让用户掌握全局。</p>
+                    </div>
+                    <div class="card">
+                        <h4>代码审查流水线</h4>
+                        <p>不同 Agent 分别处理安全审查、风格检查、性能分析和文档审查。出错时只影响对应卡片，不崩溃全局。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>共同特征：</strong>多个子 Agent 并行或串行工作，每个子 Agent 有明确的任务描述和独立的输出。卡片式渲染让用户清楚地看到"谁在做、在做什么、做到哪了"。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Best Practices ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践</h2>
+                <h4>六条经过实战验证的子 Agent 渲染准则</h4>
+                <table>
+                    <thead>
+                        <tr><th>#</th><th>准则</th><th>为什么</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>1</strong></td>
+                            <td>始终设置 <code>filterSubagentMessages: true</code></td>
+                            <td>未过滤的流会产生不可读的交错内容</td>
+                        </tr>
+                        <tr>
+                            <td><strong>2</strong></td>
+                            <td>展示 <code>toolCall.args.description</code></td>
+                            <td>让用户知道每个子 Agent 被要求做什么</td>
+                        </tr>
+                        <tr>
+                            <td><strong>3</strong></td>
+                            <td>使用可折叠卡片</td>
+                            <td>5 个以上子 Agent 时自动折叠，聚焦进行中的任务</td>
+                        </tr>
+                        <tr>
+                            <td><strong>4</strong></td>
+                            <td>展示耗时数据</td>
+                            <td>帮助用户识别性能瓶颈</td>
+                        </tr>
+                        <tr>
+                            <td><strong>5</strong></td>
+                            <td>设置适当的递归限制</td>
+                            <td>嵌套子图需要更高限制，建议从 100 开始</td>
+                        </tr>
+                        <tr>
+                            <td><strong>6</strong></td>
+                            <td>按子 Agent 处理错误</td>
+                            <td>一个失败不影响其他子 Agent 和整个 UI</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>最容易忽略的第 6 条：</strong>不要在全局 try/catch 中处理子 Agent 错误。应该在每个 <code>SubagentCard</code> 内部根据 <code>subagent.status === "error"</code> 展示错误信息，让其他子 Agent 继续运行。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 18: Vue / Svelte / Angular ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多框架适配</h2>
+                <h4>useStream 不只是 React——Vue、Svelte、Angular 都能用</h4>
+                <p>LangChain 为每个主流前端框架提供了 <code>useStream</code> 实现，核心 API 完全一致。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Vue</h4>
+                        <pre><code class="language-javascript">import { useStream } from "@langchain/vue";
+
+const stream = useStream&lt;typeof myAgent&gt;({
+  apiUrl: AGENT_URL,
+  filterSubagentMessages: true,
+});
+// 模板中用 stream.messages.value</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Svelte</h4>
+                        <pre><code class="language-javascript">import { useStream }
+  from "@langchain/svelte";
+
+const { messages,
+  getSubagentsByMessage } =
+  useStream&lt;typeof myAgent&gt;({
+    filterSubagentMessages: true,
+  });
+// 用 $messages 响应式访问</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Angular</h4>
+                        <pre><code class="language-javascript">import { useStream }
+  from "@langchain/angular";
+
+// 在 Component 中
+stream = useStream&lt;typeof myAgent&gt;({
+  filterSubagentMessages: true,
+});
+// 模板中用 stream.messages()</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>框架无关的思路：</strong><code>filterSubagentMessages</code> 和 <code>getSubagentsByMessage</code> 的概念在所有框架中完全相同。区别仅在于响应式语法——React 用 <code>.map</code>，Vue 用 <code>.value</code>，Svelte 用 <code>$</code>，Angular 用 Signal。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 19: Full Framework Examples ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>完整框架示例</h2>
+                <h4>Vue / Svelte / Angular 中 useStream 的完整写法</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Vue 3 — Composition API</h4>
+                        <pre><code class="language-javascript">&lt;script setup lang="ts"&gt;
+import { useStream } from "@langchain/vue";
+
+const AGENT_URL = "http://localhost:2024";
+
+const stream = useStream&lt;typeof myAgent&gt;({
+  apiUrl: AGENT_URL,
+  assistantId: "deep_agent_subagent_cards",
+  filterSubagentMessages: true,
+});
+&lt;/script&gt;
+
+&lt;template&gt;
+  &lt;div&gt;
+    &lt;MessageWithSubagents
+      v-for="msg in stream.messages.value"
+      :key="msg.id"
+      :message="msg"
+      :subagents="stream.getSubagentsByMessage(msg.id)"
+    /&gt;
+  &lt;/div&gt;
+&lt;/template&gt;</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>Svelte 5</h4>
+                        <pre><code class="language-javascript">&lt;script lang="ts"&gt;
+  import { useStream }
+    from "@langchain/svelte";
+
+  const AGENT_URL = "http://localhost:2024";
+
+  const { messages,
+    getSubagentsByMessage,
+    submit } = useStream&lt;typeof myAgent&gt;({
+    apiUrl: AGENT_URL,
+    assistantId:
+      "deep_agent_subagent_cards",
+    filterSubagentMessages: true,
+  });
+&lt;/script&gt;
+
+&lt;div&gt;
+  {#each $messages as msg (msg.id)}
+    &lt;MessageWithSubagents
+      message={msg}
+      subagents={getSubagentsByMessage(msg.id)}
+    /&gt;
+  {/each}
+&lt;/div&gt;</code></pre>
+                    </div>
+                </div>
+                <div class="columns" style="margin-top: 1rem;">
+                    <div class="column">
+                        <h4>Angular 17+</h4>
+                        <pre><code class="language-javascript">import { Component }
+  from "@angular/core";
+import { useStream }
+  from "@langchain/angular";
+
+const AGENT_URL = "http://localhost:2024";
+
+@Component({
+  selector: "app-deep-agent-chat",
+  template: `
+    @for (msg of stream.messages();
+          track msg.id) {
+      &lt;app-message-with-subagents
+        [message]="msg"
+        [subagents]="stream
+          .getSubagentsByMessage(msg.id)"
+      /&gt;
+    }
+  `,
+})
+export class DeepAgentChatComponent {
+  stream = useStream&lt;typeof myAgent&gt;({
+    apiUrl: AGENT_URL,
+    assistantId:
+      "deep_agent_subagent_cards",
+    filterSubagentMessages: true,
+  });
+}</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>各框架关键差异</h4>
+                        <table>
+                            <thead>
+                                <tr><th>框架</th><th>消息访问</th><th>列表渲染</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>React</td><td><code>stream.messages</code></td><td><code>.map()</code></td></tr>
+                                <tr><td>Vue</td><td><code>stream.messages.value</code></td><td><code>v-for</code></td></tr>
+                                <tr><td>Svelte</td><td><code>$messages</code></td><td><code>{#each}</code></td></tr>
+                                <tr><td>Angular</td><td><code>stream.messages()</code></td><td><code>@for</code></td></tr>
+                            </tbody>
+                        </table>
+                        <div class="key-point" style="margin-top: 0.8rem;">
+                            <strong>核心配置不变：</strong>无论哪个框架，<code>apiUrl</code>、<code>assistantId</code>、<code>filterSubagentMessages</code> 三个参数完全一致，只是响应式绑定语法不同。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 20: Complete Component Tree ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>组件全貌</h2>
+                <h4>从前端入口到最终渲染的完整组件树</h4>
+                <pre><code class="language-javascript">DeepAgentChat               // 顶层：useStream 连接后端
+├── MessageWithSubagents     // 每条协调器消息
+│   ├── HumanMessage         // 用户消息（直接渲染）
+│   └── div.prose            // 协调器 AI 消息
+│       └── SubagentProgress // 进度条 + 计数器
+│       └── SubagentCard[]   // 子 Agent 卡片组
+│           ├── StatusIcon   // 状态图标（○ ◉ ✓ ✕）
+│           ├── StatusBadge  // 状态徽章
+│           └── div.prose    // 流式内容 + 闪烁光标
+├── SynthesisIndicator       // "正在综合结果..."
+└── 全局仪表盘（可选）
+    └── stream.subagents     // 所有子 Agent 汇总</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>核心数据源</h4>
+                        <ul>
+                            <li><code>stream.messages</code> → 协调器消息</li>
+                            <li><code>stream.subagents</code> → 全局子 Agent Map</li>
+                            <li><code>getSubagentsByMessage()</code> → 按消息查找</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>核心交互</h4>
+                        <ul>
+                            <li>卡片可折叠/展开</li>
+                            <li>运行中显示闪烁光标</li>
+                            <li>完成后显示固定结果 + 耗时</li>
+                            <li>综合阶段显示紫色指示器</li>
+                        </ul>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/22-frontend-subagent-streaming-2.png" alt="图：前端组件树全貌" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 21: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了子 Agent 流式渲染的完整方案</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li><code>filterSubagentMessages: true</code> 分离协调器与子 Agent 消息</li>
+                            <li><code>SubagentStreamInterface</code> 接口的完整结构</li>
+                            <li><code>getSubagentsByMessage</code> 精确关联消息与子 Agent</li>
+                            <li>可折叠卡片、状态图标、进度条、耗时计算</li>
+                            <li>综合指示器防止用户误判"卡住"</li>
+                            <li>六条最佳实践确保生产可用</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>前端 Todo 列表</strong>：在 UI 中管理和跟踪 Agent 任务</li>
+                            <li><strong>前端沙箱</strong>：安全地展示 Agent 的代码执行结果</li>
+                            <li><strong>ACP 协议</strong>：Agent Communication Protocol 的集成</li>
+                            <li><strong>代码模式</strong>：用编程方式构建和部署 Deep Agent</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>子 Agent 流式渲染的关键不是"技术有多复杂"，而是"信息组织有多清晰"。过滤 + 关联 + 卡片的组合，让用户看到的不再是混乱的 token 交错，而是一组井然有序、各司其职的专家在工作。
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

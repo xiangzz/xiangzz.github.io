@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>人机协作（Human-in-the-loop）</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 12 章</div>
+            <h1>人机协作</h1>
+            <p>为敏感的工具操作配置人工审批，让 Agent 可控又安全</p>
+            <strong>从"无人值守"到"关键节点人工把关"的关键一步</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你有没有试过让 Agent 自作主张删除文件、发送邮件？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>无人值守的风险</h4>
+                        <ul>
+                            <li>Agent 删了不该删的文件，<strong>没有确认机制</strong></li>
+                            <li>发了错误的邮件给全公司，<strong>无法拦截</strong></li>
+                            <li>执行了危险的操作，<strong>事后才发现</strong></li>
+                            <li>参数传错了（比如发给了全组而非个人），<strong>无法修正</strong></li>
+                            <li>有些场景需要人在中间补充信息，<strong>没有交互渠道</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Human-in-the-loop 的解法</h4>
+                        <ul>
+                            <li>敏感工具执行前<strong>自动暂停</strong>，等待人工确认</li>
+                            <li>支持<strong>批准、拒绝、编辑、回复</strong>四种决策</li>
+                            <li>可以<strong>修改参数</strong>后再执行，避免错误操作</li>
+                            <li>基于 LangGraph 的 <code>interrupt</code> 能力，<strong>可靠持久化</strong></li>
+                            <li>每个工具可配置<strong>不同的审批策略</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>当你让 Agent 执行"删文件、发邮件、改数据库"这类不可逆操作时，你需要一个"暂停按钮"——在 Agent 真正动手之前，人先看一眼，确认没问题再放行。Deep Agents 通过 LangGraph 的中断机制实现了这个能力。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Core concept ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>核心概念</h2>
+                <h4>interrupt_on 参数——告诉 Agent 哪些工具需要人工审批</h4>
+                <p>Deep Agents 通过 <code>interruptOn</code> 参数为每个工具配置审批策略。当 Agent 调用配置了中断的工具时，执行会<strong>自动暂停</strong>，等待人工做出决策后继续。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/12-human-in-the-loop-1.png" alt="图：Human-in-the-loop 工作流——中断与恢复" class="ai-diagram-img">
+                <pre><code class="language-javascript">const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  tools: [removeFile, fetchFile, notifyEmail],
+  interruptOn: {
+    // true = 允许全部四种决策（approve/edit/reject/respond）
+    remove_file: true,
+    // false = 无需中断，Agent 直接执行
+    fetch_file: false,
+    // 对象形式 = 自定义允许的决策类型
+    notify_email: {
+      allowedDecisions: ["approve", "reject"]  // 只允许批准或拒绝
+    },
+  },
+  checkpointer,  // 必需！interrupt 依赖 checkpointer 持久化 Agent 状态
+});</code></pre>
+                <div class="warning">
+                    <strong>必须使用 Checkpointer：</strong>人机协作依赖 <code>MemorySaver</code> 或其他 checkpointer 来在中断和恢复之间持久化 Agent 状态。如果不配置 checkpointer，中断将无法正常工作。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Basic configuration ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>基本配置</h2>
+                <h4>定义工具、配置中断策略、创建 Agent——三步完成</h4>
+                <p>下面是一个完整的示例：定义三个工具，每个工具配置不同的审批策略。</p>
+                <pre><code class="language-javascript">import { tool } from "langchain";
+import { createDeepAgent } from "deepagents";
+import { MemorySaver } from "@langchain/langgraph";
+import { z } from "zod";
+
+// 工具 1：删除文件（高风险，允许所有决策）
+const removeFile = tool(
+  async ({ path }: { path: string }) => {
+    return `Deleted ${path}`;
+  },
+  {
+    name: "remove_file",
+    description: "Delete a file from the filesystem.",
+    schema: z.object({ path: z.string() }),
+  },
+);
+
+// 工具 2：读取文件（低风险，无需中断）
+const fetchFile = tool(
+  async ({ path }: { path: string }) => {
+    return `Contents of ${path}`;
+  },
+  {
+    name: "fetch_file",
+    description: "Read a file from the filesystem.",
+    schema: z.object({ path: z.string() }),
+  },
+);
+
+// 工具 3：发送邮件（中等风险，不允许编辑参数）
+const notifyEmail = tool(
+  async ({ to, subject, body }: { to: string; subject: string; body: string }) => {
+    return `Sent email to ${to}`;
+  },
+  {
+    name: "notify_email",
+    description: "Send an email.",
+    schema: z.object({ to: z.string(), subject: z.string(), body: z.string() }),
+  },
+);</code></pre>
+                <pre><code class="language-javascript">// 人机协作必须使用 Checkpointer 来持久化中断时的 Agent 状态
+const checkpointer = new MemorySaver();
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  tools: [removeFile, fetchFile, notifyEmail],
+  interruptOn: {
+    remove_file: true,                                        // 高风险：允许全部决策
+    fetch_file: false,                                        // 低风险：无需审批
+    notify_email: { allowedDecisions: ["approve", "reject"] }, // 中风险：禁止编辑参数
+  },
+  checkpointer,  // 必需！用于在中断和恢复之间保存状态
+});</code></pre>
+                <div class="key-point">
+                    <strong>配置逻辑：</strong><code>remove_file</code> 是高风险操作，允许批准、编辑、拒绝、回复全部四种决策。<code>fetch_file</code> 只是读取，无需中断。<code>notify_email</code> 只允许批准或拒绝，不允许编辑收件人等敏感参数。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Decision types ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>四种决策</h2>
+                <h4>approve / edit / reject / respond——控制人工能做什么</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>approve（批准）</h4>
+                        <p>使用 Agent 提出的<strong>原始参数</strong>直接执行工具。</p>
+                        <p><span class="tag tag-success">场景：参数没问题，放行</span></p>
+                        <pre><code class="language-javascript">{ type: "approve" }</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>edit（编辑）</h4>
+                        <p>在执行前<strong>修改工具参数</strong>，比如改收件人、调路径。</p>
+                        <p><span class="tag tag-info">场景：参数需要微调</span></p>
+                        <pre><code class="language-javascript">{
+  type: "edit",
+  editedAction: {
+    name: "notify_email",
+    args: { to: "team@co.com", subject: "...", body: "..." }
+  }
+}</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>reject（拒绝）</h4>
+                        <p><strong>完全跳过</strong>此工具调用的执行，返回拒绝消息。</p>
+                        <p><span class="tag tag-danger">场景：不该执行这个操作</span></p>
+                        <pre><code class="language-javascript">{ type: "reject" }</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>respond（回复）</h4>
+                        <p>将人工的消息<strong>直接作为工具结果</strong>返回，跳过执行。</p>
+                        <p><span class="tag tag-warning">场景："询问用户"类型的工具</span></p>
+                        <pre><code class="language-javascript">{ type: "respond" }</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>按风险等级定制：</strong>高风险操作允许全部四种决策；中等风险只允许批准和拒绝；必须执行的操作只允许批准。通过 <code>allowedDecisions</code> 数组精确控制。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Decision config examples ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>按风险配置</h2>
+                <h4>根据工具的风险等级定制允许的决策类型</h4>
+                <p>不同工具的风险等级不同，配置策略也应该不同。下面展示了三种典型配置：</p>
+                <pre><code class="language-javascript">const interruptOn = {
+  // 高风险操作：允许所有选项（批准、编辑、拒绝）
+  delete_file: { allowedDecisions: ["approve", "edit", "reject"] },
+
+  // 中等风险：仅允许批准或拒绝（不允许修改参数）
+  write_file: { allowedDecisions: ["approve", "reject"] },
+
+  // 必须执行的操作：只允许批准（不允许拒绝）
+  critical_operation: { allowedDecisions: ["approve"] },
+};</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>风险等级</th><th>工具示例</th><th>允许的决策</th><th>设计理由</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>高风险</strong></td>
+                            <td><code>delete_file</code></td>
+                            <td>approve / edit / reject</td>
+                            <td>需要最大灵活性——可能要改参数或直接取消</td>
+                        </tr>
+                        <tr>
+                            <td><strong>中等风险</strong></td>
+                            <td><code>write_file</code></td>
+                            <td>approve / reject</td>
+                            <td>二选一就够了——参数一般不需要人工修改</td>
+                        </tr>
+                        <tr>
+                            <td><strong>强制执行</strong></td>
+                            <td><code>critical_operation</code></td>
+                            <td>approve</td>
+                            <td>操作必须执行，但需要人工确认后才能继续</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>常见误区：</strong>不要所有工具都用 <code>true</code>（允许全部决策）。对于"发邮件"这类工具，如果允许 <code>edit</code>，人工可能把收件人改成不该收到的人。按风险等级精细配置才是正确的做法。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Handling interrupts ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>处理中断</h2>
+                <h4>检测中断、展示信息、收集决策、恢复执行——完整流程</h4>
+                <p>当中断触发时，Agent 暂停执行并返回包含 <code>__interrupt__</code> 的结果。你的代码需要：检测中断、提取信息、获取用户决策、用 <code>Command</code> 恢复。</p>
+                <pre><code class="language-javascript">import { v7 as uuid7 } from "uuid";
+import { Command } from "@langchain/langgraph";
+
+// thread_id 用于标识对话线程，checkpointer 按此 ID 存储状态
+const config = { configurable: { thread_id: uuid7() } };
+
+// 第一步：发送用户消息，触发 Agent 执行
+let result = await agent.invoke({
+  messages: [{ role: "user", content: "Delete the file temp.txt" }],
+}, config);
+
+// 第二步：检查 Agent 是否在工具调用前被中断
+if (result.__interrupt__) {
+  // __interrupt__ 是 LangGraph 的内置字段，包含所有待审批的工具调用
+  const interrupts = result.__interrupt__[0].value;
+  const actionRequests = interrupts.actionRequests;   // 待审批的工具调用列表
+  const reviewConfigs = interrupts.reviewConfigs;     // 每个工具允许的决策类型
+
+  // 创建 工具名称 → 审查配置 的查找映射，方便后续查询
+  const configMap = Object.fromEntries(
+    reviewConfigs.map((cfg) => [cfg.actionName, cfg])
+  );
+
+  // 第三步：向用户展示每个待审批操作及其允许的决策
+  for (const action of actionRequests) {
+    const reviewConfig = configMap[action.name];
+    console.log(`工具: ${action.name}`);
+    console.log(`参数: ${JSON.stringify(action.args)}`);
+    console.log(`允许的决策: ${reviewConfig.allowedDecisions}`);
+  }
+
+  // 第四步：收集用户的审批决策（按 actionRequests 顺序）
+  const decisions = [
+    { type: "approve" }  // 用户批准了删除操作
+  ];
+
+  // 第五步：用 Command({ resume }) 恢复 Agent 执行
+  result = await agent.invoke(
+    new Command({ resume: { decisions } }),
+    config  // 必须使用相同的 config，否则找不到之前的状态
+  );
+}</code></pre>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/12-human-in-the-loop-2.png" alt="图：中断处理完整调用链" class="ai-diagram-img">
+                <div class="key-point">
+                    <strong>关键步骤：</strong>调用 Agent → 检查 <code>result.__interrupt__</code> → 提取 <code>actionRequests</code> → 展示给用户 → 收集 <code>decisions</code> → 用 <code>Command({ resume })</code> 恢复。整个过程的核心就是"暂停-审批-恢复"。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Multiple tool calls ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>批量审批</h2>
+                <h4>Agent 一次调用多个工具时，中断会批量合并</h4>
+                <p>当 Agent 在一次循环中调用多个需要审批的工具时，<strong>所有中断会批量合并为一个</strong>。你需要按顺序为每个工具调用提供决策。</p>
+                <pre><code class="language-javascript">const config = { configurable: { thread_id: uuid7() } };
+
+let result = await agent.invoke({
+  messages: [{
+    role: "user",
+    content: "Delete temp.txt and send an email to admin@example.com"
+  }]
+}, config);
+
+if (result.__interrupt__) {
+  const interrupts = result.__interrupt__[0].value;
+  const actionRequests = interrupts.actionRequests;
+
+  // Agent 一次调用了两个需要审批的工具，中断被批量合并
+  console.assert(actionRequests.length === 2);
+
+  // decisions 数组的顺序必须与 actionRequests 一一对应
+  const decisions = [
+    { type: "approve" },  // 第 1 个工具 delete_file → 批准
+    { type: "reject" }    // 第 2 个工具 send_email → 拒绝
+  ];
+
+  result = await agent.invoke(
+    new Command({ resume: { decisions } }),
+    config
+  );
+}</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>决策顺序很重要</h4>
+                        <ul>
+                            <li><code>decisions</code> 数组的顺序<strong>必须</strong>和 <code>actionRequests</code> 一致</li>
+                            <li>第一个决策对应第一个工具调用</li>
+                            <li>第二个决策对应第二个工具调用</li>
+                            <li>顺序错乱会导致错误的决策应用到错误的工具</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>设计理念</h4>
+                        <ul>
+                            <li>批量合并而非逐个中断，减少交互次数</li>
+                            <li>用户可以<strong>一次性审批</strong>所有操作</li>
+                            <li>也可以<strong>选择性拒绝</strong>部分操作</li>
+                            <li>保证了原子性——要么全部决策，要么不恢复</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>常见陷阱：</strong>决策数组长度必须与 <code>actionRequests</code> 长度完全一致。少一个或多一个都会导致恢复失败。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Edit tool arguments ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>编辑参数</h2>
+                <h4>使用 edit 决策在执行前修改工具参数</h4>
+                <p>当 <code>"edit"</code> 在允许的决策列表中时，人工可以在执行前修改工具参数。比如 Agent 要给全公司发邮件，你觉得范围太广，可以改成只发给特定团队。</p>
+                <pre><code class="language-javascript">if (result.__interrupt__) {
+  const interrupts = result.__interrupt__[0].value;
+  const actionRequest = interrupts.actionRequests[0];
+
+  // 查看 Agent 原本想传给工具的参数
+  console.log(actionRequest.args);
+  // { to: "everyone@company.com", subject: "重要通知", body: "..." }
+
+  // 使用 edit 决策修改收件人范围，而不是直接拒绝
+  const decisions = [{
+    type: "edit",
+    editedAction: {
+      name: actionRequest.name,  // 必须指定工具名称，与原始请求一致
+      args: {
+        to: "team@company.com",       // 将收件人从全公司改为只发团队
+        subject: "重要通知",           // 以下字段必须全量提供（非增量合并）
+        body: "..."
+      }
+    }
+  }];
+
+  // 用修改后的参数恢复执行，工具会使用 editedAction 中的参数
+  result = await agent.invoke(
+    new Command({ resume: { decisions } }),
+    config
+  );
+}</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>editedAction 字段</th><th>是否必需</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>name</code></td><td>是</td><td>工具名称，必须与原始请求一致</td></tr>
+                        <tr><td><code>args</code></td><td>是</td><td>修改后的完整参数对象（不是增量，是全量替换）</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>注意：</strong><code>editedAction.args</code> 是<strong>全量替换</strong>，不是增量合并。你需要提供完整的参数对象，包括不需要修改的字段。修改前务必检查原始参数的完整内容。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Sub-agent interrupts on tool calls ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子 Agent 中断</h2>
+                <h4>子 Agent 可以有独立的中断配置，覆盖主 Agent 的设置</h4>
+                <p>使用子 Agent 时，中断可以发生在两个层面：<strong>工具调用上</strong>（通过 <code>interruptOn</code> 配置）和<strong>工具调用内部</strong>（通过 <code>interrupt()</code> 函数）。先看第一种。</p>
+                <pre><code class="language-javascript">const agent = createDeepAgent({
+  tools: [deleteFile, readFile],
+  interruptOn: {
+    delete_file: true,   // 主 Agent：删除需要审批
+    read_file: false,    // 主 Agent：读取无需审批
+  },
+  subagents: [{
+    name: "file-manager",
+    description: "Manages file operations",
+    systemPrompt: "You are a file management assistant.",
+    tools: [deleteFile, readFile],
+    interruptOn: {
+      // 子 Agent 覆盖：读取也需要审批！
+      delete_file: true,
+      read_file: true,  // 与主 Agent 不同
+    }
+  }],
+  checkpointer
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>主 Agent 的规则</h4>
+                        <ul>
+                            <li><code>delete_file</code>：需要审批</li>
+                            <li><code>read_file</code>：无需审批</li>
+                            <li>适用于主 Agent 直接调用工具时</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>子 Agent 的覆盖规则</h4>
+                        <ul>
+                            <li><code>delete_file</code>：需要审批（不变）</li>
+                            <li><code>read_file</code>：<strong>也需要审批</strong>（更严格）</li>
+                            <li>只影响该子 Agent 内部</li>
+                        </ul>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/12-human-in-the-loop-3.png" alt="图：主/子 Agent 中断配置覆盖关系" class="ai-diagram-img">
+                <div class="key-point">
+                    <strong>覆盖逻辑：</strong>每个子 Agent 的 <code>interruptOn</code> 是<strong>完全覆盖</strong>而非合并。如果子 Agent 配置了 <code>interruptOn</code>，主 Agent 的规则不会继承到子 Agent 中。子 Agent 处理中断的方式与主 Agent 完全相同。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Interrupts within tool calls ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工具内部中断</h2>
+                <h4>用 interrupt() 函数在工具执行过程中暂停，等待人工响应</h4>
+                <p>子 Agent 的工具可以直接调用 <code>interrupt()</code> 来暂停执行。这比 <code>interruptOn</code> 更灵活——你可以在工具内部的<strong>任意位置</strong>暂停，并获取人工的响应数据。</p>
+                <pre><code class="language-javascript">import { interrupt } from "@langchain/langgraph";
+
+const requestApproval = tool(
+  async ({ actionDescription }: { actionDescription: string }) => {
+    // 调用 interrupt() 会在当前位置暂停工具执行，等待外部传入数据
+    // interrupt() 的参数会出现在 result.__interrupt__ 中供人类查看
+    const approval = interrupt({
+      type: "approval_request",           // 自定义中断类型标识
+      action: actionDescription,           // 需要审批的操作描述
+      message: `请审批: ${actionDescription}`,  // 给人类看的提示信息
+    }) as { approved?: boolean; reason?: string };  // resume 时传入的数据会成为返回值
+
+    // interrupt() 恢复后，approval 就是 Command({ resume }) 中传入的对象
+    if (approval.approved) {
+      return `操作"${actionDescription}"已批准，继续执行...`;
+    } else {
+      return `操作"${actionDescription}"已拒绝。原因: ${
+        approval.reason || "未提供原因"
+      }`;
+    }
+  },
+  {
+    name: "request_approval",
+    description: "Request human approval before proceeding.",
+    schema: z.object({
+      actionDescription: z.string()
+        .describe("The action that requires approval"),
+    }),
+  }
+);</code></pre>
+                <div class="warning">
+                    <strong>关键区别：</strong><code>interruptOn</code> 在工具调用之前中断（工具还没执行），而 <code>interrupt()</code> 在工具内部中断（工具已经开始执行，执行到一半暂停）。两者适用于不同场景。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Interrupt within tool - full example ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>完整示例</h2>
+                <h4>从创建子 Agent 到处理中断、恢复执行的完整代码</h4>
+                <pre><code class="language-javascript">import { createAgent, tool } from "langchain";
+import { ChatOpenAI } from "@langchain/openai";
+import { HumanMessage } from "@langchain/core/messages";
+import { MemorySaver, Command, interrupt } from "@langchain/langgraph";
+import { createDeepAgent } from "deepagents";
+import { z } from "zod";
+
+async function main() {
+  const checkpointer = new MemorySaver();
+  const model = new ChatOpenAI({ model: "gpt-4o-mini", maxTokens: 4096 });
+
+  // 编译子 Agent 图，包含带 interrupt() 的工具
+  const compiledSubagent = createAgent({
+    model,
+    tools: [requestApproval],  // 使用上面定义的带 interrupt 的工具
+    name: "approval-agent",
+  });
+
+  // 创建父 Agent，将子 Agent 注册为可委派的目标
+  const parentAgent = await createDeepAgent({
+    checkpointer,
+    subagents: [{
+      name: "approval-agent",
+      description: "An agent that can request approvals",  // 父 Agent 据此判断何时委派
+      runnable: compiledSubagent,  // 传入编译后的子 Agent 图
+    }],
+  });
+
+  const config = { configurable: { thread_id: "test_interrupt" } };
+
+  // 调用父 Agent → 父 Agent 委派子 Agent → 子 Agent 调用工具 → interrupt 暂停
+  let result = await parentAgent.invoke({
+    messages: [new HumanMessage({
+      content: "Use the approval-agent to request approval for 'deploying to production'."
+    })],
+  }, config);</code></pre>
+                <pre><code class="language-javascript">  // 检查子 Agent 是否触发了 interrupt
+  if (result.__interrupt__) {
+    // interruptValue 就是工具中调用 interrupt() 时传入的对象
+    const interruptValue = result.__interrupt__[0].value;
+    console.log(`类型: ${interruptValue.type}`);
+    console.log(`操作: ${interruptValue.action}`);
+    console.log(`消息: ${interruptValue.message}`);
+
+    // 用 Command 恢复执行，resume 的数据会作为 interrupt() 的返回值
+    const result2 = await parentAgent.invoke(
+      new Command({ resume: { approved: true } }),  // 传入审批结果
+      config
+    );
+
+    // 从结果中提取工具返回的消息
+    const toolMsgs = result2.messages?.filter(m => m.type === "tool");
+    if (toolMsgs?.length) {
+      console.log(`工具结果: ${toolMsgs[toolMsgs.length - 1].content}`);
+    }
+  }
+}
+
+main().catch(console.error);</code></pre>
+                <p>运行时会输出以下内容：</p>
+                <pre><code class="language-plaintext">Invoking agent - sub-agent will use request_approval tool...
+
+Interrupt received!
+  Type: approval_request
+  Action: deploying to production
+  Message: Please approve or reject: deploying to production
+
+Resuming with Command(resume={'approved': true})...
+
+Execution completed!
+  Tool result: Approval for "deploying to production" has been granted. You can proceed with the deployment.</code></pre>
+                <div class="key-point">
+                    <strong>执行流程：</strong>用户调用父 Agent → 父 Agent 委派子 Agent → 子 Agent 调用 <code>requestApproval</code> 工具 → 工具内部 <code>interrupt()</code> 暂停 → 返回中断信息 → 人工审批 → <code>Command({ resume })</code> 恢复 → 工具继续执行并返回结果。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Best practices ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践</h2>
+                <h4>四个关键原则，确保人机协作可靠运行</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>始终使用 Checkpointer</h4>
+                        <p>人机协作需要 Checkpointer 在中断和恢复之间<strong>持久化 Agent 状态</strong>。</p>
+                        <pre><code class="language-javascript">// 必需！没有 checkpointer 就无法恢复
+const checkpointer = new MemorySaver();
+const agent = createDeepAgent({
+  tools: [...],
+  interruptOn: { ... },
+  checkpointer,  // 不要忘记
+});</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>使用相同的 thread ID</h4>
+                        <p>恢复执行时，<strong>必须</strong>使用与调用时相同的 <code>thread_id</code>。</p>
+                        <pre><code class="language-javascript">// 调用时和恢复时用同一个 config
+const config = {
+  configurable: { thread_id: uuid7() }
+};
+
+// 调用
+let result = await agent.invoke(msg, config);
+// 恢复 —— 必须用同一个 config！
+result = await agent.invoke(
+  new Command({ resume: { decisions } }),
+  config  // 同一个 config
+);</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>决策顺序与操作匹配</h4>
+                        <p>决策列表必须与 <code>actionRequests</code> 的<strong>顺序完全一致</strong>。</p>
+                        <pre><code class="language-javascript">// actionRequests: [delete_file, send_email]
+const decisions = [
+  { type: "approve" },  // 对应 delete_file
+  { type: "reject" },   // 对应 send_email
+];
+// 长度必须相等，顺序不能错</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>按风险等级配置</h4>
+                        <p>不同工具的风险等级不同，<strong>不要一刀切</strong>。</p>
+                        <pre><code class="language-javascript">const interruptOn = {
+  // 高风险：灵活审批
+  delete_file: {
+    allowedDecisions: ["approve", "edit", "reject"]
+  },
+  // 低风险：简单放行或拒绝
+  read_file: false,
+};</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>最容易犯的错：</strong>恢复时使用了不同的 <code>thread_id</code>，导致 Agent 找不到之前的状态，报错"no checkpoint found"。确保调用和恢复使用<strong>完全相同</strong>的 config 对象。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Chapter review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了 Human-in-the-loop 的完整用法</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li><code>interruptOn</code> 参数为每个工具配置<strong>审批策略</strong></li>
+                            <li>四种决策：<strong>approve / edit / reject / respond</strong></li>
+                            <li>通过 <code>__interrupt__</code> 检测中断，<code>Command({ resume })</code> 恢复执行</li>
+                            <li>多工具调用时中断<strong>批量合并</strong>，决策按顺序匹配</li>
+                            <li><code>edit</code> 决策可以<strong>修改参数</strong>后再执行</li>
+                            <li>子 Agent 可以有<strong>独立的中断配置</strong></li>
+                            <li>工具内部可用 <code>interrupt()</code> 实现<strong>自定义中断</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>关键 API 速查</h4>
+                        <table>
+                            <thead><tr><th>API</th><th>作用</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>interruptOn</code></td><td>配置需要审批的工具</td></tr>
+                                <tr><td><code>allowedDecisions</code></td><td>限制允许的决策类型</td></tr>
+                                <tr><td><code>result.__interrupt__</code></td><td>检测是否被中断</td></tr>
+                                <tr><td><code>actionRequests</code></td><td>获取待审批的工具调用</td></tr>
+                                <tr><td><code>Command({ resume })</code></td><td>用决策恢复执行</td></tr>
+                                <tr><td><code>interrupt()</code></td><td>工具内部自定义中断</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Human-in-the-loop 不是让 Agent 变慢，而是让 Agent <strong>变可信</strong>。在不可逆操作前加一道人工确认，是 AI 系统从"能用"走向"敢用"的关键一步。Deep Agents 通过 <code>interruptOn</code> 和 <code>interrupt()</code> 两种机制，覆盖了工具调用前后两种场景的审批需求。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./13-permissions.html">下一章：权限管理</a> — 声明式权限规则的完整指南</li>
+                            <li><a href="./14-memory.html">记忆管理</a> — 短期记忆与长期记忆</li>
+                            <li><a href="./10-subagents.html">子 Agent</a> — 同步和异步子 Agent 的深入用法</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://www.npmjs.com/package/deepagents">deepagents npm 包</a> — 安装和 API 参考</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">GitHub 仓库</a> — 源码和示例</li>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 文档</a> — 中断机制的底层实现</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关概念</h4>
+                        <ul>
+                            <li>LangGraph Interrupt — 理解中断的底层原理</li>
+                            <li>LangGraph Command — 恢复执行的完整 API</li>
+                            <li>MemorySaver — 人机协作必需的 Checkpointer</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

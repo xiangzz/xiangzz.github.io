@@ -6,6 +6,7 @@
     <title>10 记忆管理</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
     <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
     <style>
         .card-grid {
             display: flex;
@@ -68,6 +69,8 @@
                             <li>区分短期记忆和长期记忆</li>
                             <li>用 MemorySaver 实现多轮对话</li>
                             <li>用 InMemoryStore 实现跨线程记忆</li>
+                            <li>配置生产环境的 PostgresSaver 和 PostgresStore</li>
+                            <li>用嵌入模型实现语义搜索并集成到图节点</li>
                             <li>管理消息历史（裁剪、删除、总结）</li>
                         </ul>
                     </div>
@@ -118,23 +121,23 @@
             <div class="slide-content">
                 <h2>短期记忆</h2>
                 <h4>MemorySaver + thread_id = 多轮对话</h4>
-                <pre><code><span style="color: var(--primary-color);">import</span> { MemorySaver, StateGraph } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+                <pre><code class="language-javascript">import { MemorySaver, StateGraph } from "@langchain/langgraph";
 
-<span style="color: var(--primary-color);">const</span> checkpointer = <span style="color: var(--primary-color);">new</span> MemorySaver();
-<span style="color: var(--primary-color);">const</span> graph = builder.compile({ checkpointer });
+const checkpointer = new MemorySaver();
+const graph = builder.compile({ checkpointer });
 
-<span style="color: var(--text-muted);">// 第一轮</span>
-<span style="color: var(--primary-color);">await</span> graph.invoke(
-  { messages: [{ role: <span style="color: var(--success-color);">"user"</span>, content: <span style="color: var(--success-color);">"hi! i am Bob"</span> }] },
-  { configurable: { thread_id: <span style="color: var(--success-color);">"1"</span> } }
+// 第一轮
+await graph.invoke(
+  { messages: [{ role: "user", content: "hi! i am Bob" }] },
+  { configurable: { thread_id: "1" } }
 );
 
-<span style="color: var(--text-muted);">// 第二轮 — 同一个 thread_id，保留上一轮的上下文</span>
-<span style="color: var(--primary-color);">await</span> graph.invoke(
-  { messages: [{ role: <span style="color: var(--success-color);">"user"</span>, content: <span style="color: var(--success-color);">"what is my name?"</span> }] },
-  { configurable: { thread_id: <span style="color: var(--success-color);">"1"</span> } }
+// 第二轮 — 同一个 thread_id，保留上一轮的上下文
+await graph.invoke(
+  { messages: [{ role: "user", content: "what is my name?" }] },
+  { configurable: { thread_id: "1" } }
 );
-<span style="color: var(--text-muted);">// 模型知道你是 Bob！</span></code></pre>
+// 模型知道你是 Bob！</code></pre>
                 <div class="key-point">
                     <strong>关键：</strong>同一个 <code>thread_id</code> 下，每轮对话都会保留之前的消息历史。MessagesValue 的 reducer 自动把新消息拼到已有消息后面。
                 </div>
@@ -145,18 +148,31 @@
         <section class="slide">
             <div class="slide-content">
                 <h2>生产环境</h2>
-                <h4>MemorySaver 是内存存储，重启就丢。生产用 PostgresSaver。</h4>
-                <pre><code><span style="color: var(--primary-color);">import</span> { PostgresSaver } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph-checkpoint-postgres"</span>;
+                <h4>内存存储重启就丢。生产环境用数据库后端。</h4>
+                <pre><code class="language-javascript">// 短期记忆：PostgresSaver
+import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 
-<span style="color: var(--primary-color);">const</span> DB_URI = <span style="color: var(--success-color);">"postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"</span>;
-<span style="color: var(--primary-color);">const</span> checkpointer = PostgresSaver.fromConnString(DB_URI);
-<span style="color: var(--primary-color);">const</span> graph = builder.compile({ checkpointer });</code></pre>
+const DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+const checkpointer = PostgresSaver.fromConnString(DB_URI);
+// await checkpointer.setup(); // 首次使用需要初始化表结构
+
+// 长期记忆：PostgresStore
+import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
+
+const store = PostgresStore.fromConnString(DB_URI);
+// await store.setup(); // 首次使用需要初始化表结构
+
+const graph = builder.compile({ checkpointer, store });</code></pre>
                 <div class="card-grid">
                     <div class="card">
                         <h4>子图中使用</h4>
                         <p>只需在编译父图时提供 checkpointer，LangGraph 会自动传播给子图：</p>
-                        <pre><code><span style="color: var(--primary-color);">const</span> subgraph = subgraphBuilder.compile(); <span style="color: var(--text-muted);">// 不需要单独指定</span>
-<span style="color: var(--primary-color);">const</span> graph = builder.compile({ checkpointer }); <span style="color: var(--text-muted);">// 父图指定即可</span></code></pre>
+                        <pre><code class="language-javascript">const subgraph = subgraphBuilder.compile(); // 不需要单独指定
+const graph = builder.compile({ checkpointer }); // 父图指定即可</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>首次使用必须 setup()</h4>
+                        <p><code>checkpointer.setup()</code> 和 <code>store.setup()</code> 会创建必要的数据库表和索引。<strong>只需调用一次</strong>，后续运行不需要再调用。</p>
                     </div>
                 </div>
             </div>
@@ -167,28 +183,28 @@
             <div class="slide-content">
                 <h2>长期记忆</h2>
                 <h4>InMemoryStore + namespace = 跨线程的用户数据</h4>
-                <pre><code><span style="color: var(--primary-color);">import</span> { InMemoryStore, StateGraph } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+                <pre><code class="language-javascript">import { InMemoryStore, StateGraph } from "@langchain/langgraph";
 
-<span style="color: var(--primary-color);">const</span> store = <span style="color: var(--primary-color);">new</span> InMemoryStore();
-<span style="color: var(--primary-color);">const</span> graph = builder.compile({ store });</code></pre>
-                <pre><code><span style="color: var(--primary-color);">import</span> { v4 <span style="color: var(--primary-color);">as</span> uuidv4 } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"uuid"</span>;
+const store = new InMemoryStore();
+const graph = builder.compile({ store });</code></pre>
+                <pre><code class="language-javascript">import { v4 as uuidv4 } from "uuid";
 
-<span style="color: var(--text-muted);">// 在节点中访问 store</span>
-<span style="color: var(--primary-color);">const</span> callModel: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> State&gt; = <span style="color: var(--primary-color);">async</span> (state, runtime) => {
-  <span style="color: var(--primary-color);">const</span> userId = runtime.context?.userId;
-  <span style="color: var(--primary-color);">const</span> namespace = [userId, <span style="color: var(--success-color);">"memories"</span>];
+// 在节点中访问 store
+const callModel: GraphNode&lt;typeof State&gt; = async (state, runtime) => {
+  const userId = runtime.context?.userId;
+  const namespace = [userId, "memories"];
 
-  <span style="color: var(--text-muted);">// 搜索相关记忆</span>
-  <span style="color: var(--primary-color);">const</span> memories = <span style="color: var(--primary-color);">await</span> runtime.store?.search(namespace, {
-    query: state.messages.at(-<span style="color: var(--primary-color);">1</span>)?.content,
-    limit: <span style="color: var(--primary-color);">3</span>,
+  // 搜索相关记忆
+  const memories = await runtime.store?.search(namespace, {
+    query: state.messages.at(-1)?.content,
+    limit: 3,
   });
-  <span style="color: var(--primary-color);">const</span> info = memories?.map((d) => d.value.data).join(<span style="color: var(--success-color);">"\n"</span>) || <span style="color: var(--success-color);">""</span>;
+  const info = memories?.map((d) => d.value.data).join("\n") || "";
 
-  <span style="color: var(--text-muted);">// 存储新记忆</span>
-  <span style="color: var(--primary-color);">await</span> runtime.store?.put(namespace, uuidv4(), { data: <span style="color: var(--success-color);">"User prefers dark mode"</span> });
+  // 存储新记忆
+  await runtime.store?.put(namespace, uuidv4(), { data: "User prefers dark mode" });
 
-  <span style="color: var(--text-muted);">// 使用记忆增强模型调用...</span>
+  // 使用记忆增强模型调用...
 };</code></pre>
                 <div class="info-block">
                     <strong>调用时传入 context：</strong><code>await graph.invoke({ messages: [...] }, { configurable: { thread_id: "1" }, context: { userId: "1" } })</code>。节点通过 <code>runtime.context</code> 获取。
@@ -201,26 +217,59 @@
             <div class="slide-content">
                 <h2>语义搜索</h2>
                 <h4>用嵌入模型实现"模糊匹配"记忆</h4>
-                <pre><code><span style="color: var(--primary-color);">import</span> { OpenAIEmbeddings } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/openai"</span>;
+                <pre><code class="language-javascript">import { OpenAIEmbeddings } from "@langchain/openai";
 
-<span style="color: var(--primary-color);">const</span> store = <span style="color: var(--primary-color);">new</span> InMemoryStore({
+const store = new InMemoryStore({
   index: {
-    embeddings: <span style="color: var(--primary-color);">new</span> OpenAIEmbeddings({ model: <span style="color: var(--success-color);">"text-embedding-3-small"</span> }),
-    dims: <span style="color: var(--primary-color);">1536</span>,
+    embeddings: new OpenAIEmbeddings({ model: "text-embedding-3-small" }),
+    dims: 1536,
   },
 });
 
-<span style="color: var(--text-muted);">// 存入记忆</span>
-<span style="color: var(--primary-color);">await</span> store.put([<span style="color: var(--success-color);">"user_123"</span>, <span style="color: var(--success-color);">"memories"</span>], <span style="color: var(--success-color);">"1"</span>, { text: <span style="color: var(--success-color);">"I love pizza"</span> });
-<span style="color: var(--primary-color);">await</span> store.put([<span style="color: var(--success-color);">"user_123"</span>, <span style="color: var(--success-color);">"memories"</span>], <span style="color: var(--success-color);">"2"</span>, { text: <span style="color: var(--success-color);">"I am a plumber"</span> });
+// 存入记忆
+await store.put(["user_123", "memories"], "1", { text: "I love pizza" });
+await store.put(["user_123", "memories"], "2", { text: "I am a plumber" });
 
-<span style="color: var(--text-muted);">// 语义搜索——"我饿了" 匹配到 "I love pizza"</span>
-<span style="color: var(--primary-color);">const</span> items = <span style="color: var(--primary-color);">await</span> store.search([<span style="color: var(--success-color);">"user_123"</span>, <span style="color: var(--success-color);">"memories"</span>], {
-  query: <span style="color: var(--success-color);">"I'm hungry"</span>,
-  limit: <span style="color: var(--primary-color);">1</span>,
+// 语义搜索——"我饿了" 匹配到 "I love pizza"
+const items = await store.search(["user_123", "memories"], {
+  query: "I'm hungry",
+  limit: 1,
 });</code></pre>
                 <div class="key-point">
                     <strong>语义搜索 vs 精确匹配：</strong>没有嵌入模型时，search 只能精确匹配。加上嵌入模型后，"我饿了"也能找到"我爱吃披萨"——因为它们的语义相近。
+                </div>
+            </div>
+        </section>
+
+        <!-- 语义搜索与图节点集成 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>语义搜索实战</h2>
+                <h4>在图节点中用 runtime.store 实现记忆增强的对话</h4>
+                <pre><code class="language-javascript">const chat: GraphNode&lt;typeof State&gt; = async (state, runtime) => {
+  // 根据用户最后一条消息搜索相关记忆
+  const items = await runtime.store.search(
+    ["user_123", "memories"],
+    { query: state.messages.at(-1)?.content, limit: 2 }
+  );
+  const memories = items.map((item) => item.value.text).join("\n");
+  const memoriesText = memories
+    ? `## Memories of user\n${memories}` : "";
+
+  // 将记忆注入 system prompt
+  const response = await model.invoke([
+    { role: "system", content: `You are a helpful assistant.\n${memoriesText}` },
+    ...state.messages,
+  ]);
+  return { messages: [response] };
+};
+
+const builder = new StateGraph(State)
+  .addNode("chat", chat)
+  .addEdge(START, "chat");
+const graph = builder.compile({ store });</code></pre>
+                <div class="key-point">
+                    <strong>模式：</strong>编译图时传入带嵌入模型的 store → 节点中通过 <code>runtime.store.search()</code> 按语义检索记忆 → 注入 system prompt。搜索由 store 的嵌入索引自动处理，节点代码无需关心嵌入细节。
                 </div>
             </div>
         </section>
@@ -233,24 +282,24 @@
                 <div class="card-grid">
                     <div class="card">
                         <h4>裁剪消息</h4>
-                        <pre><code><span style="color: var(--primary-color);">import</span> { trimMessages } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/messages"</span>;
+                        <pre><code class="language-javascript">import { trimMessages } from "@langchain/core/messages";
 
-<span style="color: var(--primary-color);">const</span> messages = trimMessages(state.messages, {
-  strategy: <span style="color: var(--success-color);">"last"</span>,
-  maxTokens: <span style="color: var(--primary-color);">128</span>,
-  startOn: <span style="color: var(--success-color);">"human"</span>,
-  endOn: [<span style="color: var(--success-color);">"human"</span>, <span style="color: var(--success-color);">"tool"</span>],
+const messages = trimMessages(state.messages, {
+  strategy: "last",
+  maxTokens: 128,
+  startOn: "human",
+  endOn: ["human", "tool"],
 });</code></pre>
                     </div>
                     <div class="card">
                         <h4>删除消息</h4>
-                        <pre><code><span style="color: var(--primary-color);">import</span> { RemoveMessage } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/messages"</span>;
+                        <pre><code class="language-javascript">import { RemoveMessage } from "@langchain/core/messages";
 
-<span style="color: var(--primary-color);">if</span> (messages.length > <span style="color: var(--primary-color);">2</span>) {
-  <span style="color: var(--primary-color);">return</span> {
+if (messages.length > 2) {
+  return {
     messages: messages
-      .slice(<span style="color: var(--primary-color);">0</span>, <span style="color: var(--primary-color);">2</span>)
-      .map((m) => <span style="color: var(--primary-color);">new</span> RemoveMessage({ id: m.id })),
+      .slice(0, 2)
+      .map((m) => new RemoveMessage({ id: m.id })),
   };
 }</code></pre>
                     </div>
@@ -258,6 +307,9 @@
                         <h4>总结消息</h4>
                         <p>把旧消息压缩成摘要，删除原始消息。保留最近几条 + 摘要作为上下文。</p>
                     </div>
+                </div>
+                <div class="warning">
+                    <strong>删除消息时注意：</strong>确保删除后的消息历史仍然合法——某些 provider 期望历史以 <code>user</code> 消息开头；带 tool calls 的 <code>assistant</code> 消息后必须有对应的 <code>tool</code> 结果消息。删除不当会导致 LLM 调用报错。
                 </div>
             </div>
         </section>
@@ -267,16 +319,16 @@
             <div class="slide-content">
                 <h2>管理检查点</h2>
                 <h4>查看、遍历、清理线程数据</h4>
-                <pre><code><span style="color: var(--text-muted);">// 查看线程当前状态</span>
-<span style="color: var(--primary-color);">await</span> graph.getState({ configurable: { thread_id: <span style="color: var(--success-color);">"1"</span> } });
+                <pre><code class="language-javascript">// 查看线程当前状态
+await graph.getState({ configurable: { thread_id: "1" } });
 
-<span style="color: var(--text-muted);">// 遍历线程历史</span>
-<span style="color: var(--primary-color);">for await</span> (<span style="color: var(--primary-color);">const</span> state <span style="color: var(--primary-color);">of</span> graph.getStateHistory({ configurable: { thread_id: <span style="color: var(--success-color);">"1"</span> } })) {
+// 遍历线程历史
+for await (const state of graph.getStateHistory({ configurable: { thread_id: "1" } })) {
   console.log(state);
 }
 
-<span style="color: var(--text-muted);">// 删除线程的所有检查点</span>
-<span style="color: var(--primary-color);">await</span> checkpointer.deleteThread(<span style="color: var(--success-color);">"1"</span>);</code></pre>
+// 删除线程的所有检查点
+await checkpointer.deleteThread("1");</code></pre>
                 <div class="warning">
                     <strong>注意：</strong>MemorySaver 的数据存在内存中。进程重启后所有检查点都会丢失。生产环境务必使用 PostgresSaver 等持久化后端。
                 </div>
@@ -327,29 +379,29 @@
         <section class="slide">
             <div class="slide-content">
                 <h2>参考答案</h2>
-                <pre><code><span style="color: var(--text-muted);">// 1. 添加 MemorySaver</span>
-<span style="color: var(--primary-color);">const</span> checkpointer = <span style="color: var(--primary-color);">new</span> MemorySaver();
+                <pre><code class="language-javascript">// 1. 添加 MemorySaver
+const checkpointer = new MemorySaver();
 
-<span style="color: var(--text-muted);">// 2. 添加 InMemoryStore</span>
-<span style="color: var(--primary-color);">const</span> store = <span style="color: var(--primary-color);">new</span> InMemoryStore();
+// 2. 添加 InMemoryStore
+const store = new InMemoryStore();
 
-<span style="color: var-text-muted);">// 3. 编译时同时传入</span>
-<span style="color: var(--primary-color);">const</span> graph = builder.compile({ checkpointer, store });
+// 3. 编译时同时传入
+const graph = builder.compile({ checkpointer, store });
 
-<span style="color: var(--text-muted);">// 4. 在 llmCall 节点中管理记忆</span>
-<span style="color: var(--primary-color);">const</span> llmCall: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> State&gt; = <span style="color: var(--primary-color);">async</span> (state, runtime) => {
-  <span style="color: var(--text-muted);">// 裁剪消息</span>
-  <span style="color: var(--primary-color);">const</span> messages = trimMessages(state.messages, {
-    strategy: <span style="color: var(--success-color);">"last"</span>,
-    maxTokens: <span style="color: var(--primary-color);">2000</span>,
-    startOn: <span style="color: var(--success-color);">"human"</span>,
+// 4. 在 llmCall 节点中管理记忆
+const llmCall: GraphNode&lt;typeof State&gt; = async (state, runtime) => {
+  // 裁剪消息
+  const messages = trimMessages(state.messages, {
+    strategy: "last",
+    maxTokens: 2000,
+    startOn: "human",
   });
 
-  <span style="color: var(--text-muted);">// 读取用户偏好</span>
-  <span style="color: var(--primary-color);">const</span> userId = runtime.context?.userId;
-  <span style="color: var(--primary-color);">const</span> prefs = <span style="color: var(--primary-color);">await</span> runtime.store?.search([userId, <span style="color: var(--success-color);">"prefs"</span>], { limit: <span style="color: var(--primary-color);">3</span> });
+  // 读取用户偏好
+  const userId = runtime.context?.userId;
+  const prefs = await runtime.store?.search([userId, "prefs"], { limit: 3 });
 
-  <span style="color: var(--text-muted);">// ... 使用偏好增强模型调用</span>
+  // ... 使用偏好增强模型调用
 };</code></pre>
                 <div class="key-point">
                     <strong>模式：</strong>checkpointer 管线程内记忆（对话历史），store 管跨线程记忆（用户偏好）。两者互不干扰，组合使用。
@@ -368,7 +420,8 @@
                             <li>区分短期记忆和长期记忆</li>
                             <li>用 MemorySaver 实现多轮对话</li>
                             <li>用 InMemoryStore 存储跨线程数据</li>
-                            <li>用嵌入模型实现语义搜索</li>
+                            <li>配置生产环境的 PostgresSaver 和 PostgresStore</li>
+                            <li>用嵌入模型实现语义搜索并集成到图节点</li>
                             <li>管理消息历史（裁剪/删除/总结）</li>
                         </ul>
                     </div>
@@ -417,6 +470,8 @@
         <span id="slide-counter"></span>
         <button id="next-btn">下一页 →</button>
     </div>
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
     <script src="./js/slide.js"></script>
     <script src="./js/nav.js"></script>
 </body>

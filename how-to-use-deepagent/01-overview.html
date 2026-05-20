@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>认识 Deep Agents</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 01 章</div>
+            <h1>认识 Deep Agents</h1>
+            <p>构建能规划任务、使用子 Agent 并利用文件系统完成复杂任务的智能体</p>
+            <strong>从"简单工具调用"到"自主任务规划"的关键一步</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你有没有试过用普通 Agent 处理需要多步骤规划的复杂任务？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>普通 Agent 的困境</h4>
+                        <ul>
+                            <li>多步骤任务全靠 prompt 硬编码，<strong>没有自动规划</strong></li>
+                            <li>上下文一长就爆窗口，<strong>没有上下文管理机制</strong></li>
+                            <li>所有信息塞在对话历史里，<strong>无法持久化中间结果</strong></li>
+                            <li>复杂任务无法拆分给子 Agent，<strong>主 Agent 上下文越来越臃肿</strong></li>
+                            <li>想控制 Agent 能读写哪些文件？<strong>没有权限系统</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agents 的解法</h4>
+                        <ul>
+                            <li>内置 <code>write_todos</code> 工具，自动<strong>规划和跟踪任务步骤</strong></li>
+                            <li>文件系统工具 + 自动摘要，<strong>上下文永不溢出</strong></li>
+                            <li>可插拔后端（内存、磁盘、沙箱），<strong>灵活存储</strong></li>
+                            <li>内置 <code>task</code> 工具生成子 Agent，<strong>上下文隔离</strong></li>
+                            <li>声明式权限规则，<strong>精确控制文件访问</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>当你需要 Agent 处理的不是"回答一个问题"而是"完成一整个项目"——规划、搜索、编码、测试、审查——你就需要一套完整的工程化基础设施。Deep Agents 就是那套基础设施。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/01-overview-1.png" alt="图：普通 Agent 与 Deep Agent 能力对比" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Prerequisites ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你需要会什么</h4>
+                        <ul>
+                            <li>TypeScript / JavaScript 基础（函数、类型、async/await）</li>
+                            <li>了解 LLM 的基本概念（prompt、token、tool calling）</li>
+                            <li>会用 npm 初始化项目、安装依赖</li>
+                            <li>了解 LangChain 核心模块的基本用法</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该能</h4>
+                        <ul>
+                            <li>说清 Deep Agents 是什么、解决什么问题</li>
+                            <li>写出第一个能跑的 Deep Agent</li>
+                            <li>理解规划、文件系统、子 Agent 三大核心概念</li>
+                            <li>知道什么时候该用 Deep Agents，什么时候用 LangGraph</li>
+                            <li>掌握核心能力的概览，为后续章节打好基础</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章不会深入</h4>
+                        <ul>
+                            <li>自定义和配置的详细选项</li>
+                            <li>各种文件系统后端的实现细节</li>
+                            <li>沙箱、解释器的深入用法</li>
+                            <li>生产环境部署方案</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>环境准备：</strong>确保你有一个 Node.js 项目。安装命令：<code>$ npm install deepagents langchain @langchain/core</code>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: What is Deep Agents ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>定义与架构</h2>
+                <h4>一种"Agent Harness"——在工具调用循环之上，内置了规划、文件系统和子 Agent 等完整能力</h4>
+                <p>说白了，Deep Agents 帮你把一个复杂的 AI 任务交给一个<strong>能自主规划的智能体</strong>。</p>
+                <p>它会自己拆步骤、把中间结果存到文件系统、需要深入处理时生成子 Agent、上下文太长时自动摘要压缩。</p>
+                <p>整个执行过程可追踪、可控权限。</p>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/01-overview-2.png" alt="图：Deep Agents 架构——核心组件关系" class="ai-diagram-img">
+                <pre><code class="language-bash"># 安装依赖
+$ npm install deepagents langchain @langchain/core</code></pre>
+                <pre><code class="language-javascript">// 最简 Deep Agent —— 只需要 createDeepAgent
+import * as z from "zod";
+import { createDeepAgent } from "deepagents";
+import { tool } from "langchain";
+
+// 用 tool() 定义一个自定义工具：查询城市天气
+// 第一个参数是执行函数，第二个参数是工具的元数据
+const getWeather = tool(
+  ({ city }) => `It's always sunny in ${city}!`,
+  {
+    name: "get_weather",                            // 工具名称，Agent 通过它调用
+    description: "Get the weather for a given city", // 描述帮助 LLM 判断何时调用
+    schema: z.object({
+      city: z.string(),                             // 用 Zod 定义参数类型
+    }),
+  },
+);
+
+// createDeepAgent 返回一个 LangGraph graph，内置规划、文件系统等能力
+const agent = createDeepAgent({
+  tools: [getWeather],                              // 传入自定义工具数组
+  systemPrompt: "You are a helpful assistant",      // 系统提示词，引导 Agent 行为
+});
+
+// invoke() 同步执行 Agent，等待完整结果后返回
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "What's the weather in Tokyo?" }],
+});</code></pre>
+                <div class="warning">
+                    <strong>如果看到报错：</strong>
+                    <ul>
+                        <li><code>Cannot find module 'deepagents'</code> → 先安装依赖：<code>$ npm install deepagents langchain @langchain/core</code></li>
+                        <li><code>ERR_MODULE_NOT_FOUND</code> → 确认使用 ESM（<code>"type": "module"</code> in <code>package.json</code>）或用 <code>.mjs</code> 后缀</li>
+                    </ul>
+                </div>
+                <div class="key-point">
+                    <strong>一个函数就够了：</strong><code>createDeepAgent</code> 接收工具和系统提示词，返回一个可调用的 Agent。底层是 LangGraph 的工具调用循环，但内置了规划、文件系统、子 Agent 等能力。
+                </div>
+                <div class="info-block">
+                    <strong>LangSmith Engine 提示：</strong>LangSmith Engine 可以检测你的 Deep Agents 追踪记录中的问题并提出修复建议。你可以直接从 Issues 标签页打开一个包含修复建议的 Pull Request。<br>
+                    <a href="https://docs.langchain.com/langsmith/engine" target="_blank">了解 LangSmith Engine →</a>
+                </div>
+                <div class="info-block">
+                    <strong>追踪与部署：</strong>使用 <a href="https://smith.langchain.com/" target="_blank">LangSmith</a> 追踪请求、调试 Agent 行为并评估输出。按照<a href="https://docs.langchain.com/langsmith/trace-with-langchain" target="_blank">追踪快速入门</a>进行设置。当准备好投入生产时，<a href="https://docs.langchain.com/langsmith/deploy-to-cloud" target="_blank">部署到 LangSmith Cloud</a> 获取托管服务。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Core capabilities ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>核心能力</h2>
+                <h4>Deep Agents 不是抽象你的提示词，而是提供完整的工程化能力</h4>
+                <table>
+                    <thead>
+                        <tr><th>能力</th><th>它做了什么</th><th>举例</th><th>什么时候需要</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>任务规划</strong></td>
+                            <td>内置 <code>write_todos</code> 工具，Agent 自动把大目标拆成可追踪的小步骤，完成后打勾，遇到变化还能动态调整计划<br><a href="https://docs.langchain.com/oss/javascript/langchain/middleware/built-in#to-do-list" target="_blank">查看 write_todos 文档 →</a></td>
+                            <td>类似 CI/CD pipeline 的 stage 划分：build → test → deploy，每步有状态和依赖</td>
+                            <td>"帮我重构整个模块"这类多步骤复杂任务</td>
+                        </tr>
+                        <tr>
+                            <td><strong>上下文管理</strong></td>
+                            <td>四个文件系统工具（<code>ls</code>、<code>read_file</code>、<code>write_file</code>、<code>edit_file</code>）让 Agent 按需读写文件，加上自动摘要压缩旧消息，防止上下文窗口溢出<br><a href="https://docs.langchain.com/oss/javascript/deepagents/harness#virtual-filesystem-access" target="_blank">查看文件系统工具文档 →</a> · <a href="https://docs.langchain.com/oss/javascript/deepagents/context-engineering#summarization" target="_blank">查看摘要机制文档 →</a></td>
+                            <td>类似操作系统的虚拟内存：内存放不下时换页到磁盘，需要时再加载回来</td>
+                            <td>读 20 个源码文件再写报告——上下文会超长的情况</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Shell 执行</strong></td>
+                            <td>沙箱后端下使用 <code>execute</code> 工具运行 Shell 命令，在隔离环境中安全执行<br><a href="https://docs.langchain.com/oss/javascript/deepagents/sandboxes" target="_blank">查看沙箱后端文档 →</a></td>
+                            <td>类似 Docker 容器：隔离的执行环境，跑完销毁，不影响宿主机</td>
+                            <td>需要运行 <code>npm test</code>、<code>git commit</code>、构建部署等系统操作</td>
+                        </tr>
+                        <tr>
+                            <td><strong>子 Agent</strong></td>
+                            <td>内置 <code>task</code> 工具，主 Agent 可以生成专门的子 Agent 来处理子任务。子 Agent 有独立的上下文窗口，完成后只返回结果摘要——主 Agent 不会被子任务的细节淹没</td>
+                            <td>类似进程 fork：子进程有独立地址空间，通过 IPC 返回结果，父进程继续调度</td>
+                            <td>"分析这个文件里的所有 bug"——主 Agent 让子 Agent 深入分析，自己继续推进其他步骤</td>
+                        </tr>
+                        <tr>
+                            <td><strong>可插拔后端</strong></td>
+                            <td>同一套代码，底层可以自由切换：内存（测试用）、本地磁盘、LangGraph Store、沙箱、自定义后端<br><a href="https://docs.langchain.com/oss/javascript/deepagents/backends" target="_blank">查看后端配置文档 →</a></td>
+                            <td>类似 ORM 的数据库抽象层：代码写一次，底层切 MySQL / PostgreSQL / SQLite 都行</td>
+                            <td>开发时用内存后端快速迭代，上线切到 LangGraph Store 持久化</td>
+                        </tr>
+                        <tr>
+                            <td><strong>文件系统权限</strong></td>
+                            <td>声明式权限规则，精确控制 Agent 可以读写哪些文件和目录——读允许、写拒绝、目录白名单都支持<br><a href="https://docs.langchain.com/oss/javascript/deepagents/permissions" target="_blank">查看权限规则文档 →</a></td>
+                            <td>类似 Linux 的 <code>chmod</code> + <code>chroot</code>：限定进程可访问的文件范围和操作权限</td>
+                            <td>只让 Agent 读写 <code>/workspace</code> 目录，防止误操作系统文件</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Human-in-the-loop</strong></td>
+                            <td>Agent 在执行敏感操作（删除文件、发送邮件）前自动暂停，等人类审批后继续执行或取消<br><a href="https://docs.langchain.com/oss/javascript/deepagents/human-in-the-loop" target="_blank">查看 HITL 文档 →</a></td>
+                            <td>类似 Git 的 code review 流程：PR 不能自动 merge，至少一个 reviewer approve 后才能合入</td>
+                            <td>"删除旧文件前先让我看看"这类需要人工把关的操作</td>
+                        </tr>
+                        <tr>
+                            <td><strong>长期记忆</strong></td>
+                            <td>基于 LangGraph Memory Store，Agent 可以跨对话线程保留信息。线程 A 里记住的"用户喜欢深色模式"，线程 B 里也能查到<br><a href="https://docs.langchain.com/oss/javascript/langgraph/persistence#memory-store" target="_blank">查看 Memory Store 文档 →</a></td>
+                            <td>类似 Redis 持久化存储：多个进程/服务共享同一个数据源，key-value 按命名空间组织</td>
+                            <td>跨会话记住用户偏好、项目约定、历史决策</td>
+                        </tr>
+                        <tr>
+                            <td><strong>解释器</strong></td>
+                            <td>在内存运行时中执行 JavaScript 代码，可以编程方式组合多个工具调用结果、转换数据格式、实现复杂逻辑——不需要完整 Shell 环境<br><a href="https://docs.langchain.com/oss/javascript/deepagents/interpreters" target="_blank">查看解释器文档 →</a></td>
+                            <td>类似浏览器的 DevTools Console：快速执行脚本片段，处理数据，不需要搭建完整运行环境</td>
+                            <td>把搜索结果过滤排序、把 JSON 转成 CSV、计算统计数据</td>
+                        </tr>
+                        <tr>
+                            <td><strong>技能（Skills）</strong></td>
+                            <td>可复用的技能模块，封装了专门的工作流、领域知识和自定义指令。写一次，多个 Agent 共用<br><a href="https://docs.langchain.com/oss/javascript/deepagents/skills" target="_blank">查看技能文档 →</a></td>
+                            <td>类似 npm 包：封装一组功能，发布后任何项目 <code>npm install</code> 就能复用</td>
+                            <td>封装"代码审查"工作流，让不同项目的 Agent 都遵循同一套审查规范</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>关键区别：</strong>LangGraph 提供的是底层编排原语（节点、边、状态），你需要自己组装。Deep Agents 在 LangGraph 之上提供了一层"开箱即用的 Agent Harness"——规划、文件系统、子 Agent 全都内置好了。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: When to use ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>何时使用</h2>
+                <h4>Deep Agents 适合复杂场景，简单场景有更轻量的选择</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>适合用 Deep Agents</h4>
+                        <ul>
+                            <li>需要<strong>自动规划</strong>的多步骤任务</li>
+                            <li>需要通过<strong>文件系统管理大量上下文</strong>，使用<a href="https://docs.langchain.com/oss/javascript/deepagents/harness#virtual-filesystem-access" target="_blank">文件系统工具</a>和<a href="https://docs.langchain.com/oss/javascript/deepagents/context-engineering#summarization" target="_blank">自动摘要</a></li>
+                            <li>需要<strong>子 Agent</strong>实现上下文隔离</li>
+                            <li>需要在<strong>沙箱中执行 Shell 命令</strong>（<a href="https://docs.langchain.com/oss/javascript/deepagents/sandboxes" target="_blank">沙箱文档</a>）</li>
+                            <li>需要通过<a href="https://docs.langchain.com/oss/javascript/deepagents/backends" target="_blank">可插拔后端</a>切换存储策略</li>
+                            <li>需要<strong>声明式权限控制</strong>（<a href="https://docs.langchain.com/oss/javascript/deepagents/permissions" target="_blank">权限文档</a>）</li>
+                            <li>需要<strong>跨会话持久化记忆</strong></li>
+                            <li>需要<strong>人工审批</strong>敏感操作（<a href="https://docs.langchain.com/oss/javascript/deepagents/human-in-the-loop" target="_blank">HITL 文档</a>）</li>
+                            <li>需要使用<strong>解释器</strong>在内存运行时中组合工具（<a href="https://docs.langchain.com/oss/javascript/deepagents/interpreters" target="_blank">解释器文档</a>）</li>
+                            <li>需要使用<strong>任何模型供应商</strong>（<a href="https://docs.langchain.com/oss/javascript/deepagents/models" target="_blank">供应商无关配置</a>）</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>考虑更轻量的方案</h4>
+                        <ul>
+                            <li>简单的问答或单次工具调用</li>
+                            <li>不需要规划的单步骤任务</li>
+                            <li>上下文很短、不会溢出窗口</li>
+                            <li>不需要子 Agent 或文件系统</li>
+                        </ul>
+                        <p><strong>替代方案：</strong></p>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/oss/javascript/langchain/agents" target="_blank"><code>LangChain createAgent</code></a> — 简单 Agent</li>
+                            <li><a href="https://docs.langchain.com/oss/javascript/langgraph/overview" target="_blank"><code>LangGraph StateGraph</code></a> — 自定义工作流</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>LangChain 层级关系</h4>
+                        <table>
+                            <thead><tr><th>框架</th><th>定位</th><th>复杂度</th></tr></thead>
+                            <tbody>
+                                <tr><td><strong>LangChain</strong></td><td>核心构建模块（模型、工具、提示词）</td><td>基础</td></tr>
+                                <tr><td><strong>LangGraph</strong></td><td>低级编排运行时（节点、边、状态）</td><td>中等</td></tr>
+                                <tr><td><strong>Deep Agents</strong></td><td>高级 Agent Harness（规划、文件系统、子 Agent）</td><td>高级</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agents 仓库包含</h4>
+                        <ul>
+                            <li><strong>Deep Agents SDK</strong> — 构建 Agent 的包</li>
+                            <li><strong>Deep Agents Code</strong> — 终端编程 Agent</li>
+                            <li><strong>ACP 集成</strong> — 在 Zed 等编辑器中使用</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>框架 vs 运行时 vs Harness：</strong>LangChain 是提供核心构建模块的<strong>框架</strong>；LangGraph 是低级编排的<strong>运行时</strong>（节点、边、状态）；Deep Agents 是在它们之上构建的<strong>Agent Harness</strong>——内置规划、文件系统、子 Agent 等完整能力。要深入了解三者区别，请参阅<a href="https://docs.langchain.com/oss/javascript/concepts/products" target="_blank">框架、运行时和 Harness 概念说明</a>。要与其他框架对比，请参阅<a href="https://docs.langchain.com/oss/javascript/deepagents/comparison" target="_blank">Deep Agents 与 Claude Agent SDK 对比</a>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Creating a Deep Agent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建 Agent</h2>
+                <h4>一个 createDeepAgent 调用就够了——让我们看看细节</h4>
+                <pre><code class="language-javascript">import * as z from "zod";
+import { createDeepAgent } from "deepagents";
+import { tool } from "langchain";
+
+// 1. 定义你的自定义工具
+
+// 工具一：搜索文档 —— Agent 会根据 description 判断何时调用
+const searchDocs = tool(
+  async ({ query }) => {
+    // 实际实现中调用你的搜索 API
+    return `搜索结果：找到 3 篇与"${query}"相关的文档`;
+  },
+  {
+    name: "search_docs",
+    description: "Search the documentation for relevant information",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+    }),
+  },
+);
+
+// 工具二：创建工单 —— LLM 会自动提取 title 和 description 参数
+const createTicket = tool(
+  async ({ title, description }) => {
+    return `Ticket #123 created: ${title}`;
+  },
+  {
+    name: "create_ticket",
+    description: "Create a support ticket",
+    schema: z.object({
+      title: z.string(),
+      description: z.string(),
+    }),
+  },
+);
+
+// 2. 创建 Deep Agent —— 传入工具和系统提示词即可
+const agent = createDeepAgent({
+  tools: [searchDocs, createTicket],  // Agent 会自主选择调用哪个工具
+  systemPrompt: `你是一个技术支持助手。
+收到用户问题时，先搜索文档找答案。
+如果找不到，创建一个工单并通知用户。`,
+});
+
+// 3. 调用 Agent —— invoke() 返回完整对话历史
+const result = await agent.invoke({
+  messages: [
+    { role: "user", content: "怎么配置 OAuth2 登录？" }
+  ],
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>createDeepAgent 参数</h4>
+                        <table>
+                            <thead><tr><th>参数</th><th>类型</th><th>说明</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>tools</code></td><td>Tool[]</td><td>自定义工具数组（LangChain tool 格式）</td></tr>
+                                <tr><td><code>systemPrompt</code></td><td>string</td><td>系统提示词，定义 Agent 的行为</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>Agent 自动获得的能力</h4>
+                        <ul>
+                            <li><code>write_todos</code> — 任务规划和进度跟踪</li>
+                            <li><code>ls / read_file / write_file / edit_file</code> — 文件系统操作</li>
+                            <li><code>task</code> — 生成子 Agent</li>
+                            <li>自动摘要 — 上下文过长时压缩历史消息</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: File system & backends ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件系统</h2>
+                <h4>虚拟文件系统——Agent 的"工作台"，可插拔后端自由切换</h4>
+                <p>Deep Agents 内置四个文件系统工具，让 Agent 可以把大量上下文<strong>卸载到文件</strong>而非塞在对话历史里。</p>
+                <p>底层通过<strong>可插拔后端</strong>驱动，根据场景切换。</p>
+                <table>
+                    <thead>
+                        <tr><th>工具</th><th>作用</th><th>典型用法</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>ls</code></td><td>列出目录内容</td><td>查看有哪些文件、发现项目结构</td></tr>
+                        <tr><td><code>read_file</code></td><td>读取文件内容</td><td>查看代码、配置文件、文档</td></tr>
+                        <tr><td><code>write_file</code></td><td>创建或覆盖文件</td><td>生成代码、写入配置、保存中间结果</td></tr>
+                        <tr><td><code>edit_file</code></td><td>精确编辑文件片段</td><td>修改代码中的特定行、替换配置值</td></tr>
+                    </tbody>
+                </table>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>可插拔后端</h4>
+                        <ul>
+                            <li><strong>内存状态</strong> — 默认，适合测试和短期任务</li>
+                            <li><strong>本地磁盘</strong> — 直接读写真实文件系统</li>
+                            <li><strong>LangGraph Store</strong> — 跨线程持久化</li>
+                            <li><strong>沙箱</strong> — Modal、Daytona、Deno，隔离执行代码</li>
+                            <li><strong>自定义后端</strong> — 实现你自己的存储逻辑</li>
+                            <li><strong>复合路由</strong> — 组合多个后端</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>为什么需要文件系统？</h4>
+                        <p>普通 Agent 把所有信息塞在对话消息里。一旦任务复杂——读 20 个文件、写 10 个文件——上下文窗口就会溢出。</p>
+                        <p>文件系统让 Agent <strong>按需读写</strong>：读的时候加载，用完就放回文件。配合自动摘要，Agent 可以处理<strong>任意长度</strong的任务。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>常见误区：</strong>不要把文件系统当成"真实磁盘"来理解。它是虚拟的——内存后端下文件只存在于当次会话。如果需要持久化，要用磁盘或 LangGraph Store 后端。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/01-overview-3.png" alt="图：可插拔文件系统后端架构" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Sub-agents & memory ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>子 Agent 与记忆</h2>
+                <h4>让 Agent 能委派工作和记住过去——复杂任务的两把钥匙</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>子 Agent（task 工具）</h4>
+                        <p>当主 Agent 遇到需要深入处理的子任务时，可以生成一个<strong>专门的子 Agent</strong> 来处理。</p>
+                        <ul>
+                            <li>子 Agent 拥有<strong>独立的上下文窗口</strong>，不污染主 Agent</li>
+                            <li>处理完成后，子 Agent 将<strong>结果摘要</strong>返回给主 Agent</li>
+                            <li>子 Agent 可继承或覆盖父级的权限规则</li>
+                            <li>支持<strong>同步和异步</strong>两种模式</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>长期记忆（Memory Store）</h4>
+                        <p>基于 LangGraph 的 Memory Store，Agent 可以<strong>跨线程保留信息</strong>。</p>
+                        <ul>
+                            <li><strong>短期记忆</strong> — 线程内的对话历史</li>
+                            <li><strong>长期记忆</strong> — 跨会话、跨线程的持久化信息</li>
+                            <li>可以保存用户偏好、项目知识、历史决策</li>
+                            <li>下次对话时 Agent 能检索和使用之前的记忆</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 子 Agent 工作流示例（伪代码，展示概念）
+// 主 Agent 接到任务："重构 src/utils.ts"
+
+// 1. 主 Agent 用 write_todos 规划任务，将大目标拆成可追踪的小步骤
+// write_todos: [
+//   { task: "阅读现有代码", status: "in_progress" },
+//   { task: "识别重构点",    status: "pending" },
+//   { task: "执行重构",      status: "pending" },
+//   { task: "运行测试",      status: "pending" },
+// ]
+
+// 2. 遇到需要深入分析的部分，通过 task 工具生成子 Agent
+// task("分析 src/utils.ts 中的重复代码模式")
+//   → 子 Agent 在独立上下文中运行，主 Agent 上下文保持干净
+//   → 子 Agent 执行完毕后，只返回分析结果摘要给主 Agent
+
+// 3. 主 Agent 根据子 Agent 的结果继续工作
+// edit_file: 重构 src/utils.ts       （精确修改文件片段）
+// execute: npm test                   （在沙箱后端中运行测试）</code></pre>
+                <div class="key-point">
+                    <strong>核心价值：</strong>子 Agent 解决的是"上下文隔离"问题——主 Agent 不会被子任务的细节淹没。长期记忆解决的是"跨会话连续性"问题——Agent 能从之前的经验中学习。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/01-overview-4.png" alt="图：子 Agent 委派与记忆持久化" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Permissions & HITL ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>权限与审批</h2>
+                <h4>声明式权限规则 + Human-in-the-loop——让 Agent 可控又安全</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>文件系统权限</h4>
+                        <p>通过声明式规则，精确控制 Agent 可以读写哪些文件和目录。</p>
+                        <ul>
+                            <li><strong>允许读取</strong>：指定可读的路径模式</li>
+                            <li><strong>允许写入</strong>：指定可写的路径模式</li>
+                            <li><strong>子 Agent 继承</strong>：子 Agent 默认继承父级规则</li>
+                            <li><strong>可覆盖</strong>：子 Agent 可自定义更严格或更宽松的规则</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>Human-in-the-loop</h4>
+                        <p>基于 LangGraph 的中断功能，为敏感操作配置人工审批。</p>
+                        <ul>
+                            <li><strong>暂停执行</strong>：指定工具在执行前需要确认</li>
+                            <li><strong>人工审批</strong>：允许、拒绝或修改操作</li>
+                            <li><strong>恢复执行</strong>：审批后 Agent 继续工作</li>
+                            <li><strong>灵活配置</strong>：不同工具可设置不同审批策略</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 权限规则概念示例
+// 用 glob 模式匹配路径，精确控制 Agent 可访问的文件范围
+const permissions = {
+  read:  ["src/**", "package.json", "tsconfig.json"], // 只允许读取 src 目录和配置文件
+  write: ["src/output/**"],                            // 只允许写入 src/output 目录
+};
+
+// Human-in-the-loop：配置哪些工具需要人工确认后才执行
+// 例如：所有写操作和 Shell 命令执行前暂停，等人审批
+const hitlConfig = {
+  requireApproval: ["write_file", "edit_file", "execute"],
+};</code></pre>
+                <div class="warning">
+                    <strong>安全提示：</strong>在生产环境中，始终配置权限规则。不要让 Agent 有权访问敏感文件（如 .env、密钥文件、数据库配置）。沙箱后端可以提供额外的隔离层。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/01-overview-5.png" alt="图：双层防护模型" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Skills, interpreters & smart defaults ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>技能与扩展</h2>
+                <h4>用可复用技能扩展 Agent，用解释器组合工具，用智能默认值开箱即用</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>技能（Skills）</h4>
+                        <p>技能是可复用的模块，为 Agent 提供<strong>专门的工作流、领域知识和自定义指令</strong>。</p>
+                        <ul>
+                            <li>封装特定领域的知识和流程</li>
+                            <li>可以在多个 Agent 之间复用</li>
+                            <li>类似"插件"的概念，按需加载</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>解释器（Interpreters）</h4>
+                        <p>在内存运行时中执行 JavaScript，让 Agent 能<strong>以编程方式组合工具</strong>。</p>
+                        <ul>
+                            <li>编排子 Agent，不需要完整 Shell 环境</li>
+                            <li>转换结构化数据（JSON 解析、格式转换）</li>
+                            <li>基于 QuickJS 的安全沙箱</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>智能默认值</h4>
+                        <p>Deep Agents 附带精心设计的系统提示，教会模型<strong>如何有效使用工具</strong>。</p>
+                        <ul>
+                            <li>先规划再行动</li>
+                            <li>验证工作结果</li>
+                            <li>主动管理上下文</li>
+                            <li>可根据需要自定义或替换</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>设计哲学：</strong>Deep Agents 的默认值是"最佳实践"而非"最低配置"。开箱即用就能写出好 Agent，高级用户可以逐步自定义每个部分。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Exercise ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>设计一个代码审查 Agent——用 Deep Agents 的能力组合解决实际问题</h4>
+                <p>现在轮到你了。停下来，思考如何用 Deep Agents 构建一个<strong>代码审查 Agent</strong>。需求如下：</p>
+                <pre><code class="language-javascript">智能体应该：
+1. 接收一个 Git 仓库路径
+2. 读取最近的代码变更（diff）
+3. 分析变更的影响范围和风险等级
+4. 检查代码风格和最佳实践
+5. 生成审查意见
+6. 如果发现高风险问题，暂停等待人工确认
+7. 输出最终的审查报告</code></pre>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>任务 1：选择能力</h3>
+                        <ul>
+                            <li>需要哪些内置能力？（规划、文件系统、子 Agent、权限...）</li>
+                            <li>需要哪些自定义工具？</li>
+                            <li>系统提示词应该怎么写？</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 2：设计流程</h3>
+                        <ul>
+                            <li>Agent 会如何自动规划这个任务？</li>
+                            <li>哪些步骤适合交给子 Agent？</li>
+                            <li>文件系统怎么用？存什么中间结果？</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 3：安全设计</h3>
+                        <ul>
+                            <li>需要配置什么权限规则？</li>
+                            <li>哪些操作需要 Human-in-the-loop？</li>
+                            <li>用什么后端最合适？</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>不用写完整代码，重点想清楚"Agent 需要什么能力、流程怎么拆、安全怎么控"。可以参考前面的架构图来组织你的思路。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Reference answer ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <h4>一种可行的设计方案——不是唯一答案，但逻辑合理</h4>
+                <pre><code class="language-javascript">import * as z from "zod";
+import { createDeepAgent } from "deepagents";
+import { tool } from "langchain";
+
+// 自定义工具一：获取 Git diff —— 让 Agent 能读取代码变更
+const getGitDiff = tool(
+  async ({ repoPath, range }) => {
+    // 实际实现：运行 git diff 命令
+    return "diff content here...";
+  },
+  {
+    name: "get_git_diff",
+    description: "Get the git diff for recent changes",
+    schema: z.object({
+      repoPath: z.string(),            // 仓库路径
+      range: z.string().optional(),    // 可选的 commit 范围，如 HEAD~3
+    }),
+  },
+);
+
+// 自定义工具二：检查代码风格 —— 返回 lint 结果供 Agent 分析
+const lintCode = tool(
+  async ({ filePath, content }) => {
+    // 实际实现：运行 linter（如 ESLint）
+    return { errors: 0, warnings: 2, details: "..." };
+  },
+  {
+    name: "lint_code",
+    description: "Lint code for style issues",
+    schema: z.object({
+      filePath: z.string(),            // 要检查的文件路径
+      content: z.string(),             // 文件内容
+    }),
+  },
+);
+
+// 创建代码审查 Agent —— 系统提示词引导 Agent 的工作流程
+const reviewAgent = createDeepAgent({
+  tools: [getGitDiff, lintCode],
+  systemPrompt: `你是一个代码审查助手。
+收到审查请求后：
+1. 先用 get_git_diff 获取变更
+2. 分析影响范围和风险
+3. 用 lint_code 检查风格问题
+4. 将中间结果写入文件系统      ← 利用内置的文件系统工具
+5. 生成审查报告
+如果发现高风险问题，暂停等待确认。  ← 利用 Human-in-the-loop`,
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>能力组合</h4>
+                        <ul>
+                            <li><strong>任务规划</strong> — 自动拆解审查步骤</li>
+                            <li><strong>文件系统</strong> — 存储 diff 和中间分析结果</li>
+                            <li><strong>子 Agent</strong> — 深入分析特定文件</li>
+                            <li><strong>权限</strong> — 只允许读取指定仓库目录</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>安全策略</h4>
+                        <ul>
+                            <li><strong>后端</strong> — 沙箱后端，隔离代码执行</li>
+                            <li><strong>权限</strong> — 只读源码目录，不写</li>
+                            <li><strong>HITL</strong> — 高风险变更需人工确认</li>
+                            <li><strong>记忆</strong> — 记住项目的编码规范偏好</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>你的方案可能不一样——这很正常。</strong>关键不是"答案是否一致"，而是你能不能解释清楚：为什么选这些能力、为什么这样拆流程、为什么这样配权限。Deep Agents 的价值在于<strong>能力组合</strong>而非单一功能。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了 Deep Agents 的全貌</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>Deep Agents 是一种<strong>Agent Harness</strong>，内置规划、文件系统、子 Agent</li>
+                            <li><code>createDeepAgent</code> 一个函数就能创建完整的 Agent</li>
+                            <li>文件系统工具让 Agent 可以<strong>卸载上下文</strong>到虚拟文件</li>
+                            <li>可插拔后端：内存、磁盘、Store、沙箱、自定义</li>
+                            <li>子 Agent 通过 <code>task</code> 工具实现<strong>上下文隔离</strong></li>
+                            <li>权限规则 + HITL 让 Agent <strong>可控又安全</strong></li>
+                            <li>技能、解释器、智能默认值提供<strong>可扩展性</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>快速上手</strong> — 完整实现一个 Deep Agent</li>
+                            <li><strong>自定义</strong> — 深入配置选项和系统提示词</li>
+                            <li><strong>模型配置</strong> — 选择和配置模型供应商</li>
+                            <li><strong>后端详解</strong> — 各种文件系统后端的深入用法</li>
+                            <li><strong>子 Agent</strong> — 同步和异步子 Agent 的完整指南</li>
+                            <li><strong>沙箱与权限</strong> — 安全执行和访问控制</li>
+                            <li><strong>记忆与技能</strong> — 长期记忆和可复用技能</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Deep Agents 不是让你"少写代码"的工具，而是让你<strong>"处理更复杂的任务"</strong>的框架。当你的 Agent 需要自主规划、管理上下文、委派子任务、控制权限时，Deep Agents 提供的就是这些"自主性"的底层支撑。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./02-quickstart.html">下一章：快速上手</a> — 完整实现你的第一个 Deep Agent</li>
+                            <li><a href="./03-customization.html">自定义指南</a> — 深入配置选项</li>
+                            <li><a href="./04-comparison.html">Deep Agents vs Claude Agent SDK</a> — 框架对比</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://www.npmjs.com/package/deepagents">deepagents npm 包</a> — 安装和 API 参考</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">GitHub 仓库</a> — 源码和示例</li>
+                            <li><a href="https://smith.langchain.com/">LangSmith</a> — 追踪调试和部署平台</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关资源</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/llms.txt">LangChain 文档索引</a> — 完整的文档导航</li>
+                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 文档</a> — 底层运行时</li>
+                            <li><a href="https://docs.langchain.com/oss/javascript/concepts/products" target="_blank">框架、运行时和 Harness 的区别</a> — 理解技术栈层级</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

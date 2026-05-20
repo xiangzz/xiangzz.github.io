@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>沙箱（Sandboxes）</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 16 章</div>
+            <h1>沙箱（Sandboxes）</h1>
+            <p>在隔离环境中安全执行代码——让 Agent 拥有 Shell 能力而不危及宿主系统</p>
+            <strong>从"只读文件"到"安全执行任意命令"的关键一步</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你的 Agent 需要运行 Shell 命令——但你能信任它吗？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>没有沙箱的风险</h4>
+                        <ul>
+                            <li>Agent 运行 <code>rm -rf /</code>？<strong>你的文件全没了</strong></li>
+                            <li>Agent 读取 <code>.env</code>？<strong>密钥直接泄露</strong></li>
+                            <li>Agent 访问内网？<strong>整个网络暴露</strong></li>
+                            <li>Agent 安装恶意包？<strong>系统被植入后门</strong></li>
+                            <li>多个 Agent 同时跑？<strong>互相干扰、资源争抢</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>沙箱的解法</h4>
+                        <ul>
+                            <li>Agent 在<strong>隔离容器</strong>中运行，碰不到宿主机</li>
+                            <li>文件系统完全隔离，<strong>无法读取你的密钥</strong></li>
+                            <li>网络可配置，<strong>按需阻断外联</strong></li>
+                            <li>每次运行是<strong>全新环境</strong>，无残留风险</li>
+                            <li>按执行时间付费，<strong>用完即销毁</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>当你的 Agent 需要执行代码、安装依赖、运行测试——它就需要 Shell 权限。但你不应该把宿主机的 Shell 权限交给一个 LLM。沙箱就是那道安全边界。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: What is a sandbox backend ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>沙箱是什么</h2>
+                <h4>沙箱是 Deep Agents 的一种后端——在隔离环境中提供文件系统 + Shell 执行</h4>
+                <p>在 Deep Agents 中，<strong>沙箱就是后端（backends）</strong>。与其他后端（State、Filesystem、Store）不同，沙箱后端多了一个 <code>execute</code> 工具，让 Agent 可以在沙箱内运行任意 Shell 命令。</p>
+                <table>
+                    <thead>
+                        <tr><th>能力</th><th>说明</th><th>对比其他后端</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>文件系统工具</strong></td>
+                            <td><code>ls</code>、<code>read_file</code>、<code>write_file</code>、<code>edit_file</code>、<code>glob</code>、<code>grep</code></td>
+                            <td>所有后端都有</td>
+                        </tr>
+                        <tr>
+                            <td><strong>execute 工具</strong></td>
+                            <td>运行任意 Shell 命令，返回 stdout/stderr</td>
+                            <td><strong>沙箱独有</strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>安全边界</strong></td>
+                            <td>隔离容器保护宿主机系统</td>
+                            <td><strong>沙箱独有</strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>文件传输</strong></td>
+                            <td><code>uploadFiles()</code> / <code>downloadFiles()</code></td>
+                            <td>沙箱后端支持</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>架构示意（Agent &harr; 沙箱通信协议）：</strong>Agent（LLM &harr; Tools）通过 backend protocol 与沙箱通信；沙箱内部提供文件系统（Filesystem）、Shell（Bash）和依赖管理（Dependencies）服务。这一协议是沙箱后端与 Agent 之间的标准通信接口。
+                </div>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+import { DenoSandbox } from "@langchain/deno";
+import { ChatAnthropic } from "@langchain/anthropic";
+
+// 创建并初始化沙箱容器
+const sandbox = await DenoSandbox.create({
+  memoryMb: 1024,     // 分配 1GB 内存
+  lifetime: "10m",    // 容器最大存活时间 10 分钟
+});
+
+try {
+  const agent = createDeepAgent({
+    model: new ChatAnthropic({ model: "claude-opus-4-6" }),
+    systemPrompt: "You are a JavaScript coding assistant.",
+    backend: sandbox,  // 沙箱作为后端，Agent 可使用 execute + 文件系统工具
+  });
+
+  const result = await agent.invoke({
+    messages: [{ role: "user", content: "Create a HTTP server and test it" }],
+  });
+} finally {
+  await sandbox.close();  // 必须关闭！否则持续计费
+}</code></pre>
+                <div class="warning">
+                    <strong>常见误区：</strong>沙箱后端会持续消耗资源并产生费用。<strong>必须在不再需要时调用 <code>sandbox.close()</code></strong>，否则会一直计费。推荐使用 try/finally 确保清理。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/16-sandboxes-1.png" alt="图：Agent 与沙箱通信协议架构" class="ai-diagram-img">
+                <div class="key-point">
+                    <strong>使用 Deep Agents Code？</strong>Deep Agents Code 通过 <code>--sandbox</code> 标志内置了沙箱支持。有关具体设置、标志（<code>--sandbox-id</code>、<code>--sandbox-setup</code>）和示例，请参阅<a href="./28-code-remote-sandboxes.html">使用远程沙箱</a>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Available providers ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>可用提供商</h2>
+                <h4>五种沙箱提供商，覆盖从本地开发到云端的完整场景</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>Modal</h4>
+                        <p>云端无服务器沙箱，按执行时间付费。</p>
+                        <ul>
+                            <li>支持 <code>blockNetwork: true</code> 阻断网络</li>
+                            <li>适合生产环境的弹性扩展</li>
+                            <li>自动管理容器生命周期</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>Daytona</h4>
+                        <p>完整的开发环境沙箱，支持原生 Git 操作。</p>
+                        <ul>
+                            <li>支持快照和标签管理</li>
+                            <li>内置 TTL 自动清理闲置环境</li>
+                            <li>适合需要 Git 工作流的编码 Agent</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>Deno</h4>
+                        <p>基于 Deno 运行时的轻量沙箱。</p>
+                        <ul>
+                            <li>启动快，适合快速原型</li>
+                            <li>原生 TypeScript/JavaScript 支持</li>
+                            <li>内置安全权限模型</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>Node VFS</h4>
+                        <p>基于 Node.js 虚拟文件系统的本地沙箱。</p>
+                        <ul>
+                            <li>无需外部服务，纯本地运行</li>
+                            <li>适合本地开发和测试</li>
+                            <li>不提供真实隔离，仅模拟文件系统</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>LangSmith</h4>
+                        <p>LangSmith 平台内置的托管沙箱。</p>
+                        <ul>
+                            <li>与 LangSmith 生态深度集成</li>
+                            <li>一体化追踪和调试</li>
+                            <li>适合已使用 LangSmith 的团队</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>版本要求：</strong>沙箱功能需要 <code>deepagents>=1.7.0</code>。
+                </div>
+                <div class="key-point">
+                    <strong>选择建议：</strong>本地开发用 Node VFS 或 Deno；需要真实隔离用 Modal 或 Daytona；已用 LangSmith 平台就用其内置沙箱。找不到合适的？可以实现自己的沙箱后端。
+                </div>
+                <div class="key-point">
+                    <strong>扩展阅读：</strong>没有找到你的提供商？你可以实现自己的沙箱后端。请参阅<a href="https://docs.langchain.com/oss/javascript/contributing/integrations-langchain">贡献沙箱集成</a>了解如何为 LangChain 添加新的沙箱提供商支持。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Use cases ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>典型场景</h2>
+                <h4>沙箱特别适合这两类 Agent——它们都需要执行代码但必须安全隔离</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>编码 Agent</h4>
+                        <p>自主运行的开发助手，需要完整的开发工具链。</p>
+                        <ul>
+                            <li>使用 Shell 执行构建和测试命令</li>
+                            <li>使用 Git 克隆仓库、提交代码（许多提供商提供原生 Git API，例如 <a href="https://www.daytona.io/docs/en/git-operations/">Daytona 的 Git 操作</a>）</li>
+                            <li>运行 Docker-in-Docker 构建镜像</li>
+                            <li>安装依赖并运行流水线</li>
+                        </ul>
+                        <pre><code class="language-javascript">// 编码 Agent 典型工作流
+// 1. execute: git clone <repo>
+// 2. read_file: 查看项目结构
+// 3. edit_file: 修改代码
+// 4. execute: npm install && npm test
+// 5. execute: git commit && git push</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>数据分析 Agent</h4>
+                        <p>在隔离环境中处理数据、运行分析、生成报告。</p>
+                        <ul>
+                            <li>安装 pandas、numpy 等分析库</li>
+                            <li>加载和处理数据文件</li>
+                            <li>运行统计计算和可视化</li>
+                            <li>生成 PowerPoint、PDF 等输出</li>
+                        </ul>
+                        <pre><code class="language-javascript">// 数据分析 Agent 典型工作流
+// 1. uploadFiles: 上传 CSV 数据
+// 2. execute: pip install pandas matplotlib
+// 3. write_file: 分析脚本
+// 4. execute: python analyze.py
+// 5. downloadFiles: 下载分析报告</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Lifecycle & Scope ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>生命周期</h2>
+                <h4>两种作用域——每个对话一个沙箱，或所有对话共享一个沙箱</h4>
+                <div class="key-point">
+                    <strong>深度阅读：</strong>有关完整的生命周期表、异步 graph factory 说明、TTL 行为、LangGraph 部署接入以及客户端示例，请参阅<a href="./05-going-to-production.html">《投入生产》中的沙箱生命周期</a>。
+                </div>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>线程作用域（默认）</h4>
+                        <p>每个对话获得自己的沙箱。首次运行时创建，同一线程后续交互复用。</p>
+                        <ul>
+                            <li>线程结束或 TTL 过期时环境被清理</li>
+                            <li>不同对话之间<strong>完全隔离</strong></li>
+                            <li>推荐配置 TTL，空闲时自动清理</li>
+                            <li>适合需要隔离的多租户场景</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>助手作用域</h4>
+                        <p>同一助手上的所有线程共享一个沙箱。文件和包在不同对话间持久化。</p>
+                        <ul>
+                            <li>已安装的包、克隆的仓库<strong>跨对话复用</strong></li>
+                            <li>减少重复安装，节省启动时间</li>
+                            <li>需要注意状态积累问题</li>
+                            <li>适合连续开发场景</li>
+                        </ul>
+                    </div>
+                </div>
+                <h4 style="margin-top: 0.5em;">线程作用域代码示例</h4>
+                <pre><code class="language-python"># Python 线程作用域示例（Daytona）
+from daytona import CreateSandboxFromSnapshotParams, Daytona
+from deepagents import create_deep_agent
+from langchain_core.runnables import RunnableConfig
+from langchain_daytona import DaytonaSandbox
+
+client = Daytona()
+
+async def agent(config: RunnableConfig):
+    thread_id = config["configurable"]["thread_id"]  # 用线程 ID 作为沙箱查找键
+    try:
+        # 尝试复用已有沙箱（同一线程后续对话）
+        sandbox = await client.find_one(labels={"thread_id": thread_id})
+    except Exception:
+        # 首次运行，创建新沙箱
+        sandbox = await client.create(
+            CreateSandboxFromSnapshotParams(
+                labels={"thread_id": thread_id},  # 打上线程 ID 标签
+                auto_delete_interval=3600,  # TTL: 空闲 1 小时后自动清理
+            )
+        )
+    return create_deep_agent(
+        model="google_genai:gemini-3.1-pro-preview",
+        backend=DaytonaSandbox(sandbox=sandbox)  # 沙箱作为后端
+    )</code></pre>
+                <pre><code class="language-javascript">// TypeScript 线程作用域示例（Daytona）
+import { Daytona } from "@daytonaio/sdk";
+import { DaytonaSandbox } from "@langchain/daytona";
+import { createDeepAgent } from "deepagents";
+
+const client = new Daytona();
+
+export async function agent(config) {
+  const threadId = config.configurable?.thread_id as string;
+  let sandbox;
+  try {
+    // 尝试复用已有沙箱（同一线程后续对话）
+    sandbox = await client.findOne({ labels: { thread_id: threadId } });
+  } catch {
+    // 首次运行，创建新沙箱
+    sandbox = await client.create({
+      labels: { thread_id: threadId },  // 打上线程 ID 标签
+      autoDeleteInterval: 3600, // TTL: 空闲 1 小时后自动清理
+    });
+  }
+  return createDeepAgent({
+    model: "google_genai:gemini-3.1-pro-preview",
+    backend: await DaytonaSandbox.fromId(sandbox.id),  // 用沙箱 ID 构建后端
+  });
+}</code></pre>
+                <h4 style="margin-top: 1em;">助手作用域代码示例</h4>
+                <p>同一助手上的所有线程复用同一个沙箱，文件和已安装包跨对话持久化。使用 <code>assistant_id</code> 作为标签键而非 <code>thread_id</code>。</p>
+                <pre><code class="language-python"># Python 助手作用域示例（Daytona）
+from daytona import CreateSandboxFromSnapshotParams, Daytona
+from deepagents import create_deep_agent
+from langchain_core.runnables import RunnableConfig
+from langchain_daytona import DaytonaSandbox
+
+client = Daytona()
+
+async def agent(config: RunnableConfig):
+    assistant_id = config["configurable"]["assistant_id"]  # 按 assistant_id 查找沙箱
+    try:
+        sandbox = await client.find_one(labels={"assistant_id": assistant_id})
+    except Exception:
+        sandbox = await client.create(
+            CreateSandboxFromSnapshotParams(labels={"assistant_id": assistant_id})
+        )
+    return create_deep_agent(
+        model="google_genai:gemini-3.1-pro-preview",
+        backend=DaytonaSandbox(sandbox=sandbox)
+    )</code></pre>
+                <pre><code class="language-javascript">// TypeScript 助手作用域示例（Daytona）
+import { Daytona } from "@daytonaio/sdk";
+import { DaytonaSandbox } from "@langchain/daytona";
+import { createDeepAgent } from "deepagents";
+
+const client = new Daytona();
+
+export async function agent(config) {
+  const assistantId = config.configurable?.assistant_id as string;
+  let sandbox;
+  try {
+    sandbox = await client.findOne({ labels: { assistant_id: assistantId } });
+  } catch {
+    sandbox = await client.create({ labels: { assistant_id: assistantId } });
+  }
+  return createDeepAgent({
+    model: "google_genai:gemini-3.1-pro-preview",
+    backend: await DaytonaSandbox.fromId(sandbox.id),
+  });
+}</code></pre>
+                <div class="warning">
+                    <strong>助手作用域的陷阱：</strong>沙箱内部状态会随时间积累——磁盘空间耗尽、依赖冲突、缓存膨胀。务必配置 TTL、使用快照定期重置，或实现清理逻辑。
+                </div>
+                <div class="key-point">
+                    <strong>手动管理：</strong>有关在 graph factory 之外手动创建、执行和拆除沙箱的操作，请参阅<a href="./16-sandboxes.html">基本用法</a>和<a href="https://docs.langchain.com/oss/javascript/integrations/sandboxes">沙箱集成</a>获取提供商特定的 API。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Integration patterns ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>集成模式</h2>
+                <h4>两种架构模式——Agent 在沙箱内运行，或沙箱作为远程工具</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>Agent 在沙箱内运行</h4>
+                        <p>Agent 本身部署在沙箱容器里，你通过网络与其通信。</p>
+                        <ul>
+                            <li>与本地开发体验高度一致</li>
+                            <li>Agent 与环境紧密耦合</li>
+                        </ul>
+                        <p><strong>权衡：</strong></p>
+                        <ul>
+                            <li>API 密钥必须存在于沙箱内（安全风险）</li>
+                            <li>更新代码需要重新构建镜像</li>
+                            <li>需要额外的通信基础设施</li>
+                        </ul>
+                        <pre><code class="language-dockerfile">FROM python:3.11
+RUN pip install deepagents-code</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>沙箱作为工具</h4>
+                        <p>Agent 在你的机器上运行，需要执行代码时调用沙箱工具。</p>
+                        <ul>
+                            <li>无需重建镜像即可更新 Agent 代码</li>
+                            <li>API 密钥保留在沙箱外部</li>
+                            <li>可跨多个沙箱并行运行任务</li>
+                        </ul>
+                        <p><strong>权衡：</strong></p>
+                        <ul>
+                            <li>每次执行调用有网络延迟</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 沙箱作为工具模式（本文档推荐）
+import { DaytonaSandbox } from "@langchain/daytona";
+import { createDeepAgent } from "deepagents";
+
+const sandbox = await DaytonaSandbox.create();  // 创建新的沙箱容器
+
+const agent = createDeepAgent({
+  backend: sandbox,  // 沙箱作为后端，Agent 可执行任意 Shell 命令
+  systemPrompt: "You are a coding assistant with sandbox access.",
+});
+
+try {
+  const result = await agent.invoke({
+    messages: [
+      { role: "user", content: "Create a hello world Python script and run it" },
+    ],
+  });
+} catch (err) {
+  await sandbox.close(); // 异常时主动清理，避免资源泄漏
+  throw err;
+}</code></pre>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/16-sandboxes-2.png" alt="图：两种沙箱集成架构对比" class="ai-diagram-img">
+                <div class="key-point">
+                    <strong>如何选择：</strong>需要快速迭代 Agent 逻辑、把密钥留在沙箱外——选"沙箱作为工具"。需要生产环境与本地开发一致——选"Agent 在沙箱内运行"。本文档所有示例使用"沙箱作为工具"模式。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: How sandbox works - execute ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工作原理</h2>
+                <h4>沙箱后端只需实现一个 execute() 方法——其他文件操作都构建在它之上</h4>
+                <p>架构极其简洁：提供商唯一需要实现的方法是 <code>execute()</code>，它运行一条 Shell 命令并返回输出。所有文件系统操作（<code>read</code>、<code>write</code>、<code>edit</code>、<code>ls</code>、<code>glob</code>、<code>grep</code>）都由 <code>BaseSandbox</code> 基类通过构造脚本调用 <code>execute()</code> 实现。</p>
+                <div class="key-point">
+                    <strong>架构示意（execute 方法体系）：</strong>Agent 工具（ls、read_file 等）和 execute 工具暴露给 Agent 调用；BaseSandbox 基类通过 execute() 方法实现所有文件系统操作；Provider SDK 位于最底层，负责实际执行 Shell 命令。这意味着：添加新提供商只需实现 execute() 方法；execute 工具按条件可用——不实现 SandboxBackendProtocol 的后端不会暴露 execute 工具。
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>层面</th><th>方法</th><th>谁调用</th><th>用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Agent 工具</strong></td>
+                            <td><code>ls</code>、<code>read_file</code>、<code>write_file</code> 等</td>
+                            <td>LLM 在执行期间调用</td>
+                            <td>读取代码、写入文件、搜索内容</td>
+                        </tr>
+                        <tr>
+                            <td><strong>execute 工具</strong></td>
+                            <td><code>execute</code></td>
+                            <td>LLM 在执行期间调用</td>
+                            <td>运行 Shell 命令</td>
+                        </tr>
+                        <tr>
+                            <td><strong>底层方法</strong></td>
+                            <td><code>execute()</code></td>
+                            <td>BaseSandbox 基类</td>
+                            <td>所有工具的底层执行</td>
+                        </tr>
+                        <tr>
+                            <td><strong>文件传输</strong></td>
+                            <td><code>uploadFiles()</code> / <code>downloadFiles()</code></td>
+                            <td>你的应用代码</td>
+                            <td>宿主机与沙箱之间移动文件</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-javascript">// execute() 的返回格式
+// 成功：
+// "4\n[Command succeeded with exit code 0]"
+
+// 失败：
+// "bash: foobar: command not found\n[Command failed with exit code 127]"
+
+// 输出过大时自动截断，Agent 会被指示用 read_file 增量读取</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>添加新提供商很简单</h4>
+                        <p>只需实现 <code>execute()</code> 方法。基类 <code>BaseSandbox</code> 会自动提供所有文件系统工具的实现。</p>
+                    </div>
+                    <div class="card">
+                        <h4>execute 工具按条件可用</h4>
+                        <p>每次模型调用时，harness 会检查后端是否实现了 <code>SandboxBackendProtocol</code>。如果没有，<code>execute</code> 工具会被过滤掉，Agent 永远看不到它。</p>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/16-sandboxes-3.png" alt="图：execute() 分层调用链" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: File operations ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件操作</h2>
+                <h4>两个层面——Agent 的文件系统工具 vs 应用的文件传输 API</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>Agent 文件系统工具</h4>
+                        <p><code>read_file</code>、<code>write_file</code>、<code>edit_file</code>、<code>ls</code>、<code>glob</code>、<code>grep</code>、<code>execute</code></p>
+                        <ul>
+                            <li>LLM 在执行期间调用的工具</li>
+                            <li>通过沙箱内的 <code>execute()</code> 运行</li>
+                            <li>Agent 用来读写文件和运行命令</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>文件传输 API</h4>
+                        <p><code>uploadFiles()</code>、<code>downloadFiles()</code></p>
+                        <ul>
+                            <li>你的应用代码调用的方法</li>
+                            <li>使用提供商的原生传输 API（非 Shell）</li>
+                            <li>在宿主机与沙箱之间移动文件</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>架构示意（文件访问的两个层面）：</strong>应用代码通过提供商 API（uploadFiles/downloadFiles）直接访问沙箱文件系统，用于预填充沙箱和获取产物；Agent 的 LLM 调用 tools（read_file、write_file 等），tools 通过 execute() 在沙箱内执行 Shell 命令来操作文件系统。两种路径各有用途：Agent 工具操作沙箱内部的文件，文件传输 API 跨越宿主机与沙箱的边界。
+                </div>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>预填充沙箱</h4>
+                        <p>在 Agent 运行前注入源代码、配置或数据：</p>
+                        <pre><code class="language-javascript">const encoder = new TextEncoder();
+const responses = await sandbox.uploadFiles([
+  ["src/index.js", encoder.encode("console.log('Hello')")],
+  ["package.json", encoder.encode('{"name": "my-app"}')],
+]);
+
+for (const res of responses) {
+  if (res.error) {
+    console.error(`上传失败 ${res.path}: ${res.error}`);
+  }
+}</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>获取产物</h4>
+                        <p>在 Agent 完成后获取生成的文件：</p>
+                        <pre><code class="language-javascript">const results = await sandbox.downloadFiles([
+  "src/index.js", "output.txt"
+]);
+
+const decoder = new TextDecoder();
+for (const result of results) {
+  if (result.content) {
+    console.log(
+      `${result.path}: ${decoder.decode(result.content)}`
+    );
+  }
+}</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>别搞混：</strong>Agent 用的是 <code>read_file</code> / <code>write_file</code>（工具），你的应用代码用的是 <code>uploadFiles()</code> / <code>downloadFiles()</code>（API）。前者在沙箱内部操作，后者跨越宿主机和沙箱边界。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Security - isolation boundary ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全边界</h2>
+                <h4>沙箱保护宿主机，但不能防护上下文注入——密钥管理是关键</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>沙箱能防护的</h4>
+                        <ul>
+                            <li>Agent 无法读取你的本地文件</li>
+                            <li>Agent 无法访问宿主机环境变量</li>
+                            <li>Agent 无法干扰宿主机其他进程</li>
+                            <li>沙箱故障不会影响宿主机</li>
+                            <li>沙箱销毁后所有痕迹消失</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>沙箱不能防护的</h4>
+                        <ul>
+                            <li><strong>上下文注入</strong>——攻击者控制 Agent 输入，可在沙箱内运行任意命令</li>
+                            <li><strong>网络数据外泄</strong>——被注入的 Agent 可通过 HTTP/DNS 发送数据</li>
+                            <li><strong>沙箱内密钥泄露</strong>——注入的 Agent 可读取沙箱内的凭据</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>最重要的一条规则：切勿将密钥放入沙箱。</strong>
+                    <p>通过环境变量、挂载文件或 secrets 选项注入的 API 密钥、令牌、数据库凭据，都可能被上下文注入的 Agent 读取和外泄。即使短期或限定范围的凭据也是如此——如果 Agent 能访问，攻击者也能。</p>
+                </div>
+                <div class="key-point">
+                    <strong>安全思维：</strong>沙箱是隔离层，不是安全银弹。它保护的是你的宿主机不被 Agent 破坏，但沙箱内部的一切对 Agent 来说都是完全可访问的。因此，密钥永远不要进沙箱。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Handling secrets ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全处理密钥</h2>
+                <h4>Agent 需要调 API 怎么办？两种方案——把密钥留在沙箱外面</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>方案一：宿主机工具（推荐）</h4>
+                        <p>定义在宿主机上运行的自定义工具，在宿主机处理认证。</p>
+                        <ul>
+                            <li>Agent 通过名称调用工具</li>
+                            <li>工具在宿主机执行，带认证</li>
+                            <li>Agent 永远看不到凭据</li>
+                            <li>最简单、最安全的方案</li>
+                        </ul>
+                        <pre><code class="language-javascript">// 在宿主机上定义带认证的自定义工具
+// 工具在宿主机执行，API 密钥永远不进入沙箱
+const callApi = tool(
+  async ({ endpoint, data }) => {
+    // API_KEY 留在宿主机环境变量中，沙箱无法访问
+    const res = await fetch(endpoint, {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  {
+    name: "call_api",
+    description: "Call an authenticated API",
+    schema: z.object({
+      endpoint: z.string(),
+      data: z.any().optional(),
+    }),
+  }
+);</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>方案二：网络代理</h4>
+                        <p>用代理拦截沙箱的出站请求，自动附加凭据。</p>
+                        <ul>
+                            <li>Agent 发起普通 HTTP 请求</li>
+                            <li>代理拦截并附加 Authorization 头</li>
+                            <li>Agent 永远看不到密钥</li>
+                            <li>目前提供商支持有限</li>
+                        </ul>
+                        <pre><code class="language-javascript">// Agent 代码（在沙箱内）
+// 不知道密钥的存在，只发起普通请求
+const response = await fetch(
+  "https://api.example.com/data"
+);
+// 代理自动附加了认证头</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>如果必须将密钥注入沙箱（不推荐）：</strong>
+                    <ul>
+                        <li>为<strong>所有</strong>工具调用启用 human-in-the-loop 审批</li>
+                        <li>阻止或限制沙箱的网络访问（如 Modal 的 <code>blockNetwork: true</code>）</li>
+                        <li>使用范围最窄的凭据和最短有效期</li>
+                        <li>监控沙箱网络流量，关注异常出站请求</li>
+                    </ul>
+                    即使采取这些措施，仍然是不安全的权宜之计。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Best practices ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践</h2>
+                <h4>六条通用安全准则——从沙箱使用到输出处理的完整防护链</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>1. 审查沙箱输出</h4>
+                        <p>在应用程序中对沙箱输出采取操作之前，<strong>先审查其内容</strong>。沙箱内产生的一切都应视为不可信输入。</p>
+                    </div>
+                    <div class="card">
+                        <h4>2. 阻断不必要的网络</h4>
+                        <p>不需要网络访问时，<strong>阻止沙箱的网络访问</strong>。减少数据外泄途径。</p>
+                    </div>
+                    <div class="card">
+                        <h4>3. 过滤敏感模式</h4>
+                        <p>使用 middleware <strong>过滤或脱敏</strong>工具输出中的敏感模式，防止泄露到日志或上游。</p>
+                    </div>
+                    <div class="card">
+                        <h4>4. 视为不可信</h4>
+                        <p>将沙箱内产生的所有内容<strong>视为不可信输入</strong>——就像你对待用户提交的数据一样。</p>
+                    </div>
+                    <div class="card">
+                        <h4>5. 及时关闭沙箱</h4>
+                        <p>沙箱持续消耗资源。使用 <code>try/finally</code> 确保在不再需要时<strong>立即关闭</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>6. 配置 TTL</h4>
+                        <p>为沙箱配置 TTL，让提供商在闲置时<strong>自动删除或归档</strong>，避免资源浪费。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>安全三原则：</strong>① 密钥不进沙箱；② 不需要时阻断网络；③ 沙箱输出当用户输入处理。记住这三条，就能避免大多数安全问题。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了沙箱后端的完整用法</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>沙箱后端在隔离容器中提供<strong>文件系统 + Shell 执行</strong></li>
+                            <li>五种提供商：Modal、Daytona、Deno、Node VFS、LangSmith</li>
+                            <li>两种作用域：<strong>线程隔离</strong> vs <strong>助手共享</strong></li>
+                            <li>两种集成模式：Agent 在沙箱内 vs 沙箱作为工具</li>
+                            <li><code>execute()</code> 是唯一需要实现的方法</li>
+                            <li>文件操作分两层：Agent 工具 vs 文件传输 API</li>
+                            <li><strong>密钥永远不进沙箱</strong>——用宿主机工具或代理</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>解释器</strong> — 在内存运行时中执行 JavaScript</li>
+                            <li><strong>配置文件</strong> — Agent 的配置和档案管理</li>
+                            <li><strong>事件流</strong> — 实时追踪 Agent 的执行过程</li>
+                            <li><strong>流式输出</strong> — Token 级别的实时响应</li>
+                            <li><strong>前端集成</strong> — 构建沙箱管理的 Web 界面</li>
+                            <li><strong>Deep Agents Code</strong> — 终端编程 Agent 的沙箱配置</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>沙箱是 Deep Agents 从"只读写文件"到"安全执行任意代码"的关键桥梁。它的设计哲学是<strong>最小信任</strong>——隔离一切、密钥留外、输出审查。当你需要 Agent 运行测试、构建项目、处理数据时，沙箱就是你的安全基座。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./17-interpreters.html">下一章：解释器（Interpreters）</a> — 在内存运行时中安全执行 JavaScript</li>
+                            <li><a href="./28-code-remote-sandboxes.html">Deep Agents Code 远程沙箱</a> — 终端编程 Agent 的沙箱配置</li>
+                            <li><a href="./24-frontend-sandbox.html">前端沙箱界面</a> — 构建沙箱管理的 Web UI</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://www.npmjs.com/package/deepagents">deepagents npm 包</a> — 安装和 API 参考</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">GitHub 仓库</a> — 源码和示例</li>
+                            <li><a href="https://docs.langchain.com/llms.txt">LangChain 文档索引</a> — 完整的文档导航</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>沙箱提供商</h4>
+                        <ul>
+                            <li><a href="https://modal.com">Modal</a> — 云端无服务器沙箱</li>
+                            <li><a href="https://www.daytona.io">Daytona</a> — 完整开发环境沙箱</li>
+                            <li><a href="https://deno.com">Deno</a> — 轻量运行时沙箱</li>
+                            <li><a href="https://smith.langchain.com/">LangSmith</a> — 托管沙箱平台</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

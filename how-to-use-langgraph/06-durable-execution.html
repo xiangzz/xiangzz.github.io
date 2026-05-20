@@ -6,6 +6,7 @@
     <title>06 持久化执行 — LangGraph 教程</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
     <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
     <style>
         .ai-diagram {
             background: linear-gradient(135deg, #FDFBF7 0%, #F6F1EA 100%);
@@ -298,7 +299,7 @@
                     <div class="flow-step" style="border-top: 3px solid var(--primary-color);">
                         <h4 style="color: var(--primary-color);">1. 启用持久化</h4>
                         <p>编译时传入 <code>checkpointer</code></p>
-                        <pre><code><span style="color:#B45309;">// MemorySaver 用于开发</span>
+                        <pre><code class="language-javascript">// MemorySaver 用于开发
 const graph = workflow.compile({
   checkpointer: new MemorySaver()
 });</code></pre>
@@ -306,27 +307,27 @@ const graph = workflow.compile({
                     <div class="flow-step" style="border-top: 3px solid #7C3AED;">
                         <h4 style="color: #7C3AED;">2. 指定线程</h4>
                         <p>每次调用传 <code>thread_id</code></p>
-                        <pre><code><span style="color:#B45309;">// 同一任务用相同 thread_id</span>
+                        <pre><code class="language-javascript">// 同一任务用相同 thread_id
 const config = {
   configurable: {
-    thread_id: <span style="color:#059669;">"task-001"</span>
+    thread_id: "task-001"
   }
 };</code></pre>
                     </div>
                     <div class="flow-step" style="border-top: 3px solid #D97706;">
                         <h4 style="color: #D97706;">3. 包裹副作用</h4>
                         <p>用 <code>task()</code> 包装非确定性操作</p>
-                        <pre><code>import { task } from <span style="color:#059669;">"@langchain/langgraph"</span>;
+                        <pre><code class="language-javascript">import { task } from "@langchain/langgraph";
 
 const result = await task(
-  <span style="color:#059669;">"my-api-call"</span>,
+  "my-api-call",
   async () => fetch(url)
 );</code></pre>
                     </div>
                 </div>
-                <pre><code><span style="color:#B45309;">// 完整示例：满足三个前提的持久化执行图</span>
-import { StateGraph, MemorySaver, START, END, task } from <span style="color:#059669;">"@langchain/langgraph"</span>;
-import { Annotation } from <span style="color:#059669;">"@langchain/langgraph"</span>;
+                <pre><code class="language-javascript">// 完整示例：满足三个前提的持久化执行图
+import { StateGraph, MemorySaver, START, END, task } from "@langchain/langgraph";
+import { Annotation } from "@langchain/langgraph";
 
 const State = Annotation.Root({
   url: Annotation&lt;string&gt;,
@@ -334,8 +335,8 @@ const State = Annotation.Root({
 });
 
 const fetchNode = async (state) => {
-  <span style="color:#B45309;">// 用 task() 包裹网络请求——重放时自动跳过</span>
-  const html = await task(<span style="color:#059669;">"fetch-url"</span>, async () => {
+  // 用 task() 包裹网络请求——重放时自动跳过
+  const html = await task("fetch-url", async () => {
     const resp = await fetch(state.url);
     return await resp.text();
   });
@@ -343,12 +344,12 @@ const fetchNode = async (state) => {
 };
 
 const graph = new StateGraph(State)
-  .addNode(<span style="color:#059669;">"fetch"</span>, fetchNode)
-  .addEdge(START, <span style="color:#059669;">"fetch"</span>)
-  .addEdge(<span style="color:#059669;">"fetch"</span>, END)
-  .compile({ checkpointer: new MemorySaver() });  <span style="color:#B45309;">// 前提 1</span>
+  .addNode("fetch", fetchNode)
+  .addEdge(START, "fetch")
+  .addEdge("fetch", END)
+  .compile({ checkpointer: new MemorySaver() });  // 前提 1
 
-const config = { configurable: { thread_id: <span style="color:#059669;">"crawl-1"</span> } };  <span style="color:#B45309;">// 前提 2</span></code></pre>
+const config = { configurable: { thread_id: "crawl-1" } };  // 前提 2</code></pre>
                 <div class="warning">
                     <strong>前提 3 是最容易忽略的：</strong>如果你在节点里直接调 API、写数据库、发邮件，恢复时这些操作会重新执行。<code>task()</code> 能让 LangGraph 记住"这个操作已经做过了"，重放时跳过。
                 </div>
@@ -414,34 +415,34 @@ const config = { configurable: { thread_id: <span style="color:#059669;">"crawl-
                     <div class="card" style="border-top: 3px solid var(--primary-color);">
                         <h4>原则一：避免重复工作</h4>
                         <p>所有有副作用的操作（API 调用、数据库写入、发邮件）必须用 <code>task()</code> 包裹。这样重放时 LangGraph 知道跳过它们。</p>
-                        <pre><code><span style="color:#B45309;">// 错误：直接调用</span>
+                        <pre><code class="language-javascript">// 错误：直接调用
 const data = await fetch(url);
 
-<span style="color:#059669;">// 正确：用 task() 包裹</span>
-const data = await task(<span style="color:#059669;">"fetch-data"</span>,
+// 正确：用 task() 包裹
+const data = await task("fetch-data",
   async () => await fetch(url)
 );</code></pre>
                     </div>
                     <div class="card" style="border-top: 3px solid #7C3AED;">
                         <h4>原则二：包裹非确定性</h4>
                         <p>随机数、时间戳、UUID 等非确定性操作也要用 <code>task()</code> 包裹。否则每次重放都会生成不同的值，导致状态不一致。</p>
-                        <pre><code><span style="color:#B45309;">// 错误：每次重放结果不同</span>
+                        <pre><code class="language-javascript">// 错误：每次重放结果不同
 const id = crypto.randomUUID();
 
-<span style="color:#059669;">// 正确：重放时使用缓存的结果</span>
-const id = await task(<span style="color:#059669;">"gen-id"</span>,
+// 正确：重放时使用缓存的结果
+const id = await task("gen-id",
   () => crypto.randomUUID()
 );</code></pre>
                     </div>
                     <div class="card" style="border-top: 3px solid var(--success-color);">
                         <h4>原则三：幂等操作</h4>
                         <p>即使用了 <code>task()</code>，也无法 100% 保证不重复。设计操作时尽量让它<strong>执行多次和执行一次效果相同</strong>。</p>
-                        <pre><code><span style="color:#B45309;">// 使用幂等写入：upsert 而非 insert</span>
-await task(<span style="color:#059669;">"save-result"</span>,
+                        <pre><code class="language-javascript">// 使用幂等写入：upsert 而非 insert
+await task("save-result",
   async () => db.collection.updateOne(
-    { _id: taskId },  <span style="color:#B45309;">// 唯一键</span>
+    { _id: taskId },  // 唯一键
     { $set: { result } },
-    { upsert: <span style="color:#059669;">true</span> }
+    { upsert: true }
   )
 );</code></pre>
                     </div>
@@ -493,17 +494,17 @@ await task(<span style="color:#059669;">"save-result"</span>,
                         </tr>
                     </tbody>
                 </table>
-                <pre><code><span style="color:#B45309;">// 三种模式的使用方式——只在调用时指定</span>
-const config = { configurable: { thread_id: <span style="color:#059669;">"task-1"</span> } };
+                <pre><code class="language-javascript">// 三种模式的使用方式——只在调用时指定
+const config = { configurable: { thread_id: "task-1" } };
 
-<span style="color:#B45309;">// exit 模式：只在图结束时保存</span>
-await graph.stream({ input: <span style="color:#059669;">"test"</span> }, { ...config, durability: <span style="color:#059669;">"exit"</span> });
+// exit 模式：只在图结束时保存
+await graph.stream({ input: "test" }, { ...config, durability: "exit" });
 
-<span style="color:#B45309;">// async 模式：异步保存（默认）</span>
-await graph.stream({ input: <span style="color:#059669;">"test"</span> }, { ...config, durability: <span style="color:#059669;">"async"</span> });
+// async 模式：异步保存（默认）
+await graph.stream({ input: "test" }, { ...config, durability: "async" });
 
-<span style="color:#B45309;">// sync 模式：每步同步保存——最安全</span>
-await graph.stream({ input: <span style="color:#059669;">"test"</span> }, { ...config, durability: <span style="color:#059669;">"sync"</span> });</code></pre>
+// sync 模式：每步同步保存——最安全
+await graph.stream({ input: "test" }, { ...config, durability: "sync" });</code></pre>
                 <div class="card-grid">
                     <div class="card">
                         <h4>如何选择</h4>
@@ -535,42 +536,42 @@ await graph.stream({ input: <span style="color:#059669;">"test"</span> }, { ...c
             <div class="slide-content">
                 <h2>task() 详解</h2>
                 <h4>用 <code>task()</code> 包裹副作用，让重放时自动跳过已执行的操作</h4>
-                <pre><code><span style="color:#B45309;">// task() 的签名</span>
-import { task } from <span style="color:#059669;">"@langchain/langgraph"</span>;
+                <pre><code class="language-javascript">// task() 的签名
+import { task } from "@langchain/langgraph";
 
-<span style="color:#B45309;">// 第一个参数：唯一名称（同一个节点内不能重复）</span>
-<span style="color:#B45309;">// 第二个参数：实际要执行的异步函数</span>
-const result = await task(<span style="color:#059669;">"fetch-url"</span>, async () => {
+// 第一个参数：唯一名称（同一个节点内不能重复）
+// 第二个参数：实际要执行的异步函数
+const result = await task("fetch-url", async () => {
   const response = await fetch(state.url);
   return await response.text();
 });</code></pre>
                 <h4>在节点中使用 task()</h4>
-                <pre><code>import { task } from <span style="color:#059669;">"@langchain/langgraph"</span>;
+                <pre><code class="language-javascript">import { task } from "@langchain/langgraph";
 
 const researchNode = async (state) => {
-  <span style="color:#B45309;">// 任务 1：获取网页内容（副作用 → 用 task）</span>
-  const html = await task(<span style="color:#059669;">"fetch-page"</span>, async () => {
+  // 任务 1：获取网页内容（副作用 → 用 task）
+  const html = await task("fetch-page", async () => {
     const resp = await fetch(state.url);
     return resp.text();
   });
 
-  <span style="color:#B45309;">// 任务 2：调用 LLM 分析（副作用 + 花钱 → 用 task）</span>
-  const analysis = await task(<span style="color:#059669;">"analyze"</span>, async () => {
-    const llm = new ChatOpenAI({ model: <span style="color:#059669;">"gpt-4o-mini"</span> });
+  // 任务 2：调用 LLM 分析（副作用 + 花钱 → 用 task）
+  const analysis = await task("analyze", async () => {
+    const llm = new ChatOpenAI({ model: "gpt-4o-mini" });
     const result = await llm.invoke(html.slice(0, 3000));
     return result.content;
   });
 
-  <span style="color:#B45309;">// 纯计算不需要 task()——没有副作用，重放也无害</span>
+  // 纯计算不需要 task()——没有副作用，重放也无害
   const summary = analysis.slice(0, 200);
 
   return { result: summary };
 };
 
 const graph = new StateGraph(State)
-  .addNode(<span style="color:#059669;">"research"</span>, researchNode)
-  .addEdge(START, <span style="color:#059669;">"research"</span>)
-  .addEdge(<span style="color:#059669;">"research"</span>, END)
+  .addNode("research", researchNode)
+  .addEdge(START, "research")
+  .addEdge("research", END)
   .compile({ checkpointer: new MemorySaver() });</code></pre>
                 <div class="card-grid">
                     <div class="card">
@@ -634,41 +635,41 @@ const graph = new StateGraph(State)
                     </tbody>
                 </table>
                 <h4>场景一：暂停与恢复（HITL）</h4>
-                <pre><code>import { interrupt, Command } from <span style="color:#059669;">"@langchain/langgraph"</span>;
+                <pre><code class="language-javascript">import { interrupt, Command } from "@langchain/langgraph";
 
 const reviewNode = async (state) => {
-  <span style="color:#B45309;">// 暂停，等待人工审核</span>
-  const humanDecision = interrupt(<span style="color:#059669;">"请审核这个结果："</span> + state.draft);
+  // 暂停，等待人工审核
+  const humanDecision = interrupt("请审核这个结果：" + state.draft);
 
-  <span style="color:#B45309;">// humanDecision 就是恢复时传入的值</span>
-  if (humanDecision === <span style="color:#059669;">"approve"</span>) {
-    return { status: <span style="color:#059669;">"approved"</span> };
+  // humanDecision 就是恢复时传入的值
+  if (humanDecision === "approve") {
+    return { status: "approved" };
   }
-  return { status: <span style="color:#059669;">"rejected"</span>, feedback: humanDecision };
+  return { status: "rejected", feedback: humanDecision };
 };
 
-<span style="color:#B45309;">// 恢复执行——传入人工决策</span>
+// 恢复执行——传入人工决策
 await graph.invoke(
-  null,  <span style="color:#B45309;">// 不需要新输入</span>
+  null,  // 不需要新输入
   {
     ...config,
-    command: new Command({ resume: <span style="color:#059669;">"approve"</span> }),
+    command: new Command({ resume: "approve" }),
   }
 );</code></pre>
                 <h4>场景二：故障恢复</h4>
-                <pre><code><span style="color:#B45309;">// 第一次调用——假设在节点 C 崩溃了</span>
+                <pre><code class="language-javascript">// 第一次调用——假设在节点 C 崩溃了
 try {
-  await graph.invoke({ input: <span style="color:#059669;">"start"</span> }, config);
+  await graph.invoke({ input: "start" }, config);
 } catch (e) {
-  console.log(<span style="color:#059669;">"崩溃了，准备恢复..."</span>);
+  console.log("崩溃了，准备恢复...");
 }
 
-<span style="color:#B45309;">// 恢复：用同一个 thread_id 重新调用，自动从断点恢复</span>
+// 恢复：用同一个 thread_id 重新调用，自动从断点恢复
 const result = await graph.invoke(
-  null,  <span style="color:#B45309;">// 不需要新输入，检查点已有状态</span>
-  config  <span style="color:#B45309;">// 同一个 thread_id</span>
+  null,  // 不需要新输入，检查点已有状态
+  config  // 同一个 thread_id
 );
-console.log(result);  <span style="color:#B45309;">// 从崩溃点继续执行</span></code></pre>
+console.log(result);  // 从崩溃点继续执行</code></pre>
                 <div class="key-point">
                     <strong>记住：</strong>两种恢复方式的共同点是都用同一个 <code>thread_id</code>。区别在于：暂停/恢复需要传 <code>Command({ resume })</code>；故障恢复只需重新调用即可。
                 </div>
@@ -761,9 +762,9 @@ console.log(result);  <span style="color:#B45309;">// 从崩溃点继续执行</
                         </ul>
                     </div>
                 </div>
-                <pre><code><span style="color:#B45309;">// 参考答案：练习 1 & 2</span>
-import { StateGraph, MemorySaver, START, END, task, interrupt, Command } from <span style="color:#059669;">"@langchain/langgraph"</span>;
-import { Annotation } from <span style="color:#059669;">"@langchain/langgraph"</span>;
+                <pre><code class="language-javascript">// 参考答案：练习 1 & 2
+import { StateGraph, MemorySaver, START, END, task, interrupt, Command } from "@langchain/langgraph";
+import { Annotation } from "@langchain/langgraph";
 
 const State = Annotation.Root({
   url: Annotation&lt;string&gt;,
@@ -773,7 +774,7 @@ const State = Annotation.Root({
 });
 
 const fetchNode = async (state) => {
-  const html = await task(<span style="color:#059669;">"fetch-page"</span>, async () => {
+  const html = await task("fetch-page", async () => {
     const resp = await fetch(state.url);
     return resp.text();
   });
@@ -781,41 +782,41 @@ const fetchNode = async (state) => {
 };
 
 const analyzeNode = async (state) => {
-  <span style="color:#B45309;">// 等待人工确认分析内容</span>
-  const approved = interrupt(<span style="color:#059669;">`内容预览：${state.content.slice(0, 100)}...确认分析？`</span>);
+  // 等待人工确认分析内容
+  const approved = interrupt(`内容预览：${state.content.slice(0, 100)}...确认分析？`);
 
-  const result = await task(<span style="color:#059669;">"llm-analyze"</span>, async () => {
-    <span style="color:#B45309;">// 模拟 LLM 调用</span>
-    return <span style="color:#059669;">`分析结果：${state.content.length} 字符`</span>;
+  const result = await task("llm-analyze", async () => {
+    // 模拟 LLM 调用
+    return `分析结果：${state.content.length} 字符`;
   });
   return { analysis: result };
 };
 
 const reportNode = (state) => {
-  return { report: <span style="color:#059669;">`报告：${state.analysis}`</span> };
+  return { report: `报告：${state.analysis}` };
 };
 
 const graph = new StateGraph(State)
-  .addNode(<span style="color:#059669;">"fetch"</span>, fetchNode)
-  .addNode(<span style="color:#059669;">"analyze"</span>, analyzeNode)
-  .addNode(<span style="color:#059669;">"report"</span>, reportNode)
-  .addEdge(START, <span style="color:#059669;">"fetch"</span>)
-  .addEdge(<span style="color:#059669;">"fetch"</span>, <span style="color:#059669;">"analyze"</span>)
-  .addEdge(<span style="color:#059669;">"analyze"</span>, <span style="color:#059669;">"report"</span>)
-  .addEdge(<span style="color:#059669;">"report"</span>, END)
+  .addNode("fetch", fetchNode)
+  .addNode("analyze", analyzeNode)
+  .addNode("report", reportNode)
+  .addEdge(START, "fetch")
+  .addEdge("fetch", "analyze")
+  .addEdge("analyze", "report")
+  .addEdge("report", END)
   .compile({ checkpointer: new MemorySaver() });
 
-const config = { configurable: { thread_id: <span style="color:#059669;">"exercise-1"</span> } };
+const config = { configurable: { thread_id: "exercise-1" } };
 
-<span style="color:#B45309;">// 第一次调用——会在 analyze 节点暂停</span>
-await graph.invoke({ url: <span style="color:#059669;">"https://example.com"</span> }, config);
+// 第一次调用——会在 analyze 节点暂停
+await graph.invoke({ url: "https://example.com" }, config);
 
-<span style="color:#B45309;">// 查看暂停状态</span>
+// 查看暂停状态
 const snap = await graph.getState(config);
-console.log(<span style="color:#059669;">"下一步:"</span>, snap.next);  <span style="color:#B45309;">// ["analyze"]</span>
+console.log("下一步:", snap.next);  // ["analyze"]
 
-<span style="color:#B45309;">// 恢复——传入确认</span>
-await graph.invoke(null, { ...config, command: new Command({ resume: <span style="color:#059669;">"yes"</span> }) });</code></pre>
+// 恢复——传入确认
+await graph.invoke(null, { ...config, command: new Command({ resume: "yes" }) });</code></pre>
             </div>
         </section>
 
@@ -910,6 +911,8 @@ await graph.invoke(null, { ...config, command: new Command({ resume: <span style
         <button id="next-btn">下一页 →</button>
     </div>
 
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
     <script src="./js/slide.js"></script>
     <script src="./js/nav.js"></script>
 </body>

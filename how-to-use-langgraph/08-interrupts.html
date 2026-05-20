@@ -6,6 +6,7 @@
     <title>08 中断与人机交互</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏸️</text></svg>">
     <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
     <style>
         .card-grid {
             display: flex;
@@ -98,13 +99,13 @@
                     - 避免：过度装饰、3D 效果、杂乱的颜色
                     </p>
                 </div>
-                <pre><code><span style="color: var(--primary-color);">import</span> { interrupt } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+                <pre><code class="language-javascript">import { interrupt } from "@langchain/langgraph";
 
-<span style="color: var(--primary-color);">async function</span> approvalNode(state) {
-    <span style="color: var(--text-muted);">// 暂停并请求审批</span>
-    <span style="color: var(--primary-color);">const</span> approved = interrupt(<span style="color: var(--success-color);">"Do you approve this action?"</span>);
-    <span style="color: var(--text-muted);">// Command({ resume: true }) 传入的值成为 approved</span>
-    <span style="color: var(--primary-color);">return</span> { approved };
+async function approvalNode(state) {
+    // 暂停并请求审批
+    const approved = interrupt("Do you approve this action?");
+    // Command({ resume: true }) 传入的值成为 approved
+    return { approved };
 }</code></pre>
                 <div class="key-point">
                     <strong>三步走：</strong>① 调用 <code>interrupt()</code> 暂停执行，传入提示信息 → ② 状态保存到 checkpointer → ③ 用 <code>Command({ resume: value })</code> 恢复，value 成为 interrupt() 的返回值。
@@ -117,19 +118,19 @@
             <div class="slide-content">
                 <h2>暂停与恢复</h2>
                 <h4>完整的中断-恢复代码流程</h4>
-                <pre><code><span style="color: var(--primary-color);">import</span> { Command } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+                <pre><code class="language-javascript">import { Command } from "@langchain/langgraph";
 
-<span style="color: var(--primary-color);">const</span> config = { configurable: { thread_id: <span style="color: var(--success-color);">"thread-1"</span> } };
+const config = { configurable: { thread_id: "thread-1" } };
 
-<span style="color: var(--text-muted);">// 第一次运行 — 遇到中断暂停</span>
-<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> graph.invoke({ input: <span style="color: var(--success-color);">"data"</span> }, config);
+// 第一次运行 — 遇到中断暂停
+const result = await graph.invoke({ input: "data" }, config);
 
-<span style="color: var(--text-muted);">// 查看中断内容</span>
+// 查看中断内容
 console.log(result.__interrupt__);
-<span style="color: var(--text-muted);">// [{ value: 'Do you approve this action?', ... }]</span>
+// [{ value: 'Do you approve this action?', ... }]
 
-<span style="color: var(--text-muted);">// 用人类的响应恢复</span>
-<span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--primary-color);">true</span> }), config);</code></pre>
+// 用人类的响应恢复
+await graph.invoke(new Command({ resume: true }), config);</code></pre>
                 <div class="card-grid">
                     <div class="card">
                         <h4>三个关键点</h4>
@@ -148,22 +149,22 @@ console.log(result.__interrupt__);
             <div class="slide-content">
                 <h2>审批模式</h2>
                 <h4>interrupt 返回布尔值，决定走哪条路</h4>
-                <pre><code><span style="color: var(--primary-color);">const</span> approvalNode: <span style="color: var(--primary-color);">typeof</span> State.Node = (state) => {
-  <span style="color: var(--primary-color);">const</span> isApproved = interrupt({
-    question: <span style="color: var(--success-color);">"Do you want to proceed?"</span>,
+                <pre><code class="language-javascript">const approvalNode: typeof State.Node = (state) => {
+  const isApproved = interrupt({
+    question: "Do you want to proceed?",
     details: state.actionDetails,
   });
 
-  <span style="color: var(--primary-color);">if</span> (isApproved) {
-    <span style="color: var(--primary-color);">return new</span> Command({ goto: <span style="color: var(--success-color);">"proceed"</span> });
-  } <span style="color: var(--primary-color);">else</span> {
-    <span style="color: var(--primary-color);">return new</span> Command({ goto: <span style="color: var(--success-color);">"cancel"</span> });
+  if (isApproved) {
+    return new Command({ goto: "proceed" });
+  } else {
+    return new Command({ goto: "cancel" });
   }
 };
 
-<span style="color: var(--text-muted);">// 恢复时传入 true 审批或 false 拒绝</span>
-<span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--primary-color);">true</span> }), config);   <span style="color: var(--text-muted);">// 审批</span>
-<span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--primary-color);">false</span> }), config);  <span style="color: var(--text-muted);">// 拒绝</span></code></pre>
+// 恢复时传入 true 审批或 false 拒绝
+await graph.invoke(new Command({ resume: true }), config);   // 审批
+await graph.invoke(new Command({ resume: false }), config);  // 拒绝</code></pre>
             </div>
         </section>
 
@@ -172,17 +173,17 @@ console.log(result.__interrupt__);
             <div class="slide-content">
                 <h2>审查与编辑</h2>
                 <h4>人类修改智能体生成的内容后再继续</h4>
-                <pre><code><span style="color: var(--primary-color);">const</span> reviewNode: <span style="color: var(--primary-color);">typeof</span> State.Node = (state) => {
-  <span style="color: var(--primary-color);">const</span> editedContent = interrupt({
-    instruction: <span style="color: var(--success-color);">"Review and edit this content"</span>,
+                <pre><code class="language-javascript">const reviewNode: typeof State.Node = (state) => {
+  const editedContent = interrupt({
+    instruction: "Review and edit this content",
     content: state.generatedText,
   });
-  <span style="color: var(--primary-color);">return</span> { generatedText: editedContent };
+  return { generatedText: editedContent };
 };
 
-<span style="color: var(--text-muted);">// 恢复时提供编辑后的内容</span>
-<span style="color: var(--primary-color);">await</span> graph.invoke(
-  <span style="color: var(--primary-color);">new</span> Command({ resume: <span style="color: var(--success-color);">"The edited and improved text"</span> }),
+// 恢复时提供编辑后的内容
+await graph.invoke(
+  new Command({ resume: "The edited and improved text" }),
   config
 );</code></pre>
                 <div class="info-block">
@@ -196,24 +197,24 @@ console.log(result.__interrupt__);
             <div class="slide-content">
                 <h2>工具中的中断</h2>
                 <h4>interrupt 不只能在节点里用——工具函数里也能用</h4>
-                <pre><code><span style="color: var(--primary-color);">import</span> { tool } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/core/tools"</span>;
+                <pre><code class="language-javascript">import { tool } from "@langchain/core/tools";
 
-<span style="color: var(--primary-color);">const</span> sendEmailTool = tool(
-  <span style="color: var(--primary-color);">async</span> ({ to, subject, body }) => {
-    <span style="color: var(--primary-color);">const</span> response = interrupt({
-      action: <span style="color: var(--success-color);">"send_email"</span>,
+const sendEmailTool = tool(
+  async ({ to, subject, body }) => {
+    const response = interrupt({
+      action: "send_email",
       to, subject, body,
-      message: <span style="color: var(--success-color);">"Approve sending this email?"</span>,
+      message: "Approve sending this email?",
     });
 
-    <span style="color: var(--primary-color);">if</span> (response?.action === <span style="color: var(--success-color);">"approve"</span>) {
-      <span style="color: var(--primary-color);">return</span> <span style="color: var(--success-color);">`Email sent to ${response.to ?? to}`</span>;
+    if (response?.action === "approve") {
+      return `Email sent to ${response.to ?? to}`;
     }
-    <span style="color: var(--primary-color);">return</span> <span style="color: var(--success-color);">"Email cancelled by user"</span>;
+    return "Email cancelled by user";
   },
   {
-    name: <span style="color: var(--success-color);">"send_email"</span>,
-    description: <span style="color: var(--success-color);">"Send an email"</span>,
+    name: "send_email",
+    description: "Send an email",
     schema: z.object({ to: z.string(), subject: z.string(), body: z.string() }),
   }
 );</code></pre>
@@ -228,15 +229,15 @@ console.log(result.__interrupt__);
             <div class="slide-content">
                 <h2>输入验证</h2>
                 <h4>用 while 循环反复询问，直到获得合法输入</h4>
-                <pre><code><span style="color: var(--primary-color);">const</span> getAgeNode: <span style="color: var(--primary-color);">typeof</span> State.Node = (state) => {
-  <span style="color: var(--primary-color);">let</span> prompt = <span style="color: var(--success-color);">"What is your age?"</span>;
+                <pre><code class="language-javascript">const getAgeNode: typeof State.Node = (state) => {
+  let prompt = "What is your age?";
 
-  <span style="color: var(--primary-color);">while</span> (<span style="color: var(--primary-color);">true</span>) {
-    <span style="color: var(--primary-color);">const</span> answer = interrupt(prompt);
-    <span style="color: var(--primary-color);">if</span> (<span style="color: var(--primary-color);">typeof</span> answer === <span style="color: var(--success-color);">"number"</span> && answer > <span style="color: var(--primary-color);">0</span>) {
-      <span style="color: var(--primary-color);">return</span> { age: answer };
-    } <span style="color: var(--primary-color);">else</span> {
-      prompt = <span style="color: var(--success-color);">`'${answer}' is not a valid age. Please enter a positive number.`</span>;
+  while (true) {
+    const answer = interrupt(prompt);
+    if (typeof answer === "number" && answer > 0) {
+      return { age: answer };
+    } else {
+      prompt = `'${answer}' is not a valid age. Please enter a positive number.`;
     }
   }
 };</code></pre>
@@ -264,22 +265,22 @@ console.log(result.__interrupt__);
             <div class="slide-content">
                 <h2>多个中断</h2>
                 <h4>并行分支各有中断时，用 ID 映射恢复值</h4>
-                <pre><code><span style="color: var(--primary-color);">import</span> { isInterrupted, INTERRUPT } <span style="color: var(--primary-color);">from</span> <span style="color: var(--success-color);">"@langchain/langgraph"</span>;
+                <pre><code class="language-javascript">import { isInterrupted, INTERRUPT } from "@langchain/langgraph";
 
-<span style="color: var(--text-muted);">// 两个并行节点各有一个 interrupt</span>
-<span style="color: var(--primary-color);">const</span> interruptedResult = <span style="color: var(--primary-color);">await</span> graph.invoke({ vals: [] }, config);
-<span style="color: var(--text-muted);">// { __interrupt__: [{ id: '...', value: 'question_a' }, { id: '...', value: 'question_b' }] }</span>
+// 两个并行节点各有一个 interrupt
+const interruptedResult = await graph.invoke({ vals: [] }, config);
+// { __interrupt__: [{ id: '...', value: 'question_a' }, { id: '...', value: 'question_b' }] }
 
-<span style="color: var(--text-muted);">// 一次恢复所有中断</span>
-<span style="color: var(--primary-color);">const</span> resumeMap: Record&lt;string, string&gt; = {};
-<span style="color: var(--primary-color);">if</span> (isInterrupted(interruptedResult)) {
-  <span style="color: var(--primary-color);">for</span> (<span style="color: var(--primary-color);">const</span> i <span style="color: var(--primary-color);">of</span> interruptedResult[INTERRUPT]) {
-    <span style="color: var(--primary-color);">if</span> (i.id != <span style="color: var(--primary-color);">null</span>) {
-      resumeMap[i.id] = <span style="color: var(--success-color);">`answer for ${i.value}`</span>;
+// 一次恢复所有中断
+const resumeMap: Record&lt;string, string&gt; = {};
+if (isInterrupted(interruptedResult)) {
+  for (const i of interruptedResult[INTERRUPT]) {
+    if (i.id != null) {
+      resumeMap[i.id] = `answer for ${i.value}`;
     }
   }
 }
-<span style="color: var(--primary-color);">const</span> result = <span style="color: var(--primary-color);">await</span> graph.invoke(<span style="color: var(--primary-color);">new</span> Command({ resume: resumeMap }), config);</code></pre>
+const result = await graph.invoke(new Command({ resume: resumeMap }), config);</code></pre>
             </div>
         </section>
 
@@ -352,26 +353,26 @@ console.log(result.__interrupt__);
         <section class="slide">
             <div class="slide-content">
                 <h2>参考答案</h2>
-                <pre><code><span style="color: var(--primary-color);">const</span> State = <span style="color: var(--primary-color);">new</span> StateSchema({
+                <pre><code class="language-javascript">const State = new StateSchema({
   topic: z.string(),
   content: z.string(),
   feedback: z.string().optional(),
 });
 
-<span style="color: var(--text-muted);">// 节点 1：生成文档</span>
-<span style="color: var(--primary-color);">const</span> generateDoc: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> State&gt; = <span style="color: var(--primary-color);">async</span> (state) => {
-  <span style="color: var(--primary-color);">const</span> prompt = state.feedback
-    ? <span style="color: var(--success-color);">`Rewrite doc about ${state.topic}. Feedback: ${state.feedback}`</span>
-    : <span style="color: var(--success-color);">`Write a doc about ${state.topic}`</span>;
-  <span style="color: var(--primary-color);">const</span> msg = <span style="color: var(--primary-color);">await</span> model.invoke(prompt);
-  <span style="color: var(--primary-color);">return</span> { content: msg.content };
+// 节点 1：生成文档
+const generateDoc: GraphNode&lt;typeof State&gt; = async (state) => {
+  const prompt = state.feedback
+    ? `Rewrite doc about ${state.topic}. Feedback: ${state.feedback}`
+    : `Write a doc about ${state.topic}`;
+  const msg = await model.invoke(prompt);
+  return { content: msg.content };
 };
 
-<span style="color: var(--text-muted);">// 节点 2：审批</span>
-<span style="color: var(--primary-color);">const</span> review: GraphNode&lt;<span style="color: var(--primary-color);">typeof</span> State&gt; = (state) => {
-  <span style="color: var(--primary-color);">const</span> decision = interrupt({ content: state.content, question: <span style="color: var(--success-color);">"Approve?"</span> });
-  <span style="color: var(--primary-color);">if</span> (decision.approved) <span style="color: var(--primary-color);">return new</span> Command({ goto: <span style="color: var(--success-color);">"publish"</span> });
-  <span style="color: var(--primary-color);">return</span> { feedback: decision.feedback };
+// 节点 2：审批
+const review: GraphNode&lt;typeof State&gt; = (state) => {
+  const decision = interrupt({ content: state.content, question: "Approve?" });
+  if (decision.approved) return new Command({ goto: "publish" });
+  return { feedback: decision.feedback };
 };</code></pre>
                 <div class="key-point">
                     <strong>模式：</strong>interrupt 获取人类决策 → Command(goto) 路由到不同节点。拒绝时附带 feedback，生成节点根据 feedback 重新创作。
@@ -440,6 +441,8 @@ console.log(result.__interrupt__);
         <span id="slide-counter"></span>
         <button id="next-btn">下一页 →</button>
     </div>
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
     <script src="./js/slide.js"></script>
     <script src="./js/nav.js"></script>
 </body>

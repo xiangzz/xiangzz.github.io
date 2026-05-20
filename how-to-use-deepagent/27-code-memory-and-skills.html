@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记忆与技能</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 27 章</div>
+            <h1>记忆与技能</h1>
+            <p>Deep Agents Code 的持久化记忆、AGENTS.md 文件和可复用技能</p>
+            <strong>从"一次性的助手"到"能学习、有技能的编程伙伴"</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你有没有试过让编程助手记住你的编码风格？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>无记忆 Agent 的困境</h4>
+                        <ul>
+                            <li>每次会话都是"新来的"，<strong>不记得你的编码约定</strong></li>
+                            <li>教过它的事下次全忘了，<strong>重复劳动</strong></li>
+                            <li>项目架构只能写在注释里，<strong>Agent 不会主动看</strong></li>
+                            <li>团队规范无法沉淀，<strong>每个人都要重新教一遍</strong></li>
+                            <li>想让它自动执行某类任务？<strong>没有可复用的技能机制</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Deep Agents Code 的解法</h4>
+                        <ul>
+                            <li><strong>自动记忆</strong>——Agent 自动保存学到的约定和偏好</li>
+                            <li><strong>AGENTS.md</strong>——持久化上下文文件，每次会话自动加载</li>
+                            <li><strong>记忆优先协议</strong>——先查记忆再回答，确保一致性</li>
+                            <li><strong>Skills 技能</strong>——可复用的专业化工作流和领域知识</li>
+                            <li><strong>社区技能</strong>——一行命令安装他人分享的技能</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>没有记忆的编程助手就像一个每次都要重新培训的实习生。Deep Agents Code 提供两种自定义机制——<strong>Memory（记忆）</strong>存储偏好和约定，<strong>Skills（技能）</strong>提供可复用的专业化能力。两者互补，缺一不可。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Prerequisites ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你需要会什么</h4>
+                        <ul>
+                            <li>了解 Deep Agents Code 的基本使用（<code>dcode</code> 命令）</li>
+                            <li>了解 Agent 的基本概念（会话、上下文、提示词）</li>
+                            <li>熟悉 Markdown 文件的编写</li>
+                            <li>了解文件系统路径和目录结构</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该能</h4>
+                        <ul>
+                            <li>说清 Memory 和 Skills 的区别与适用场景</li>
+                            <li>配置 AGENTS.md 文件（全局和项目级）</li>
+                            <li>使用 <code>/remember</code> 显式更新记忆</li>
+                            <li>创建、发现和调用自定义技能</li>
+                            <li>从命令行安装和使用社区技能</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章不会深入</h4>
+                        <ul>
+                            <li>SDK 编程式记忆后端（见 SDK 文档）</li>
+                            <li>沙箱和解释器的详细配置（见第 16、17 章）</li>
+                            <li>子代理的高级编排（见第 29 章）</li>
+                            <li>生产环境部署方案（见第 05 章）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>两种自定义方式：</strong>Memory 用于存储<strong>通用编码风格、偏好和已学习的约定</strong>（跨会话持久保存）；Skills 用于提供<strong>特定任务的上下文、约定、指南或指令</strong>（按需加载）。使用 <code>/remember</code> 可以同时更新两者。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Auto memory ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自动记忆</h2>
+                <h4>Agent 使用"记忆优先"协议——先查记忆再回答</h4>
+                <p>在你使用 Agent 的过程中，它会自动将信息存储在 <code>~/.deepagents/&lt;agent_name&gt;/memories/</code> 中，以 Markdown 文件的形式保存。整个过程分三步：</p>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. 研究</h4>
+                        <p>在开始任务之前，先搜索记忆以获取相关上下文</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. 响应</h4>
+                        <p>在执行过程中不确定时，查阅已有记忆</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. 学习</h4>
+                        <p>自动保存新信息以供未来会话使用</p>
+                    </div>
+                </div>
+                <pre><code class="language-bash"># 记忆文件按主题组织，存储在 Agent 专属目录下
+# 每个 .md 文件记录一类知识，Agent 根据任务自动检索
+~/.deepagents/backend-dev/memories/
+├── api-conventions.md      # API 编码约定（命名、格式等）
+├── database-schema.md      # 数据库表结构和字段说明
+└── deployment-process.md   # 部署流程和注意事项</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>教 Agent 一个约定</h4>
+                        <pre><code class="language-bash">dcode --agent backend-dev
+> Our API uses snake_case and includes \
+  created_at/updated_at timestamps</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>Agent 自动记住</h4>
+                        <pre><code class="language-bash">> Create a /users endpoint
+# Agent 无需提示即可应用约定
+# 自动使用 snake_case
+# 自动添加 created_at/updated_at</code></pre>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/27-code-memory-and-skills-1.png" alt="图：记忆优先协议三步循环" class="ai-diagram-img">
+                <div class="key-point">
+                    <strong>记忆优先协议：</strong>Agent 在回答问题或执行任务之前，会先搜索记忆文件。这意味着你教过它一次的约定，它在所有未来的会话中都会自动遵循——不需要每次都提醒。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: AGENTS.md files ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>AGENTS.md</h2>
+                <h4>持久化上下文文件——每次会话启动时自动加载</h4>
+                <p>AGENTS.md 文件提供<strong>持久化上下文</strong>，在每次会话启动时都会加载到系统提示中。有两个层级：</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>全局 AGENTS.md</h4>
+                        <p><strong>路径：</strong><code>~/.deepagents/&lt;agent_name&gt;/AGENTS.md</code></p>
+                        <p>每次会话都会加载。适用于所有项目的通用配置。</p>
+                        <p><span class="tag tag-primary">所有会话</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>项目 AGENTS.md</h4>
+                        <p><strong>路径：</strong>项目根目录下 <code>.deepagents/AGENTS.md</code></p>
+                        <p>当 Deep Agents Code 从该项目内部运行时加载。</p>
+                        <p><span class="tag tag-info">项目特定</span></p>
+                    </div>
+                </div>
+                <pre><code class="language-markdown"># 示例：项目级 AGENTS.md
+# 此文件在每次会话启动时自动加载到 Agent 的系统提示中
+
+## 项目架构
+- 前端：React + TypeScript，位于 /frontend
+- 后端：Node.js + Express，位于 /backend
+- 数据库：PostgreSQL，使用 Prisma ORM
+
+## 编码约定
+- 使用函数式组件和 Hooks
+- 所有 API 响应使用 { success, data, error } 格式
+- 测试文件放在 __tests__ 目录下
+
+## Git 规范
+- 分支命名：feature/xxx、fix/xxx、chore/xxx
+- 提交信息使用 Conventional Commits</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>两个文件在启动时会<strong>附加到系统提示（system prompt）</strong>中。所以只写必要的信息，避免内容过长占用上下文窗口。额外的项目知识可以放在 <code>.deepagents/</code> 目录下的其他文件中，然后在 AGENTS.md 中引用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: How memory works ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>记忆原理</h2>
+                <h4>Agent 何时读取记忆、何时更新记忆</h4>
+                <p>Agent 的记忆不是"只在启动时读一次"，而是在整个交互过程中持续运作：</p>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>何时读取</h4>
+                        <ul>
+                            <li><strong>启动时</strong>：加载 AGENTS.md 到系统提示</li>
+                            <li><strong>回答项目特定问题时</strong>：搜索记忆文件</li>
+                            <li><strong>你引用过去的工作或模式时</strong>：查找相关记忆</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>何时更新</h4>
+                        <ul>
+                            <li><strong>你提供行为指导时</strong>：更新 AGENTS.md</li>
+                            <li><strong>你给出工作反馈时</strong>：记住偏好</li>
+                            <li><strong>Agent 识别出模式时</strong>：自动保存新记忆</li>
+                            <li><strong>你使用 /remember 时</strong>：显式触发更新</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>在 AGENTS.md 中引用额外文件</h4>
+                        <pre><code class="language-markdown"># AGENTS.md
+
+## 项目架构
+详细架构说明请参考 [架构文档](./architecture.md)
+
+## API 约定
+完整 API 规范请参考 [API 文档](./api-spec.md)</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>额外文件不会被自动加载</h4>
+                        <pre><code class="language-plaintext">.deepagents/
+├── AGENTS.md           ← 启动时自动加载到系统提示
+├── architecture.md     ← Agent 需要时才读取（需在 AGENTS.md 中引用）
+├── api-spec.md         ← Agent 需要时才读取（需在 AGENTS.md 中引用）
+└── deployment.md       ← Agent 需要时才读取（需在 AGENTS.md 中引用）</code></pre>
+                    </div>
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/27-code-memory-and-skills-2.png" alt="图：记忆读取与更新双轨时间线" class="ai-diagram-img">
+                <div class="key-point">
+                    <strong>关键规则：</strong>额外的记忆文件<strong>不会在启动时读取</strong>，但 Agent 可以在需要时引用和更新它们。你<strong>必须在 AGENTS.md 中引用</strong>额外文件，Agent 才能感知到它们的存在。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Global vs Project AGENTS.md ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>全局与项目</h2>
+                <h4>什么时候用全局 AGENTS.md，什么时候用项目级</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>全局 AGENTS.md</h4>
+                        <p><code>~/.deepagents/agent/AGENTS.md</code></p>
+                        <ul>
+                            <li>你的<strong>个性、风格和通用编码偏好</strong></li>
+                            <li>总体的<strong>语气和沟通风格</strong></li>
+                            <li>通用编码偏好（格式化、类型提示等）</li>
+                            <li>适用于<strong>所有场景</strong>的工具使用模式</li>
+                            <li><strong>不随项目变化</strong>的工作流和方法论</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>项目 AGENTS.md</h4>
+                        <p><code>.deepagents/AGENTS.md</code></p>
+                        <ul>
+                            <li><strong>项目特定的上下文和约定</strong></li>
+                            <li>项目<strong>架构和设计模式</strong></li>
+                            <li>特定于该代码库的<strong>编码约定</strong></li>
+                            <li><strong>测试策略和部署流程</strong></li>
+                            <li><strong>团队指南和项目结构</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-plaintext"># 文件结构示例
+
+~/.deepagents/                     # 用户级配置根目录
+└── backend-dev/                   # 以 Agent 名称命名的专属目录
+    ├── AGENTS.md                  # 全局：编码风格、偏好（所有项目通用）
+    └── memories/
+        ├── api-conventions.md     # 自动保存的 API 约定记忆
+        └── database-schema.md    # 自动保存的数据库结构记忆
+
+my-project/                        # 项目根目录
+├── .deepagents/
+│   └── AGENTS.md                  # 项目级：架构、约定（仅本项目加载）
+├── src/
+└── .git/                          # Git 仓库是项目级配置被发现的条件</code></pre>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/27-code-memory-and-skills-3.png" alt="图：全局与项目 AGENTS.md 叠加加载" class="ai-diagram-img">
+                <div class="info-block">
+                    <strong>最佳实践：</strong>全局 AGENTS.md 写"你是谁"（风格、偏好、方法论），项目 AGENTS.md 写"这个项目怎么做"（架构、约定、流程）。两者在启动时合并加载到系统提示中。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: Skills overview ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>技能概述</h2>
+                <h4>可复用的 Agent 能力——提供专业化的工作流和领域知识</h4>
+                <p>Skills 是 Agent 的<strong>可插拔能力模块</strong>，遵循 <a href="https://agentskills.io/">Agent Skills 标准</a>。添加技能后，Agent 会自动利用它们，并随着使用不断更新。</p>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>Memory vs Skills</h4>
+                        <table>
+                            <thead><tr><th>维度</th><th>Memory</th><th>Skills</th></tr></thead>
+                            <tbody>
+                                <tr><td><strong>用途</strong></td><td>存储偏好和约定</td><td>提供专业化工作流</td></tr>
+                                <tr><td><strong>加载方式</strong></td><td>启动时加载 + 按需搜索</td><td>按需加载（匹配任务描述）</td></tr>
+                                <tr><td><strong>更新方式</strong></td><td>Agent 自动保存</td><td>手动创建或社区安装</td></tr>
+                                <tr><td><strong>类比</strong></td><td>记事本——记经验</td><td>工具箱——装工具</td></tr>
+                            </tbody>
+                        </table>
+                        <p class="metaphor-disarm">比喻只是帮助理解，实际上计算机内部的处理方式不同：Memory 是持久化存储介质上的 Markdown 文件，Agent 在启动时加载到系统提示词中；Skills 是按需加载的指令文件（SKILL.md），Agent 根据任务描述匹配后读取其内容并遵循其中的指令行事。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>技能发现目录</h4>
+                        <pre><code class="language-plaintext"># 技能发现目录（优先级从低到高）
+~/.deepagents/&lt;agent_name&gt;/skills/   # 用户级：特定 Agent 的技能
+~/.agents/skills/                     # 用户级别名
+.deepagents/skills/                   # 项目级：当前项目的技能（优先级最高）
+.agents/skills/                       # 项目级别名
+~/.claude/skills/                     # 实验性：Claude Code 兼容目录
+.claude/skills/                       # 实验性：Claude Code 兼容目录</code></pre>
+                        <p>当存在重复名称时，优先级高的目录会覆盖优先级低的。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>自动发现：</strong>Deep Agents Code 在启动时会自动从上述目录发现技能。当你执行任务时，如果任务描述与某个技能匹配，Agent 会自动读取该技能文件并遵循其指令。你也可以通过 <code>/skill:&lt;name&gt; [args]</code> 直接调用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Creating skills ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建技能</h2>
+                <h4>三步创建自定义技能——创建、编辑、添加资源</h4>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. 创建技能</h4>
+                        <p>用 <code>dcode skills create</code> 命令</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. 编辑 SKILL.md</h4>
+                        <p>编写技能的指令和描述</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. 添加资源</h4>
+                        <p>可选：添加脚本等额外资源</p>
+                    </div>
+                </div>
+                <pre><code class="language-bash"># 用户技能：存储在 ~/.deepagents/&lt;agent_name&gt;/skills/，所有项目可用
+dcode skills create test-skill
+
+# 项目技能：存储在 .deepagents/skills/，仅当前项目可用
+dcode skills create test-skill --project</code></pre>
+                <p>命令执行后会生成以下结构：</p>
+                <pre><code class="language-plaintext">skills/
+└── test-skill/
+    └── SKILL.md     # 技能定义文件：包含 frontmatter 元数据和指令内容</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>也可以手动复制</h4>
+                        <pre><code class="language-bash"># 手动创建技能目录并复制现有技能
+mkdir -p ~/.deepagents/&lt;agent_name&gt;/skills
+cp -r examples/skills/web-research \
+  ~/.deepagents/&lt;agent_name&gt;/skills/</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>SKILL.md 结构</h4>
+                        <pre><code class="language-markdown">---
+name: test-skill                       # 技能名称，用于 /skill:name 调用
+description: A skill for testing       # Agent 根据此描述判断是否自动匹配任务
+---
+
+# Test Skill Instructions
+
+When using this skill:
+1. First analyze the input
+2. Then generate output</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>关键点：</strong>SKILL.md 的 frontmatter 中包含 <code>name</code> 和 <code>description</code>——Agent 通过 description 判断是否匹配当前任务。写好 description 是技能被自动触发的关键。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Community skills ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>社区技能</h2>
+                <h4>一行命令安装社区分享的技能——站在巨人的肩膀上</h4>
+                <p>使用 Vercel 的 <a href="https://github.com/vercel-labs/skills">Skills CLI</a> 可以快速安装社区 <a href="https://agentskills.io/">Agent Skills</a>：</p>
+                <pre><code class="language-bash"># 全局安装一个社区技能（-g 全局，-a 指定 Agent，-y 跳过确认）
+npx skills add vercel-labs/agent-skills \
+  --skill web-design-guidelines -a deepagents -g -y
+
+# 列出已安装的技能（-a 指定 Agent，-g 显示全局技能）
+npx skills ls -a deepagents -g</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>全局安装（-g）</h4>
+                        <p>将技能符号链接到：</p>
+                        <p><code>~/.deepagents/agent/skills/</code></p>
+                        <p>默认 Agent 的用户级技能目录，所有项目可用。</p>
+                        <p><span class="tag tag-primary">跨项目共享</span></p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>项目级安装（省略 -g）</h4>
+                        <p>将技能放置在：</p>
+                        <p><code>.deepagents/skills/</code></p>
+                        <p>在该项目中运行的任何 Agent 都可以使用。</p>
+                        <p><span class="tag tag-info">项目专用</span></p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>全局安装仅针对默认的 <code>agent</code> 目录。如果你使用自定义命名的 Agent（如 <code>backend-dev</code>），请使用<strong>项目级安装</strong>，或手动将技能符号链接到 <code>~/.deepagents/{your-agent}/skills/</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Invoking skills ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>调用技能</h2>
+                <h4>从命令行直接调用技能——无需交互式输入</h4>
+                <p>使用 <code>--skill</code> 参数在启动时直接调用技能：</p>
+                <pre><code class="language-bash"># 启动 TUI 并立即调用指定技能
+dcode --skill code-review
+
+# 使用 -m 向技能传递具体请求
+dcode --skill code-review -m 'review the auth module'
+
+# 将文件内容通过管道输入给技能（stdin 内容自动成为上下文）
+cat diff.txt | dcode --skill code-review
+
+# 管道输入 + 附加指令
+cat diff.txt | dcode --skill code-review -m 'focus on security'</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>非交互模式</h4>
+                        <pre><code class="language-bash"># 非交互模式运行技能（-n 运行后退出，适合脚本和 CI/CD）
+dcode --skill code-review -n 'review this patch'
+
+# 静默模式（-q 仅输出结果到 stdout，不显示工具调用详情）
+dcode --skill code-review \
+  -n 'review this patch' -q</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>交互模式</h4>
+                        <pre><code class="language-bash"># 在交互会话中直接按名称调用技能
+/skill:code-review
+
+# 带参数调用：斜杠命令后的文本作为技能的输入参数
+/skill:web-research \
+  latest LangGraph features
+
+# 重新扫描技能目录，发现新添加或修改的技能
+/reload</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong><code>--skill</code> 与 <code>--quiet</code> 或 <code>--no-stream</code> 搭配使用时需要 <code>-n</code>（非交互模式）。技能发现会在启动时运行，并可通过 <code>/reload</code> 重新触发。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Listing and managing skills ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>管理技能</h2>
+                <h4>列出、查看和管理已安装的技能</h4>
+                <pre><code class="language-bash"># 列出当前 Agent 的所有用户级技能
+dcode skills list
+
+# 列出项目级技能（.deepagents/skills/ 下的）
+dcode skills list --project
+
+# 获取特定技能的详细信息（名称、描述、文件路径）
+dcode skills info test-skill
+dcode skills info test-skill --project</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>技能优先级</h4>
+                        <p>当多个目录存在同名技能时，优先级从高到低：</p>
+                        <ol>
+                            <li><code>.deepagents/skills/</code>（项目级）</li>
+                            <li><code>.agents/skills/</code>（项目级别名）</li>
+                            <li><code>~/.deepagents/&lt;agent&gt;/skills/</code>（用户级）</li>
+                            <li><code>~/.agents/skills/</code>（用户级别名）</li>
+                            <li><code>~/.claude/skills/</code>（实验性）</li>
+                        </ol>
+                        <p>优先级高的目录会<strong>覆盖</strong>优先级低的同名技能。</p>
+                    </div>
+                    <div class="card">
+                        <h4>项目技能的发现条件</h4>
+                        <ul>
+                            <li>项目的根文件夹必须包含 <code>.git</code> 文件夹</li>
+                            <li>Deep Agents Code 从项目文件夹内的<strong>任何位置</strong>启动时，会向上查找 <code>.git</code> 来确定项目根目录</li>
+                            <li>使用 <code>/reload</code> 可在会话中重新扫描技能目录</li>
+                        </ul>
+                        <p><span class="tag tag-warning">需要 Git 仓库</span></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>技能生命周期：</strong>创建/安装 → 启动时自动发现 → 匹配任务时自动加载 → 用 <code>/skill:name</code> 直接调用 → 用 <code>/reload</code> 重新扫描。整个过程无需手动配置。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: /remember command ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>/remember 命令</h2>
+                <h4>显式触发记忆和技能更新的一站式命令</h4>
+                <p>使用 <code>/remember</code> 可以显式提示 Agent 根据当前对话更新其记忆和技能：</p>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>你教了 Agent 一个新的编码约定</li>
+                            <li>你纠正了 Agent 的某个行为</li>
+                            <li>你想让 Agent 记住当前项目的关键信息</li>
+                            <li>你希望 Agent 更新某个技能的指令</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>更新内容</h4>
+                        <ul>
+                            <li><strong>AGENTS.md</strong>：更新全局或项目级上下文</li>
+                            <li><strong>记忆文件</strong>：保存新的约定、偏好、模式</li>
+                            <li><strong>技能文件</strong>：更新 SKILL.md 中的指令</li>
+                            <li>所有更新在<strong>下次会话</strong>自动生效</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-bash"># 在对话中教 Agent 一个约定后，使用 /remember 显式触发记忆更新
+> 我们的项目使用严格的 TypeScript，禁止 any 类型
+> /remember
+
+# Agent 会将这条约定保存到 AGENTS.md 或记忆文件中
+# 下次启动新会话时自动加载并遵循此约定</code></pre>
+                <div class="key-point">
+                    <strong>自动 vs 显式：</strong>Agent 通常会自动识别并保存重要信息。但当你不确定 Agent 是否理解了你的意图时，用 <code>/remember</code> 显式触发更新更保险——确保关键信息不会丢失。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Exercise ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>为一个后端开发 Agent 配置记忆和技能</h4>
+                <p>现在轮到你了。停下来，为你的后端开发 Agent 设计<strong>记忆和技能配置</strong>。需求如下：</p>
+                <pre><code class="language-javascript">// 练习场景配置
+Agent 名称：backend-dev
+工作内容：开发和维护 Node.js REST API
+
+需要记住（写入 AGENTS.md 或让 Agent 自动记忆）：
+1. 项目使用 Express + Prisma + PostgreSQL
+2. API 响应格式统一为 { success, data, error }
+3. 数据库迁移使用 Prisma Migrate
+4. 测试使用 Jest + Supertest
+
+需要技能（创建 SKILL.md 文件）：
+1. code-review：自动审查 PR 的代码质量
+2. api-docs：根据路由定义生成 API 文档</code></pre>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>任务 1：配置 AGENTS.md</h3>
+                        <ul>
+                            <li>全局和项目级 AGENTS.md 各写什么内容？</li>
+                            <li>需要引用哪些额外的记忆文件？</li>
+                            <li>使用 <code>/remember</code> 测试记忆更新</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 2：创建技能</h3>
+                        <ul>
+                            <li>用 <code>dcode skills create</code> 创建两个技能</li>
+                            <li>编写 SKILL.md 的 description 和指令</li>
+                            <li>验证技能是否被自动发现</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>任务 3：测试效果</h3>
+                        <ul>
+                            <li>启动新会话，验证记忆是否自动加载</li>
+                            <li>执行代码审查任务，验证技能是否触发</li>
+                            <li>用 <code>dcode skills list</code> 确认技能已安装</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>先写 AGENTS.md（确定 Agent 知道什么），再创建技能（确定 Agent 能做什么）。记忆提供"知识"，技能提供"能力"——两者结合才能发挥最大价值。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>到这里，你已经掌握了 Deep Agents Code 记忆和技能的完整用法</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li><strong>Memory（记忆）</strong>：自动保存和检索 Agent 的学习成果</li>
+                            <li><strong>AGENTS.md</strong>：持久化上下文，分全局和项目两级</li>
+                            <li><strong>记忆优先协议</strong>：先查记忆再回答，确保一致性</li>
+                            <li><strong>Skills（技能）</strong>：可复用的专业化工作流，按需加载</li>
+                            <li><strong>技能发现</strong>：启动时自动扫描多个目录</li>
+                            <li><strong>命令行调用</strong>：<code>--skill</code> 直接调用，支持管道输入</li>
+                            <li><strong>社区技能</strong>：<code>npx skills add</code> 一键安装</li>
+                            <li><strong>/remember</strong>：显式触发记忆和技能更新</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>远程沙箱</strong> — 在隔离环境中执行代码</li>
+                            <li><strong>子代理</strong> — 多 Agent 协作完成复杂任务</li>
+                            <li><strong>提供商配置</strong> — 连接不同的 LLM 提供商</li>
+                            <li><strong>配置详解</strong> — Deep Agents Code 的完整配置</li>
+                            <li><strong>MCP 工具</strong> — 扩展 Agent 的工具能力</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>记忆让 Agent "记住经验"，技能让 Agent "掌握能力"。两者结合，你的编程助手从"一次性工具"变成"持续成长的伙伴"。AGENTS.md 是知识库，Skills 是工具箱——用好它们，Agent 越用越懂你。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./28-code-remote-sandboxes.html">下一章：远程沙箱</a> — 在隔离环境中执行代码</li>
+                            <li><a href="./29-code-subagents.html">子代理</a> — 多 Agent 协作</li>
+                            <li><a href="./14-memory.html">记忆（SDK）</a> — 编程式记忆后端</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://agents.md/">AGENTS.md 标准</a> — 持久化上下文文件规范</li>
+                            <li><a href="https://agentskills.io/">Agent Skills 标准</a> — 技能文件规范</li>
+                            <li><a href="https://github.com/vercel-labs/skills">Skills CLI</a> — 社区技能安装工具</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关概念</h4>
+                        <ul>
+                            <li><a href="https://www.npmjs.com/package/deepagents">deepagents npm 包</a> — SDK API 参考</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">GitHub 仓库</a> — 源码和示例</li>
+                            <li>上下文工程（第 08 章）— 短期记忆的管理策略</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

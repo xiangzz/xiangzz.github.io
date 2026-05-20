@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP 工具</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔌</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 32 章</div>
+            <h1>MCP 工具</h1>
+            <p>从 MCP 服务器加载额外工具，扩展 Deep Agents Code 的能力边界</p>
+            <strong>无需修改 Agent 本身，一行配置即可接入外部服务</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你的 Agent 能力有限——想接数据库、调用 API、操作文件系统怎么办？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>内置工具的局限</h4>
+                        <ul>
+                            <li>Deep Agents Code 内置的工具集<strong>固定且有限</strong></li>
+                            <li>想连接公司内部 API？<strong>只能自己写代码包装</strong></li>
+                            <li>需要操作特定数据库？<strong>没有现成驱动</strong></li>
+                            <li>每次扩展能力都要<strong>修改 Agent 源码</strong>，维护成本高</li>
+                            <li>不同项目需要不同工具集，<strong>无法灵活切换</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>MCP 协议的解法</h4>
+                        <ul>
+                            <li><strong>MCP（Model Context Protocol）</strong>统一了工具接入标准</li>
+                            <li>外部服务器提供工具，Agent <strong>自动发现并使用</strong></li>
+                            <li>文件系统、数据库、API<strong>一键接入</strong></li>
+                            <li>只需一个 <code>.mcp.json</code> 配置文件，<strong>零代码扩展</strong></li>
+                            <li>项目级 / 用户级灵活配置，<strong>按需切换</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>问题核心：</strong>当你的 Agent 需要和外部世界交互——查数据库、调 API、读文件——你不想每次都去改 Agent 的代码。MCP 提供了一个标准协议，让你通过配置文件就能把任意外部工具"插"到 Agent 上，就像 USB 即插即用一样。
+                    <p class="metaphor-disarm">"USB 即插即用"只是比喻帮助你理解使用体验。实际上计算机内部的工作方式是：Deep Agents Code 在启动时读取 <code>.mcp.json</code> 配置文件，根据配置启动子进程（stdio）或建立 HTTP/SSE 连接（远程），通过 MCP 协议发现并注册工具列表，然后将其注入到 Agent 可用的工具集中——与 USB 的物理插拔和驱动加载机制完全不同。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: Quick Start ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>快速入门</h2>
+                <h4>三步配置：创建文件、添加服务器、启动——就这么简单</h4>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. 创建配置文件</h4>
+                        <p>用户级或项目级</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. 添加 MCP 服务器</h4>
+                        <p>在 JSON 中声明</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. 启动 Deep Agents Code</h4>
+                        <p>自动发现并加载</p>
+                    </div>
+                </div>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>用户级配置（所有项目通用）</h4>
+                        <pre><code class="language-bash"># 创建用户级配置目录和文件
+mkdir -p ~/.deepagents
+touch ~/.deepagents/.mcp.json</code></pre>
+                        <p>此文件中的服务器在<strong>所有项目</strong>中可用。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>项目级配置（当前项目专用）</h4>
+                        <pre><code class="language-bash"># 在项目根目录创建配置文件
+touch .mcp.json
+
+# 或隐藏在 .deepagents 子目录中
+mkdir -p .deepagents
+touch .deepagents/.mcp.json</code></pre>
+                        <p>此文件中的服务器<strong>仅在此项目</strong>中可用。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>添加一个示例服务器：</strong>在 <code>.mcp.json</code> 中写入服务器配置，然后启动 <code>dcode</code> 即可自动加载。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Configuration Example ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置示例</h2>
+                <h4>一个 JSON 文件搞定——声明服务器名称、类型和连接参数</h4>
+                <pre><code class="language-json">{
+    "mcpServers": {
+        "docs-langchain": {           // 服务器名称（需匹配 [A-Za-z0-9_-]+）
+            "type": "http",          // 传输类型：http / sse / stdio（默认）
+            "url": "https://docs.langchain.com/mcp"  // 远程 MCP 服务器端点
+        }
+    }
+}</code></pre>
+                <p>要添加更多服务器，在 <code>mcpServers</code> 中添加更多条目。有关 OAuth、stdio、SSE 和 HTTP 服务器字段、环境变量和请求头的信息，请参见<a href="#configuration-format">配置格式</a>。</p>
+                <p>启动 Deep Agents Code 后，会看到确认信息：</p>
+                <pre><code class="language-text">✓ Loaded 3 MCP tools</code></pre>
+                <p>在交互式会话中运行 <code>/mcp</code> 可查看每个服务器的状态、传输方式和已加载的工具列表。Agent 现在可以在整个会话期间使用这些工具——stdio 服务器在工具调用之间会<strong>保持存活</strong>。</p>
+                <div class="warning">
+                    <strong>常见误区：</strong>不要把 <code>.mcp.json</code> 放在错误的目录下。项目级配置文件必须在包含 <code>.git</code> 文件夹的项目根目录中，否则不会被自动发现。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Auto Discovery ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自动发现机制</h2>
+                <h4>Deep Agents Code 自动搜索标准位置的配置文件，无需任何命令行标志</h4>
+                <table>
+                    <thead>
+                        <tr><th>优先级</th><th>位置</th><th>作用域</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1（最低）</td>
+                            <td><code>~/.deepagents/.mcp.json</code></td>
+                            <td>用户级别——应用于所有项目</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td><code>&lt;project&gt;/.deepagents/.mcp.json</code></td>
+                            <td>项目级别——.deepagents 子目录</td>
+                        </tr>
+                        <tr>
+                            <td>3（最高）</td>
+                            <td><code>&lt;project&gt;/.mcp.json</code></td>
+                            <td>项目级别——根目录（兼容 Claude Code）</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>合并规则</h4>
+                        <ul>
+                            <li>多个配置文件的 <code>mcpServers</code> 条目会被<strong>合并</strong></li>
+                            <li>同一服务器名称出现多次时，<strong>高优先级</strong>配置覆盖低优先级</li>
+                            <li>项目级可以覆盖用户级，<strong>不影响其他项目</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>命令行标志</h4>
+                        <ul>
+                            <li><code>--mcp-config PATH</code>：添加显式配置作为最高优先级</li>
+                            <li><code>--no-mcp</code>：完全禁用 MCP，不加载任何服务器</li>
+                            <li>这两个标志<strong>互斥</strong>，不能同时使用</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>Claude Code 兼容：</strong>如果你已经在项目根目录下为 Claude Code 配置了 <code>.mcp.json</code>，Deep Agents Code 会自动识别——无需额外设置。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/32-code-mcp-tools-1.png" alt="图：MCP 配置三级优先级自动发现" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: Config Format ==================== -->
+        <section class="slide" id="configuration-format">
+            <div class="slide-content">
+                <h2>配置格式</h2>
+                <h4><code>mcpServers</code> 下的每个键是一个服务器名称，字段决定了 Deep Agents Code 如何连接到它</h4>
+                <div class="card-grid cols-3">
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>stdio 服务器（默认）</h4>
+                        <p>作为子进程启动，通过 stdin/stdout 通信。设置 <code>command</code>、<code>args</code>、<code>env</code> 字段。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>SSE 服务器</h4>
+                        <p>Server-Sent Events 传输。设置 <code>type: "sse"</code>、<code>url</code>、可选的 <code>headers</code> 和 <code>auth</code>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>HTTP 服务器</h4>
+                        <p>可流式传输的 HTTP。设置 <code>type: "http"</code>、<code>url</code>、可选的 <code>headers</code> 和 <code>auth</code>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>字段参考：</strong>每种服务器类型都有特定的必填和可选字段。在以下幻灯片中查看各字段的详细说明，包括类型注解和必填/可选分组。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/32-code-mcp-tools-2.png" alt="图：三种 MCP 服务器连接模式" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: stdio Servers ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>stdio 服务器（默认）</h2>
+                <h4>作为子进程启动，通过 stdin/stdout 通信——最常用的本地服务器类型</h4>
+                <pre><code class="language-json">{
+  "mcpServers": {
+    "filesystem": {               // 服务器名称
+      "command": "npx",          // 启动子进程的可执行文件
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],  // 允许访问 /tmp 目录
+      "env": {}                   // 无额外环境变量
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],  // GitHub MCP 官方服务器
+      "env": { "GITHUB_TOKEN": "your-token" }  // 通过 env 安全传递 API 密钥
+    }
+  }
+}</code></pre>
+                <h3 style="margin-top: 1.5em; font-size: 1.2em;">字段参考</h3>
+                <div class="card-grid cols-3">
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>command <span class="field-type">type="string"</span> <span class="field-required">必填</span></h4>
+                        <p>要运行的可执行文件，如 <code>npx</code>、<code>python</code>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>args <span class="field-type">type="string[]"</span></h4>
+                        <p>传递给命令的参数数组。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>env <span class="field-type">type="object"</span></h4>
+                        <p>为子进程设置的环境变量。使用此字段传递 API 密钥和其他凭据，避免将它们暴露在 shell 历史记录中。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>必填字段：</strong><code>command</code>。<strong>可选字段：</strong><code>args</code>、<code>env</code>，以及共享的<a href="#tool-filtering">工具过滤字段</a>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: SSE and HTTP Servers ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>远程服务器</h2>
+                <h4>SSE 和 HTTP 两种远程传输方式——连接云端 MCP 服务</h4>
+                <pre><code class="language-json">{
+  "mcpServers": {
+    "remote-api": {
+      "type": "sse",              // Server-Sent Events 传输方式
+      "url": "https://api.example.com/mcp",  // 远程 MCP 端点
+      "headers": { "Authorization": "Bearer your-token" }  // 每次请求携带认证头
+    }
+  }
+}</code></pre>
+                <h3 style="margin-top: 1.5em; font-size: 1.2em;">字段参考</h3>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>SSE 服务器</h4>
+                        <p><strong>必填：</strong><code>type: "sse"</code>、<code>url</code>。<strong>可选：</strong><code>headers</code>、<code>auth</code>，以及共享的<a href="#tool-filtering">工具过滤字段</a>。</p>
+                        <ul>
+                            <li><code>type: "sse"</code>——Server-Sent Events 传输</li>
+                            <li>必填：<code>type</code>、<code>url</code></li>
+                            <li>可选：<code>headers</code>、<code>auth</code></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>HTTP 服务器</h4>
+                        <p><strong>必填：</strong><code>type: "http"</code>、<code>url</code>。<strong>可选：</strong><code>headers</code>、<code>auth</code>，以及共享的<a href="#tool-filtering">工具过滤字段</a>。</p>
+                        <ul>
+                            <li><code>type: "http"</code>——可流式传输的 HTTP</li>
+                            <li>别名：<code>streamable_http</code>、<code>streamable-http</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-grid cols-2" style="margin-top: 1em;">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>type <span class="field-type">type=""sse""</span> <span class="field-required">必填</span></h4>
+                        <p>传输类型。使用 <code>"sse"</code> 表示 Server-Sent Events。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>type <span class="field-type">type=""http""</span> <span class="field-required">必填</span></h4>
+                        <p>传输类型。使用 <code>"http"</code> 表示可流式传输的 HTTP。<code>streamable_http</code> 和 <code>streamable-http</code> 也作为别名被接受。</p>
+                    </div>
+                </div>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>url <span class="field-type">type="string"</span> <span class="field-required">必填</span></h4>
+                        <p>服务器端点 URL。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>headers <span class="field-type">type="object"</span></h4>
+                        <p>每次请求时发送的 HTTP 头。通常用于身份验证。值支持 <code>${VAR}</code> 形式引用父 shell 的环境变量（在服务器激活时解析）。</p>
+                    </div>
+                </div>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>auth <span class="field-type">type=""oauth""</span></h4>
+                        <p>设置为 <code>"oauth"</code> 以使用 <code>dcode mcp login</code> 驱动 OAuth 登录流程，而不是提供 <code>Authorization</code> 请求头。<strong>不能</strong>与 <code>Authorization</code> 请求头同时使用。参见 <a href="#oauth-login">OAuth 登录</a>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>请求头环境变量：</strong><code>headers</code> 值支持 <code>${VAR}</code> 形式引用环境变量，在服务器<strong>激活时</strong>（而非配置加载时）解析。一个未设置的变量只会导致需要它的那个服务器启动失败；其余服务器仍会正常启动。这意味着你可以在配置加载后、服务器激活前设置或更新环境变量。
+                </div>
+                <pre><code class="language-json">{
+    "mcpServers": {
+        "internal-api": {
+            "type": "http",                     // 可流式传输的 HTTP 双向通信
+            "url": "https://api.example.com/mcp",
+            "headers": { "Authorization": "Bearer ${INTERNAL_API_TOKEN}" }  // ${} 在激活时从环境变量展开
+        }
+    }
+}</code></pre>
+                <div class="info-block">
+                    <strong>兼容性提示：</strong><code>type</code> 字段也可以写成 <code>transport</code>，以兼容其他 MCP 客户端。两者行为完全一致。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Multiple Servers ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多个服务器</h2>
+                <h4>配置任意数量的服务器，工具自动合并提供给 Agent</h4>
+                <pre><code class="language-json">{
+  "mcpServers": {
+    "filesystem": {          // stdio 类型（默认，无需指定 type）
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/projects"]
+    },
+    "github": {              // stdio 类型——本地 GitHub MCP 服务器
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_TOKEN": "ghp_..." }  // 安全传递 GitHub Token
+    },
+    "database": {            // SSE 类型——远程数据库 MCP 服务器
+      "type": "sse",
+      "url": "https://db-mcp.internal:8080/mcp",
+      "headers": { "Authorization": "Bearer ..." }
+    }
+  }
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>混合部署</h4>
+                        <p>stdio、SSE、HTTP 服务器可以在同一个配置文件中<strong>混合使用</strong>。每个服务器的工具会被独立发现，然后合并为一个统一的工具集提供给 Agent。</p>
+                    </div>
+                    <div class="card">
+                        <h4>命名规则</h4>
+                        <p>服务器名称必须匹配 <code>[A-Za-z0-9_-]+</code>。名称用作 OAuth 令牌文件的磁盘文件名，因此路径分隔符和其他 shell 元字符会被拒绝。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: Tool Filtering ==================== -->
+        <section class="slide" id="tool-filtering">
+            <div class="slide-content">
+                <h2>工具过滤</h2>
+                <h4>精细控制每个服务器暴露给 Agent 的工具范围</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>allowedTools <span class="field-type">type="string[]"</span></h4>
+                        <p>要保留的工具名称或 <code>fnmatch</code> glob 模式。来自此服务器的所有其他工具将被丢弃。与 <code>disabledTools</code> 互斥。</p>
+                        <pre><code class="language-json">"allowedTools": ["read_file", "list_directory"]</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>disabledTools <span class="field-type">type="string[]"</span></h4>
+                        <p>要丢弃的工具名称或 <code>fnmatch</code> glob 模式。来自此服务器的所有其他工具将被保留。与 <code>allowedTools</code> 互斥。</p>
+                        <pre><code class="language-json">"disabledTools": ["delete_repository", "delete_*_branch"]</code></pre>
+                    </div>
+                </div>
+                <pre><code class="language-json">{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "allowedTools": ["read_file", "list_directory"]  // 白名单：只保留这两个工具
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "disabledTools": ["delete_repository", "delete_*_branch"]  // 黑名单：禁用危险操作（支持 glob）
+    }
+  }
+}</code></pre>
+                <div class="warning">
+                    <strong>互斥规则：</strong>同一服务器上不能同时设置 <code>allowedTools</code> 和 <code>disabledTools</code>。也不能设置为空列表——请省略该字段。
+                </div>
+                <div class="key-point">
+                    <strong>匹配规则：</strong>支持 <code>fnmatch</code> 风格的 glob 模式（<code>*</code>、<code>?</code>、<code>[</code>），同时匹配裸工具名和服务器前缀形式（<code>{server}_{tool}</code>）。未匹配到任何已加载工具的条目会被记录为警告而非错误——底层 MCP 服务器可以在不同版本中演进其工具列表，而不会破坏你的配置。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: OAuth Login ==================== -->
+        <section class="slide" id="oauth-login">
+            <div class="slide-content">
+                <h2>OAuth 登录</h2>
+                <h4>需要 OAuth 的远程服务器（Slack、GitHub、Notion 等）一键认证</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>配置服务器</h4>
+                        <pre><code class="language-json">{
+    "mcpServers": {
+        "linear": {
+            "type": "http",                      // HTTP 传输方式
+            "url": "https://mcp.linear.app/mcp",  // Linear 官方 MCP 端点
+            "auth": "oauth"                       // 使用 OAuth 认证（不能用 Authorization 头）
+        }
+    }
+}</code></pre>
+                        <p><code>auth: "oauth"</code> 与 <code>Authorization</code> 请求头互斥，且不能用于 stdio 服务器。</p>
+                    </div>
+                    <div class="after">
+                        <h4>运行登录流程</h4>
+                        <pre><code class="language-bash"># 启动 OAuth 登录流程（打开浏览器授权）
+dcode mcp login linear</code></pre>
+                        <ul>
+                            <li><strong>标准服务器：</strong>浏览器授权码 + PKCE 流程，粘贴回 URL</li>
+                            <li><strong>Slack：</strong>预置公共客户端，支持团队 ID</li>
+                            <li><strong>GitHub：</strong>设备授权许可，输入验证码</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>令牌存储：</strong>令牌写入 <code>~/.deepagents/.state/mcp-tokens/&lt;server&gt;-&lt;sha256-16(url)&gt;.json</code>，目录权限 <code>0700</code>，文件权限 <code>0600</code>，支持自动刷新。URL 哈希确保不同环境拥有独立令牌。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Token and Re-auth ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>令牌与重认证</h2>
+                <h4>令牌自动持久化和刷新——过期时无需重启会话</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>令牌存储位置</h4>
+                        <pre><code class="language-text">~/.deepagents/.state/mcp-tokens/&lt;server&gt;-&lt;sha256-16(url)&gt;.json</code></pre>
+                        <ul>
+                            <li>SHA-256 哈希的前 16 个十六进制字符</li>
+                            <li>包含访问令牌、刷新令牌和客户端信息</li>
+                            <li>原子写入（先写临时文件再 rename）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>重新认证</h4>
+                        <ul>
+                            <li>刷新令牌过期时，服务器标记为 <code>unauthenticated</code></li>
+                            <li>欢迎横幅显示未认证服务器数量</li>
+                            <li><code>/mcp</code> 报告每个服务器的原因</li>
+                            <li>重新运行 <code>dcode mcp login &lt;server&gt;</code> 即可</li>
+                            <li><strong>会话无需重启</strong>，令牌刷新后自动重连</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>配置文件选择：</strong>默认情况下，<code>dcode mcp login</code> 读取与 Deep Agents Code 运行时相同的自动发现配置（受项目级别信任门控）。传递 <code>--config &lt;path&gt;</code> 以使用特定文件：
+                </div>
+                <pre><code class="language-bash"># 指定配置文件登录（不使用自动发现的配置）
+dcode mcp login linear --config ./mcp-config.json</code></pre>
+                <div class="warning">
+                    <strong>安全警告：</strong>尚未被信任的项目级别配置在 <code>mcp login</code> 期间会被跳过，以防止攻击者控制的 <code>headers</code> 条目通过 <code>${VAR}</code> 插值窃取本地密钥。在项目中先运行一次 <code>dcode</code> 以批准配置。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Server Status ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>服务器状态</h2>
+                <h4>每个服务器启动后处于三种状态之一——单个失败不影响整体</h4>
+                <table>
+                    <thead>
+                        <tr><th>状态</th><th>含义</th><th>处理方式</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>ok</strong></td>
+                            <td>已连接，工具已加载并可供 Agent 使用</td>
+                            <td>无需操作</td>
+                        </tr>
+                        <tr>
+                            <td><strong>unauthenticated</strong></td>
+                            <td>需要 OAuth 登录或刷新失败</td>
+                            <td>运行 <code>dcode mcp login &lt;server&gt;</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>error</strong></td>
+                            <td>预检、发现或传输设置失败，附带错误消息</td>
+                            <td>查看 <code>/mcp</code> 中的失败原因</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>容错机制</h4>
+                        <p>单个服务器失败<strong>不再导致启动中止</strong>。Agent 会使用成功启动的服务器继续运行，欢迎横幅显示未认证和出错的服务器数量。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>实时监控</h4>
+                        <p><code>/mcp</code> 查看器会随服务器连接<strong>实时更新</strong>，支持 <code>Tab</code> / <code>Shift+Tab</code> 导航，可查看传输方式、工具列表和失败原因。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>系统提示感知：</strong>已连接的 MCP 服务器及其工具会自动列在 Agent 的系统提示中，按服务器名称和传输类型分组，帮助模型推理工具来源和故障域。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Project Trust ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>项目信任机制</h2>
+                <h4>默认拒绝策略——防止不受信任的仓库执行任意代码或窃取密钥</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>潜在风险</h4>
+                        <ul>
+                            <li>stdio 服务器可以在你机器上<strong>执行任意命令</strong></li>
+                            <li>远程服务器的 <code>headers</code> 可通过 <code>${VAR}</code> <strong>窃取环境变量</strong></li>
+                            <li>远程服务器可发起 <strong>SSRF 攻击</strong>（访问 localhost 或云元数据端点）</li>
+                            <li>克隆一个恶意仓库后运行 <code>dcode</code>，就可能<strong>中招</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>防护措施</h4>
+                        <ul>
+                            <li><strong>交互模式：</strong>激活前提示批准，显示每个命令和 URL</li>
+                            <li><strong>非交互模式：</strong>除非传 <code>--trust-project-mcp</code>，否则跳过</li>
+                            <li>批准决定通过 <strong>SHA-256 指纹</strong>持久化，配置变化重新提示</li>
+                            <li>stdio 和远程条目<strong>同样受到门控</strong></li>
+                            <li>用户级配置始终受信任</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-bash"># 交互模式下跳过批准提示（直接信任当前项目的 MCP 配置）
+dcode --trust-project-mcp
+
+# 非交互模式下必须显式信任，否则项目服务器会被跳过
+dcode -n "run tests" --trust-project-mcp</code></pre>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/32-code-mcp-tools-3.png" alt="图：项目信任门控决策流程" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Trust Storage ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>信任存储</h2>
+                <h4>信任决定存储在 config.toml 中——指纹校验，配置变化自动失效</h4>
+                <pre><code class="language-toml"># ~/.deepagents/config.toml
+
+[mcp_trust.projects]
+# 键为项目根目录绝对路径，值为配置文件的 SHA-256 摘要
+"/Users/you/myproject" = "sha256:abc123..."</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>存储结构</h4>
+                        <ul>
+                            <li>键：项目根目录的<strong>绝对路径</strong></li>
+                            <li>值：项目级别配置内容的<strong>SHA-256 摘要</strong></li>
+                            <li>修改 <code>.mcp.json</code> 会<strong>自动使指纹失效</strong></li>
+                            <li>删除条目即可<strong>撤销信任</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>登录安全</h4>
+                        <ul>
+                            <li><code>dcode mcp login</code> 同样遵守项目信任</li>
+                            <li>不受信任的项目配置在登录期间<strong>被跳过</strong></li>
+                            <li>防止恶意远程条目将密钥拉入 OAuth 握手</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>安全提醒：</strong>受信任的 stdio MCP 服务器拥有与你用户账户相同的权限。仅批准你信任的仓库中的服务器，在接受之前务必审查命令内容。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Troubleshooting ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>故障排除</h2>
+                <h4>常见问题与解决方案——快速定位并修复 MCP 配置问题</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #D06519;">
+                        <h4>stdio 启动失败</h4>
+                        <p>验证命令在 Deep Agents Code 之外是否正常工作：</p>
+                        <pre><code class="language-bash"># 手动测试 stdio 服务器是否能在 Deep Agents Code 外正常运行
+npx -y @modelcontextprotocol/server-filesystem /tmp</code></pre>
+                        <p>常见原因：包未安装、<code>npx</code> 不在 PATH 中、缺少环境变量。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #0284C7;">
+                        <h4>连接被拒绝</h4>
+                        <p>检查远程服务器是否正在运行以及 URL 是否正确。如需认证，确保 <code>headers</code> 包含正确的凭据。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>工具未显示</h4>
+                        <p>看到 <code>✓ Loaded 0 MCP tools</code>？服务器启动成功但没有声明工具——检查服务器自身的日志或文档。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>配置校验失败</h4>
+                        <p><code>Invalid MCP config at ...</code> 的常见原因：</p>
+                        <ul>
+                            <li>服务器名称不合法（需匹配 <code>[A-Za-z0-9_-]+</code>）</li>
+                            <li>stdio 服务器上设置了 <code>auth: oauth</code></li>
+                            <li>同一条目同时设置 <code>command</code> 和 <code>url</code></li>
+                            <li>请求头值不是字符串</li>
+                        </ul>
+                        <p>修复高亮显示的原因后重新启动——Deep Agents Code 不再为配置错误输出多页子进程跟踪信息。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>服务器在 /mcp 中显示 unauthenticated</h4>
+                        <p>你可能还没有运行 <code>dcode mcp login &lt;server&gt;</code>，或者持久化的刷新令牌已过期或在服务器端被撤销。</p>
+                        <p>重新运行登录命令——你的会话会继续运行，令牌刷新后服务器会重新连接。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>${VAR} 请求头引用失败</h4>
+                        <p>请求头插值在<strong>激活时</strong>运行，因此未设置的变量只会导致需要它的服务器失败。在父 shell 中导出变量，或将其添加到 <code>~/.deepagents/.env</code>。</p>
+                        <p>要调试，请设置 <code>DEEPAGENTS_CODE_DEBUG=1</code> 并检查关闭时输出到 stderr 的每个会话的日志路径。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>MCP 工具让 Deep Agents Code 的能力边界变得无限可扩展</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>MCP 是一个<strong>标准协议</strong>，让 Agent 无代码接入外部工具</li>
+                            <li>三种服务器类型：<strong>stdio</strong>（本地子进程）、<strong>SSE</strong>、<strong>HTTP</strong>（远程）</li>
+                            <li>配置文件三级优先级：用户级 → 项目隐藏目录 → 项目根目录</li>
+                            <li><strong>工具过滤</strong>：allowedTools / disabledTools 精细控制</li>
+                            <li><strong>OAuth 登录</strong>：一键认证，令牌自动刷新</li>
+                            <li><strong>项目信任</strong>：默认拒绝策略，SHA-256 指纹校验</li>
+                            <li>单个服务器失败<strong>不影响整体</strong>运行</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>数据位置</strong>：了解 Deep Agents Code 的数据存储和位置管理</li>
+                            <li>更多关于 MCP 服务器开发和自定义工具的深入内容</li>
+                            <li>LangChain MCP 指南：协议细节和构建自定义服务器</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>MCP 工具把"扩展 Agent 能力"从"写代码"变成了"写配置"。你只需一个 <code>.mcp.json</code> 文件就能接入文件系统、数据库、API 等任意外部服务，同时内置的安全机制确保不受信任的配置不会在你不知情的情况下执行。这是 Agent 工程化的关键一环。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 18: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./33-code-data-locations.html">下一章：数据位置</a> — 了解 Deep Agents Code 的数据存储和位置管理</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://modelcontextprotocol.io/">MCP 规范</a> — 官方协议规范和服务器注册表</li>
+                            <li><a href="https://docs.langchain.com/mcp">LangChain MCP 指南</a> — 协议细节和构建自定义服务器</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关资源</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/llms.txt">文档索引</a> — 获取完整的文档索引，发现所有可用页面</li>
+                            <li><a href="https://github.com/langchain-ai/docs">GitHub 仓库</a> — 源码和贡献指南</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

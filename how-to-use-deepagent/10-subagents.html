@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>子代理（Subagents）</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== Slide 1: Title ==================== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 10 章</div>
+            <h1>子代理（Subagents）</h1>
+            <p>将复杂任务委派给专门的子代理，保持主代理上下文整洁</p>
+            <strong>从"一人扛所有"到"分工协作"的关键能力</strong>
+        </section>
+
+        <!-- ==================== Slide 2: Problem-driven opening ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要它</h2>
+                <h4>你的代理上下文是不是经常被中间结果撑爆？</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>不用子代理的困境</h4>
+                        <ul>
+                            <li>网页搜索返回 50 条结果，<strong>上下文瞬间被填满</strong></li>
+                            <li>10 次工具调用的中间输出留在上下文里，<strong>有效信息被淹没</strong></li>
+                            <li>多步骤任务越跑越慢，token 消耗<strong>线性增长</strong></li>
+                            <li>所有任务共享同一套指令，<strong>无法针对优化</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>子代理的解法</h4>
+                        <ul>
+                            <li>将繁重工作隔离在<strong>独立上下文</strong>中</li>
+                            <li>主代理只接收<strong>最终结果</strong>，不看到中间过程</li>
+                            <li>每个子代理可以有<strong>专门的模型和工具</strong></li>
+                            <li>主代理专注<strong>高层协调</strong>，效率大幅提升</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心概念：上下文隔离。</strong>子代理就像外包团队——你把需求说清楚，他们各自干活，最后只给你交付结果。主代理的"工作台"始终保持整洁。
+                    <br><br>
+                    <strong>卸甲：</strong>上面说"像外包团队"，这只是为了方便你理解。实际上子代理没有"人"的主动性——它只是主 Agent 调用 <code>task</code> 工具时，框架自动创建的一个新 Agent 实例。它没有团队协作意识，按系统提示执行完就结束，不会主动反馈或沟通。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 3: When to use ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>使用场景判断</h2>
+                <h4>不是所有任务都需要子代理——用对地方才有效</h4>
+                <div class="card-grid cols-2">
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>适合使用子代理</h4>
+                        <ul>
+                            <li>会杂乱主代理上下文的<strong>多步骤任务</strong></li>
+                            <li>需要自定义指令或工具的<strong>专门领域</strong></li>
+                            <li>需要不同<strong>模型能力</strong>的任务</li>
+                            <li>希望主代理专注<strong>高层协调</strong>时</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>不适合使用子代理</h4>
+                        <ul>
+                            <li>简单的<strong>单步骤任务</strong>（直接做更快）</li>
+                            <li>需要保留<strong>中间上下文</strong>的任务</li>
+                            <li>子代理的开销<strong>大于收益</strong>时</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>常见误区：</strong>不要为了"架构好看"而给每个小任务都配子代理。单步骤任务直接在主代理中完成，反而更高效。子代理有调度开销——名称解析、上下文初始化、结果回传都需要时间。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 4: Architecture diagram ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工作原理</h2>
+                <h4>主代理通过 task 工具将工作委派给子代理，子代理在隔离上下文中执行</h4>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/10-subagents-1.png" alt="图：子代理委派架构——从主代理到专门化执行" class="ai-diagram-img">
+                <div class="key-point">
+                    <strong>同步 vs 异步：</strong>本页介绍的子代理是同步的——主代理会阻塞等待子代理完成。对于长时间运行、并行或需要中途取消的任务，请使用异步子代理。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 5: Configuration basics ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>基本配置</h2>
+                <h4>subagents 参数接受字典列表或 CompiledSubAgent 对象列表</h4>
+                <p>Deep Agents 提供<strong>两种方式</strong>定义子代理：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>字典方式（SubAgent）</h4>
+                        <p>适合大多数场景。用普通对象定义子代理的名称、描述、提示词和工具。</p>
+                        <p><span class="tag tag-primary">简单、推荐首选</span></p>
+                    </div>
+                    <div class="card">
+                        <h4>编译方式（CompiledSubAgent）</h4>
+                        <p>适合复杂工作流。使用预编译的 LangGraph 图作为子代理的执行逻辑。</p>
+                        <p><span class="tag tag-info">灵活、高级场景</span></p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>关于默认子代理：</strong>Deep Agents 会自动添加一个 <code>general-purpose</code> 子代理（具有文件系统工具），除非你已经提供了一个同名的子代理。要禁用它，设置 <code>general_purpose_subagent.enabled = False</code>，而不是用 <code>excluded_middleware</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 6: SubAgent dictionary fields ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>SubAgent 字段</h2>
+                <h4>字典方式定义子代理时，有 3 个必填字段和 6 个可选字段</h4>
+                <table>
+                    <thead>
+                        <tr><th>字段</th><th>必填</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>name</code></td>
+                            <td>是</td>
+                            <td>唯一标识符，主代理调用 task() 时使用</td>
+                        </tr>
+                        <tr>
+                            <td><code>description</code></td>
+                            <td>是</td>
+                            <td>描述子代理功能，主代理据此决定何时委派</td>
+                        </tr>
+                        <tr>
+                            <td><code>systemPrompt</code></td>
+                            <td>是</td>
+                            <td>子代理的指令，不继承主代理的提示词</td>
+                        </tr>
+                        <tr>
+                            <td><code>tools</code></td>
+                            <td>否</td>
+                            <td>子代理可用的工具列表。默认从主代理继承。<strong>指定后会完全覆盖继承的工具。</strong></td>
+                        </tr>
+                        <tr>
+                            <td><code>model</code></td>
+                            <td>否</td>
+                            <td>覆盖主代理模型。可传字符串如 <code>"openai:gpt-5.4"</code>（<code>"provider:model"</code> 格式）或 LangChain 聊天模型对象（如 <code>await initChatModel("gpt-5.4")</code>）。默认从主代理继承。</td>
+                        </tr>
+                        <tr>
+                            <td><code>middleware</code></td>
+                            <td>否</td>
+                            <td>额外中间件，用于日志、限流等</td>
+                        </tr>
+                        <tr>
+                            <td><code>skills</code></td>
+                            <td>否</td>
+                            <td>技能源路径（如 <code>["/skills/research/"]</code>）。指定后子代理从这些目录加载技能，拥有独立技能集。不从主代理继承。技能状态完全隔离——子代理技能对父代理不可见，反之亦然。</td>
+                        </tr>
+                        <tr>
+                            <td><code>responseFormat</code></td>
+                            <td>否</td>
+                            <td>结构化输出模式，返回 JSON 而非自由文本</td>
+                        </tr>
+                        <tr>
+                            <td><code>interruptOn</code></td>
+                            <td>否</td>
+                            <td>为特定工具配置人机协作中断。子代理的值会覆盖主代理的设置。需要检查点（checkpointer）。默认从主代理继承。</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>继承规则：</strong><code>tools</code> 和 <code>model</code> 默认从主代理继承；<code>systemPrompt</code>、<code>middleware</code>、<code>skills</code> 则不继承，必须显式定义。记清楚哪些会自动继承，哪些需要手动设置。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 7: Creating a research subagent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建研究子代理</h2>
+                <h4>实战：定义一个专门做网络调研的子代理</h4>
+                <pre><code class="language-javascript">import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { createDeepAgent } from "deepagents";
+import { z } from "zod";
+
+// 1. 定义搜索工具：用 Tavily 搜索引擎封装为 LangChain 工具
+const internetSearch = tool(
+  async ({
+    query,
+    maxResults = 5,
+    topic = "general",
+    includeRawContent = false,
+  }: {
+    query: string;
+    maxResults?: number;
+    topic?: "general" | "news" | "finance";
+    includeRawContent?: boolean;
+  }) => {
+    // 每次调用时创建 Tavily 实例，使用环境变量中的 API Key
+    const tavily = new TavilySearch({
+      maxResults,
+      tavilyApiKey: process.env.TAVILY_API_KEY,
+      includeRawContent,
+      topic,
+    });
+    return await tavily._call({ query });  // 执行搜索并返回结果
+  },
+  {
+    name: "internet_search",
+    // description 要写清楚工具做什么，让主 Agent 知道何时委派
+    description: "Run a web search",
+    // schema 定义参数结构，describe() 标注每个参数的含义
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z.number().optional().default(5),
+      topic: z
+        .enum(["general", "news", "finance"])
+        .optional()
+        .default("general"),
+      includeRawContent: z.boolean().optional().default(false),
+    }),
+  }
+);
+
+// 2. 定义研究子代理：专门做网络调研，隔离搜索过程中的中间结果
+const researchSubagent = {
+  name: "research-agent",               // 主 Agent 用 task(name) 调用时传这个名字
+  description: "Used to research more in depth questions",  // 主 Agent 据此决定何时委派
+  systemPrompt: "You are a great researcher",  // 子代理的指令，不继承主代理的提示词
+  tools: [internetSearch],              // 仅限搜索工具，保持子代理专注
+  model: "google-genai:gemini-3.1-pro-preview", // 可选：覆盖主代理模型
+};
+
+// 3. 创建主代理，注册子代理
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",  // 主代理使用的模型
+  subagents: [researchSubagent],  // 主 Agent 会自动获得 task 工具来委派任务
+});</code></pre>
+                <details class="provider-details">
+                    <summary><strong>各提供商完整代码（点击展开）</strong></summary>
+                    <p>以下代码与上方示例基本相同，唯一区别是 <code>model</code> 字段的值。单击提供商名称查看完整代码：</p>
+                    <details class="provider-tab">
+                        <summary>OpenAI — <code>"openai:gpt-5.4"</code></summary>
+                        <pre><code class="language-javascript">import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { createDeepAgent, type SubAgent } from "deepagents";
+import { z } from "zod";
+
+const internetSearch = tool(
+  async ({
+    query, maxResults = 5, topic = "general", includeRawContent = false,
+  }: {
+    query: string; maxResults?: number; topic?: "general" | "news" | "finance"; includeRawContent?: boolean;
+  }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults, tavilyApiKey: process.env.TAVILY_API_KEY, includeRawContent, topic,
+    });
+    return await tavilySearch._call({ query });
+  },
+  {
+    name: "internet_search", description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z.number().optional().default(5),
+      topic: z.enum(["general", "news", "finance"]).optional().default("general"),
+      includeRawContent: z.boolean().optional().default(false),
+    }),
+  },
+);
+
+const researchSubagent: SubAgent = {
+  name: "research-agent",
+  description: "Used to research more in depth questions",
+  systemPrompt: "You are a great researcher",
+  tools: [internetSearch],
+  model: "openai:gpt-5.4",
+};
+const subagents = [researchSubagent];
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  subagents,
+});</code></pre>
+                    </details>
+                    <details class="provider-tab">
+                        <summary>Anthropic — <code>"anthropic:claude-sonnet-4-6"</code></summary>
+                        <pre><code class="language-javascript">import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { createDeepAgent, type SubAgent } from "deepagents";
+import { z } from "zod";
+
+const internetSearch = tool(
+  async ({
+    query, maxResults = 5, topic = "general", includeRawContent = false,
+  }: {
+    query: string; maxResults?: number; topic?: "general" | "news" | "finance"; includeRawContent?: boolean;
+  }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults, tavilyApiKey: process.env.TAVILY_API_KEY, includeRawContent, topic,
+    });
+    return await tavilySearch._call({ query });
+  },
+  {
+    name: "internet_search", description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z.number().optional().default(5),
+      topic: z.enum(["general", "news", "finance"]).optional().default("general"),
+      includeRawContent: z.boolean().optional().default(false),
+    }),
+  },
+);
+
+const researchSubagent: SubAgent = {
+  name: "research-agent",
+  description: "Used to research more in depth questions",
+  systemPrompt: "You are a great researcher",
+  tools: [internetSearch],
+  model: "anthropic:claude-sonnet-4-6",
+};
+const subagents = [researchSubagent];
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  subagents,
+});</code></pre>
+                    </details>
+                    <details class="provider-tab">
+                        <summary>OpenRouter — <code>"openrouter:anthropic/claude-sonnet-4-6"</code></summary>
+                        <pre><code class="language-javascript">import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { createDeepAgent, type SubAgent } from "deepagents";
+import { z } from "zod";
+
+const internetSearch = tool(
+  async ({
+    query, maxResults = 5, topic = "general", includeRawContent = false,
+  }: {
+    query: string; maxResults?: number; topic?: "general" | "news" | "finance"; includeRawContent?: boolean;
+  }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults, tavilyApiKey: process.env.TAVILY_API_KEY, includeRawContent, topic,
+    });
+    return await tavilySearch._call({ query });
+  },
+  {
+    name: "internet_search", description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z.number().optional().default(5),
+      topic: z.enum(["general", "news", "finance"]).optional().default("general"),
+      includeRawContent: z.boolean().optional().default(false),
+    }),
+  },
+);
+
+const researchSubagent: SubAgent = {
+  name: "research-agent",
+  description: "Used to research more in depth questions",
+  systemPrompt: "You are a great researcher",
+  tools: [internetSearch],
+  model: "openrouter:anthropic/claude-sonnet-4-6",
+};
+const subagents = [researchSubagent];
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  subagents,
+});</code></pre>
+                    </details>
+                    <details class="provider-tab">
+                        <summary>Fireworks — <code>"fireworks:accounts/fireworks/models/qwen3p5-397b-a17b"</code></summary>
+                        <pre><code class="language-javascript">import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { createDeepAgent, type SubAgent } from "deepagents";
+import { z } from "zod";
+
+const internetSearch = tool(
+  async ({
+    query, maxResults = 5, topic = "general", includeRawContent = false,
+  }: {
+    query: string; maxResults?: number; topic?: "general" | "news" | "finance"; includeRawContent?: boolean;
+  }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults, tavilyApiKey: process.env.TAVILY_API_KEY, includeRawContent, topic,
+    });
+    return await tavilySearch._call({ query });
+  },
+  {
+    name: "internet_search", description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z.number().optional().default(5),
+      topic: z.enum(["general", "news", "finance"]).optional().default("general"),
+      includeRawContent: z.boolean().optional().default(false),
+    }),
+  },
+);
+
+const researchSubagent: SubAgent = {
+  name: "research-agent",
+  description: "Used to research more in depth questions",
+  systemPrompt: "You are a great researcher",
+  tools: [internetSearch],
+  model: "fireworks:accounts/fireworks/models/qwen3p5-397b-a17b",
+};
+const subagents = [researchSubagent];
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  subagents,
+});</code></pre>
+                    </details>
+                    <details class="provider-tab">
+                        <summary>Baseten — <code>"baseten:zai-org/GLM-5"</code></summary>
+                        <pre><code class="language-javascript">import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { createDeepAgent, type SubAgent } from "deepagents";
+import { z } from "zod";
+
+const internetSearch = tool(
+  async ({
+    query, maxResults = 5, topic = "general", includeRawContent = false,
+  }: {
+    query: string; maxResults?: number; topic?: "general" | "news" | "finance"; includeRawContent?: boolean;
+  }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults, tavilyApiKey: process.env.TAVILY_API_KEY, includeRawContent, topic,
+    });
+    return await tavilySearch._call({ query });
+  },
+  {
+    name: "internet_search", description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z.number().optional().default(5),
+      topic: z.enum(["general", "news", "finance"]).optional().default("general"),
+      includeRawContent: z.boolean().optional().default(false),
+    }),
+  },
+);
+
+const researchSubagent: SubAgent = {
+  name: "research-agent",
+  description: "Used to research more in depth questions",
+  systemPrompt: "You are a great researcher",
+  tools: [internetSearch],
+  model: "baseten:zai-org/GLM-5",
+};
+const subagents = [researchSubagent];
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  subagents,
+});</code></pre>
+                    </details>
+                    <details class="provider-tab">
+                        <summary>Ollama — <code>"ollama:devstral-2"</code></summary>
+                        <pre><code class="language-javascript">import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { createDeepAgent, type SubAgent } from "deepagents";
+import { z } from "zod";
+
+const internetSearch = tool(
+  async ({
+    query, maxResults = 5, topic = "general", includeRawContent = false,
+  }: {
+    query: string; maxResults?: number; topic?: "general" | "news" | "finance"; includeRawContent?: boolean;
+  }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults, tavilyApiKey: process.env.TAVILY_API_KEY, includeRawContent, topic,
+    });
+    return await tavilySearch._call({ query });
+  },
+  {
+    name: "internet_search", description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z.number().optional().default(5),
+      topic: z.enum(["general", "news", "finance"]).optional().default("general"),
+      includeRawContent: z.boolean().optional().default(false),
+    }),
+  },
+);
+
+const researchSubagent: SubAgent = {
+  name: "research-agent",
+  description: "Used to research more in depth questions",
+  systemPrompt: "You are a great researcher",
+  tools: [internetSearch],
+  model: "ollama:devstral-2",
+};
+const subagents = [researchSubagent];
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  subagents,
+});</code></pre>
+                    </details>
+                </details>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>关键点</h4>
+                        <ul>
+                            <li><code>name</code> 是主代理委派任务时的唯一标识</li>
+                            <li><code>description</code> 要具体，让主代理知道何时调用</li>
+                            <li><code>tools</code> 只给需要的，保持专注</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>各提供商 model 值</h4>
+                        <p>子代理的 <code>model</code> 字段使用 <code>"provider:model"</code> 格式。省略则继承主代理。</p>
+                        <table>
+                            <thead><tr><th>提供商</th><th>model 值示例</th></tr></thead>
+                            <tbody>
+                                <tr><td>Google</td><td><code>"google-genai:gemini-3.1-pro-preview"</code></td></tr>
+                                <tr><td>OpenAI</td><td><code>"openai:gpt-5.4"</code></td></tr>
+                                <tr><td>Anthropic</td><td><code>"anthropic:claude-sonnet-4-6"</code></td></tr>
+                                <tr><td>OpenRouter</td><td><code>"openrouter:anthropic/claude-sonnet-4-6"</code></td></tr>
+                                <tr><td>Fireworks</td><td><code>"fireworks:accounts/fireworks/models/qwen3p5-397b-a17b"</code></td></tr>
+                                <tr><td>Baseten</td><td><code>"baseten:zai-org/GLM-5"</code></td></tr>
+                                <tr><td>Ollama</td><td><code>"ollama:devstral-2"</code></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 8: CompiledSubAgent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>编译式子代理</h2>
+                <h4>用预编译的 LangGraph 图作为子代理——适合复杂工作流</h4>
+                <p>当字典方式不够灵活时，你可以用 <code>CompiledSubAgent</code> 包装一个完整的 LangGraph 图。</p>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+import { createAgent } from "langchain";
+
+// 1. 创建自定义代理图：用 LangGraph 构建多节点工作流
+const customGraph = createAgent({
+  model: yourModel,        // 自定义模型
+  tools: specializedTools, // 专门的数据分析工具集
+  prompt: "You are a specialized agent for data analysis...",
+});
+
+// 2. 包装为 CompiledSubAgent，用 runnable 字段传入已编译的图
+const customSubagent = {
+  name: "data-analyzer",  // 子代理标识
+  description: "Specialized agent for complex data analysis tasks",
+  runnable: customGraph,  // 必须是已编译的 LangGraph 图
+};
+
+// 3. 注册到主代理，子代理即可通过 task 工具被调用
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  tools: [internetSearch],
+  systemPrompt: researchInstructions,
+  subagents: [customSubagent],
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>字典方式 vs 编译方式</h4>
+                        <ul>
+                            <li><strong>字典方式：</strong>适合简单的"给提示词+工具"场景</li>
+                            <li><strong>编译方式：</strong>适合需要自定义图结构、多节点流转的复杂工作流</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>CompiledSubAgent 必填字段</h4>
+                        <ul>
+                            <li><code>name</code> — 子代理的唯一标识</li>
+                            <li><code>description</code> — 功能描述</li>
+                            <li><code>runnable</code> — 已编译的 LangGraph 图（必须先 <code>.compile()</code>）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>如果你创建自定义 LangGraph 图，确保图具有一个名为 <code>"messages"</code> 的状态键，否则子代理无法正确与主代理通信。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 9: Structured output ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>结构化输出</h2>
+                <h4>让子代理返回可预测的 JSON，而非自由文本</h4>
+                <p>默认情况下，父代理接收子代理最后一条消息的文本。设置 <code>responseFormat</code> 后，父代理获得符合 schema 的有效 JSON。</p>
+                <pre><code class="language-javascript">import { z } from "zod";
+import { createDeepAgent } from "deepagents";
+
+// 定义结构化输出的 schema：子代理返回值必须符合此结构
+const ResearchFindings = z.object({
+  summary: z.string().describe("Summary of findings"),         // 研究摘要
+  confidence: z.number().describe("Confidence score from 0 to 1"), // 置信度
+  sources: z.array(z.string()).describe("List of source URLs"),    // 来源列表
+});
+
+const researchSubagent = {
+  name: "researcher",
+  description: "Researches topics and returns structured findings",
+  systemPrompt: "Research the given topic thoroughly. Return your findings.",
+  tools: [webSearch],
+  responseFormat: ResearchFindings,  // 设置后，子代理返回 JSON 而非自由文本
+};
+
+const agent = createDeepAgent({
+  model: "claude-sonnet-4-6",
+  subagents: [researchSubagent],
+});
+
+// 调用后，父代理收到 JSON 序列化的结构化数据（可编程处理）：
+// '{"summary": "...", "confidence": 0.87, "sources": ["https://..."]}'</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>何时使用</h4>
+                        <ul>
+                            <li>父代理需要<strong>编程方式处理</strong>结果时</li>
+                            <li>结果需要传递给<strong>下游工具</strong>时</li>
+                            <li>需要确保<strong>输出格式一致</strong>时</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>支持的 schema 类型</h4>
+                        <ul>
+                            <li>Zod schema（推荐）</li>
+                            <li>JSON Schema 对象</li>
+                            <li><code>toolStrategy(...)</code></li>
+                            <li><code>providerStrategy(...)</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>版本要求：</strong>子代理的结构化输出需要 <code>deepagents &gt;= 1.8.4</code>。检查你的版本：<code>npm list deepagents</code>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 10: General-purpose subagent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>通用子代理</h2>
+                <h4>Deep Agents 自动提供的 general-purpose 子代理——适合无需专门行为的上下文隔离</h4>
+                <p>除了自定义子代理，每个 Deep Agent 都能访问一个<strong>内置的通用子代理</strong>。</p>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>默认行为</h4>
+                        <ul>
+                            <li>继承主代理的<strong>系统提示词</strong></li>
+                            <li>继承主代理的<strong>所有工具</strong></li>
+                            <li>继承主代理的<strong>模型</strong></li>
+                            <li>继承主代理的<strong>技能</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>如何自定义</h4>
+                        <ul>
+                            <li><strong>替换：</strong>传入 <code>name: "general-purpose"</code> 的自定义子代理</li>
+                            <li><strong>禁用：</strong>设置 <code>general_purpose_subagent.enabled = False</code></li>
+                            <li><strong>重命名：</strong>在 harness 配置中设置</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-javascript">// 替换默认的 general-purpose 子代理（同名即覆盖内置的）
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  tools: [internetSearch],
+  subagents: [
+    {
+      name: "general-purpose",           // 名称与内置子代理相同，会覆盖默认的
+      description: "General-purpose agent for research and multi-step tasks",
+      systemPrompt: "You are a general-purpose assistant.",
+      tools: [internetSearch],            // 可以自定义工具集
+      model: "openai:gpt-5.4",           // 使用不同于主代理的模型
+    },
+  ],
+});</code></pre>
+                <div class="key-point">
+                    <strong>典型场景：</strong>主代理不再自己做 10 次网页搜索（填满上下文），而是委派给 general-purpose 子代理：<code>task(name="general-purpose", task="Research quantum computing trends")</code>。子代理在内部执行所有搜索，只返回摘要。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 11: Streaming & tracing ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>流式追踪</h2>
+                <h4>通过 lc_agent_name 元数据区分不同代理的执行记录</h4>
+                <p>在流式传输追踪信息时，每个代理运行都带有 <code>lc_agent_name</code> 元数据，帮助你区分数据来自哪个代理。</p>
+                <pre><code class="language-javascript">const researchSubagent = {
+  name: "research-agent",      // 这个名称会出现在元数据中
+  description: "Used to research more in depth questions",
+  systemPrompt: "You are a great researcher",
+  tools: [internetSearch],
+  model: "google_genai:gemini-3.1-pro-preview",
+};
+
+const agent = createDeepAgent(
+  model: "google_genai:gemini-3.1-pro-preview",
+  subagents: [researchSubagent],
+  name: "main-agent"          // 给主代理也命名
+);
+
+// 在 LangSmith 追踪中：
+// main-agent 的运行 → { lc_agent_name: "main-agent" }
+// research-agent 的运行 → { lc_agent_name: "research-agent" }</code></pre>
+                <p><strong>Python 版本：</strong></p>
+                <pre><code class="language-python">import os
+from typing import Literal
+from tavily import TavilyClient
+from deepagents import create_deep_agent
+
+tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+
+def internet_search(
+    query: str,
+    max_results: int = 5,
+    topic: Literal["general", "news", "finance"] = "general",
+    include_raw_content: bool = False,
+):
+    """Run a web search"""
+    return tavily_client.search(
+        query,
+        max_results=max_results,
+        include_raw_content=include_raw_content,
+        topic=topic,
+    )
+
+research_subagent = {
+    "name": "research-agent",
+    "description": "Used to research more in depth questions",
+    "system_prompt": "You are a great researcher",
+    "tools": [internet_search],
+    "model": "google_genai:gemini-3.1-pro-preview",  # 可选覆盖
+}
+subagents = [research_subagent]
+
+agent = create_deep_agent(
+    model="google_genai:gemini-3.1-pro-preview",
+    subagents=subagents,
+    name="main-agent"
+)</code></pre>
+                <p>向 deep Agent 发送提示后，子代理或 deep Agent 执行的所有代理运行都会在其元数据中包含代理名称。例如，名为 <code>research-agent</code> 的子代理，在所有相关的代理运行元数据中将包含 <code>{'lc_agent_name': 'research-agent'}</code>：</p>
+                <p><em>在 LangSmith 追踪界面中，每个代理运行的元数据都包含 <code>lc_agent_name</code> 字段，你可以据此按代理过滤和分组追踪数据，清晰区分各个子代理的执行情况。</em></p>
+                <pre><code class="language-plain">LangSmith 追踪示例（元数据视图）：
+┌─────────────────────────────────────────────────────────┐
+│  Run: main-agent              lc_agent_name: main-agent │
+│  ├── Run: research-agent      lc_agent_name: research-agent │
+│  │   ├── Tool: internet_search                          │
+│  │   └── Tool: internet_search                          │
+│  └── Run: research-agent      lc_agent_name: research-agent │
+│      └── Tool: internet_search                          │
+└─────────────────────────────────────────────────────────┘</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>追踪信息用途</h4>
+                        <ul>
+                            <li>在 LangSmith 中<strong>按代理过滤</strong>追踪数据</li>
+                            <li>分析每个子代理的<strong>性能和成本</strong></li>
+                            <li>调试子代理的<strong>决策路径</strong></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>最佳实践</h4>
+                        <ul>
+                            <li>给主代理和每个子代理都设置<strong>有意义的名称</strong></li>
+                            <li>名称用<strong>小写+连字符</strong>格式（如 <code>data-collector</code>）</li>
+                            <li>名称会出现在 <code>AIMessage</code> 和流式传输的元数据中</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 12: Best practices - descriptions ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>写好描述</h2>
+                <h4>描述是主代理决定调用谁的唯一依据——必须具体且面向操作</h4>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>差的描述（太模糊）</h4>
+                        <pre><code class="language-javascript">// ❌ 主代理无法判断何时该用
+{ name: "helper", description: "helps with stuff" }
+
+// ❌ 太笼统，无法区分用途
+{ name: "finance-agent",
+  description: "做金融相关的事" }</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>好的描述（具体可操作）</h4>
+                        <pre><code class="language-javascript">// ✅ 明确说明做什么、何时用
+{ name: "research-specialist",
+  description: "Conducts in-depth research " +
+    "using web search. Use when you need " +
+    "detailed information requiring " +
+    "multiple searches." }
+
+// ✅ 包含具体功能描述
+{ name: "financial-analyst",
+  description: "分析金融数据并生成带有" +
+    "置信度评分的投资洞察" }</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>描述写作公式：</strong><code>[做什么] + [用什么工具] + [什么时候用]</code>。好的描述让主代理能准确判断何时委派，避免调用错误的子代理或重复自己做。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 13: Best practices - system prompt & tools ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>提示词与工具</h2>
+                <h4>详细的系统提示词 + 最小化的工具集 = 高效的子代理</h4>
+                <pre><code class="language-javascript">const researchSubagent = {
+  name: "research-agent",
+  description: "Conducts in-depth research using web search",
+  systemPrompt: `你是一位细致的研究员。你的工作是：
+1. 将研究问题分解为可搜索的查询
+2. 使用 internet_search 查找相关信息
+3. 将发现综合成全面但简洁的摘要
+4. 在提出论断时引用来源
+
+输出格式：
+- 摘要（2-3 段）
+- 主要发现（要点列表）
+- 来源（附 URL）
+
+将回复控制在 500 字以内，以保持上下文整洁。`,
+  tools: [internetSearch],  // 只给需要的工具
+};</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>工具过多（不聚焦）</h4>
+                        <pre><code class="language-javascript">// ❌ 邮件代理不需要搜索和上传
+const emailAgent = {
+  name: "email-sender",
+  tools: [sendEmail, webSearch,
+          databaseQuery, fileUpload],
+};</code></pre>
+                    </div>
+                    <div class="after">
+                        <h4>最小工具集（聚焦）</h4>
+                        <pre><code class="language-javascript">// ✅ 只有邮件相关的工具
+const emailAgent = {
+  name: "email-sender",
+  tools: [sendEmail, validateEmail],
+};</code></pre>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>原则：</strong>工具越少，子代理越专注。系统提示词要包含工具使用指南和输出格式要求。记住——子代理的 systemPrompt <strong>不继承</strong>主代理，必须完整定义。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 14: Best practices - model selection ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模型选择策略</h2>
+                <h4>不同任务用不同模型——大上下文、数值分析各有擅长</h4>
+                <pre><code class="language-javascript">const subagents = [
+  {
+    name: "contract-reviewer",
+    description: "Reviews legal documents and contracts",
+    systemPrompt: "You are an expert legal reviewer...",
+    tools: [readDocument, analyzeContract],
+    model: "google_genai:gemini-3.1-pro-preview",
+    // 大上下文窗口，适合长文档审查
+  },
+  {
+    name: "financial-analyst",
+    description: "Analyzes financial data and market trends",
+    systemPrompt: "You are an expert financial analyst...",
+    tools: [getStockPrice, analyzeFundamentals],
+    model: "gpt-5.4",
+    // 更适合数值分析和推理
+  },
+];</code></pre>
+                <div class="card-grid cols-2">
+                    <div class="card">
+                        <h4>按任务选模型</h4>
+                        <ul>
+                            <li><strong>长文档处理：</strong>选大上下文模型</li>
+                            <li><strong>数值分析：</strong>选推理能力强的模型</li>
+                            <li><strong>简单任务：</strong>用小模型降低成本</li>
+                            <li><strong>创意写作：</strong>选擅长语言的模型</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>模型覆盖格式</h4>
+                        <ul>
+                            <li><code>"openai:gpt-5.4"</code></li>
+                            <li><code>"anthropic:claude-sonnet-4-6"</code></li>
+                            <li><code>"google-genai:gemini-3.1-pro-preview"</code></li>
+                            <li><code>"ollama:devstral-2"</code></li>
+                            <li>格式：<code>"provider:model"</code></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 15: Common pattern - multiple subagents ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多代理协作</h2>
+                <h4>创建多个专门子代理，分工协作完成复杂任务</h4>
+                <pre><code class="language-javascript">const subagents = [
+  {
+    name: "data-collector",
+    description: "Gathers raw data from various sources",
+    systemPrompt: "Collect comprehensive data on the topic",
+    tools: [webSearch, apiCall, databaseQuery],
+  },
+  {
+    name: "data-analyzer",
+    description: "Analyzes collected data for insights",
+    systemPrompt: "Analyze data and extract key insights",
+    tools: [statisticalAnalysis],
+  },
+  {
+    name: "report-writer",
+    description: "Writes polished reports from analysis",
+    systemPrompt: "Create professional reports from insights",
+    tools: [formatDocument],
+  },
+];
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  systemPrompt: "You coordinate data analysis and reporting.",
+  subagents,
+});</code></pre>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h4>1. 主代理规划</h4>
+                        <p>创建高层任务计划</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>2. 收集数据</h4>
+                        <p>委派给 data-collector</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>3. 分析数据</h4>
+                        <p>委派给 data-analyzer</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>4. 撰写报告</h4>
+                        <p>委派给 report-writer</p>
+                    </div>
+                    <div class="flow-step">
+                        <h4>5. 编译输出</h4>
+                        <p>主代理汇总最终结果</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>每个子代理都在只专注于其任务的整洁上下文中工作。</strong>主代理就像项目经理——不亲自干活，只负责协调和汇总。
+                    <br><br>
+                    <strong>卸甲：</strong>说"主代理像项目经理"只是为了帮你理解分工关系。实际上主 Agent 只是一个更大的语言模型实例，它调用 <code>task</code> 工具时，框架为其创建一个新的 Agent 实例（子 Agent）。"协调"仅仅是主 Agent 按顺序调用不同子 Agent 并拼接它们的输出——这不是有意识的项目管理。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/10-subagents-2.png" alt="图：多子代理分工协作流程" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 16: Context management ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>上下文管理</h2>
+                <h4>父代理的运行时上下文自动传播到所有子代理</h4>
+                <p>当你调用父代理时传入的运行时上下文，会<strong>自动流到</strong>每个子代理及其工具中。</p>
+                <pre><code class="language-javascript">import { z } from "zod";
+
+const contextSchema = z.object({
+  userId: z.string(),
+  sessionId: z.string(),
+});
+
+// 工具通过 runtime 参数获取运行时上下文（无需手动传递）
+const getUserData = tool(
+  async (input, runtime) => {
+    const userId = runtime.context?.userId;  // 从 context 中读取用户 ID
+    return `Data for user ${userId}: ${input.query}`;
+  },
+  {
+    name: "get_user_data",
+    description: "Fetch data for the current user",
+    schema: z.object({ query: z.string() }),
+  }
+);
+
+const researchSubagent = {
+  name: "researcher",
+  description: "Conducts research for the current user",
+  systemPrompt: "You are a research assistant.",
+  tools: [getUserData],  // 子代理中使用需要上下文的工具
+};
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  subagents: [researchSubagent],
+  contextSchema,  // 声明上下文结构
+});
+
+// 调用时传入上下文，会自动流到 researcher 子代理及其 getUserData 工具
+const result = await agent.invoke(
+  { messages: [{ role: "user", content: "Look up my recent activity" }] },
+  { context: { userId: "user-123", sessionId: "abc" } },
+);</code></pre>
+                <div class="key-point">
+                    <strong>自动传播：</strong>你不需要在子代理中手动传递上下文。在父代理 <code>invoke</code> 时传入的 context，所有子代理的工具都能通过 <code>runtime.context</code> 访问。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/10-subagents-1.png" alt="图：运行时上下文自动传播" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 17: Per-subagent context ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>按代理配置</h2>
+                <h4>用命名空间键为不同子代理传递不同的配置</h4>
+                <pre><code class="language-javascript">const result = await agent.invoke(
+  { messages: [{ role: "user", content: "Research and verify" }] },
+  {
+    context: {
+      userId: "user-123",                  // 所有代理共享
+      "researcher:maxDepth": 3,            // 仅限 researcher
+      "fact-checker:strictMode": true,     // 仅限 fact-checker
+    },
+  },
+);
+
+// 在工具中识别调用者
+const sharedLookup = tool(
+  async (input, runtime) => {
+    const agentName = runtime.config?.metadata?.lc_agent_name;
+    if (agentName === "fact-checker") {
+      return strictLookup(input.query);   // fact-checker 用严格模式
+    }
+    return generalLookup(input.query);     // 其他代理用通用模式
+  },
+  {
+    name: "shared_lookup",
+    description: "Look up information",
+    schema: z.object({ query: z.string() }),
+  }
+);</code></pre>
+                <p><strong>Typed contextSchema 替代方案：</strong>也可以将代理特定设置建模为 contextSchema 中的独立字段，并用专用工具读取：</p>
+                <pre><code class="language-javascript">// 带 typed fields 的 contextSchema
+const contextSchema = z.object({
+  userId: z.string(),
+  researcherMaxDepth: z.number().optional(),
+  factCheckerStrictMode: z.boolean().optional(),
+});
+
+// 根据上下文字段分支的工具
+const verifyClaim = tool(
+  async (input, runtime) => {
+    const strictMode = runtime.context?.factCheckerStrictMode ?? false;
+    if (strictMode) {
+      return strictVerification(input.claim);
+    }
+    return basicVerification(input.claim);
+  },
+  {
+    name: "verify_claim",
+    description: "Verify a factual claim",
+    schema: z.object({ claim: z.string() }),
+  }
+);</code></pre>
+                <h4>组合模式：context + lc_agent_name</h4>
+                <p>你可以结合 <code>runtime.context</code> 和 <code>runtime.config.metadata.lc_agent_name</code>，在同一个工具中根据调用代理分支行为：</p>
+                <pre><code class="language-javascript">const flexibleSearch = tool(
+  async (input, runtime) => {
+    const agentName = runtime.config?.metadata?.lc_agent_name ?? "unknown";
+    const ctx = runtime.context;
+    const maxResults =
+      agentName === "researcher" ? ctx?.researcherMaxDepth ?? 5 : 5;
+    const includeRaw = false;
+
+    return performSearch(input.query, { maxResults, includeRaw });
+  },
+  {
+    name: "flexible_search",
+    description: "Search with agent-specific settings",
+    schema: z.object({ query: z.string() }),
+  }
+);</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>命名空间键</h4>
+                        <p>用 <code>"子代理名:键名"</code> 格式传递子代理特定配置。例如 <code>"researcher:maxDepth"</code> 只有 researcher 子代理能读到。</p>
+                    </div>
+                    <div class="card">
+                        <h4>识别调用者</h4>
+                        <p>通过 <code>runtime.config?.metadata?.lc_agent_name</code> 获取调用工具的代理名称，据此分支行为。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 18: Skill inheritance ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>技能继承</h2>
+                <h4>general-purpose 子代理继承主代理技能，自定义子代理默认不继承</h4>
+                <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
+
+// 拥有自己技能的研究子代理
+const researchSubagent = {
+  name: "researcher",
+  description: "Research assistant with specialized skills",
+  systemPrompt: "You are a researcher.",
+  tools: [webSearch],
+  skills: ["/skills/research/", "/skills/web-search/"],
+};
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  skills: ["/skills/main/"],              // 主代理和 GP 子代理获得这些
+  subagents: [researchSubagent],          // 仅获得自己的技能路径
+});</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>General-purpose 子代理</h4>
+                        <ul>
+                            <li>自动<strong>继承</strong>主代理的技能</li>
+                            <li>运行自己的 SkillsMiddleware 实例</li>
+                            <li>技能状态与主代理<strong>隔离</strong></li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>自定义子代理</h4>
+                        <ul>
+                            <li>默认<strong>不继承</strong>技能</li>
+                            <li>需用 <code>skills</code> 参数显式配置</li>
+                            <li>技能状态<strong>双向隔离</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>完全隔离：</strong>技能状态在两个方向上完全隔离——父代理的技能对子代理不可见，子代理的技能也不会传播回父代理。这是设计上的选择，确保代理之间不互相干扰。
+                </div>
+                <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/10-subagents-2.png" alt="图：GP 子代理与自定义子代理的技能继承差异" class="ai-diagram-img">
+            </div>
+        </section>
+
+        <!-- ==================== Slide 19: Troubleshooting ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见问题排查</h2>
+                <h4>子代理未被调用？上下文仍然膨胀？选错了子代理？</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>子代理未被调用</h4>
+                        <p><strong>原因：</strong>主代理觉得自己能搞定。</p>
+                        <ul>
+                            <li>让 <code>description</code> 更具体，明确何时使用</li>
+                            <li>在主代理 systemPrompt 中指示其委派任务</li>
+                        </ul>
+                        <pre><code class="language-javascript">// ✅ 好的描述
+{ name: "research-specialist",
+  description: "Conducts in-depth research " +
+    "requiring multiple searches." }
+// ❌ 差的描述
+{ name: "helper",
+  description: "helps with stuff" }</code></pre>
+                        <p><strong>额外方案——在 systemPrompt 中明确指示委派：</strong></p>
+                        <pre><code class="language-javascript">const agent = createDeepAgent({
+  systemPrompt: `...你的指令...
+
+  重要提示：对于复杂任务，请使用 task() 工具
+  委派给你的子代理。这可以保持你的上下文
+  整洁并改善结果。`,
+  subagents: [...]
+});</code></pre>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #D97706;">
+                        <h4>上下文仍然膨胀</h4>
+                        <p><strong>原因：</strong>子代理返回了太多内容。</p>
+                        <ul>
+                            <li>在 systemPrompt 中指示子代理返回<strong>简洁摘要</strong></li>
+                            <li>用文件系统处理大数据，只返回分析结果</li>
+                        </ul>
+                        <pre><code class="language-javascript">systemPrompt: `...
+仅返回必要的摘要。
+不要包含原始数据或中间结果。
+回复控制在 500 字以内。`</code></pre>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #7C3AED;">
+                        <h4>选错了子代理</h4>
+                        <p><strong>原因：</strong>子代理描述不够区分。</p>
+                        <ul>
+                            <li>在描述中清晰区分不同子代理的<strong>适用场景</strong></li>
+                            <li>使用"简单/快速"vs"复杂/深度"等关键词</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #059669;">
+                        <h4>不使用子代理运行</h4>
+                        <p>如果不需要委派功能：</p>
+                        <ul>
+                            <li>设置 <code>general_purpose_subagent.enabled = False</code></li>
+                            <li>不在 <code>subagents</code> 中传入任何同步子代理</li>
+                            <li>不要用 <code>excluded_middleware</code>（会报错）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 20: Returning concise results ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>返回简洁结果</h2>
+                <h4>教导子代理只返回摘要，不返回原始数据——这是上下文管理的关键</h4>
+                <p>白话：子代理的输出会直接进入主 Agent 的上下文。如果子代理返回了 100 行搜索结果，这些结果全部占据主 Agent 的 Token 预算。所以你要在子代理的提示词里明确说"只给摘要"。</p>
+                <pre><code class="language-javascript">const dataAnalyst = {
+  name: "data-analyst",
+  description: "Analyzes data and returns concise insights",
+  systemPrompt: `分析数据并返回：
+1. 关键洞察（3-5 个要点）
+2. 总体置信度评分
+3. 建议的下一步行动
+
+不要包含：
+- 原始数据
+- 中间计算过程
+- 详细的工具输出
+
+将回复控制在 300 字以内。`,
+  tools: [statisticalAnalysis],
+};
+
+// 大数据处理策略
+const bigDataAgent = {
+  systemPrompt: `当你收集大量数据时：
+1. 将原始数据保存到 /data/raw_results.txt
+2. 处理和分析数据
+3. 仅返回分析摘要
+
+这可以保持上下文整洁。`,
+};</code></pre>
+                <div class="key-point">
+                    <strong>两条核心策略：</strong>（1）在 systemPrompt 中明确限制输出长度和格式；（2）大数据存文件，只返回摘要。子代理的返回值直接进入主代理上下文——控制返回量就是控制上下文大小。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 21: Chapter review ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>子代理是 Deep Agent 从"单兵作战"到"团队协作"的核心机制</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你学到了什么</h4>
+                        <ul>
+                            <li>子代理解决<strong>上下文膨胀</strong>问题——主代理只看结果</li>
+                            <li>两种定义方式：<strong>字典（SubAgent）</strong>和<strong>编译（CompiledSubAgent）</strong></li>
+                            <li>内置的 <strong>general-purpose</strong> 子代理适合通用委派</li>
+                            <li><strong>结构化输出</strong>让父代理获得可解析的 JSON</li>
+                            <li>运行时上下文<strong>自动传播</strong>到所有子代理</li>
+                            <li>技能继承规则：GP 子代理继承，自定义子代理不继承</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续章节预告</h4>
+                        <ul>
+                            <li><strong>异步子代理</strong>：长时间运行、并行工作流、中途取消</li>
+                            <li><strong>人机协作</strong>：interrupt_on 配置与人机交互</li>
+                            <li><strong>权限管理</strong>：控制子代理可以执行哪些操作</li>
+                            <li><strong>内存管理</strong>：短期和长期记忆机制</li>
+                            <li><strong>技能系统</strong>：为子代理加载专门的技能集</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>子代理不是"锦上添花"的功能，而是处理复杂任务时的<strong>必需品</strong>。当你的代理需要做多步调研、处理大数据、或混合使用不同模型时，子代理让你的系统<strong>保持整洁、专注、可控</strong>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Slide 22: Further reading ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./11-async-subagents.html">下一章：异步子代理</a> -- 并行工作流和长时间运行任务</li>
+                            <li><a href="./12-human-in-the-loop.html">人机协作</a> -- 在子代理中配置人工审批</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://docs.langchain.com/deepagents/subagents">Deep Agents 子代理文档</a> -- 完整 API 参考</li>
+                            <li><a href="https://smith.langchain.com/">LangSmith</a> -- 可视化追踪和调试</li>
+                            <li><a href="https://github.com/langchain-ai/deepagents">GitHub 仓库</a> -- 源码和示例</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>相关概念</h4>
+                        <ul>
+                            <li><a href="https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html">上下文隔离</a> -- 理解为什么子代理有效</li>
+                            <li><a href="https://docs.langchain.com/deepagents/skills">技能系统</a> -- 为子代理加载专门的技能</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="../prism/prism.js"></script>
+    <script src="../prism/prism-autoloader.min.js"></script>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>
