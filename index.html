@@ -1781,17 +1781,52 @@
         /* 侧边导航高亮 */
         var sections = document.querySelectorAll('.content-section');
         var navLinks = document.querySelectorAll('.nav-links a');
-        var sectionObserver = new IntersectionObserver(function (entries) {
-            entries.forEach(function (entry) {
-                if (entry.isIntersecting) {
-                    var id = entry.target.getAttribute('id');
-                    navLinks.forEach(function (link) {
-                        link.classList.toggle('active', link.getAttribute('data-section') === id);
-                    });
+        var sectionState = {};
+        function setActiveSection(id) {
+            navLinks.forEach(function (link) {
+                link.classList.toggle('active', link.getAttribute('data-section') === id);
+            });
+        }
+        function pickBestSectionId() {
+            var bestId = null;
+            var bestRatio = 0;
+            sections.forEach(function (s) {
+                var id = s.getAttribute('id');
+                var ratio = sectionState[id] || 0;
+                if (ratio > bestRatio) {
+                    bestRatio = ratio;
+                    bestId = id;
                 }
             });
-        }, { threshold: 0.3, rootMargin: '-10% 0px -60% 0px' });
+            if (bestId) return bestId;
+
+            var bestFallbackId = null;
+            var bestFallbackDist = Infinity;
+            var anchor = window.innerHeight * 0.32;
+            sections.forEach(function (s) {
+                var rect = s.getBoundingClientRect();
+                if (rect.bottom <= 0) return;
+                var dist = Math.abs(rect.top - anchor);
+                if (dist < bestFallbackDist) {
+                    bestFallbackDist = dist;
+                    bestFallbackId = s.getAttribute('id');
+                }
+            });
+            return bestFallbackId;
+        }
+        function updateActiveSection() {
+            var id = pickBestSectionId();
+            if (id) setActiveSection(id);
+        }
+        var sectionObserver = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                var id = entry.target.getAttribute('id');
+                sectionState[id] = entry.isIntersecting ? entry.intersectionRatio : 0;
+            });
+            updateActiveSection();
+        }, { threshold: [0, 0.12, 0.24, 0.36, 0.48, 0.6], rootMargin: '-10% 0px -60% 0px' });
         sections.forEach(function (s) { sectionObserver.observe(s); });
+        updateActiveSection();
 
         /* 论文折叠 */
         document.querySelectorAll('.pub-year-toggle').forEach(function (btn) {
