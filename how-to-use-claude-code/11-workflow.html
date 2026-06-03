@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>11 Workflow</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔄</text></svg>">
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 11 章</div>
+            <h1>Dynamic Workflows</h1>
+            <p>大规模子代理编排——让几十个代理协同完成一个任务</p>
+            <strong>脚本化编排、对抗性验证、可恢复执行</strong>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>一个代理不够</h2>
+                <h4>当任务大到单次对话装不下的时候，怎么办？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>全仓库审计</h4>
+                        <p>500 个文件逐一检查安全漏洞。一个代理读到第 30 个文件时，上下文已经塞满了，<strong>最早发现的问题被挤出记忆</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>大规模迁移</h4>
+                        <p>把整个项目从 ESLint 迁移到 Oxlint——配置文件、插件、规则覆盖，每个包都需要独立处理。<strong>一个代理跑不完</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>结果可信度</h4>
+                        <p>让 Claude 做了一次深度研究，返回了一份报告。但你不知道<strong>哪些结论站得住脚</strong>——它没有自己验证过自己的结论。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>Workflow 就是为这些场景设计的：</strong>它把"谁做什么、什么时候做"写成 JavaScript 脚本，让几十到几百个子代理并行执行，中间结果存放在脚本变量里而非上下文窗口，还能让代理之间互相验证彼此的发现。
+                </div>
+            </div>
+        </section>
+
+        <!-- 四种方式对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>四种方式对比</h2>
+                <h4>Subagents、Skills、Agent Teams、Workflows 各有分工</h4>
+                <table>
+                    <thead><tr><th></th><th>Subagents</th><th>Skills</th><th>Agent Teams</th><th>Workflows</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>本质</strong></td><td>Claude 生成的工人</td><td>Claude 遵循的指令</td><td>主代理监督对等会话</td><td>运行时执行的脚本</td></tr>
+                        <tr><td><strong>谁决定下一步</strong></td><td>Claude，逐轮</td><td>Claude，遵循提示</td><td>主代理，逐轮</td><td>脚本</td></tr>
+                        <tr><td><strong>中间结果</strong></td><td>上下文窗口</td><td>上下文窗口</td><td>共享任务列表</td><td>脚本变量</td></tr>
+                        <tr><td><strong>可重复性</strong></td><td>工人定义</td><td>指令</td><td>团队定义</td><td>编排本身</td></tr>
+                        <tr><td><strong>规模</strong></td><td>每轮几个</td><td>同 Subagents</td><td>少量长期会话</td><td>数十到数百</td></tr>
+                        <tr><td><strong>中断恢复</strong></td><td>重启当前轮</td><td>重启当前轮</td><td>同伴继续</td><td>可恢复</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>核心区别：</strong>Workflow 把计划移入代码。其他三种方式中，Claude 是编排者——逐轮决定下一步做什么，所有结果堆积在上下文中。Workflow 脚本持有循环、分支和中间结果，Claude 的上下文只保留最终答案。
+                </div>
+            </div>
+        </section>
+
+        <!-- 架构概览 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>架构概览</h2>
+                <h4>用户会话、Workflow Runtime 和子代理的三层关系</h4>
+                <div class="ai-diagram">
+                    <h4>图：Workflow 运行时架构——从用户输入到最终结果的三层结构</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术架构示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：三层架构图。顶层是"用户会话"（单个圆角矩形），中间层是"Workflow Runtime"（大圆角矩形，内含"JavaScript 脚本执行环境"和"Journal 日志系统"两个子块），底层是多个"子代理"（并行排列的小圆角矩形，标注 Agent1、Agent2...Agent N）
+                    - 各元素关系：用户会话通过箭头向下连接到 Runtime，Runtime 通过多条箭头向下分发到各个子代理。Journal 与脚本执行环境用虚线双向箭头连接
+                    - 关键标注：用户会话旁标注"上下文只保留最终答案"，Runtime 内标注"并发上限 16"，脚本执行环境内列出 agent()、parallel()、pipeline()、phase() 四个函数名
+                    - 配色建议：浅蓝/浅灰背景，深色文字，Runtime 边框用橙色标注，子代理用浅绿色填充
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 脚本是怎么来的 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>脚本怎么来的</h2>
+                <h4>从你输入提示词到 Workflow 运行，中间发生了什么</h4>
+                <div class="warning">
+                    <strong>前提条件：</strong>要看到下方对话框，Workflow 功能必须先启用。需要两个条件：<b>环境变量</b> <code>CLAUDE_CODE_WORKFLOWS=1</code>（字符串）且<b>账户计划</b>支持 Dynamic Workflows（Max/Team 默认开，Pro 需在 <code>/config</code> 手动打开）。详情见本章末尾的排错指南。
+                </div>
+                <pre><code><span style="color: var(--success-color);">你输入：</span>ultracode: 审查 src/routes/ 下每个路由文件是否缺少认证检查
+
+<span style="color: var(--info-color);">Claude Code：</span>检测到 "ultracode" 关键字 → 高亮显示 → 弹出确认提示
+┌─────────────────────────────────────────────────┐
+│  Dynamic workflow requested for this turn       │
+│  Esc to ignore                                   │
+│                                                 │
+│  Phases:                                        │
+│    1. Scan — 发现所有路由文件                     │
+│    2. Review — 每个文件一个代理并行审查            │
+│    3. Verify — 对抗性验证每个发现                 │
+│    4. Report — 汇总报告                          │
+│                                                 │
+│  ⚠️ Token usage will be high                    │
+│                                                 │
+│  [Yes, run it] [View raw script] [No]           │
+└─────────────────────────────────────────────────┘
+
+<span style="color: var(--info-color);">你选择 "View raw script" → Claude 把生成的 JS 脚本展示给你</span>
+<span style="color: var(--info-color);">你选择 "Yes, run it"  → Workflow Runtime 在后台接管执行</span>
+
+<span style="color: var(--success-color);">你输入：</span>/workflows    <span style="color: var(--text-muted);"># 随时查看进度</span>
+<span style="color: var(--text-muted);"># 你的会话保持响应，可以继续做其他事</span></code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>你不需要自己写脚本</h4>
+                        <p>Claude 根据你的任务描述<strong>即时生成</strong> JavaScript 脚本。你只需要用自然语言描述要做什么，Claude 决定怎么编排。脚本写好后保存在会话目录下，你可以查看、编辑、重新运行。</p>
+                    </div>
+                    <div class="card">
+                        <h4>为什么是 JavaScript</h4>
+                        <p>脚本需要表达循环、分支、并行这些<strong>确定性的控制流</strong>——而不是让模型逐轮决定下一步。JavaScript 是 Workflow Runtime 能执行的唯一语言。脚本里没有文件系统访问，<strong>所有读写操作都由子代理完成</strong>。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 脚本结构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>脚本结构</h2>
+                <h4>Claude 生成的脚本长什么样</h4>
+                <pre><code><span style="color: var(--text-muted);">// 1. 元数据块（必须是纯字面量，不能有变量或计算）</span>
+export const meta = {
+  name: 'my-workflow',
+  description: '做什么事',
+  phases: [
+    { title: 'Phase1', detail: '描述' },
+    { title: 'Phase2', detail: '描述' },
+  ],
+};
+
+<span style="color: var(--text-muted);">// 2. 脚本主体</span>
+phase('Phase1');
+const results = await parallel(items.map(item => () =>
+  agent(`处理 ${item}`, { schema: MY_SCHEMA, phase: 'Phase1' })
+));
+
+phase('Phase2');
+const final = await agent('综合所有结果', { phase: 'Phase2' });
+
+return { final, count: results.length };</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>脚本能做什么</h4>
+                        <p>使用 <code>agent()</code>、<code>parallel()</code>、<code>pipeline()</code>、<code>phase()</code>、<code>log()</code>、<code>workflow()</code> 编排子代理。读取 <code>args</code> 获取外部输入，通过 <code>return</code> 返回结果。</p>
+                    </div>
+                    <div class="card">
+                        <h4>脚本不能做什么</h4>
+                        <p><strong>没有</strong>文件系统或 Node.js API 访问。代理负责读写文件和运行命令，脚本只负责协调。<code>Date.now()</code>、<code>Math.random()</code> 会直接抛错——为了保证可缓存和可恢复。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 核心原语：agent() -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>agent() 原语</h2>
+                <h4>派生一个子代理执行任务，返回结果</h4>
+                <pre><code><span style="color: var(--text-muted);">// 最简用法：返回代理的文本输出</span>
+const result = await agent('审查 src/auth.ts 的安全性');
+
+<span style="color: var(--text-muted);">// 带 schema：强制返回结构化 JSON（模型会自动重试直到匹配）</span>
+const bugs = await agent('找出这个文件里的 bug', {
+  schema: {
+    type: 'object',
+    properties: {
+      bugs: { type: 'array', items: {
+        type: 'object',
+        properties: {
+          file: { type: 'string' },
+          line: { type: 'number' },
+          severity: { type: 'string', enum: ['high','medium','low'] },
+        }
+      }}
+    }
+  }
+});
+
+<span style="color: var(--text-muted);">// 常用选项</span>
+await agent('审查代码', {
+  label: 'review:auth',       <span style="color: var(--text-muted);">// 进度视图中的显示名</span>
+  phase: 'Review',            <span style="color: var(--text-muted);">// 分配到进度组</span>
+  isolation: 'worktree',      <span style="color: var(--text-muted);">// 在独立 git worktree 中运行</span>
+  agentType: 'general-purpose' <span style="color: var(--text-muted);">// 使用自定义子代理类型</span>
+});</code></pre>
+                <div class="key-point">
+                    <strong>关键：</strong><code>schema</code> 是 Workflow 的核心机制之一。它迫使子代理返回符合 JSON Schema 的结构化数据，而不是自由文本。后续阶段可以直接用这些数据做判断，不需要再解析。
+                </div>
+            </div>
+        </section>
+
+        <!-- parallel vs pipeline -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>并行原语</h2>
+                <h4>parallel() 是屏障，pipeline() 是流水线——默认用 pipeline</h4>
+                <div class="comparison">
+                    <div class="after">
+                        <h4>parallel() — 屏障式</h4>
+                        <p>等<strong>所有</strong>任务完成才返回。适合需要看到全部结果才能做决定的场景。</p>
+                        <pre><code>const all = await parallel([
+  () => agent('搜索角度A'),
+  () => agent('搜索角度B'),
+  () => agent('搜索角度C'),
+]);
+<span style="color: var(--text-muted);">// 这里拿到全部 3 个结果</span>
+const deduped = dedup(all);</code></pre>
+                    </div>
+                    <div class="before">
+                        <h4>pipeline() — 流水线</h4>
+                        <p>每个 item 独立流经所有阶段，<strong>无屏障</strong>。Item A 在阶段 3 时，Item B 可能还在阶段 1。</p>
+                        <pre><code>const results = await pipeline(
+  files,
+  (file) => agent(`审查 ${file}`),
+  (review) => agent(`验证 ${review.file}`)
+);
+<span style="color: var(--text-muted);">// 更快，因为没有等待屏障</span></code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>常见误区：</strong>不要因为"阶段在概念上是分开的"就用 <code>parallel()</code>。分开 ≠ 需要同步。<code>pipeline()</code> 的默认性能更好。只有当后续阶段真的需要跨项合并或去重时，才用 <code>parallel()</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 选择决策 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>选择决策</h2>
+                <h4>什么时候用 parallel，什么时候用 pipeline</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #16A34A;">
+                        <h4>✅ 用 parallel 的理由</h4>
+                        <ul>
+                            <li><strong>去重/合并</strong>：需要跨全部结果去重后再处理</li>
+                            <li><strong>提前退出</strong>：根据总数决定是否跳过（"0 个发现，跳过验证"）</li>
+                            <li><strong>跨项引用</strong>：后续提示词需要引用"其他发现"</li>
+                        </ul>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>❌ 不该用 parallel 的理由</h4>
+                        <ul>
+                            <li><strong>"我先 flatten 一下"</strong>→ 在 pipeline 的 stage 里做就行</li>
+                            <li><strong>"阶段在概念上是分开的"</strong>→ 分开 ≠ 需要同步</li>
+                            <li><strong>"代码更整洁"</strong>→ 屏障有真实的延迟代价</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>经验法则：</strong>默认用 <code>pipeline()</code>。只有当你发现自己在写"先 <code>parallel()</code> → 做 transform → 再 <code>parallel()</code>"，而中间的 transform 不依赖跨项数据时，你应该用 <code>pipeline()</code> 并把 transform 放在 stage 里。
+                </div>
+            </div>
+        </section>
+
+        <!-- 其他原语 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>辅助原语</h2>
+                <h4>phase、log、workflow、budget、args</h4>
+                <table>
+                    <thead><tr><th>原语</th><th>作用</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>phase(title)</code></td><td>设置进度分组</td><td><code>phase('Verify')</code></td></tr>
+                        <tr><td><code>log(msg)</code></td><td>输出进度消息</td><td><code>log(`${bugs.length} bugs found`)</code></td></tr>
+                        <tr><td><code>workflow(name, args?)</code></td><td>嵌套调用另一个工作流</td><td><code>await workflow('deep-research', { question: topic })</code></td></tr>
+                        <tr><td><code>budget.total</code></td><td>总 token 预算（未设则为 null）</td><td><code>while (budget.remaining() > 50000)</code></td></tr>
+                        <tr><td><code>budget.spent()</code></td><td>已消耗 token</td><td>见上</td></tr>
+                        <tr><td><code>args</code></td><td>外部传入的参数</td><td><code>args.weekStart</code></td></tr>
+                    </tbody>
+                </table>
+                <pre><code><span style="color: var(--text-muted);">// 按预算控制深度</span>
+const bugs = [];
+while (budget.total && budget.remaining() > 50000) {
+  const result = await agent('Find bugs', { schema: BUGS_SCHEMA });
+  bugs.push(...result.bugs);
+  log(`${bugs.length} found, ${Math.round(budget.remaining()/1000)}k remaining`);
+}
+
+<span style="color: var(--text-muted);">// 嵌套调用内置工作流</span>
+const report = await workflow('deep-research', 'Claude Code hooks 原理');</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong><code>workflow()</code> 只支持一层嵌套。子工作流内再调用 <code>workflow()</code> 会抛错。子工作流共享父级的并发上限、代理计数和 token 预算。
+                </div>
+            </div>
+        </section>
+
+        <!-- 质量模式：对抗性验证 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>对抗性验证</h2>
+                <h4>让 N 个"怀疑者"代理力图反驳每个发现</h4>
+                <pre><code><span style="color: var(--text-muted);">// 对每个发现，派 3 个独立怀疑者</span>
+const VOTES = 3;
+const REFUTATIONS_TO_KILL = 2;
+
+const verified = await parallel(findings.map(f => () =>
+  parallel(Array.from({ length: VOTES }, (_, i) => () =>
+    agent(`Be SKEPTICAL. Try to REFUTE this claim:
+      "${f.claim}"
+      Source: ${f.source}
+      Return refuted: true/false with evidence.`, {
+      schema: VERDICT_SCHEMA
+    })
+  )).then(verdicts => {
+    const valid = verdicts.filter(Boolean);
+    const refuted = valid.filter(v => v.refuted).length;
+    const survives = valid.length >= REFUTATIONS_TO_KILL
+                     && refuted < REFUTATIONS_TO_KILL;
+    return { ...f, survives, refutedVotes: refuted };
+  })
+));
+
+const confirmed = verified.filter(f => f.survives);</code></pre>
+                <div class="info-block">
+                    <strong>为什么有效：</strong>单个代理倾向于相信自己产出的内容。让 3 个独立"怀疑者"从不同角度反驳——如果 2 个以上认为站不住，就丢弃。这比单纯增加代理数量更能提升结果可信度。
+                </div>
+            </div>
+        </section>
+
+        <!-- 质量模式：循环直到枯竭 + 多视角 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>循环与多视角</h2>
+                <h4>Loop-Until-Dry + Perspective-Diverse Verify</h4>
+                <pre><code>const seen = new Set();
+const confirmed = [];
+let dry = 0;
+
+while (dry < 2) {  <span style="color: var(--text-muted);">// 连续 2 轮没新发现就停</span>
+  const found = (await parallel(FINDERS.map(f => () =>
+    agent(f.prompt, { phase: 'Find', schema: BUGS })
+  ))).filter(Boolean).flatMap(r => r.bugs);
+
+  const fresh = found.filter(b => !seen.has(key(b)));
+  if (!fresh.length) { dry++; continue; }
+  dry = 0;
+  fresh.forEach(b => seen.add(key(b)));
+
+  <span style="color: var(--text-muted);">// 每个发现用 3 个不同视角独立评判</span>
+  const judged = await parallel(fresh.map(b => () =>
+    parallel(['correctness','security','repro'].map(lens => () =>
+      agent(`Judge "${b.desc}" via the ${lens} lens`, {
+        phase: 'Verify', schema: VERDICT
+      })
+    )).then(vs => ({
+      b,
+      real: vs.filter(Boolean).filter(v => v.real).length >= 2
+    }))
+  ));
+  confirmed.push(...judged.filter(v => v.real).map(v => v.b));
+}</code></pre>
+                <div class="key-point">
+                    <strong>去重的关键细节：</strong>对"已见"去重（<code>seen</code>），不是对"已确认"去重。否则被拒绝的发现在下一轮会重新出现，循环永远不收敛。
+                </div>
+            </div>
+        </section>
+
+        <!-- 质量模式总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>质量模式总结</h2>
+                <h4>四种模式可以根据任务自由组合</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>🎯 对抗性验证</h4>
+                        <p>每个发现 → N 个怀疑者反驳 → 低于多数存活则丢弃。</p>
+                        <p><strong>适用：</strong>审计、研究——防止"听起来对但实际错"的结论。</p>
+                    </div>
+                    <div class="card">
+                        <h4>🔍 多视角验证</h4>
+                        <p>每个验证者用不同视角（正确性、安全性、性能、可复现性）评判。</p>
+                        <p><strong>适用：</strong>代码审查——比 N 个相同视角的冗余验证更强。</p>
+                    </div>
+                    <div class="card">
+                        <h4>⚖️ 评判团</h4>
+                        <p>N 个独立方案 → 并行评分 → 从获胜方案综合，嫁接亚军优点。</p>
+                        <p><strong>适用：</strong>架构设计、方案选型——解空间很大时。</p>
+                    </div>
+                    <div class="card">
+                        <h4>🔄 循环直到枯竭</h4>
+                        <p>持续派生发现器，直到 K 轮没有新发现。</p>
+                        <p><strong>适用：</strong>Bug 扫描、安全审计——不知道总量有多大时。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- /deep-research 详解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>/deep-research</h2>
+                <h4>Claude Code 内置的深度研究工作流——也是最好的学习范例</h4>
+                <div class="ai-diagram">
+                    <h4>图：/deep-research 五阶段流程——从问题分解到带引用报告</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：五个阶段从左到右的流程图，每个阶段是一个圆角矩形，用箭头连接。阶段分别为：Scope（1个代理）、Search（5个并行代理）、Fetch（去重+获取15个来源）、Verify（每个声明3个对抗验证）、Synthesize（1个代理写报告）
+                    - 各元素关系：Scope 分解为 5 个角度，每个角度一个 Search 代理。Search 结果流入 Fetch 做去重。Fetch 提取的声明流入 Verify 做 3 投验证。Verify 存活的声明流入 Synthesize 写最终报告
+                    - 关键标注：在 Verify 阶段标注"2/3 反驳即淘汰"，在 Search 阶段标注"5 个并行"，在 Fetch 阶段标注"Top 15 来源"
+                    - 配色建议：浅灰背景，Scope/Synthesize 用蓝色，Search/Verify 用橙色，Fetch 用绿色。箭头统一用深灰色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- /deep-research 脚本详解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>研究脚本详解</h2>
+                <h4>/deep-research 的核心逻辑拆解</h4>
+                <pre><code><span style="color: var(--text-muted);">// 阶段1：分解问题</span>
+phase("Scope");
+const scope = await agent(
+  "Decompose this question into 5 search angles...\n" + QUESTION,
+  { schema: SCOPE_SCHEMA }  <span style="color: var(--text-muted);">// 强制返回结构化角度列表</span>
+);
+
+<span style="color: var(--text-muted);">// 阶段2+3：搜索 + 获取（pipeline，无屏障延迟）</span>
+const searchResults = await pipeline(
+  scope.angles,
+  (angle) => agent(SEARCH_PROMPT(angle), { schema: SEARCH_SCHEMA }),
+  (searchResult) => {
+    <span style="color: var(--text-muted);">// URL 去重 + 预算控制</span>
+    const novel = dedupAndBudget(searchResult.results);
+    return parallel(novel.map(source => () =>
+      agent(FETCH_PROMPT(source), { schema: EXTRACT_SCHEMA })
+    ));
+  }
+);
+
+<span style="color: var(--text-muted);">// 阶段4：3 投对抗性验证</span>
+phase("Verify");
+const voted = await parallel(rankedClaims.map(claim => () =>
+  parallel([0,1,2].map(v => () =>
+    agent(VERIFY_PROMPT(claim, v), { schema: VERDICT_SCHEMA })
+  )).then(verdicts => ({
+    ...claim,
+    survives: valid >= 2 && refuted < 2
+  }))
+));
+
+<span style="color: var(--text-muted);">// 阶段5：综合报告</span>
+phase("Synthesize");
+const report = await agent("Synthesize...", { schema: REPORT_SCHEMA });</code></pre>
+            </div>
+        </section>
+
+        <!-- 触发方式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>触发方式</h2>
+                <h4>三种方式让 Claude 写出并运行一个 Workflow</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>方式一：提示词触发</h4>
+                        <p>在提示词中包含 <code>ultracode</code> 关键字，或用自然语言说 "use a workflow"。</p>
+                        <pre><code>ultracode: 审查 src/routes/ 下
+每个端点是否缺少认证检查</code></pre>
+                        <p>Claude Code 会高亮关键字并显示确认提示，按 <code>Esc</code> 取消。如果快捷键无效，用鼠标点击 "No" 按钮也可以取消。</p>
+                    </div>
+                    <div class="card">
+                        <h4>方式二：全局 ultracode</h4>
+                        <p>设置 <code>/effort ultracode</code>，Claude 自动为每个重要任务规划 Workflow。</p>
+                        <pre><code>/effort ultracode</code></pre>
+                        <p>每个请求可能变成多个连续 Workflow：理解 → 实现 → 验证。<strong>更费 token</strong>，适合关键任务。</p>
+                    </div>
+                    <div class="card">
+                        <h4>方式三：运行命令</h4>
+                        <p>直接运行内置或已保存的 Workflow 命令。</p>
+                        <pre><code><span style="color: var(--text-muted);"># 内置</span>
+/deep-research Claude Code hooks 原理
+
+<span style="color: var(--text-muted);"># 保存过的自定义</span>
+/vue-newsletter {"weekStart":"2026-06-04"}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 保存与复用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>保存与复用</h2>
+                <h4>一次写好、反复运行的 Workflow 才是真正的价值</h4>
+                <pre><code><span style="color: var(--text-muted);"># 查看运行中的工作流</span>
+/workflows
+
+<span style="color: var(--text-muted);"># 选择一个成功的运行，按 s 保存</span>
+<span style="color: var(--text-muted);"># 保存位置选择：</span>
+<span style="color: var(--success-color);">  .claude/workflows/   ← 项目级（团队共享，随仓库分发）</span>
+<span style="color: var(--info-color);">  ~/.claude/workflows/ ← 个人级（所有项目可用，仅自己可见）</span></code></pre>
+                <pre><code><span style="color: var(--text-muted);"># 保存后像 slash command 一样调用</span>
+/my-code-review
+
+<span style="color: var(--text-muted);"># 传入参数</span>
+/triage-issues issues 1024, 1025, and 1030
+
+<span style="color: var(--text-muted);"># 同名时，项目级优先于个人级</span></code></pre>
+                <div class="key-point">
+                    <strong>为什么保存很重要：</strong>动态 Workflow 是 Claude 每次即时生成的脚本。如果你发现某次运行的编排恰好是你想要的——保存它。下次直接按名字调用，保证每次用<strong>完全相同的编排结构</strong>，而不是让 Claude 重新规划。
+                </div>
+            </div>
+        </section>
+
+        <!-- 实战示例：代码审查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：代码审查</h2>
+                <h4>多维度审查 + 对抗性验证的完整 Workflow</h4>
+                <pre><code>export const meta = {
+  name: 'review-changes',
+  description: 'Review changed files across dimensions, verify each finding',
+  phases: [
+    { title: 'Review', detail: '三个维度并行审查' },
+    { title: 'Verify', detail: '对抗性验证每个发现' },
+  ],
+};
+
+const DIMENSIONS = [
+  { key: 'bugs',     prompt: 'Review for correctness bugs...' },
+  { key: 'perf',     prompt: 'Review for performance issues...' },
+  { key: 'security', prompt: 'Review for security vulnerabilities...' },
+];
+
+const results = await pipeline(
+  DIMENSIONS,
+  (d) => agent(d.prompt, {
+    label: `review:${d.key}`,
+    phase: 'Review',
+    schema: FINDINGS_SCHEMA
+  }),
+  (review) => parallel(review.findings.map(f => () =>
+    agent(`Adversarially verify: ${f.title}`, {
+      label: `verify:${f.file}`,
+      phase: 'Verify',
+      schema: VERDICT_SCHEMA
+    }).then(v => ({ ...f, verdict: v }))
+  ))
+);
+
+const confirmed = results.flat()
+  .filter(Boolean)
+  .filter(f => f.verdict?.isReal);
+return { confirmed };</code></pre>
+            </div>
+        </section>
+
+        <!-- 运行管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行管理</h2>
+                <h4>查看进度、暂停恢复、成本控制</h4>
+                <pre><code><span style="color: var(--text-muted);"># 查看所有运行</span>
+/workflows
+
+<span style="color: var(--text-muted);"># 在进度视图中可用的快捷键：</span>
+↑/↓        选择阶段或代理
+Enter/→    展开查看详细内容
+p          暂停或恢复运行
+x          停止选中的代理或整个工作流
+s          保存脚本为命令
+Esc        返回上一层</code></pre>
+                <div class="info-block">
+                    <strong>注意：</strong>快捷键可能因版本而异。如果 <code>p</code> 暂停无效，用 <code>/workflows</code> 进入视图后点击暂停按钮即可。
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>暂停与恢复</h4>
+                        <p>停止后可以恢复。已完成的 <code>agent()</code> 调用从 Journal 缓存直接返回，只重新执行未完成或被修改的部分。</p>
+                        <p><strong>注意：</strong>恢复只在同一会话内有效。退出 Claude Code 后再启动会重新开始。</p>
+                    </div>
+                    <div class="card">
+                        <h4>成本控制</h4>
+                        <p>一个 Workflow 可能消耗大量 token。建议：</p>
+                        <ul>
+                            <li>先在小范围试跑（一个目录而非整个仓库）</li>
+                            <li><code>/workflows</code> 视图显示每个代理的 token 用量</li>
+                            <li>可随时停止，已完成的工作不会丢失</li>
+                            <li>用 <code>/model</code> 确认当前模型</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 运行约束 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行约束</h2>
+                <h4>Workflow Runtime 的安全边界</h4>
+                <table>
+                    <thead><tr><th>约束</th><th>原因</th></tr></thead>
+                    <tbody>
+                        <tr><td>无运行中用户输入</td><td>只有代理权限提示可以暂停运行。需要人工审批的阶段，拆成独立的 Workflow</td></tr>
+                        <tr><td>无直接文件系统或 Shell 访问</td><td>代理负责读写和执行命令，脚本只负责协调代理</td></tr>
+                        <tr><td>最多 16 个并发代理</td><td>限制本地资源使用（CPU 核心数较少时自动降低）</td></tr>
+                        <tr><td>每次运行最多 1000 个代理</td><td>防止失控循环</td></tr>
+                        <tr><td><code>Date.now()</code> 等抛错</td><td>保证 Journal 缓存的可恢复性——非确定性函数会使缓存失效</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>为什么禁止 Date.now()：</strong>Workflow 用 Journal 记录每个 <code>agent()</code> 调用的输入和输出。暂停后恢复时，相同输入直接返回缓存结果。如果脚本里用了 <code>Date.now()</code>，每次恢复都会得到不同值，缓存全部失效。如果需要时间戳，通过 <code>args</code> 从外部传入。
+                </div>
+            </div>
+        </section>
+
+        <!-- 关闭 Workflow -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>关闭 Workflow</h2>
+                <h4>三种方式禁用 Dynamic Workflows</h4>
+                <table>
+                    <thead><tr><th>方式</th><th>持久性</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>/config</code> 切换</td><td>跨会话</td><td>在设置中关闭 "Dynamic workflows" 开关</td></tr>
+                        <tr><td><code>settings.json</code></td><td>跨会话</td><td>设置 <code>"disableWorkflows": true</code></td></tr>
+                        <tr><td>环境变量</td><td>启动时读取</td><td><code>CLAUDE_CODE_DISABLE_WORKFLOWS=1</code></td></tr>
+                    </tbody>
+                </table>
+                <p>关闭后：<code>ultracode</code> 关键字不再触发、<code>/deep-research</code> 不可用、<code>/effort ultracode</code> 从菜单中移除。</p>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>ultracode 不触发</h4>
+                        <p><strong>症状：</strong>提示词包含 ultracode 但 Claude 没有生成 Workflow。</p>
+                        <p><strong>修复：</strong>Workflow 触发需要同时满足两个条件：</p>
+                        <ol>
+                            <li>环境变量 <code>CLAUDE_CODE_WORKFLOWS=1</code>（字符串，不是数字）</li>
+                            <li>账户计划支持 Dynamic Workflows（Max/Team/Enterprise 默认开启，Pro 需在 <code>/config</code> 手动启用）</li>
+                        </ol>
+                        <p>用 <code>echo $CLAUDE_CODE_WORKFLOWS</code> 确认变量已设置。如果用 <code>/config</code> 找不到 "Dynamic workflows" 开关，说明当前账户未支持该功能。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>运行卡住不动</h4>
+                        <p><strong>症状：</strong>Workflow 启动后进度不动。</p>
+                        <p><strong>修复：</strong>可能是权限提示在等待你批准。用 <code>/workflows</code> 查看状态。把需要的命令提前加入 <code>allowedTools</code>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>schema 匹配失败</h4>
+                        <p><strong>症状：</strong>代理反复重试，消耗大量 token。</p>
+                        <p><strong>修复：</strong>简化 schema 定义，减少 required 字段，或去掉嵌套层级。过于复杂的 schema 会导致模型反复尝试。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>token 消耗过快</h4>
+                        <p><strong>症状：</strong>一次运行消耗远超预期。</p>
+                        <p><strong>修复：</strong>先在小范围试跑。检查 <code>/model</code>，考虑对简单阶段用更小的模型。停止运行不会丢失已完成的工作。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>Date.now() 报错</h4>
+                        <p><strong>症状：</strong>脚本执行时报 "Date.now is not available"。</p>
+                        <p><strong>修复：</strong>这是设计限制。通过 <code>args</code> 传入时间戳。用 index 值（而非随机数）来区分代理。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>恢复后结果不同</h4>
+                        <p><strong>症状：</strong>暂停后恢复，结果跟之前不一样。</p>
+                        <p><strong>修复：</strong>如果修改了脚本，被修改的 <code>agent()</code> 调用会重新执行。只有参数不变的调用才使用缓存。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 动手练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>让 Claude 为你的项目生成一个 Workflow</h4>
+                <div class="key-point">
+                    <strong>任务：</strong>用 Workflow 对你当前项目做一次多维度代码审查。
+                </div>
+                <ol>
+                    <li>在 Claude Code 中输入带 <code>ultracode</code> 关键字的审查请求</li>
+                    <li>选择 "View raw script" 查看生成的脚本</li>
+                    <li>运行 Workflow，用 <code>/workflows</code> 监控进度</li>
+                    <li>运行完成后按 <code>s</code> 保存为可复用的命令</li>
+                </ol>
+                <div class="info-block">
+                    <strong>提示词参考：</strong>
+                    <code>ultracode: 审查 src/ 目录下所有文件的代码质量，从正确性、安全性、性能三个维度并行审查，每个发现经过 3 个独立验证者确认</code>
+                </div>
+            </div>
+        </section>
+
+        <!-- 参考答案 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参考答案</h2>
+                <h4>一个典型的审查 Workflow 运行过程</h4>
+                <pre><code><span style="color: var(--text-muted);"># 步骤 1：触发 Workflow</span>
+<span style="color: var(--success-color);">> ultracode: 审查 src/ 下所有文件，从正确性、安全性、性能
+> 三个维度并行审查，每个发现经过独立验证</span>
+
+<span style="color: var(--text-muted);"># 步骤 2：Claude 生成脚本，确认运行</span>
+Dynamic workflow requested for this turn · Alt+W to ignore
+
+<span style="color: var(--text-muted);"># 步骤 3：查看运行进度</span>
+/workflows
+<span style="color: var(--text-muted);"># 输出示例：</span>
+┌─ Review ────────── 3/3 agents ──── 45,230 tokens ──
+│  review:bugs     ✅ 12 findings
+│  review:perf     ✅ 8 findings
+│  review:security ✅ 5 findings
+├─ Verify ────────── 25/25 agents ─── 183,400 tokens ─
+│  verify:auth.ts:42   2-1 ✓ survives
+│  verify:api.ts:108   1-2 ✗ killed
+│  ...
+└─ Complete ─ 11 confirmed findings
+
+<span style="color: var(--text-muted);"># 步骤 4：保存成功运行</span>
+Press <kbd>s</kbd> → save as "code-review" → .claude/workflows/
+
+<span style="color: var(--text-muted);"># 下次直接调用：</span>
+/code-review</code></pre>
+                <div class="key-point">
+                    <strong>关键步骤：</strong>触发 → 确认脚本 → 运行并监控 → 验证结果质量 → 保存可复用命令。
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>课程总回顾</h2>
+                <h4>十一章走完，从入门到大规模编排</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>到这里，你已经能</h4>
+                        <ul>
+                            <li>理解 Workflow 与 Subagents/Teams 的区别</li>
+                            <li>读懂和编写 Workflow 脚本</li>
+                            <li>使用 agent/parallel/pipeline 编排子代理</li>
+                            <li>应用对抗性验证等质量模式提升结果可信度</li>
+                            <li>保存和复用 Workflow 命令</li>
+                            <li>管理运行、控制成本、排查问题</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>完整课程路线</h4>
+                        <ul>
+                            <li><a href="./01-slash-commands.html">01</a> Slash Commands — 自制命令</li>
+                            <li><a href="./02-memory.html">02</a> Memory — 长期上下文</li>
+                            <li><a href="./03-skills.html">03</a> Skills — 可复用能力包</li>
+                            <li><a href="./04-subagents.html">04</a> Subagents — 角色分工</li>
+                            <li><a href="./05-mcp.html">05</a> MCP — 外部工具接入</li>
+                            <li><a href="./06-hooks.html">06</a> Hooks — 事件驱动自动化</li>
+                            <li><a href="./07-plugins.html">07</a> Plugins — 方案打包分发</li>
+                            <li><a href="./08-checkpoints.html">08</a> Checkpoints — 快照回退</li>
+                            <li><a href="./09-advanced-features.html">09</a> Advanced — 高级特性</li>
+                            <li><a href="./10-cli.html">10</a> CLI — 工程化入口</li>
+                            <li><strong>11 Workflow</strong> — 大规模子代理编排</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>Workflow 是 Claude Code 的编排引擎。它把"谁做什么、什么时候做"从模型的大脑移到了代码中。你写控制流，代理做思考，中间结果不占上下文。配合对抗性验证等质量模式，Workflow 产出的结果比单次对话更可信——这就是从"AI 助手"到"AI 工程团队"的关键一步。
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>官方文档</h4>
+                        <ul>
+                            <li><a href="https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code">A harness for every task: dynamic workflows in Claude Code</a> — 官方介绍，含六种编排模式详解</li>
+                            <li><a href="https://code.claude.com/docs/en/agent-teams">Orchestrate Teams of Claude Code Sessions</a> — Agent Teams 对比</li>
+                            <li><a href="https://code.claude.com/docs/en/sub-agents">Create Custom Subagents</a> — 子代理定义</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>社区资源</h4>
+                        <ul>
+                            <li><a href="https://www.infoq.com/news/2026/06/dynamic-workflows-claude-code/">Claude Code Adds Dynamic Workflows for Parallel Agent Coordination</a> — InfoQ 技术深度分析</li>
+                            <li><a href="https://github.com/ithiria894/awesome-claude-code-workflows">awesome-claude-code-workflows</a> — 社区工作流集合</li>
+                            <li><a href="https://github.com/shinpr/claude-code-workflows">shinpr/claude-code-workflows</a> — 生产级工作流框架</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

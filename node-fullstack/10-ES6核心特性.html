@@ -17,13 +17,30 @@
             <p>让 JavaScript 代码更简洁、更强大</p>
         </section>
 
-        <!-- 开场：问题驱动 -->
+        <!-- 开场：问题驱动（强化场景感） -->
         <section class="slide">
             <div class="slide-content">
-                <h3>你有没有想过</h3>
-                <h4>为什么别人的代码看起来干净利落，而你的总是又长又啰嗦？</h4>
-                <p>ES6（ECMAScript 2015）是 JavaScript 历史上最重要的一次更新。它引入了大量新语法，让你的代码更短、更清晰、更不容易出错。</p>
-                <p>本章将覆盖日常开发中使用频率最高的 ES6+ 特性。掌握它们，你的代码质量会上一个台阶。</p>
+                <h3>你接手了一个老项目</h3>
+                <h4>打开代码，满屏都是这样的写法：</h4>
+                <pre><code class="language-javascript">// 字符串拼接——引号和加号搅成一锅粥
+var msg = "Hello, " + user.name + "! 您的余额是 " + user.balance + " 元";
+
+// var 变量提升——深夜调试两小时，发现是 hoisting 导致的 bug
+for (var i = 0; i < buttons.length; i++) {
+    buttons[i].onclick = function() {
+        console.log("按钮" + i); // 永远打印最后一个值！
+    };
+}
+
+// 用 for 循环手动做数组转换——又长又不直观
+var names = [];
+for (var j = 0; j < users.length; j++) {
+    names.push(users[j].name);
+}
+
+// 多层嵌套取值——一层没判断就全线崩溃
+var city = user && user.address && user.address.city || "未知";</code></pre>
+                <p>ES6（ECMAScript 2015）是 JavaScript 历史上最重要的一次更新。模板字面量消灭拼接噩梦，<code>let/const</code> 堵住变量提升的坑，解构一行搞定提取，可选链让深层访问不再提心吊胆。本章覆盖日常开发中使用频率最高的 ES6+ 特性，掌握它们，上面那些代码都会成为历史。</p>
             </div>
         </section>
 
@@ -64,23 +81,56 @@ let msg = `Welcome ${isMember ? `back, ${name}` : "guest"}!`;</code></pre>
             </div>
         </section>
 
-        <!-- 标签模板 -->
+        <!-- 标签模板（充实讲解） -->
         <section class="slide">
             <div class="slide-content">
                 <h3>标签模板</h3>
-                <h4>自定义模板字符串的处理逻辑</h4>
-                <pre><code class="language-javascript">// 标签模板：函数 + 模板字面量
+                <h4>自定义模板的处理逻辑</h4>
+                <p><strong>标签模板</strong>是模板字面量的高级用法：在反引号前面放一个函数名，这个函数会接收到模板的所有字符串片段和嵌入值，你可以自由组合输出。</p>
+                <p>打个比方：普通模板字面量是"填空题直接交卷"，标签模板是"填空后先交给老师审阅再输出"——你在函数里决定最终格式。</p>
+                <pre><code class="language-javascript">// 基本结构：strings 是字符串片段数组，values 是所有 ${} 的值
 function highlight(strings, ...values) {
     return strings.reduce((result, str, i) => {
         let val = values[i] ? `&lt;mark&gt;${values[i]}&lt;/mark&gt;` : '';
         return result + str + val;
     }, '');
 }
+let name = "张三";
 let output = highlight`Hello ${name}, age ${25}`;
-// "Hello &lt;mark&gt;张三&lt;/mark&gt;, age &lt;mark&gt;25&lt;/mark&gt;"
+// "Hello &lt;mark&gt;张三&lt;/mark&gt;, age &lt;mark&gt;25&lt;/mark&gt;"</code></pre>
+            </div>
+        </section>
 
-// 原始字符串：不转义
+        <!-- 标签模板应用场景 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>标签模板实战</h3>
+                <h4>为什么需要标签模板？</h4>
+                <p>标签模板不是炫技，它在三个场景中不可替代：</p>
+                <pre><code class="language-javascript">// 场景1：安全转义 HTML——防 XSS 攻击
+function safeHTML(strings, ...values) {
+    let escape = s => String(s).replace(/&/g,'&amp;amp;').replace(/</g,'&amp;lt;').replace(/>/g,'&amp;gt;');
+    return strings.reduce((res, str, i) =>
+        res + str + (i < values.length ? escape(values[i]) : ''), '');
+}
+let userInput = "&lt;script&gt;alert('xss')&lt;/script&gt;";
+safeHTML`&lt;p&gt;评论：${userInput}&lt;/p&gt;`;
+// "&lt;p&gt;评论：&amp;lt;script&amp;gt;alert('xss')&amp;lt;/script&amp;gt;&lt;/p&gt;"
+
+// 场景2：SQL 参数化查询——防注入
+function sql(strings, ...values) {
+    return { text: strings.join('$' + (i => i)),
+             params: values };
+}
+let userId = "1; DROP TABLE users;";
+sql`SELECT * FROM users WHERE id = ${userId}`;
+// 参数和 SQL 分离，杜绝注入
+
+// 原始字符串：不转义反斜杠
 console.log(String.raw`C:\Users\name`); // "C:\\Users\\name"</code></pre>
+                <div class="intro-block">
+                    <p>场景3 是国际化（i18n）：根据语言环境替换模板中的词汇和日期格式。标签函数可以根据 <code>locale</code> 决定值的输出形式，比手动拼接更安全、更易维护。</p>
+                </div>
             </div>
         </section>
 
@@ -265,6 +315,7 @@ let features = [
                 <h3>Set 集合</h3>
                 <h4>自动去重的值集合</h4>
                 <p><strong>Set</strong> 是一组唯一值的集合，同一个值只能出现一次。</p>
+                <p>打个比方：Set 像"会员名单"——名字只能登记一次，重复登记自动忽略。</p>
                 <pre><code class="language-javascript">let set = new Set();
 set.add(1);
 set.add(2);
@@ -294,6 +345,7 @@ let difference = new Set([...a].filter(x => !b.has(x))); // 差集 {1}</code></p
                 <h3>Map 映射</h3>
                 <h4>键可以是任意类型的字典</h4>
                 <p><strong>Map</strong> 是键值对集合，和普通对象最大的区别是：<strong>键可以是任意类型</strong>（对象、函数等）。</p>
+                <p>打个比方：Object 像"名片夹"——只能用名字查找；Map 像"储物柜"——钥匙可以是任何东西（卡片、指纹、手环）。</p>
                 <pre><code class="language-javascript">let map = new Map();
 map.set("name", "张三");
 map.set(42, "the answer");
@@ -316,6 +368,32 @@ let obj2 = Object.fromEntries(map2);</code></pre>
             </div>
         </section>
 
+        <!-- Map vs Object 对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Map 还是 Object?</h3>
+                <h4>何时用 Map，何时用 Object？</h4>
+                <p>很多同学疑惑：Map 能做的事 Object 也能做，为什么还要学 Map？关键看你的场景：</p>
+                <table>
+                    <thead>
+                        <tr><th>对比维度</th><th>Object</th><th>Map</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>键的类型</td><td>字符串 / Symbol</td><td>任意类型（对象、函数、数字等）</td></tr>
+                        <tr><td>键的顺序</td><td>整数键优先排序</td><td>按插入顺序</td></tr>
+                        <tr><td>大小获取</td><td>需手动计算 <code>Object.keys().length</code></td><td>直接 <code>.size</code></td></tr>
+                        <tr><td>遍历性能</td><td>键少时快</td><td>频繁增删时更快</td></tr>
+                        <tr><td>序列化</td><td>直接 <code>JSON.stringify</code></td><td>需手动转换</td></tr>
+                        <tr><td>原型链</td><td>有（可能被污染）</td><td>无（更安全）</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>选 Object</strong>：定义数据结构（用户、配置项）、需要 JSON 序列化、键是固定字符串。</p>
+                    <p><strong>选 Map</strong>：频繁增删键值对、键不是字符串（如 DOM 元素做键）、需要保证遍历顺序、运行时才知道有哪些键。</p>
+                </div>
+            </div>
+        </section>
+
         <!-- 分部标题：Symbol -->
         <section class="slide">
             <div class="slide-content">
@@ -325,32 +403,63 @@ let obj2 = Object.fromEntries(map2);</code></pre>
             </div>
         </section>
 
-        <!-- WeakMap/WeakSet -->
+        <!-- WeakMap/WeakSet（充实讲解） -->
         <section class="slide">
             <div class="slide-content">
                 <h3>WeakMap/WeakSet</h3>
-                <h4>不阻止垃圾回收的"弱引用"集合</h4>
-                <p><code>Map</code> 和 <code>Set</code> 会强引用它们的键/值——即使你不再需要某个对象，只要它还在 Map 里，就不会被回收。<code>WeakMap</code> 和 <code>WeakSet</code> 解决了这个问题。</p>
+                <h4>不阻止垃圾回收的集合</h4>
+                <p><strong>WeakMap/WeakSet</strong> 是"弱引用"版本的 Map/Set。它们对键（或元素）持有弱引用——当一个对象不再被其他地方引用时，即使它还在 WeakMap 里，也会被垃圾回收自动清理。</p>
+                <p>打个比方：普通 Map 像"保险箱"——东西放进去就锁住了，没人要也不会扔。WeakMap 像"租的储物柜"——租户走了（对象被回收），柜子自动清空。</p>
                 <pre><code class="language-javascript">// WeakMap：键必须是对象，键被回收时条目自动消失
 let cache = new WeakMap();
 let obj = { data: "重要数据" };
 cache.set(obj, "处理结果");
 console.log(cache.get(obj)); // "处理结果"
-obj = null; // 原对象被回收，cache 中的条目自动消失
+obj = null; // 原对象被回收，cache 中的条目自动消失</code></pre>
+            </div>
+        </section>
 
-// 典型用途：为 DOM 元素或对象附加数据，不阻止其被回收
+        <!-- WeakMap/WeakSet 应用场景 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Weak 实战场景</h3>
+                <h4>什么时候该用 Weak？</h4>
+                <pre><code class="language-javascript">// 场景1：DOM 元素关联数据——元素删除后数据自动清理
 let elementData = new WeakMap();
 function bindData(el, data) {
     elementData.set(el, data);
 }
+// 当 el 从 DOM 中移除，elementData 中的条目自动消失
+// 不会造成内存泄漏！
 
-// WeakSet：只存对象引用，适合做"标记"
+// 场景2：缓存计算结果——对象不用时缓存自动清除
+let computeCache = new WeakMap();
+function expensiveCompute(obj) {
+    if (computeCache.has(obj)) return computeCache.get(obj);
+    let result = /* 耗时计算 */ obj.value * 2;
+    computeCache.set(obj, result);
+    return result;
+}
+
+// 场景3：存储私有数据——外部无法访问
+let privateData = new WeakMap();
+class User {
+    constructor(name, secret) {
+        privateData.set(this, { secret });
+        this.name = name;
+    }
+    getSecret() { return privateData.get(this).secret; }
+}
+
+// WeakSet：做"已处理"标记
 let processed = new WeakSet();
-function markDone(task) {
+function processOnce(task) {
+    if (processed.has(task)) return; // 跳过已处理的
     processed.add(task);
+    // 处理逻辑...
 }</code></pre>
                 <div class="intro-block">
-                    <p>WeakMap/WeakSet 不可遍历、没有 <code>size</code> 属性、没有 <code>keys()/values()</code> 方法。它们是"只有存取、没有遍历"的轻量容器。在框架和库中经常用于缓存和私有数据存储。</p>
+                    <p>WeakMap/WeakSet 不可遍历、没有 <code>size</code> 属性、没有 <code>keys()/values()</code> 方法。这是设计如此——因为条目随时可能被垃圾回收清理，遍历结果不可预测。在框架（Vue、React）和库中广泛用于缓存和私有数据存储。</p>
                 </div>
             </div>
         </section>
@@ -359,7 +468,7 @@ function markDone(task) {
         <section class="slide">
             <div class="slide-content">
                 <h3>Symbol 类型</h3>
-                <h4>每次调用都生成一个唯一标识</h4>
+                <h4>每次调用都生成唯一标识</h4>
                 <p><strong>Symbol</strong> 是 ES6 引入的第七种原始类型。每个 <code>Symbol()</code> 调用都返回一个独一无二的值，即使描述相同。</p>
                 <pre><code class="language-javascript">let s1 = Symbol("description");
 let s2 = Symbol("description");
@@ -396,8 +505,9 @@ console.log(g1 === g2); // true</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h3>可选链 ?.</h3>
-                <h4>安全访问嵌套属性，不报错</h4>
+                <h4>安全访问嵌套属性</h4>
                 <p><strong>可选链</strong>（Optional Chaining）让你安全地访问深层属性。如果中间某层是 <code>null</code> 或 <code>undefined</code>，直接返回 <code>undefined</code> 而不报错。</p>
+                <p>打个比方：可选链像"快递柜逐层找包裹"——某一层是空的，就返回"没找到"，而不是把整个柜子砸了。</p>
                 <pre><code class="language-javascript">let user = { address: { city: "北京" } };
 
 // 以前：需要一层层判断
@@ -420,7 +530,7 @@ console.log(arr?.[0]); // undefined</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h3>空值合并 ??</h3>
-                <h4>只在 null/undefined 时才用默认值</h4>
+                <h4>只在 null/undefined 时兜底</h4>
                 <p><strong>空值合并运算符</strong>（<code>??</code>）只在值为 <code>null</code> 或 <code>undefined</code> 时返回右侧的默认值。和 <code>||</code> 不同，<code>0</code>、<code>""</code>、<code>false</code> 都被视为有效值。</p>
                 <pre><code class="language-javascript">// ?? vs || 的关键区别
 console.log(0 || "default");    // "default"（0 是 falsy）
@@ -480,6 +590,71 @@ cleanUsers(rawUsers);
             </div>
         </section>
 
+        <!-- 练习四：Map/Set -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习四：购物车</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>用 Map + Set 实现购物车</h3>
+                        <p><strong>任务</strong>：实现一个购物车类，支持添加商品、去重、按分类筛选、统计。</p>
+                        <pre><code class="language-javascript">class ShoppingCart {
+    // 用 Map 存商品 { id => { name, price, category } }
+    // 用 Set 记录已有的分类
+
+    addItem(item)  { /* 添加商品，重复 id 覆盖 */ }
+    getItemsByCategory(cat) { /* 返回某分类的所有商品 */ }
+    getCategories()   { /* 返回所有分类名 */ }
+    getTotal()        { /* 计算总价 */ }
+    removeItem(id)    { /* 按 id 删除 */ }
+}
+
+// 测试用例
+const cart = new ShoppingCart();
+cart.addItem({ id: 1, name: "JS权威指南", price: 99, category: "书籍" });
+cart.addItem({ id: 2, name: "机械键盘", price: 299, category: "外设" });
+cart.addItem({ id: 3, name: "ES6入门", price: 69, category: "书籍" });
+cart.addItem({ id: 2, name: "机械键盘Pro", price: 399, category: "外设" }); // 覆盖
+
+console.log(cart.getTotal());           // 567
+console.log(cart.getCategories());      // ["书籍", "外设"]
+console.log(cart.getItemsByCategory("书籍").length); // 2</code></pre>
+                        <p><strong>要求</strong>：内部用 <code>Map</code> 存商品（id 做 key），用 <code>Set</code> 维护分类列表。添加时自动去重（相同 id 覆盖）。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">class ShoppingCart {
+    #items = new Map();     // id => item
+    #categories = new Set();
+
+    addItem(item) {
+        this.#items.set(item.id, item);
+        this.#categories.add(item.category);
+    }
+    removeItem(id) {
+        let item = this.#items.get(id);
+        if (!item) return;
+        this.#items.delete(id);
+        // 检查该分类下是否还有商品
+        let remaining = [...this.#items.values()]
+            .some(i => i.category === item.category);
+        if (!remaining) this.#categories.delete(item.category);
+    }
+    getItemsByCategory(cat) {
+        return [...this.#items.values()]
+            .filter(i => i.category === cat);
+    }
+    getCategories() { return [...this.#categories]; }
+    getTotal() {
+        return [...this.#items.values()]
+            .reduce((sum, i) => sum + i.price, 0);
+    }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- 排错 -->
         <section class="slide">
             <div class="slide-content">
@@ -503,10 +678,18 @@ cleanUsers(rawUsers);
                 <h4>问题四：<code>??</code> 和 <code>&&</code> / <code>||</code> 不能混用</h4>
                 <p><strong>原因</strong>：<code>a ?? b || c</code> 会报语法错误，因为优先级不明确。</p>
                 <p><strong>修复</strong>：加括号明确优先级：<code>(a ?? b) || c</code>。</p>
+
+                <h4>问题五：Map 用对象做键，必须是同一个引用</h4>
+                <p><strong>原因</strong>：<code>map.get({ id: 1 })</code> 每次创建新对象，引用不同，取不到值。</p>
+                <p><strong>修复</strong>：用变量保存引用，或改用原始值（字符串/数字）做键。</p>
+
+                <h4>问题六：WeakMap 遍历会报错</h4>
+                <p><strong>原因</strong>：WeakMap/WeakSet 没有迭代器，不支持 <code>for...of</code>、<code>forEach</code>、<code>size</code>。</p>
+                <p><strong>修复</strong>：如果需要遍历，说明你不该用 WeakMap——改用普通 Map。</p>
             </div>
         </section>
 
-        <!-- 练习 -->
+        <!-- 练习一和练习二 -->
         <section class="slide">
             <div class="slide-content">
                 <h3>动手练一练</h3>
@@ -562,6 +745,11 @@ users.forEach(u => console.log(getCity(u)));
         <section class="slide title-slide">
             <h1>下一章</h1>
             <p>你已经掌握了 ES6+ 最核心的特性。下一章我们进入 <strong>异步编程核心</strong>——学习 Promise、async/await，让你的代码能处理耗时任务而不"卡死"。</p>
+        
+            <div class="chapter-turn-nav">
+                <a href="./09-原型与面向对象.html" class="chapter-turn-prev">← 上一章：原型与面向对象</a>
+                <a href="./11-异步编程核心.html" class="chapter-turn-next">下一章：异步编程核心 →</a>
+            </div>
         </section>
 
     </main>

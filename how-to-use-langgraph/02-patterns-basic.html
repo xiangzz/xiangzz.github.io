@@ -322,6 +322,9 @@ const llmWithTools = llm.bindTools([multiply]);
         <section class="slide">
             <div class="slide-content">
                 <h2>链式调用代码</h2>
+                <div class="warning">
+                    <strong>思考题：</strong>你想让 AI 写一个笑话，但要求质量过关：先写初稿，检查质量——太烂就短路结束，过关才继续改进和抛光。中间有一步不通过就"短路"，怎么实现？
+                </div>
                 <pre><code class="language-javascript">import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
 import * as z from "zod";
 
@@ -354,6 +357,7 @@ const polishJoke: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   );
   return { finalJoke: msg.content };
 };</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/02_prompt_chaining.ts">📄 完整代码：02_prompt_chaining.ts</a></p>
             </div>
         </section>
 
@@ -364,6 +368,9 @@ const polishJoke: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
             <div class="slide-content">
                 <h2>质量门控</h2>
                 <h4>核心机制：<code>addConditionalEdges</code> + <code>ConditionalEdgeRouter</code></h4>
+                <div class="warning">
+                    <strong>思考题：</strong>Prompt Chaining 模式中，如何用条件边实现"质量门控"——初稿质量不通过时直接跳到 END，跳过后续改进步骤？
+                </div>
                 <pre><code class="language-javascript">// 质量门函数 —— 检查笑话是否包含 ? 或 !（简单判断是否有笑点）
 const checkPunchline: ConditionalEdgeRouter&lt;typeof State, "improveJoke"&gt; = (state) =&gt; {
   if (state.joke?.includes("?") || state.joke?.includes("!")) {
@@ -393,6 +400,7 @@ const result = await chain.invoke({ topic: "cats" });</code></pre>
                 <div class="warning">
                     <strong>注意：</strong><code>ConditionalEdgeRouter</code> 的第二个泛型参数是所有可能的返回值对应的节点名。返回字符串必须和 <code>addConditionalEdges</code> 的映射对象的 key 完全一致，否则运行时报错。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/02_prompt_chaining.ts">📄 完整代码：02_prompt_chaining.ts</a></p>
             </div>
         </section>
 
@@ -431,6 +439,9 @@ const result = await chain.invoke({ topic: "cats" });</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h2>并行执行代码</h2>
+                <div class="warning">
+                    <strong>思考题：</strong>你要给用户展示一个话题的三种创作风格：笑话、小故事、打油诗。串行写太慢了，能不能三个同时写，最后汇总？
+                </div>
                 <pre><code class="language-javascript">import { StateGraph, StateSchema, GraphNode, START, END } from "@langchain/langgraph";
 import * as z from "zod";
 
@@ -480,6 +491,7 @@ const parallelWorkflow = new StateGraph(State)
   .compile();
 
 const result = await parallelWorkflow.invoke({ topic: "cats" });</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/02_parallelization.ts">📄 完整代码：02_parallelization.ts</a></p>
             </div>
         </section>
 
@@ -519,6 +531,9 @@ const result = await parallelWorkflow.invoke({ topic: "cats" });</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h2>路由代码实现</h2>
+                <div class="warning">
+                    <strong>思考题：</strong>你在做一个智能客服，用户的问题有不同类型。你需要先判断类型，再把问题转给对应的专家处理。怎么实现"一个入口，多条出路"？
+                </div>
                 <pre><code class="language-javascript">import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
 import * as z from "zod";
 
@@ -559,6 +574,7 @@ const routeDecision: ConditionalEdgeRouter&lt;typeof State, "llmCall1" | "llmCal
   else if (state.decision === "joke") return "llmCall2";
   else return "llmCall3";
 };</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/02_routing.ts">📄 完整代码：02_routing.ts</a></p>
             </div>
         </section>
 
@@ -568,6 +584,9 @@ const routeDecision: ConditionalEdgeRouter&lt;typeof State, "llmCall1" | "llmCal
         <section class="slide">
             <div class="slide-content">
                 <h2>路由图构建</h2>
+                <div class="warning">
+                    <strong>思考题：</strong>路由工作流中，addConditionalEdges 的对象映射和数组列表两种写法有什么区别？分别在什么场景下使用？
+                </div>
                 <pre><code class="language-javascript">// 构建路由工作流
 const routerWorkflow = new StateGraph(State)
   .addNode("llmCall1", llmCall1)
@@ -602,6 +621,7 @@ console.log(result.output);</code></pre>
                         <p>返回值本身就是节点名 → 用数组列表，更简洁</p>
                     </div>
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/02_routing.ts">📄 完整代码：02_routing.ts</a></p>
             </div>
         </section>
 
@@ -635,6 +655,10 @@ console.log(result.output);</code></pre>
                         <div class="info-block" style="margin-top: 8px;">
                             <strong>排查方法：</strong>并行节点的输出字段要分开命名，或使用 <code>ReducedValue</code> 做合并。
                         </div>
+                        <div class="warning" style="margin-top: 8px;">
+                            <strong>思考题：</strong>两个节点并行执行，都要往同一个字段写结果，最终只保留了一个节点的输出。怎么让两个节点的结果都保留？
+                        </div>
+                        <p style="text-align: right; font-size: 0.85em;"><a href="./codes/02_reduced_value.ts">📄 完整代码：02_reduced_value.ts</a></p>
                     </div>
                 </div>
                 <div class="warning" style="margin-top: 16px;">

@@ -113,6 +113,9 @@
                     - 避免：过度装饰、3D 效果、杂乱的颜色、小到看不清的文字
                     </p>
                 </div>
+                <div class="warning">
+                    <strong>思考题：</strong>你想让 AI 自动生成一个笑话：先随机选一个话题，再根据这个话题写笑话。这两个步骤有先后顺序，怎么用代码表达？
+                </div>
                 <pre><code class="language-javascript">// 安装依赖
 $ npm install @langchain/langgraph @langchain/core
 
@@ -147,6 +150,7 @@ const result = await graph.invoke({
                         <li><code>TypeError: StateSchema is not a constructor</code> → 检查是否使用 ESM（<code>"type": "module"</code> in <code>package.json</code>）或用 <code>.mjs</code> 后缀</li>
                     </ul>
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/01_hello_world.ts">📄 完整代码：01_hello_world.ts</a></p>
                 <div class="key-point">
                     <strong>三个关键字：</strong><code>StateSchema</code>（定义共享状态）、<code>addNode</code>（添加节点函数）、<code>addEdge</code>（连线）。这就是 LangGraph 的最小知识集。
                 </div>
@@ -383,6 +387,9 @@ const result = await graph.invoke({
                         </ul>
                     </div>
                 </div>
+                <div class="warning">
+                    <strong>思考题：</strong>你在写一个「项目评审系统」，多个评审员会同时给项目打分、写评语。你需要记录当前状态、收集所有评审员的标签（不互相覆盖）、累加评审次数。怎么设计一个 State 能同时满足这些需求？
+                </div>
                 <pre><code class="language-javascript">import { StateSchema } from "@langchain/langgraph";
 import * as z from "zod";
 
@@ -407,6 +414,7 @@ const EmailAgentState = new StateSchema({
   // 生成的内容
   responseText: z.string().optional(),
 });</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/01_state_design.ts">📄 完整代码：01_state_design.ts</a></p>
                 <div class="key-point">
                     <strong>为什么存原始数据：</strong>不同节点可以用不同方式格式化同一份数据。你改提示词模板时不用改状态结构，调试也更清晰——每个节点接收的就是纯数据，不是掺了格式的文本。
                 </div>
@@ -419,6 +427,9 @@ const EmailAgentState = new StateSchema({
                 <h2>第四步：写节点</h2>
                 <h4>节点就是一个函数——接收当前状态，返回对状态的更新</h4>
                 <p>说白了，每个节点就是 <code>(state) =&gt; { return { key: newValue } }</code>。返回值会<strong>合并</strong>到状态里，传给下一个节点。</p>
+                <div class="warning">
+                    <strong>思考题：</strong>你的 Agent 运行中可能遇到各种错误——网络超时、LLM 返回格式不对、需要用户提供信息、服务器崩溃。每种错误的处理方式不同，怎么区分和应对？
+                </div>
                 <pre><code class="language-javascript">// 分类节点：调用 LLM 分析邮件意图
 const classifyIntent: GraphNode&lt;typeof EmailAgentState&gt; = async (state) =&gt; {
   const prompt = `请分析以下邮件的意图和紧急程度：
@@ -434,6 +445,7 @@ const searchDocs: GraphNode&lt;typeof EmailAgentState&gt; = async (state) =&gt; 
   const results = await knowledgeBase.search(state.classification?.topic);
   return { searchResults: results };
 };</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/01_error_handling.ts">📄 完整代码：01_error_handling.ts</a></p>
                 <h4>错误处理策略——不同错误，不同解法</h4>
                 <table>
                     <thead>
@@ -466,12 +478,16 @@ const searchDocs: GraphNode&lt;typeof EmailAgentState&gt; = async (state) =&gt; 
                         </tr>
                     </tbody>
                 </table>
+                <div class="warning">
+                    <strong>思考题：</strong>你需要调用一个不稳定的外部 API，它有时超时、有时限流。你不想一失败就放弃，但也不能无限重试。怎么设计一个"最多重试 N 次"的机制？
+                </div>
                 <pre><code class="language-javascript">// 给容易出网络问题的节点加重试策略
 workflow.addNode(
   "searchDocumentation",
   searchDocumentation,
   { retryPolicy: { maxAttempts: 3, initialInterval: 1.0 } }
 );</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/01_retry_policy.ts">📄 完整代码：01_retry_policy.ts</a></p>
             </div>
         </section>
 
@@ -498,6 +514,9 @@ workflow.addNode(
                         <p><code>return new Command({ goto: "nodeX" })</code></p>
                     </div>
                 </div>
+                <div class="warning">
+                    <strong>思考题：</strong>你写了一个「审批流程」图，有三个出口：通过→进入 publish 节点、驳回→进入 reject 节点、需要修改→同时更新状态并跳回 review 节点。能不能在节点内部直接决定"下一步去哪"？
+                </div>
                 <pre><code class="language-javascript">import { MemorySaver, StateGraph, START, END } from "@langchain/langgraph";
 
 // 创建图并连线
@@ -519,6 +538,7 @@ const workflow = new StateGraph(EmailAgentState)
 // 用 checkpointer 编译，启用持久化
 const memory = new MemorySaver();
 const app = workflow.compile({ checkpointer: memory });</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/01_command_routing.ts">📄 完整代码：01_command_routing.ts</a></p>
                 <div class="key-point">
                     <strong>图结构非常精简：</strong>因为路由逻辑通过条件边和 Command 对象在节点内部完成。你只需要连"必要的边"，其余的由节点自己决定去哪。这让控制流显式且可追踪。
                 </div>

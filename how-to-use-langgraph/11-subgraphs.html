@@ -152,6 +152,9 @@
             <div class="slide-content">
                 <h2>节点内调用</h2>
                 <h4>父子图状态不同时，在节点函数内调用子图并转换状态</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>主图的 State 是 input + output + stats，子图的 State 是 text + processedText + wordCount，两边的字段名完全不同，怎么让它们互相通信？
+                </div>
                 <pre><code class="language-javascript">// 子图 — 有自己的状态 { bar }
 const SubgraphState = new StateSchema({ bar: z.string() });
 
@@ -174,6 +177,7 @@ const graph = new StateGraph(State)
   })
   .addEdge(START, "node1")
   .compile();</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/11_call_inside_node.ts">📄 完整代码：11_call_inside_node.ts</a></p>
                 <div class="info-block">
                     <strong>模式：</strong>在节点函数内手动完成 foo → bar 的输入映射，调用子图，再把 bar → foo 映射回来。两个图完全独立，各自维护自己的状态结构。
                 </div>
@@ -185,6 +189,9 @@ const graph = new StateGraph(State)
             <div class="slide-content">
                 <h2>直接作为节点</h2>
                 <h4>父子图共享状态键时，直接传入编译后的子图</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>主图和子图都用 messages 字段，每次都写 wrapper 节点手动映射太繁琐了，既然字段名一样，能不能让 LangGraph 自动处理 State 的传入传出？
+                </div>
                 <pre><code class="language-javascript">// 父子图共享 { foo } 状态
 const State = new StateSchema({ foo: z.string() });
 
@@ -200,6 +207,7 @@ const graph = new StateGraph(State)
   .addNode("node1", subgraph)  // 直接传！
   .addEdge(START, "node1")
   .compile();</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/11_direct_as_node.ts">📄 完整代码：11_direct_as_node.ts</a></p>
                 <div class="key-point">
                     <strong>简洁很多：</strong>不需要包装函数，不需要状态映射。子图直接读取和更新父图的状态。只要两边的 StateSchema 有相同的键就行。
                 </div>
@@ -211,6 +219,9 @@ const graph = new StateGraph(State)
             <div class="slide-content">
                 <h2>子图持久化</h2>
                 <h4>子图的检查点行为取决于它的 checkpointer 配置</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>子图需要 checkpointer 吗？如果子图是纯计算（输入→输出），加了 checkpointer 反而浪费性能；如果需要记忆跨调用状态，不加又不行。三种模式该选哪个？
+                </div>
                 <table>
                     <thead><tr><th>模式</th><th>checkpointer</th><th>行为</th></tr></thead>
                     <tbody>
@@ -233,6 +244,7 @@ const graph = new StateGraph(State)
                         </table>
                     </div>
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/11_persistence_modes.ts">📄 完整代码：11_persistence_modes.ts</a></p>
             </div>
         </section>
 
@@ -241,6 +253,9 @@ const graph = new StateGraph(State)
             <div class="slide-content">
                 <h2>查看子图状态</h2>
                 <h4>用 subgraphs: true 选项查看子图内部状态</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>主图把子图当节点用，运行完了想看子图内部的中间状态——比如 step1 输出了什么、step2 又改了什么。默认 getState 只能看到主图层面，子图是黑盒，怎么透视子图内部？
+                </div>
                 <pre><code class="language-javascript">// 查看当前调用的子图状态
 const subgraphState = (await graph.getState(config, { subgraphs: true }))
   .tasks[0].state;</code></pre>
@@ -251,6 +266,7 @@ for await (const chunk of await graph.stream(
 )) {
   console.log(chunk);
 }</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/11_subgraph_state.ts">📄 完整代码：11_subgraph_state.ts</a></p>
                 <div class="info-block">
                     <strong>默认行为：</strong>父图把子图视为一个黑盒节点。加上 <code>subgraphs: true</code> 后，可以查看子图内部的执行细节——包括中间节点的状态和输出。
                 </div>
@@ -302,6 +318,9 @@ for await (const chunk of await graph.stream(
         <section class="slide">
             <div class="slide-content">
                 <h2>参考答案</h2>
+                <div class="warning">
+                    <strong>思考题：</strong>你的系统有三层结构：主图调度、分析子图、文本处理子图。每层的 State 都不一样，需要逐层映射。多层嵌套子图怎么组织？有什么注意事项？
+                </div>
                 <pre><code class="language-javascript">// 子图 A：研究
 const ResearchState = new StateSchema({
   topic: z.string(),
@@ -357,6 +376,7 @@ const parentGraph = new StateGraph(ParentState)
   .addEdge("research", "write")
   .addEdge("write", END)
   .compile();</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/11_multi_level_subgraph.ts">📄 完整代码：11_multi_level_subgraph.ts</a></p>
                 <div class="key-point">
                     <strong>模式：</strong>每个子图有独立的状态（ResearchState vs WritingState）。父图在节点函数内做状态映射——把 topic 传给研究子图，把 findings 传给写作子图。
                 </div>

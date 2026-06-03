@@ -180,6 +180,9 @@ for await (const chunk of await graph.stream(inputs, {
                 <h2>状态流</h2>
                 <h4>用 <code>updates</code> 和 <code>values</code> 模式追踪图的每一步状态变化</h4>
                 <p>先定义一个简单的两步图：<code>refineTopic</code> 润色主题，<code>generateJoke</code> 生成笑话。</p>
+                <div class="warning">
+                    <strong>思考题：</strong>你的图有多个步骤，你希望每完成一步就能看到进度，而不是等全部跑完才出结果。graph.stream() 有两种模式："values" 每次给完整状态，"updates" 只给增量。该用哪个？区别在哪？
+                </div>
                 <pre><code class="language-javascript">// 定义图
 import { StateGraph, StateSchema, START, END } from "@langchain/langgraph";
 import * as z from "zod";
@@ -230,6 +233,7 @@ const graph = new StateGraph(State)
                 <div class="info-block">
                     <strong>区别：</strong><code>updates</code> 只输出当前节点的改动，体积小，适合增量渲染；<code>values</code> 输出完整状态快照，适合需要全貌的场景。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/07_stream_values_updates.ts">📄 完整代码：07_stream_values_updates.ts</a></p>
             </div>
         </section>
 
@@ -239,6 +243,9 @@ const graph = new StateGraph(State)
                 <h2>逐 Token 流</h2>
                 <h4>用 <code>messages</code> 模式实现 LLM 逐字输出——和 ChatGPT 一样的打字效果</h4>
                 <p>当图中有 LLM 调用时，<code>messages</code> 模式会流式返回每一个 token。每个 chunk 是一个二元组：<code>[messageChunk, metadata]</code>。</p>
+                <div class="warning">
+                    <strong>思考题：</strong>你希望 AI 的回复像 ChatGPT 一样逐字打出，而不是等全部生成完才一次性显示。怎么获取 LLM 的 token 级别流？
+                </div>
                 <pre><code class="language-javascript">import { ChatOpenAI } from "@langchain/openai";
 
 const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
@@ -267,6 +274,7 @@ for await (const [messageChunk, metadata] of await graph.stream(
                 <div class="key-point">
                     <strong>关键理解：</strong><code>messages</code> 模式的每个 chunk 是 <code>[messageChunk, metadata]</code> 元组。<code>messageChunk.content</code> 包含当前 token 文本；<code>metadata</code> 包含来源节点、标签等元信息。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/07_stream_messages.ts">📄 完整代码：07_stream_messages.ts</a></p>
             </div>
         </section>
 
@@ -276,6 +284,9 @@ for await (const [messageChunk, metadata] of await graph.stream(
                 <h2>过滤与排除</h2>
                 <h4>用标签 (tags) 筛选特定 LLM 调用，用 <code>nostream</code> 标签排除不需要流式输出的部分</h4>
                 <p>当一个图中有多个 LLM 调用时，你可能只想流式输出其中一个。LangGraph 提供两种控制手段。</p>
+                <div class="warning">
+                    <strong>思考题：</strong>你的图有两个 LLM 节点：主对话 LLM（用户要看到逐字输出）和内部分类器 LLM（用户不需要看到）。怎么在 messages 流中只展示主 LLM 的输出？
+                </div>
                 <h3>按标签过滤——只流式特定 LLM</h3>
                 <pre><code class="language-javascript">// 给不同 LLM 实例打标签
 const jokeModel = new ChatOpenAI({ model: "gpt-5.4-mini", tags: ['joke'] });
@@ -310,6 +321,7 @@ const internalModel = new ChatAnthropic({
                 <div class="warning">
                     <strong>注意：</strong><code>nostream</code> 是在 LLM 实例上设置的，不是在 <code>stream()</code> 调用时设置的。一旦标记，所有使用该实例的节点都不会产生流式 token。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/07_tag_filtering.ts">📄 完整代码：07_tag_filtering.ts</a></p>
             </div>
         </section>
 
@@ -319,6 +331,9 @@ const internalModel = new ChatAnthropic({
                 <h2>自定义数据流</h2>
                 <h4>用 <code>config.writer()</code> 从节点内部推送任意数据，用 <code>streamMode: "custom"</code> 接收</h4>
                 <p>状态更新和 token 流覆盖了大多数场景，但有时你需要推送更灵活的数据——比如中间计算结果、进度百分比、日志信息。<code>custom</code> 模式就是为此设计的。</p>
+                <div class="warning">
+                    <strong>思考题：</strong>你的分析任务有多个阶段，前端需要展示进度条。但你不想让这些"进度信息"污染 State。能不能在不修改状态的情况下，推送自定义数据给前端？
+                </div>
                 <pre><code class="language-javascript">import { StateGraph, StateSchema, GraphNode, START, LangGraphRunnableConfig } from "@langchain/langgraph";
 
 const analyzeNode: GraphNode&lt;typeof State&gt; = async (state, config) =&gt; {
@@ -342,6 +357,7 @@ for await (const chunk of await graph.stream(inputs, {
 // { stage: "loading_data", progress: 0.2 }
 // { stage: "analyzing", progress: 0.6 }
 // { stage: "done", progress: 1.0 }</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/07_stream_custom.ts">📄 完整代码：07_stream_custom.ts</a></p>
                 <div class="ai-diagram">
                     <h4>图：自定义数据流的推送机制</h4>
                     <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
@@ -401,6 +417,9 @@ for await (const chunk of await graph.stream(inputs, {
                 </table>
                 <h3>流式进度的工具——用 async generator 定义</h3>
                 <p>普通工具只在结束时返回结果。如果你需要中间进度，可以用 <strong>async generator</strong>（<code>async function*</code>）来定义工具，每 <code>yield</code> 一次就产生一个 <code>on_tool_event</code>。</p>
+                <div class="warning">
+                    <strong>思考题：</strong>你的搜索工具执行时间较长，你想在工具执行过程中向前端报告进度（"正在搜索..."、"处理结果..."）。怎么让工具在执行中推送中间状态？
+                </div>
                 <div class="card-grid">
                     <div class="card">
                         <h4>普通工具</h4>
@@ -432,6 +451,7 @@ for await (const chunk of await graph.stream(inputs, {
                 <div class="info-block">
                     <strong>async generator 工具的工作方式：</strong>每次 <code>yield</code> 会触发 <code>on_tool_event</code>，最终的 <code>return</code> 会触发 <code>on_tool_end</code>。如果中途抛出异常，则触发 <code>on_tool_error</code>。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/07_stream_tools.ts">📄 完整代码：07_stream_tools.ts</a></p>
             </div>
         </section>
 
@@ -440,6 +460,9 @@ for await (const chunk of await graph.stream(inputs, {
             <div class="slide-content">
                 <h2>完整代码示例</h2>
                 <h4>一个逐航司搜索航班的流式工具，以及消费其事件的客户端代码</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你的搜索工具执行时间较长，你想在工具执行过程中向前端报告进度（"正在搜索..."、"处理结果..."）。怎么让工具在执行中推送中间状态？
+                </div>
                 <pre><code class="language-javascript">// 1. 定义流式工具——用 async generator 逐航司搜索
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
@@ -493,6 +516,7 @@ for await (const [mode, chunk] of await graph.stream(
     }
   }
 }</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/07_stream_tools.ts">📄 完整代码：07_stream_tools.ts</a></p>
             </div>
         </section>
 
@@ -548,6 +572,9 @@ for await (const chunk of await graph.stream(
                 <h2>多模式组合</h2>
                 <h4>同时使用多种流模式——用数组语法组合，输出 <code>[mode, chunk]</code> 元组</h4>
                 <p>实际项目中，你可能同时需要状态更新和自定义进度数据。LangGraph 允许你把多个流模式组合在一起。</p>
+                <div class="warning">
+                    <strong>思考题：</strong>你既想看每步的状态更新（updates），又想看自定义进度（custom）。两种数据混在一起怎么区分？
+                </div>
                 <pre><code class="language-javascript">// 多模式组合——streamMode 传数组
 for await (const [mode, chunk] of await graph.stream(inputs, {
   streamMode: ["updates", "custom"],  // 同时订阅两种模式
@@ -597,6 +624,7 @@ for await (const [mode, chunk] of await graph.stream(inputs, {
                 <div class="warning">
                     <strong>易错点：</strong>单模式时 <code>chunk</code> 就是数据本身；多模式时 <code>chunk</code> 变成 <code>[mode, data]</code> 元组。忘记解构会导致代码报错。建议始终用 <code>const [mode, chunk]</code> 解构。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/07_stream_multi_mode.ts">📄 完整代码：07_stream_multi_mode.ts</a></p>
             </div>
         </section>
 

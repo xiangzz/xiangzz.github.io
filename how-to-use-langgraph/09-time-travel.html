@@ -125,6 +125,9 @@
             <div class="slide-content">
                 <h2>重放</h2>
                 <h4>找到目标检查点，原样重新执行</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你的笑话生成图已经跑完了，但你发现第二个节点（写笑话）的输出不太理想。你想看看如果从那一步开始重新执行，结果会不会不同。怎么"时光倒流"重跑？
+                </div>
                 <pre><code class="language-javascript">// 先运行一次图
 const config = { configurable: { thread_id: "thread-1" } };
 const result = await graph.invoke({}, config);
@@ -140,6 +143,7 @@ const beforeJoke = states.find((s) => s.next.includes("writeJoke"));
 
 // 从那个检查点重新执行
 const replayResult = await graph.invoke(null, beforeJoke.config);</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/09_replay.ts">📄 完整代码：09_replay.ts</a></p>
                 <div class="key-point">
                     <strong>关键 API：</strong><code>graph.getStateHistory(config)</code> 返回所有历史检查点。用 <code>invoke(null, checkpointConfig)</code> 从指定检查点重新执行。<code>null</code> 表示不提供新输入。
                 </div>
@@ -177,6 +181,9 @@ const replayResult = await graph.invoke(null, beforeJoke.config);</code></pre>
             <div class="slide-content">
                 <h2>分叉</h2>
                 <h4>修改历史状态，创建一条平行时间线</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你的笑话图跑完了，主题是"程序员"。现在你想看看如果主题换成"数学老师"，笑话会怎样——但原始结果不能丢。怎么在不影响原时间线的情况下，分叉出一条新路径？
+                </div>
                 <div class="ai-diagram">
                     <h4>图：分叉模式——从检查点创建平行时间线</h4>
                     <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
@@ -204,6 +211,7 @@ const forkConfig = await graph.updateState(
 // 从分叉点继续执行
 const forkResult = await graph.invoke(null, forkConfig);
 console.log(forkResult.joke); // 关于 chickens 的笑话</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/09_fork.ts">📄 完整代码：09_fork.ts</a></p>
                 <div class="key-point">
                     <strong>分叉 = updateState + invoke：</strong>先用 <code>updateState</code> 在目标检查点修改状态，这会创建一个新的检查点。然后用 <code>invoke(null, forkConfig)</code> 从新检查点继续执行。
                 </div>
@@ -218,6 +226,9 @@ console.log(forkResult.joke); // 关于 chickens 的笑话</code></pre>
             <div class="slide-content">
                 <h2>指定节点</h2>
                 <h4>用 asNode 控制分叉后的执行起点</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你的图有 step1→step2→step3 三步。你想模拟"如果 step2 的输出是 X 而不是 Y，后续会怎样"。updateState 修改了状态，但图怎么知道从哪一步继续？
+                </div>
                 <pre><code class="language-javascript">// 将更新视为 generateTopic 产生的
 // 执行从 writeJoke（generateTopic 的后继）恢复
 const forkConfig = await graph.updateState(
@@ -225,6 +236,7 @@ const forkConfig = await graph.updateState(
   { topic: "chickens" },
   { asNode: "generateTopic" },
 );</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/09_as_node.ts">📄 完整代码：09_as_node.ts</a></p>
                 <div class="card-grid">
                     <div class="card">
                         <h4>不指定 asNode</h4>
@@ -251,6 +263,9 @@ const forkConfig = await graph.updateState(
             <div class="slide-content">
                 <h2>中断与回溯</h2>
                 <h4>中断在时间旅行中总是重新触发</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你的审批图有个 interrupt 节点。你回放到那个检查点想重试，但 interrupt 又弹出来了。能不能：(a) 重新回答中断问题？(b) 直接跳过中断？
+                </div>
                 <pre><code class="language-javascript">// 首次运行：遇到中断
 await graph.invoke({ value: [] }, config);
 await graph.invoke(new Command({ resume: "Alice" }), config);
@@ -268,6 +283,7 @@ await graph.invoke(new Command({ resume: "Bob" }), forkConfig);
                 <div class="warning">
                     <strong>注意：</strong>重放/分叉时遇到 interrupt 会暂停——你需要提供新的 resume 值。旧的中断值不会自动回放。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/09_interrupt_time_travel.ts">📄 完整代码：09_interrupt_time_travel.ts</a></p>
             </div>
         </section>
 
@@ -276,6 +292,9 @@ await graph.invoke(new Command({ resume: "Bob" }), forkConfig);
             <div class="slide-content">
                 <h2>多重中断之间的分叉</h2>
                 <h4>图中有多个中断点时，可以从它们之间分叉</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>多步表单中用户想修改第二步的答案而不影响第一步，怎么精确定位两个中断之间的检查点来分叉？
+                </div>
                 <pre><code class="language-javascript">// 图结构：askName → askAge → final
 // askName 和 askAge 各有一个 interrupt()
 
@@ -298,6 +317,7 @@ const forkConfig = await graph.updateState(between.config, { value: ["modified"]
 const result = await graph.invoke(null, forkConfig);
 // askName 的结果保留（"name:Alice"）
 // askAge 重新触发中断，等待新的回答</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/09_interrupt_time_travel.ts">📄 完整代码：09_interrupt_time_travel.ts</a></p>
                 <div class="key-point">
                     <strong>关键思路：</strong>多步表单场景中，用户可能想修改第二步的答案而不影响第一步。<code>getStateHistory</code> 能精确定位两个中断之间的检查点，分叉后前面的回答被保留，只有后续步骤重新执行。
                 </div>
@@ -309,6 +329,9 @@ const result = await graph.invoke(null, forkConfig);
             <div class="slide-content">
                 <h2>子图与回溯</h2>
                 <h4>子图的时间旅行取决于它的 checkpointer 配置</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你的主图里嵌套了一个子图。主图的检查点能看，但子图内部哪一步出了问题，你怎么查？默认状态下子图对主图来说是个"黑盒"。能打开看看吗？
+                </div>
                 <table>
                     <thead><tr><th>模式</th><th>checkpointer</th><th>行为</th></tr></thead>
                     <tbody>
@@ -332,6 +355,7 @@ const subConfig = parentState.tasks[0].state.config;
 const forkConfig = await graph.updateState(subConfig, { value: ["forked"] });
 const result = await graph.invoke(null, forkConfig);
 // stepB 重新执行，stepA 的结果被保留</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/09_subgraph_time_travel.ts">📄 完整代码：09_subgraph_time_travel.ts</a></p>
                 <div class="info-block">
                     <strong>推荐做法：</strong>大多数情况用继承模式就够了。只有当子图内部有复杂的多步逻辑需要独立调试时，才给它设置 <code>checkpointer: true</code>。访问子图内部检查点需要用 <code>getState(config, { subgraphs: true })</code>。
                 </div>

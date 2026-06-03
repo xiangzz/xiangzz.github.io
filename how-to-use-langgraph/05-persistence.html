@@ -415,6 +415,9 @@
                     - 避免：过度装饰、3D 效果、杂乱的颜色
                     </p>
                 </div>
+                <div class="warning">
+                    <strong>思考题：</strong>你做了一个聊天机器人，但发现用户每次发消息，AI 都像失忆了一样——完全不记得之前说过什么。你需要让对话有"记忆"：同一用户的多次对话保持上下文，不同用户的对话要互相隔离。
+                </div>
                 <pre><code class="language-javascript">// 定义带 reducer 的状态
 import { StateSchema, MemorySaver, StateGraph, START, END } from "@langchain/langgraph";
 import { z } from "zod";
@@ -433,6 +436,7 @@ const graph = workflow.compile({ checkpointer });</code></pre>
                 <div class="warning">
                     <strong>注意：</strong>不传 <code>thread_id</code> 会报错。每次 <code>invoke</code> / <code>stream</code> 都必须在 <code>configurable</code> 中指定 <code>thread_id</code>。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/05_memory_saver.ts">📄 完整代码：05_memory_saver.ts</a></p>
             </div>
         </section>
 
@@ -443,6 +447,9 @@ const graph = workflow.compile({ checkpointer });</code></pre>
             <div class="slide-content">
                 <h2>使用方式</h2>
                 <h4>从创建到运行——MemorySaver 的完整用法</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>编译时传了 checkpointer，运行时忘了传 thread_id 会怎样？同一个 thread_id 第二次 invoke 会发生什么——是从头开始执行，还是跳过已完成的节点？
+                </div>
                 <pre><code class="language-javascript">// 完整示例：一个带持久化的简单图
 import { StateSchema, StateGraph, MemorySaver, START, END } from "@langchain/langgraph";
 import { z } from "zod";
@@ -479,6 +486,7 @@ console.log(result1.messages);  // ["initial", "from A", "from B"]
 // 第二次调用——状态会延续！
 const result2 = await graph.invoke({ messages: ["second call"] }, config);
 console.log(result2.messages);  // ["initial", "from A", "from B", "second call", "from A", "from B"]</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/05_memory_saver.ts">📄 完整代码：05_memory_saver.ts</a></p>
                 <div class="key-point">
                     <strong>两步启用持久化：</strong>①编译时传 <code>{ checkpointer: new MemorySaver() }</code>；②调用时传 <code>{ configurable: { thread_id: "..." } }</code>。缺一不可。
                 </div>
@@ -492,6 +500,9 @@ console.log(result2.messages);  // ["initial", "from A", "from B", "second call"
             <div class="slide-content">
                 <h2>获取状态</h2>
                 <h4>用 <code>getState()</code> 查看当前线程的完整状态快照</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你的 Agent 运行了好几步，现在你想看看当前的状态是什么、翻看之前每一步的历史记录、直接手动改一下状态里的某个值，怎么做到？
+                </div>
                 <pre><code class="language-javascript">// 获取当前线程的最新状态
 const config = { configurable: { thread_id: "thread-1" } };
 const snapshot = await graph.getState(config);
@@ -531,6 +542,7 @@ const step2 = history.find((s) => s.metadata.step === 2);
 
 // 按来源查找——"找到所有由 updateState 创建的分支"
 const forks = history.filter((s) => s.metadata.source === "update");</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/05_state_snapshot.ts">📄 完整代码：05_state_snapshot.ts</a></p>
             </div>
         </section>
 
@@ -596,6 +608,9 @@ const forks = history.filter((s) => s.metadata.source === "update");</code></pre
             <div class="slide-content">
                 <h2>更新状态</h2>
                 <h4>用 <code>updateState()</code> 直接修改检查点中的状态值</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>人工审核后需要把修改注入到状态里继续执行。但如果指定了 as_node 参数，下一步 next 会怎么变化？更新后的值会经过 reducer 处理吗？
+                </div>
                 <pre><code class="language-javascript">// 直接修改当前线程的状态
 const config = { configurable: { thread_id: "thread-1" } };
 
@@ -614,6 +629,7 @@ await graph.updateState(config, {
 
 // 现在状态就像 nodeA 返回了 "injected by human" 一样
 // 下一步 next 会变成 nodeA 之后的节点</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/05_state_snapshot.ts">📄 完整代码：05_state_snapshot.ts</a></p>
                 <div class="card-grid">
                     <div class="card">
                         <h4>典型用途</h4>
@@ -645,6 +661,9 @@ await graph.updateState(config, {
                 <h2>跨线程存储</h2>
                 <h4>检查点是线程内的，MemoryStore 用于跨线程共享数据</h4>
                 <p>检查点绑定在单个线程上，不同线程之间<strong>无法共享状态</strong>。如果你需要跨线程的记忆——比如用户偏好、长期知识库——就需要 <code>MemoryStore</code>。</p>
+                <div class="warning">
+                    <strong>思考题：</strong>你用 thread_id 隔离了每个对话，但发现用户在对话A里说"我喜欢深色主题"，到了对话B里 AI 就忘了这个偏好了。你需要一种跨对话共享的"长期记忆"。
+                </div>
                 <pre><code class="language-javascript">import { InMemoryStore } from "@langchain/langgraph";
 
 // 创建跨线程存储
@@ -671,6 +690,7 @@ const results = await store.search(namespace, {
   query: "用户喜欢什么",
 });
 console.log(results);  // [{ key: "memory-1", value: { content: "..." }, ... }]</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/05_cross_thread_store.ts">📄 完整代码：05_cross_thread_store.ts</a></p>
                 <div class="key-point">
                     <strong>两层记忆：</strong><code>checkpointer</code>（线程内短期记忆）+ <code>MemoryStore</code>（跨线程长期记忆）。前者自动管理，后者手动读写。
                 </div>
@@ -685,6 +705,9 @@ console.log(results);  // [{ key: "memory-1", value: { content: "..." }, ... }]<
                 <h2>语义搜索</h2>
                 <h4>给 MemoryStore 加上向量嵌入，实现语义级别的记忆检索</h4>
                 <p>默认的 <code>store.search()</code> 是关键词匹配。如果你需要"意思相近"的搜索——比如搜"用户喜欢什么"能匹配到"偏好深色主题"——就需要接入嵌入模型。</p>
+                <div class="warning">
+                    <strong>思考题：</strong>用户问"我爱写代码"，你想从记忆中找到相关的偏好，但记忆里存的是"我是前端工程师"——关键词不匹配，搜不到。能不能按"意思"来搜索？
+                </div>
                 <div class="expand-card" onclick="this.classList.toggle('open')">
                     <div class="expand-card-header">
                         <h4>💡 什么是嵌入模型（Embedding）？点击展开</h4>
@@ -742,6 +765,7 @@ const results = await store.search(["user-123", "memories"], {
   query: "用户的视觉偏好",
 });
 // 能匹配到 "用户偏好深色主题"，即使没有关键词重叠</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/05_semantic_search.ts">📄 完整代码：05_semantic_search.ts</a></p>
                 <div class="card-grid">
                     <div class="card">
                         <h4>无嵌入（默认）</h4>
@@ -816,6 +840,9 @@ const saveMemory = async (state, runtime) => {
             <div class="slide-content">
                 <h2>存储后端</h2>
                 <h4>根据场景选择合适的 Checkpointer 实现</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你开发时用 MemorySaver（内存），一切正常。但部署到生产环境后，服务一重启，所有对话记忆就丢了。你需要换一个持久化的后端，但不想改业务代码。
+                </div>
                 <table>
                     <thead>
                         <tr><th>后端</th><th>包名</th><th>适用场景</th><th>持久性</th></tr>
@@ -873,6 +900,7 @@ import { MemorySaver } from "@langchain/langgraph";
 // 生产
 import { PostgresSaver } from "...";
 .compile({ checkpointer: new PostgresSaver(pool) })</code></pre>
+                        <p style="text-align: right; font-size: 0.85em;"><a href="./codes/05_checkpointer_backends.ts">📄 完整代码：05_checkpointer_backends.ts</a></p>
                     </div>
                 </div>
             </div>

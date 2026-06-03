@@ -99,6 +99,9 @@
                     - 避免：过度装饰、3D 效果、杂乱的颜色
                     </p>
                 </div>
+                <div class="warning">
+                    <strong>思考题：</strong>你的自动化脚本要删除服务器上的临时文件，但删除操作不可逆。能不能在执行危险操作前暂停，等你确认后再继续？
+                </div>
                 <pre><code class="language-javascript">import { interrupt } from "@langchain/langgraph";
 
 async function approvalNode(state) {
@@ -107,6 +110,7 @@ async function approvalNode(state) {
     // Command({ resume: true }) 传入的值成为 approved
     return { approved };
 }</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/08_basic_interrupt.ts">📄 完整代码：08_basic_interrupt.ts</a></p>
                 <div class="key-point">
                     <strong>三步走：</strong>① 调用 <code>interrupt()</code> 暂停执行，传入提示信息 → ② 状态保存到 checkpointer → ③ 用 <code>Command({ resume: value })</code> 恢复，value 成为 interrupt() 的返回值。
                 </div>
@@ -118,6 +122,9 @@ async function approvalNode(state) {
             <div class="slide-content">
                 <h2>暂停与恢复</h2>
                 <h4>完整的中断-恢复代码流程</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>interrupt() 暂停后，如何通过 Command({ resume }) 恢复执行？恢复时传入的值如何成为 interrupt() 的返回值？
+                </div>
                 <pre><code class="language-javascript">import { Command } from "@langchain/langgraph";
 
 const config = { configurable: { thread_id: "thread-1" } };
@@ -131,6 +138,7 @@ console.log(result.__interrupt__);
 
 // 用人类的响应恢复
 await graph.invoke(new Command({ resume: true }), config);</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/08_basic_interrupt.ts">📄 完整代码：08_basic_interrupt.ts</a></p>
                 <div class="card-grid">
                     <div class="card">
                         <h4>三个关键点</h4>
@@ -149,6 +157,9 @@ await graph.invoke(new Command({ resume: true }), config);</code></pre>
             <div class="slide-content">
                 <h2>审批模式</h2>
                 <h4>interrupt 返回布尔值，决定走哪条路</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你有一个文档审批流程，通过后直接发布，驳回则退回修改。怎么在 interrupt 恢复后，根据用户决策走不同的分支？
+                </div>
                 <pre><code class="language-javascript">const approvalNode: typeof State.Node = (state) => {
   const isApproved = interrupt({
     question: "Do you want to proceed?",
@@ -165,6 +176,7 @@ await graph.invoke(new Command({ resume: true }), config);</code></pre>
 // 恢复时传入 true 审批或 false 拒绝
 await graph.invoke(new Command({ resume: true }), config);   // 审批
 await graph.invoke(new Command({ resume: false }), config);  // 拒绝</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/08_approval_pattern.ts">📄 完整代码：08_approval_pattern.ts</a></p>
             </div>
         </section>
 
@@ -173,6 +185,9 @@ await graph.invoke(new Command({ resume: false }), config);  // 拒绝</code></p
             <div class="slide-content">
                 <h2>审查与编辑</h2>
                 <h4>人类修改智能体生成的内容后再继续</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>AI 生成的文章草稿总是差点意思，你想在发布前人工润色一下。但润色结果怎么传回图中继续后续流程？
+                </div>
                 <pre><code class="language-javascript">const reviewNode: typeof State.Node = (state) => {
   const editedContent = interrupt({
     instruction: "Review and edit this content",
@@ -186,6 +201,7 @@ await graph.invoke(
   new Command({ resume: "The edited and improved text" }),
   config
 );</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/08_review_edit.ts">📄 完整代码：08_review_edit.ts</a></p>
                 <div class="info-block">
                     <strong>模式：</strong>智能体生成内容 → interrupt 暂停并展示给人类 → 人类编辑 → resume 传回编辑后的内容 → 智能体用编辑后的内容继续。
                 </div>
@@ -197,6 +213,9 @@ await graph.invoke(
             <div class="slide-content">
                 <h2>工具中的中断</h2>
                 <h4>interrupt 不只能在节点里用——工具函数里也能用</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你的 AI Agent 有一个"发送邮件"工具，用户说"帮我发邮件"就立刻发出去了。但万一理解错了收件人，邮件已经发出去了。怎么在工具真正执行前加一道人工确认？
+                </div>
                 <pre><code class="language-javascript">import { tool } from "@langchain/core/tools";
 
 const sendEmailTool = tool(
@@ -218,6 +237,7 @@ const sendEmailTool = tool(
     schema: z.object({ to: z.string(), subject: z.string(), body: z.string() }),
   }
 );</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/08_tool_interrupt.ts">📄 完整代码：08_tool_interrupt.ts</a></p>
                 <div class="key-point">
                     <strong>为什么在工具里中断：</strong>不是所有工具调用都需要人类确认。但发邮件、删除数据、支付等高风险操作，应该在执行前暂停等待人类批准。
                 </div>
@@ -229,6 +249,9 @@ const sendEmailTool = tool(
             <div class="slide-content">
                 <h2>输入验证</h2>
                 <h4>用 while 循环反复询问，直到获得合法输入</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>注册流程要求用户输入邮箱，但用户可能乱填。你需要反复提示直到输入合法。interrupt 每次暂停后恢复，怎么保持之前的验证状态？
+                </div>
                 <pre><code class="language-javascript">const getAgeNode: typeof State.Node = (state) => {
   let prompt = "What is your age?";
 
@@ -241,6 +264,7 @@ const sendEmailTool = tool(
     }
   }
 };</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/08_input_validation.ts">📄 完整代码：08_input_validation.ts</a></p>
                 <div class="ai-diagram">
                     <h4>图：输入验证的循环模式</h4>
                     <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
@@ -265,6 +289,9 @@ const sendEmailTool = tool(
             <div class="slide-content">
                 <h2>多个中断</h2>
                 <h4>并行分支各有中断时，用 ID 映射恢复值</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>注册流程需要分步收集姓名、年龄、爱好三项信息。一个节点里有多个 interrupt()，怎么逐个恢复？
+                </div>
                 <pre><code class="language-javascript">import { isInterrupted, INTERRUPT } from "@langchain/langgraph";
 
 // 两个并行节点各有一个 interrupt
@@ -281,6 +308,7 @@ if (isInterrupted(interruptedResult)) {
   }
 }
 const result = await graph.invoke(new Command({ resume: resumeMap }), config);</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/08_multiple_interrupts.ts">📄 完整代码：08_multiple_interrupts.ts</a></p>
             </div>
         </section>
 

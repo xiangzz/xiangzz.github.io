@@ -144,28 +144,52 @@ export class AuthService {
                 <h3>认证架构</h3>
                 <h4>注册、登录、Token 管理的完整数据流</h4>
                 <div class="ai-diagram">
-                    <h4>图：基于 JWT 的完整认证系统架构图</h4>
+                    <h4>图 A：JWT 认证数据流主图</h4>
                     <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
-                    - 画面主体：展示一个完整的用户认证系统，包含注册、登录、Token 刷新三个核心流程的数据流
+                    - 画面主体：展示 JWT 认证系统的三条核心数据流，包含注册、登录、Token 刷新流程
                     - 布局分为三个水平泳道，从上到下：
-                      - 泳道 1（蓝色，标注"浏览器/客户端"）：包含 React 前端应用图标、登录表单示意、Cookie 存储区域、localStorage 区域
-                      - 泳道 2（绿色，标注"Express 后端"）：包含认证中间件、路由处理器（注册/登录/刷新）、bcrypt 验证模块、JWT 签发模块
+                      - 泳道 1（蓝色，标注"浏览器/客户端"）：包含 React 前端应用图标、登录表单示意、Cookie 存储区域、内存存储区域
+                      - 泳道 2（绿色，标注"Express 后端"）：包含路由处理器（注册/登录/刷新）、bcrypt 验证模块、JWT 签发模块
                       - 泳道 3（紫色，标注"数据层"）：包含 PostgreSQL 用户表（字段：id, email, password_hash, refresh_token）和 Redis 黑名单（标注"Token 吊销列表"）
                     - 三条核心数据流（用不同颜色的箭头）：
                       - 注册流程（绿色箭头）：前端表单 POST /api/register → 后端 bcrypt.hash → 写入 PostgreSQL → 返回 201
                       - 登录流程（蓝色箭头）：前端 POST /api/login → 后端 bcrypt.compare → 签发 Access Token（15min）+ Refresh Token（7d）→ Access Token 返回 JSON body，Refresh Token 写入 HttpOnly Cookie → 前端保存 Access Token 到内存/state
                       - Token 刷新流程（橙色箭头）：前端 Access Token 过期 → 自动 POST /api/refresh（携带 HttpOnly Cookie）→ 后端验证 Refresh Token → 签发新 Access Token + 新 Refresh Token → 旧 Refresh Token 写入 Redis 黑名单
-                    - 在右侧画一个独立的"中间件鉴权流程"：
-                      - 请求 → 提取 Bearer Token → JWT.verify 验证签名和过期时间 → 检查 Redis 黑名单 → 通过/拒绝
-                      - 用分支箭头标注"通过 → next()"和"拒绝 → 401 Unauthorized"
                     - 在左下角画一个安全注解区域：
                       - 标注"Access Token：短命（15min），存 JS 内存，不存 localStorage（防 XSS）"
                       - 标注"Refresh Token：长寿（7d），存 HttpOnly + Secure + SameSite Cookie（防 CSRF）"
-                      - 标注"密码存储：bcrypt 哈希，cost factor 12，永远不存明文"
                     - 配色建议：浅灰背景，三个泳道分别用浅蓝、浅绿、浅紫底色，注册流用绿色箭头，登录流用蓝色箭头，刷新流用橙色箭头，安全注解用浅黄底色
                     - 画面比例：16:9
                     - 避免：过度装饰、3D 效果、箭头交叉混乱、文字过小
                     - 标注文字用中文，API 路径和代码用等宽字体
+                    </p>
+                </div>
+                <div class="ai-diagram">
+                    <h4>图 B：JWT 验证中间件流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：展示 JWT 验证中间件（requireAuth）的完整工作流程，从请求进入到通过或拒绝的分支判断
+                    - 流程步骤（从左到右的流程图，用矩形和菱形判断节点）：
+                      1. 起始节点（圆角矩形）："收到请求"
+                      2. 矩形节点："从 Authorization 头提取 Bearer Token"
+                      3. 菱形判断节点："Token 存在？"
+                         - 否 → 红色箭头 → 终止节点"返回 401：未提供认证令牌"
+                         - 是 → 继续下一步
+                      4. 矩形节点："JWT.verify() 验证签名和有效期"
+                      5. 菱形判断节点："验证通过？"
+                         - 否 → 菱形判断节点"错误类型？"
+                           - TokenExpiredError → 红色箭头 → "返回 401：令牌已过期，请刷新"
+                           - 其他错误 → 红色箭头 → "返回 403：无效的认证令牌"
+                         - 是 → 继续下一步
+                      6. 菱形判断节点（可选）："检查 Redis 黑名单？"
+                         - 在黑名单中 → 红色箭头 → "返回 401：令牌已被撤销"
+                         - 不在黑名单 → 继续下一步
+                      7. 矩形节点："将解码后的用户信息挂载到 req.user"
+                      8. 绿色终止节点："调用 next() → 请求进入路由处理器"
+                    - 右侧画一个代码片段注释框，展示 req.user 的类型结构：`{ userId: string, email: string, role: string }`
+                    - 配色建议：浅灰背景，正常流程蓝色系箭头，拒绝路径红色系箭头，判断节点橙色菱形，成功节点绿色，失败节点红色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、箭头交叉混乱
+                    - 标注文字用中文，代码用等宽字体
                     </p>
                 </div>
             </div>
@@ -970,6 +994,11 @@ router.post('/reset-password', validate(resetPasswordSchema), authController.res
         <section class="slide title-slide">
             <h1>下一章</h1>
             <p>认证搞定了。下一章学习<strong>文件上传与静态资源</strong>——让用户能上传头像、图片和文档。</p>
+        
+            <div class="chapter-turn-nav">
+                <a href="./43-API设计与验证.html" class="chapter-turn-prev">← 上一章：API设计与验证</a>
+                <a href="./45-文件上传与静态资源.html" class="chapter-turn-next">下一章：文件上传与静态资源 →</a>
+            </div>
         </section>
 
     </main>

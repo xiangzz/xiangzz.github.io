@@ -317,6 +317,9 @@ const config = {
                     <div class="flow-step" style="border-top: 3px solid #D97706;">
                         <h4 style="color: #D97706;">3. 包裹副作用</h4>
                         <p>用 <code>task()</code> 包装非确定性操作</p>
+                        <div class="warning">
+                            <strong>思考题：</strong>你的 Agent 在执行过程中会调用外部 API、写数据库。如果中途崩溃重启，所有操作会重新执行一遍——API 被重复调用、数据库被重复写入。怎么让重启后跳过已经执行过的副作用？
+                        </div>
                         <pre><code class="language-javascript">import { task } from "@langchain/langgraph";
 
 const result = await task(
@@ -350,6 +353,7 @@ const graph = new StateGraph(State)
   .compile({ checkpointer: new MemorySaver() });  // 前提 1
 
 const config = { configurable: { thread_id: "crawl-1" } };  // 前提 2</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/06_task_wrapping.ts">📄 完整代码：06_task_wrapping.ts</a></p>
                 <div class="warning">
                     <strong>前提 3 是最容易忽略的：</strong>如果你在节点里直接调 API、写数据库、发邮件，恢复时这些操作会重新执行。<code>task()</code> 能让 LangGraph 记住"这个操作已经做过了"，重放时跳过。
                 </div>
@@ -411,6 +415,9 @@ const config = { configurable: { thread_id: "crawl-1" } };  // 前提 2</code></
             <div class="slide-content">
                 <h2>编码原则</h2>
                 <h4>理解了回放机制后，写代码时要遵循三条原则</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你的 Agent 有时重放后行为不一致——UUID 每次生成都不同、时间戳每次都变、数据库 INSERT 导致重复记录。怎么写出"即使重放也不出问题"的代码？
+                </div>
                 <div class="card-grid">
                     <div class="card" style="border-top: 3px solid var(--primary-color);">
                         <h4>原则一：避免重复工作</h4>
@@ -450,6 +457,7 @@ await task("save-result",
                 <div class="warning">
                     <strong>三层防护：</strong><code>task()</code>（防止重放重复） + 幂等设计（防止极端情况重复） + checkpointer（保证状态一致）。三者配合才是完整的持久化执行。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/06_coding_principles.ts">📄 完整代码：06_coding_principles.ts</a></p>
             </div>
         </section>
 
@@ -494,6 +502,9 @@ await task("save-result",
                         </tr>
                     </tbody>
                 </table>
+                <div class="warning">
+                    <strong>思考题：</strong>你的图在运行时，每一步都会产生中间结果。你需要决定什么时候把这些中间结果保存到检查点——每步都保存太慢，全部跑完再保存中途崩了就全丢。有没有折中方案？
+                </div>
                 <pre><code class="language-javascript">// 三种模式的使用方式——只在调用时指定
 const config = { configurable: { thread_id: "task-1" } };
 
@@ -505,6 +516,7 @@ await graph.stream({ input: "test" }, { ...config, durability: "async" });
 
 // sync 模式：每步同步保存——最安全
 await graph.stream({ input: "test" }, { ...config, durability: "sync" });</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/06_durability_modes.ts">📄 完整代码：06_durability_modes.ts</a></p>
                 <div class="card-grid">
                     <div class="card">
                         <h4>如何选择</h4>
@@ -536,6 +548,9 @@ await graph.stream({ input: "test" }, { ...config, durability: "sync" });</code>
             <div class="slide-content">
                 <h2>task() 详解</h2>
                 <h4>用 <code>task()</code> 包裹副作用，让重放时自动跳过已执行的操作</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你的 Agent 在执行过程中会调用外部 API、写数据库。如果中途崩溃重启，所有操作会重新执行一遍——API 被重复调用、数据库被重复写入。怎么让重启后跳过已经执行过的副作用？
+                </div>
                 <pre><code class="language-javascript">// task() 的签名
 import { task } from "@langchain/langgraph";
 
@@ -573,6 +588,7 @@ const graph = new StateGraph(State)
   .addEdge(START, "research")
   .addEdge("research", END)
   .compile({ checkpointer: new MemorySaver() });</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/06_task_wrapping.ts">📄 完整代码：06_task_wrapping.ts</a></p>
                 <div class="card-grid">
                     <div class="card">
                         <h4>什么时候用 task()</h4>
@@ -634,6 +650,9 @@ const graph = new StateGraph(State)
                         </tr>
                     </tbody>
                 </table>
+                <div class="warning">
+                    <strong>思考题：</strong>你的 Agent 有 3 个步骤。运行到第 2 步时，服务器突然崩了。你想在恢复后从第 2 步继续，而不是从头开始。怎么做？
+                </div>
                 <h4>场景一：暂停与恢复（HITL）</h4>
                 <pre><code class="language-javascript">import { interrupt, Command } from "@langchain/langgraph";
 
@@ -670,6 +689,7 @@ const result = await graph.invoke(
   config  // 同一个 thread_id
 );
 console.log(result);  // 从崩溃点继续执行</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/06_fault_recovery.ts">📄 完整代码：06_fault_recovery.ts</a></p>
                 <div class="key-point">
                     <strong>记住：</strong>两种恢复方式的共同点是都用同一个 <code>thread_id</code>。区别在于：暂停/恢复需要传 <code>Command({ resume })</code>；故障恢复只需重新调用即可。
                 </div>

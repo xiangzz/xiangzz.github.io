@@ -121,6 +121,9 @@
             <div class="slide-content">
                 <h2>短期记忆</h2>
                 <h4>MemorySaver + thread_id = 多轮对话</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你跟 AI 说"我叫小明"，下一轮它就忘了。每次都像新认识的人一样，用户体验极差。怎么让 AI 在同一个对话中记住之前说过的话？
+                </div>
                 <pre><code class="language-javascript">import { MemorySaver, StateGraph } from "@langchain/langgraph";
 
 const checkpointer = new MemorySaver();
@@ -138,6 +141,7 @@ await graph.invoke(
   { configurable: { thread_id: "1" } }
 );
 // 模型知道你是 Bob！</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/10_short_term_memory.ts">📄 完整代码：10_short_term_memory.ts</a></p>
                 <div class="key-point">
                     <strong>关键：</strong>同一个 <code>thread_id</code> 下，每轮对话都会保留之前的消息历史。MessagesValue 的 reducer 自动把新消息拼到已有消息后面。
                 </div>
@@ -149,6 +153,9 @@ await graph.invoke(
             <div class="slide-content">
                 <h2>生产环境</h2>
                 <h4>内存存储重启就丢。生产环境用数据库后端。</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>开发时用 MemorySaver（内存），进程一重启记忆全丢了。上线后用户每次刷新页面就失忆，这不行。怎么把记忆持久化到数据库？迁移成本高吗？
+                </div>
                 <pre><code class="language-javascript">// 短期记忆：PostgresSaver
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 
@@ -163,6 +170,7 @@ const store = PostgresStore.fromConnString(DB_URI);
 // await store.setup(); // 首次使用需要初始化表结构
 
 const graph = builder.compile({ checkpointer, store });</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/10_production_backends.ts">📄 完整代码：10_production_backends.ts</a></p>
                 <div class="card-grid">
                     <div class="card">
                         <h4>子图中使用</h4>
@@ -183,6 +191,9 @@ const graph = builder.compile({ checkpointer }); // 父图指定即可</code></p
             <div class="slide-content">
                 <h2>长期记忆</h2>
                 <h4>InMemoryStore + namespace = 跨线程的用户数据</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>用户在对话A中说"我是前端工程师"，在对话B中问"我是做什么的"，AI 答不上来——因为 thread_id 不同，短期记忆互不相通。怎么让记忆跨对话持久保存？
+                </div>
                 <pre><code class="language-javascript">import { InMemoryStore, StateGraph } from "@langchain/langgraph";
 
 const store = new InMemoryStore();
@@ -206,6 +217,7 @@ const callModel: GraphNode&lt;typeof State&gt; = async (state, runtime) => {
 
   // 使用记忆增强模型调用...
 };</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/10_long_term_memory.ts">📄 完整代码：10_long_term_memory.ts</a></p>
                 <div class="info-block">
                     <strong>调用时传入 context：</strong><code>await graph.invoke({ messages: [...] }, { configurable: { thread_id: "1" }, context: { userId: "1" } })</code>。节点通过 <code>runtime.context</code> 获取。
                 </div>
@@ -217,6 +229,9 @@ const callModel: GraphNode&lt;typeof State&gt; = async (state, runtime) => {
             <div class="slide-content">
                 <h2>语义搜索</h2>
                 <h4>用嵌入模型实现"模糊匹配"记忆</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>用户存了一条"学习 LangGraph 的工作流模式"，后来说"怎么保存状态"——关键词完全不同，Store 怎么找到相关的记忆？按关键词匹配肯定搜不到。
+                </div>
                 <pre><code class="language-javascript">import { OpenAIEmbeddings } from "@langchain/openai";
 
 const store = new InMemoryStore({
@@ -235,6 +250,7 @@ const items = await store.search(["user_123", "memories"], {
   query: "I'm hungry",
   limit: 1,
 });</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/10_semantic_memory.ts">📄 完整代码：10_semantic_memory.ts</a></p>
                 <div class="key-point">
                     <strong>语义搜索 vs 精确匹配：</strong>没有嵌入模型时，search 只能精确匹配。加上嵌入模型后，"我饿了"也能找到"我爱吃披萨"——因为它们的语义相近。
                 </div>
@@ -246,6 +262,9 @@ const items = await store.search(["user_123", "memories"], {
             <div class="slide-content">
                 <h2>语义搜索实战</h2>
                 <h4>在图节点中用 runtime.store 实现记忆增强的对话</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>怎么在图节点中通过 runtime.store 搜索记忆，并把找到的记忆注入到 LLM 的系统提示中？
+                </div>
                 <pre><code class="language-javascript">const chat: GraphNode&lt;typeof State&gt; = async (state, runtime) => {
   // 根据用户最后一条消息搜索相关记忆
   const items = await runtime.store.search(
@@ -268,6 +287,7 @@ const builder = new StateGraph(State)
   .addNode("chat", chat)
   .addEdge(START, "chat");
 const graph = builder.compile({ store });</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/10_semantic_memory.ts">📄 完整代码：10_semantic_memory.ts</a></p>
                 <div class="key-point">
                     <strong>模式：</strong>编译图时传入带嵌入模型的 store → 节点中通过 <code>runtime.store.search()</code> 按语义检索记忆 → 注入 system prompt。搜索由 store 的嵌入索引自动处理，节点代码无需关心嵌入细节。
                 </div>
@@ -282,6 +302,9 @@ const graph = builder.compile({ store });</code></pre>
                 <div class="card-grid">
                     <div class="card">
                         <h4>裁剪消息</h4>
+                        <div class="warning">
+                            <strong>思考题：</strong>对话越来越长，消息堆积到上百条，发给 LLM 的 token 数暴增。怎么自动裁剪旧消息，只保留最近的上下文？
+                        </div>
                         <pre><code class="language-javascript">import { trimMessages } from "@langchain/core/messages";
 
 const messages = trimMessages(state.messages, {
@@ -290,9 +313,13 @@ const messages = trimMessages(state.messages, {
   startOn: "human",
   endOn: ["human", "tool"],
 });</code></pre>
+                        <p style="text-align: right; font-size: 0.85em;"><a href="./codes/10_trim_messages.ts">📄 完整代码：10_trim_messages.ts</a></p>
                     </div>
                     <div class="card">
                         <h4>删除消息</h4>
+                        <div class="warning">
+                            <strong>思考题：</strong>用户说"把我刚才发的消息删掉，里面有我的密码"。对话历史中的敏感信息必须彻底移除。怎么精确删除某条消息，而不是清空整个对话？
+                        </div>
                         <pre><code class="language-javascript">import { RemoveMessage } from "@langchain/core/messages";
 
 if (messages.length > 2) {
@@ -302,10 +329,15 @@ if (messages.length > 2) {
       .map((m) => new RemoveMessage({ id: m.id })),
   };
 }</code></pre>
+                        <p style="text-align: right; font-size: 0.85em;"><a href="./codes/10_remove_message.ts">📄 完整代码：10_remove_message.ts</a></p>
                     </div>
                     <div class="card">
                         <h4>总结消息</h4>
+                        <div class="warning">
+                            <strong>思考题：</strong>对话有 50 条消息，trimMessages 太粗暴——直接丢弃旧消息可能丢失关键信息。能不能把旧消息"浓缩"成一段摘要，既节省 token 又保留关键信息？
+                        </div>
                         <p>把旧消息压缩成摘要，删除原始消息。保留最近几条 + 摘要作为上下文。</p>
+                        <p style="text-align: right; font-size: 0.85em;"><a href="./codes/10_memory_summarization.ts">📄 完整代码：10_memory_summarization.ts</a></p>
                     </div>
                 </div>
                 <div class="warning">

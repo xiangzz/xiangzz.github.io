@@ -207,6 +207,9 @@
             <div class="slide-content">
                 <h2>Send 动态分发</h2>
                 <h4>核心 API：<code>Send</code> 类</h4>
+                <div class="warning">
+                    <strong>思考题：</strong>你的系统需要给每个员工生成绩效评估，但每次人数不同（3人或10人）。普通条件边只能选"A节点"或"B节点"，怎么实现运行时动态创建 N 个处理节点？
+                </div>
                 <pre><code class="language-javascript">import { StateGraph, StateSchema, ReducedValue, GraphNode, Send, START, END } from "@langchain/langgraph";</code></pre>
 
                 <p><code>Send</code> 让你从条件边函数里<strong>动态地</strong>把任务分发到指定节点。每次 <code>new Send("节点名", { 数据 })</code> 就创建一个独立的工作者调用。</p>
@@ -241,6 +244,7 @@ const State = new StateSchema({
                 <div class="warning">
                     <strong>易错点：</strong><code>Send</code> 只能在条件边函数中使用，不能在普通节点里创建。<code>ReducedValue</code> 的 reducer 函数第一个参数可能是 <code>null</code>（第一次调用时），别忘了处理。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/03_send_api.ts">📄 完整代码：03_send_api.ts</a></p>
             </div>
         </section>
 
@@ -250,6 +254,9 @@ const State = new StateSchema({
         <section class="slide">
             <div class="slide-content">
                 <h2>编排模式代码</h2>
+                <div class="warning">
+                    <strong>思考题：</strong>你要写一份关于"AI Agent 发展"的报告，报告有多个章节需要独立研究，但章节数量在运行时才确定。怎么让一个编排者动态分配 N 个任务？
+                </div>
                 <pre><code class="language-javascript">import { StateGraph, StateSchema, ReducedValue, GraphNode, Send, START, END } from "@langchain/langgraph";
 import * as z from "zod";
 
@@ -286,6 +293,7 @@ const llmCall: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   );
   return { completedSections: [{ title: section.title, content: msg.content }] };
 };</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/03_orchestrator_worker.ts">📄 完整代码：03_orchestrator_worker.ts</a></p>
             </div>
         </section>
 
@@ -295,6 +303,9 @@ const llmCall: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
         <section class="slide">
             <div class="slide-content">
                 <h2>编排图构建</h2>
+                <div class="warning">
+                    <strong>思考题：</strong>Send 创建了 N 个并行工作者，它们的结果如何汇总到一个节点？为什么 synthesizer 能读到所有 worker 的输出，而不会出现数据竞争？
+                </div>
                 <pre><code class="language-javascript">// 综合者：把所有工作者生成的内容合成最终报告
 const synthesizer: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
   const parts = state.completedSections
@@ -332,6 +343,7 @@ const result = await orchestratorWorkflow.invoke({
                 <div class="key-point">
                     <strong>执行流程：</strong>编排者拆出 N 个 section → <code>Send</code> 创建 N 个 llmCall 实例并行运行 → 每个实例的结果通过 <code>ReducedValue</code> 累积 → 全部完成后综合者读取累积结果并生成报告。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/03_orchestrator_worker.ts">📄 完整代码：03_orchestrator_worker.ts</a></p>
             </div>
         </section>
 
@@ -382,6 +394,9 @@ const result = await orchestratorWorkflow.invoke({
         <section class="slide">
             <div class="slide-content">
                 <h2>评估优化代码</h2>
+                <div class="warning">
+                    <strong>思考题：</strong>你让 AI 写了一篇文章但质量不确定。你想让它反复修改直到质量达标，但又怕陷入死循环。怎么实现"写 → 评 → 不行就改 → 再评 → 最多改 N 次"？
+                </div>
                 <pre><code class="language-javascript">import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
 import * as z from "zod";
 
@@ -423,6 +438,7 @@ const llmCallEvaluator: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
 const routeJoke: ConditionalEdgeRouter&lt;typeof State, "llmCallGenerator"&gt; = (state) =&gt; {
   return state.funnyOrNot === "funny" ? "Accepted" : "Rejected";
 };</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/03_evaluator_optimizer.ts">📄 完整代码：03_evaluator_optimizer.ts</a></p>
             </div>
         </section>
 
@@ -432,6 +448,9 @@ const routeJoke: ConditionalEdgeRouter&lt;typeof State, "llmCallGenerator"&gt; =
         <section class="slide">
             <div class="slide-content">
                 <h2>评估优化图构建</h2>
+                <div class="warning">
+                    <strong>思考题：</strong>如果 LLM 始终无法通过评估，循环会永远转下去。怎么在条件边中加入"最大重试次数"保护，防止无限循环？
+                </div>
                 <pre><code class="language-javascript">// 构建评估优化工作流
 const optimizerWorkflow = new StateGraph(State)
   .addNode("llmCallGenerator", llmCallGenerator)
@@ -468,6 +487,7 @@ const routeJokeSafe: ConditionalEdgeRouter&lt;typeof State, "llmCallGenerator"&g
   }
   return "Rejected";     // 不合格 → 重试
 };</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/03_evaluator_optimizer.ts">📄 完整代码：03_evaluator_optimizer.ts</a></p>
             </div>
         </section>
 
@@ -510,6 +530,10 @@ const routeJokeSafe: ConditionalEdgeRouter&lt;typeof State, "llmCallGenerator"&g
                 <h2>工具调用循环</h2>
                 <h4>核心机制：<code>shouldContinue</code> + <code>ToolNode</code></h4>
 
+                <div class="warning">
+                    <strong>思考题：</strong>你想做一个"能算数学的计算器 Agent"，用户说"算一下 3+5 乘以 2"，Agent 需要理解意图、调用工具、如果还需计算就继续调工具。怎么实现"思考 → 调用 → 再思考"的循环？
+                </div>
+
                 <div class="card-grid">
                     <div class="card">
                         <h4>ToolNode</h4>
@@ -534,6 +558,7 @@ const shouldContinue: ConditionalEdgeRouter&lt;typeof State, "toolNode"&gt; = (s
                 <div class="info-block">
                     <strong>为什么用 <code>messages</code> 数组？</strong>智能体的 state 通常只有一个 <code>messages</code> 字段。LLM 的输出、工具的返回值、用户的输入都是 message，追加到这个数组里。LangGraph 的 <code>ToolNode</code> 和 <code>shouldContinue</code> 都基于这个约定工作。
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/03_agent_tool_calling.ts">📄 完整代码：03_agent_tool_calling.ts</a></p>
             </div>
         </section>
 
@@ -543,6 +568,9 @@ const shouldContinue: ConditionalEdgeRouter&lt;typeof State, "toolNode"&gt; = (s
         <section class="slide">
             <div class="slide-content">
                 <h2>智能体代码</h2>
+                <div class="warning">
+                    <strong>思考题：</strong>用户说"算一下 (3+5)*2"，LLM 需要先调 add(3,5) 得到 8，再调 multiply(8,2) 得到 16。怎么让 LLM 自主决定调哪个工具、调几次？
+                </div>
                 <pre><code class="language-javascript">import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter, Messages, START, END } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { tool } from "langchain";
@@ -578,6 +606,7 @@ const shouldContinue: ConditionalEdgeRouter&lt;typeof State, "toolNode"&gt; = (s
   if (lastMessage?.tool_calls?.length) return "toolNode";
   return END;
 };</code></pre>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/03_agent_tool_calling.ts">📄 完整代码：03_agent_tool_calling.ts</a></p>
             </div>
         </section>
 
@@ -587,6 +616,9 @@ const shouldContinue: ConditionalEdgeRouter&lt;typeof State, "toolNode"&gt; = (s
         <section class="slide">
             <div class="slide-content">
                 <h2>智能体图构建</h2>
+                <div class="warning">
+                    <strong>思考题：</strong>代码里只有 addEdge("toolNode", "llmCall") 这一条回边。为什么 LLM 不会一直循环——什么时候它会主动停止调用工具？
+                </div>
                 <pre><code class="language-javascript">// 工具执行节点
 const toolNode = new ToolNode([multiply, add]);
 
@@ -625,6 +657,7 @@ console.log(result.messages.at(-1).content);
                         <p>你没有写"先加后乘"的逻辑。LLM 自己读懂了算式，自己决定调哪个工具、调几次。这就是<strong>自主决策</strong>——流程路径完全由 LLM 运行时决定。</p>
                     </div>
                 </div>
+                <p style="text-align: right; font-size: 0.85em;"><a href="./codes/03_agent_tool_calling.ts">📄 完整代码：03_agent_tool_calling.ts</a></p>
             </div>
         </section>
 
