@@ -124,7 +124,7 @@
 
 const agent = createDeepAgent({
   tools: [getWeather],          // 主 Agent 可用的工具列表
-  system: "You are a helpful assistant",  // 主 Agent 的系统指令
+  systemPrompt: "You are a helpful assistant",  // 主 Agent 的系统指令
   subagents: [
     {
       name: "researcher",       // 子 Agent 类型名称
@@ -223,7 +223,7 @@ const subagent = {
                     </div>
                     <div class="card">
                         <h4>内容过滤</h4>
-                        <p>使用 <code>filterSubagentMessages</code> 工具函数过滤出特定子 Agent 的消息，避免混入协调者消息。</p>
+                        <p>在 <code>useStream</code> 中开启 <code>filterSubagentMessages</code> 选项，让 <code>stream.messages</code> 自动过滤出特定子 Agent 的消息，避免混入协调者消息。</p>
                         <p><span class="tag tag-success">消息隔离</span></p>
                     </div>
                 </div>
@@ -312,21 +312,19 @@ const diff = {
         <section class="slide">
             <div class="slide-content">
                 <h2>消息过滤</h2>
-                <h4>使用 filterSubagentMessages 从消息流中提取特定子 Agent 的内容</h4>
-                <p>在复杂场景中，协调者和多个子 Agent 的消息混合在一起。<code>filterSubagentMessages</code> 帮你按子 Agent ID 过滤，实现消息隔离渲染。</p>
-                <pre><code class="language-javascript">import { useStream, filterSubagentMessages } from "@langchain/react";
+                <h4>使用 filterSubagentMessages 选项自动隔离各子 Agent 的消息</h4>
+                <p>在复杂场景中，协调者和多个子 Agent 的消息混合在一起。在 <code>useStream</code> 配置中开启 <code>filterSubagentMessages: true</code>，<code>stream.messages</code> 就会自动按子 Agent 过滤，实现消息隔离渲染。</p>
+                <pre><code class="language-javascript">import { useStream } from "@langchain/react";
 
 function SubagentPanel({ subagentId }) {
   const stream = useStream({
     apiUrl: "http://localhost:2024",
     assistantId: "agent",
+    filterSubagentMessages: true,  // 自动按子 Agent 隔离消息
   });
 
-  // 从混合消息流中过滤出指定子 Agent 的消息
-  const messages = filterSubagentMessages(
-    stream.messages,  // 完整的消息流
-    subagentId        // 目标子 Agent 的 ID
-  );
+  // stream.messages 已自动按当前子 Agent 过滤
+  const messages = stream.messages;
 
   return (
     &lt;div className="subagent-panel"&gt;
@@ -365,7 +363,7 @@ function SubagentPanel({ subagentId }) {
             <div class="slide-content">
                 <h2>完整示例</h2>
                 <h4>把所有前端模式组合起来——消息 + 子 Agent + 待办 + 沙箱</h4>
-                <pre><code class="language-javascript">import { useStream, filterSubagentMessages } from "@langchain/react";
+                <pre><code class="language-javascript">import { useStream } from "@langchain/react";
 import { createDeepAgent } from "deepagents";
 
 // 1. 后端创建 Deep Agent
@@ -382,6 +380,7 @@ function DeepAgentUI() {
   const stream = useStream({
     apiUrl: "http://localhost:2024",
     assistantId: "agent",
+    filterSubagentMessages: true,  // 自动按子 Agent 隔离消息
   });
 
   const todos = stream.values?.todos;
@@ -395,7 +394,7 @@ function DeepAgentUI() {
       {/* 子 Agent 卡片区 */}
       {subagents.map(sub =&gt; (
         &lt;SubagentCard key={sub.id} subagent={sub}
-          messages={filterSubagentMessages(stream.messages, sub.id)}
+          messages={stream.messages}
         /&gt;
       ))}
 
@@ -482,7 +481,7 @@ function DeepAgentUI() {
 // LangChain 模式                    // Deep Agent 扩展
 stream.messages                  → stream.subagents
 stream.values                    → stream.values.todos
-stream.submit(input)             → filterSubagentMessages()</code></pre>
+stream.submit(input)             → filterSubagentMessages: true（配置选项）</code></pre>
                 <div class="key-point">
                     <strong>零额外学习成本：</strong>因为 Deep Agent 构建在相同的 LangGraph 运行时之上，<code>useStream</code> 提供了相同的核心 API。你已经会用的 LangChain 前端知识，全部可以直接复用。
                 </div>
@@ -553,7 +552,7 @@ const agent = createDeepAgent({
                             <li>前端使用 <code>useStream</code> 统一管理流式连接</li>
                             <li>三个核心属性：<code>messages</code>、<code>subagents</code>、<code>todos</code></li>
                             <li>三大前端模式：子 Agent 流式、待办列表、沙箱</li>
-                            <li><code>filterSubagentMessages</code> 实现消息隔离渲染</li>
+                            <li>在 <code>useStream</code> 中开启 <code>filterSubagentMessages</code> 实现消息隔离渲染</li>
                             <li>与 LangChain 前端模式<strong>完全兼容</strong>，零额外学习成本</li>
                         </ul>
                     </div>

@@ -7,8 +7,6 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
     <link rel="stylesheet" href="./references/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
 </head>
 <body>
     <main id="presentation">
@@ -18,6 +16,21 @@
             <h1>端到端类型安全 tRPC</h1>
             <p>后端改了接口，前端立刻报错——不需要代码生成</p>
         </section>
+        <!-- 学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>🎯 学习目标</h3>
+                <h4>学完本章，你将能够：</h4>
+                <ul>
+                    <li>理解 tRPC 的类型推导原理和端到端类型安全的价值</li>
+                    <li>定义 tRPC Router 并实现 Procedure</li>
+                    <li>使用中间件实现认证和权限控制</li>
+                    <li>在前端 React 组件中类型安全地调用后端 API</li>
+                    <li>实现请求批处理、错误处理和 Subscriptions</li>
+                </ul>
+            </div>
+        </section>
+
 
         <!-- 问题驱动 -->
         <section class="slide">
@@ -165,7 +178,96 @@ export const userRouter = router({
             </div>
         </section>
 
-        <!-- Procedure 类型 -->
+        <!-- Part 2: 中间件与认证 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 中间件与认证</h2>
+                <p>在 procedure 执行前运行校验逻辑，鉴权、日志、性能监控一条龙。</p>
+            </div>
+        </section>
+
+        <!-- 中间件链介绍 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>中间件链</h3>
+                <h4>洋葱模型：每个 procedure 都经过层层拦截</h4>
+                <p>tRPC 的中间件和 Express/Koa 的中间件概念类似：在到达最终 handler 之前（或之后）执行逻辑。</p>
+                <p>这个比喻只是为了帮你建立直观感受。实际上 tRPC 中间件是一个纯函数，接收 ctx 和 next，返回结果，完全在 TypeScript 类型系统内运行。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>鉴权</h4>
+                        <p>检查 Token / Session，未登录直接抛 UNAUTHORIZED</p>
+                    </div>
+                    <div class="card">
+                        <h4>日志</h4>
+                        <p>记录每个 procedure 的入参、耗时、调用者</p>
+                    </div>
+                    <div class="card">
+                        <h4>性能监控</h4>
+                        <p>统计 P99 耗时，上报 Sentry / OpenTelemetry</p>
+                    </div>
+                    <div class="card">
+                        <h4>错误转换</h4>
+                        <p>把数据库/第三方异常统一映射为 TRPCError</p>
+                    </div>
+                </div>
+                <pre><code class="language-typescript">// 中间件的本质：一个函数，包装 next()
+const myMiddleware = t.middleware(async ({ ctx, next, path, type }) =&gt; {
+  const start = Date.now();
+  const result = await next();          // 调用下一个中间件或 handler
+  console.log(`[${type}] ${path} took ${Date.now() - start}ms`);
+  return result;
+});</code></pre>
+            </div>
+        </section>
+
+        <!-- 完整中间件示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>完整中间件示例</h3>
+                <h4>日志 + 认证组合实战</h4>
+                <pre><code class="language-typescript">// server/middlewares.ts
+import { initTRPC, TRPCError } from '@trpc/server';
+import type { Context } from './context';
+
+const t = initTRPC.context&lt;Context&gt;().create();
+
+// 1. 日志中间件：记录所有请求
+const loggerMiddleware = t.middleware(async ({ ctx, next, path, type }) =&gt; {
+  const start = performance.now();
+  const result = await next();
+  const duration = (performance.now() - start).toFixed(2);
+
+  console.log(
+    `[${new Date().toISOString()}] ${type.toUpperCase()} ${path} ` +
+    `— user=${ctx.user?.id ?? 'anonymous'} — ${duration}ms`
+  );
+  return result;
+});
+
+// 2. 认证中间件：强制要求登录
+const authMiddleware = t.middleware(({ ctx, next }) =&gt; {
+  if (!ctx.user) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: '请先登录后再访问此资源',
+    });
+  }
+  return next({ ctx: { user: ctx.user } });
+});
+
+// 3. 组合成 protectedProcedure
+export const publicProcedure = t.procedure.use(loggerMiddleware);
+export const protectedProcedure = t.procedure
+  .use(loggerMiddleware)
+  .use(authMiddleware);</code></pre>
+                <div class="intro-block">
+                    <p>中间件的执行顺序与 .use() 的调用顺序一致：<code>logger → auth → handler</code>。想在 auth 之前做额外校验？再加一个 .use() 即可。</p>
+                </div>
+            </div>
+        </section>
+
+                <!-- Procedure 类型 -->
         <section class="slide">
             <div class="slide-content">
                 <h3>Procedure 类型</h3>
@@ -255,7 +357,335 @@ const create = trpc.user.register.useMutation({
             </div>
         </section>
 
-        <!-- Express 集成 -->
+        <!-- 错误处理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>错误处理</h3>
+                <h4>TRPCError + formatError：把异常变成客户端可理解的信息</h4>
+                <p>tRPC 内置 <code>TRPCError</code>，每个错误码对应一个 HTTP 状态码。正确分类错误，前端才能做出合适的响应。</p>
+                <pre><code class="language-typescript">import { TRPCError } from '@trpc/server';
+
+// 在 procedure 中抛出
+const updateUser = protectedProcedure
+  .input(z.object({ name: z.string().min(1) }))
+  .mutation(async ({ ctx, input }) =&gt; {
+    try {
+      return await ctx.db.user.update({
+        where: { id: ctx.user.id },
+        data: { name: input.name },
+      });
+    } catch (err) {
+      if (err.code === 'P2002') {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: '该用户名已被使用',
+        });
+      }
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: '服务器内部错误',
+      });
+    }
+  });</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>BAD_REQUEST (400)</h4>
+                        <p>输入校验失败、参数格式不对</p>
+                    </div>
+                    <div class="card">
+                        <h4>UNAUTHORIZED (401)</h4>
+                        <p>未提供 Token 或 Token 过期</p>
+                    </div>
+                    <div class="card">
+                        <h4>FORBIDDEN (403)</h4>
+                        <p>已登录但权限不足</p>
+                    </div>
+                    <div class="card">
+                        <h4>INTERNAL_SERVER_ERROR (500)</h4>
+                        <p>服务端bug、数据库异常</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- formatError 统一格式化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>formatError 统一格式化</h3>
+                <h4>避免生产环境泄露堆栈信息</h4>
+                <pre><code class="language-typescript">// server/trpc.ts
+const t = initTRPC.context&lt;Context&gt;().create({
+  formatError({ error, shape }) {
+    if (
+      error.code === 'INTERNAL_SERVER_ERROR' &amp;&amp;
+      process.env.NODE_ENV === 'production'
+    ) {
+      return {
+        ...shape,
+        message: '服务器开小差了，请稍后再试',
+      };
+    }
+    return {
+      ...shape,
+      data: {
+        ...shape.data,
+        stack: process.env.NODE_ENV === 'development'
+          ? error.stack
+          : undefined,
+      },
+    };
+  },
+});</code></pre>
+                <div class="warning">
+                    <strong>不要泄露内部细节给客户端。</strong>数据库连接字符串、内部路径、敏感数据都应该在 formatError 里过滤掉。
+                </div>
+            </div>
+        </section>
+
+        <!-- 请求批处理 Batching -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>请求批处理 Batching</h3>
+                <h4>同帧多个请求自动合并为一个 HTTP 请求</h4>
+                <p>tRPC 默认使用 <code>httpBatchLink</code>，在同一帧触发的多个 procedure 调用会自动合并为一个 POST 请求。</p>
+                <pre><code class="language-typescript">// 同一个组件内，这些调用会被合并为 1 次 HTTP 请求
+function Dashboard() {
+  const user     = trpc.user.get.useQuery();
+  const orders   = trpc.order.list.useQuery();
+  const settings = trpc.settings.get.useQuery();
+  // 实际只发 1 个请求：POST /api/trpc
+  // body: [{ method: 'user.get', ... }, { method: 'order.list', ... }, ...]
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>REST 需要 N 次请求</h4>
+                        <p>GET /user + GET /orders + GET /settings = 3 次往返</p>
+                    </div>
+                    <div class="card">
+                        <h4>tRPC 只需 1 次请求</h4>
+                        <p>httpBatchLink 批量打包，减少网络开销</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Subscriptions 实时通信 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Subscriptions 实时通信</h3>
+                <h4>WebSocket 原生支持，无需额外框架</h4>
+                <p>tRPC 的 <code>subscription</code> 类型让你可以直接在后端定义实时事件，前端用 <code>useSubscription</code> 监听。</p>
+                <pre><code class="language-typescript">// server/routers/notificationRouter.ts
+export const notificationRouter = router({
+  onNewMessage: protectedProcedure
+    .subscription(({ ctx }) =&gt; {
+      return observable&lt;Message&gt;((emit) =&gt; {
+        const handler = (msg: Message) =&gt; emit.next(msg);
+        ctx.websocket.on(`user:${ctx.user.id}:message`, handler);
+        return () =&gt; ctx.websocket.off(`user:${ctx.user.id}:message`, handler);
+      });
+    }),
+});</code></pre>
+                <pre><code class="language-typescript">// 前端：实时监听新消息
+function ChatRoom() {
+  trpc.notification.onNewMessage.useSubscription(undefined, {
+    onData(message) {
+      setMessages(prev =&gt; [...prev, message]);
+    },
+    onError(err) {
+      console.error('连接断开：', err);
+    },
+  });
+}</code></pre>
+                <div class="intro-block">
+                    <p>这个比喻只是为了帮你建立直观感受：subscription 就像给后端装了一个"事件对讲机"，前端按个频道就能听到。实际上它是通过 WebSocket 长连接维持双向通信，底层可以用 ws 库或 Socket.IO 实现。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 输入验证深度 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>输入验证最佳实践</h3>
+                <h4>Zod Schema 不止是类型校验</h4>
+                <p>在 tRPC 中，<code>input()</code> 接受的 Zod Schema 会在运行时解析并校验数据，同时自动推导出 TypeScript 类型——一份定义，双重保障。</p>
+                <pre><code class="language-typescript">import { z } from 'zod';
+
+// 用 zod 定义复杂的校验规则
+const CreatePostInput = z.object({
+  title: z.string()
+    .min(5, '标题至少5个字符')
+    .max(100, '标题不超过100个字符'),
+  content: z.string().min(1),
+  tags: z.array(z.string()).max(5, '最多5个标签'),
+  published: z.boolean().default(false),
+  publishedAt: z.date().optional(),
+  category: z.enum(['tech', 'life', 'tutorial']),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const postRouter = router({
+  create: protectedProcedure
+    .input(CreatePostInput)
+    .mutation(async ({ ctx, input }) =&gt; {
+      // input 已经通过 Zod 校验，并且类型完美
+      return ctx.db.post.create({
+        data: { ...input, authorId: ctx.user.id },
+      });
+    }),
+});</code></pre>
+                <div class="warning">
+                    <strong>不要在前端重新建校验规则。</strong>把 Zod Schema 提取到共享模块（如 <code>server/schemas</code>），前后端共用同一份定义，避免校验逻辑不一致。
+                </div>
+            </div>
+        </section>
+
+        <!-- 输出类型验证 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>输出类型验证</h3>
+                <h4>服务端返回什么，前端就拿不到更多</h4>
+                <p>除了 input，tRPC 还支持 <code>output()</code> 校验返回值。防止数据库泄露多余字段给前端（如 password 字段）。</p>
+                <pre><code class="language-typescript">const UserOutput = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().email(),
+  avatar: z.string().nullable(),
+  createdAt: z.date(),
+});
+
+export const userRouter = router({
+  getById: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .output(UserOutput)          // ← 校验输出
+    .query(async ({ ctx, input }) =&gt; {
+      const user = await ctx.db.user.findUnique({
+        where: { id: input.id },
+      });
+      // Zod 会校验 user 对象，如果包含 password 等未定义字段会报错
+      return user;
+    }),
+});</code></pre>
+                <div class="intro-block">
+                    <p>output 校验还能帮你发现"数据库返回了意外字段"这种隐蔽 bug。建议对外暴露的接口都加上 output。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>测试 tRPC Procedures</h3>
+                <h4>使用 mock context 进行单元测试</h4>
+                <p>tRPC 是纯函数，不需要启动服务器就能测试。传入 mock context 即可。</p>
+                <pre><code class="language-typescript">// server/__tests__/userRouter.test.ts
+import { appRouter } from '../routers';
+
+describe('userRouter.list', () =&gt; {
+  it('应该返回分页用户列表', async () =&gt; {
+    const ctx = {
+      db: {
+        user: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: '1', name: '张三', email: 'a@b.com' },
+          ]),
+          count: jest.fn().mockResolvedValue(1),
+        },
+      },
+      user: { id: 'admin', role: 'ADMIN' },
+    };
+
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.user.list({ page: 1, limit: 10 });
+
+    expect(result.users).toHaveLength(1);
+    expect(result.pagination.total).toBe(1);
+    expect(ctx.db.user.findMany).toHaveBeenCalledWith({
+      skip: 0, take: 10,
+    });
+  });
+});</code></pre>
+                <div class="intro-block">
+                    <p>用 <code>appRouter.createCaller(ctx)</code> 创建 caller，直接调用 procedure，无需 HTTP 请求。比 supertest 快 10 倍以上。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 性能优化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>性能优化</h3>
+                <h4>dataLoader 模式解决 N+1 查询</h4>
+                <p>tRPC 的 context 在每个请求中创建一次，你可以在其中初始化 DataLoader 来批量查询。</p>
+                <pre><code class="language-typescript">// server/context.ts
+import DataLoader from 'dataloader';
+
+export function createContext({ req, res }: FetchCreateContextFnOptions) {
+  return {
+    db,
+    // DataLoader 自动合并同请求内的多次查询
+    userLoader: new DataLoader&lt;string, User&gt;(async (ids) =&gt; {
+      const users = await db.user.findMany({
+        where: { id: { in: [...ids] } },
+      });
+      const map = new Map(users.map(u =&gt; [u.id, u]));
+      return ids.map(id =&gt; map.get(id)!);
+    }),
+  };
+}
+
+// 在 procedure 中使用
+const getUserById = publicProcedure
+  .input(z.object({ id: z.string() }))
+  .query(async ({ ctx, input }) =&gt; {
+    return ctx.userLoader.load(input.id);  // 自动批处理
+  });</code></pre>
+                <div class="warning">
+                    <strong>DataLoader 是请求级别的。</strong>不要在 context 外面创建 DataLoader，否则会跨请求缓存导致数据错乱。
+                </div>
+            </div>
+        </section>
+
+                <!-- Part 3: 实战场景 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 实战场景</h2>
+                <p>tRPC 不是银弹。了解它擅长什么、不擅长什么，才能做出正确的技术选型。</p>
+            </div>
+        </section>
+
+        <!-- 何时选择 何时放弃 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>何时选择，何时放弃</h3>
+                <h4>技术选型不是信仰问题，是权衡问题</h4>
+                <table>
+                    <thead><tr><th>tRPC 最合适</th><th>tRPC 不合适</th></tr></thead>
+                    <tbody>
+                        <tr><td>全 TypeScript 技术栈</td><td>团队主要用 Python / Java / Go</td></tr>
+                        <tr><td>中小型内部产品</td><td>需要对外提供公开 API</td></tr>
+                        <tr><td>前后端在同一仓库 (monorepo)</td><td>前端是移动端（React Native 支持较弱）</td></tr>
+                        <tr><td>快速迭代、类型安全优先</td><td>需要复杂的 API 版本管理</td></tr>
+                        <tr><td>团队熟悉 React + Node</td><td>已有成熟 GraphQL 基础设施</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>一个简单判断标准：如果你会犹豫"要不要用 tRPC"，大概率说明你当前项目的约束更适合 REST 或 GraphQL。tRPC 让人毫不犹豫选择时，通常是因为你的技术栈是全 TS + 内部产品。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>✅ 选择 tRPC</h4>
+                        <p>全栈 TS · Monorepo · 内部工具 · 快速迭代 · 前端驱动开发</p>
+                    </div>
+                    <div class="card">
+                        <h4>❌ 选择 REST/GraphQL</h4>
+                        <p>多语言团队 · 公开 API · 移动端为主 · 需要持久化缓存</p>
+                    </div>
+                </div>
+                </div>
+            </div>
+        </section>
+
+                <!-- Express 集成 -->
         <section class="slide">
             <div class="slide-content">
                 <h3>Express 集成</h3>
@@ -326,8 +756,100 @@ const todoRouter = router({
             </div>
         </section>
 
+        <!-- 练习二 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习二：添加认证中间件</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习二</h3>
+                        <p><strong>任务</strong>：创建一个 <code>protectedProcedure</code>，要求请求头中包含有效的 Bearer Token。如果 Token 无效或缺失，抛出自定义的 UNAUTHORIZED 错误。</p>
+                        <pre><code class="language-typescript">// 你的代码：
+// 1. 从 ctx.headers 读取 Authorization
+// 2. 验证 Bearer Token（可用假函数 verifyToken）
+// 3. 无效时 throw new TRPCError({ code: 'UNAUTHORIZED' })</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">import { initTRPC, TRPCError } from '@trpc/server';
+import type { Context } from './context';
+
+const t = initTRPC.context&lt;Context&gt;().create();
+
+const isAuthenticated = t.middleware(({ ctx, next }) =&gt; {
+  const authHeader = ctx.req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: '缺少 Authorization 头，请提供 Bearer Token',
+    });
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  const user = verifyToken(token); // 你的验证逻辑
+
+  if (!user) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'Token 无效或已过期',
+    });
+  }
+
+  return next({ ctx: { user } });
+});
+
+export const publicProcedure = t.procedure;
+export const protectedProcedure = t.procedure.use(isAuthenticated);</code></pre>
+                            <p>在 React 端，你需要把 Token 加到请求里：</p>
+                            <pre><code class="language-typescript">// client/trpc.ts
+import { createTRPCReact, httpBatchLink } from '@trpc/react-query';
+
+const trpc = createTRPCReact&lt;AppRouter&gt;();
+
+const trpcClient = trpc.createClient({
+  links: [
+    httpBatchLink({
+      url: '/api/trpc',
+      headers() {
+        const token = localStorage.getItem('token');
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      },
+    }),
+  ],
+});</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- 收尾 -->
-        <section class="slide title-slide">
+                <!-- 要点总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📝 要点总结</h3>
+                <h4>本章核心知识点</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>类型推导</h4>
+                        <p>后端定义 Router，前端自动获得完整类型，重构不再怕漏改</p>
+                    </div>
+                    <div class="card">
+                        <h4>Procedure</h4>
+                        <p>query/mutation/subscription 三种 Procedure 覆盖所有交互模式</p>
+                    </div>
+                    <div class="card">
+                        <h4>中间件链</h4>
+                        <p>认证、日志、权限检查通过中间件组合，保持 Procedure 简洁</p>
+                    </div>
+                    <div class="card">
+                        <h4>React Query 集成</h4>
+                        <p>tRPC + TanStack Query = 类型安全 + 缓存 + 自动重试</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+<section class="slide title-slide">
             <h1>下一章</h1>
             <p>tRPC 让前后端类型永远同步。下一章我们学习 <strong>Docker 容器化</strong>——让应用在任何环境都能一致运行。</p>
         

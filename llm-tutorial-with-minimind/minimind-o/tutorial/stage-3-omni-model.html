@@ -294,8 +294,11 @@ def encode_audio_inputs(self, audio_inputs, audio_lens=None):
             out[i] = emb_list[j]                            # 有音频的位置填上
             j += 1                                          # 没音频的位置保持 None
     return out                                              # 返回 list，里面混着 None</code></pre>
+                <div class="warning">
+                    <p><strong>读源码别被 <code>None</code> 吓到。</strong>这里返回的 list 里混着 <code>None</code>，<strong>不是 bug</strong>，是处理「批次里有的样本没音频」的故意设计。如果直接拿这个 list 去 stack 会报错——下游 <code>inject_audio_features</code> 会逐个检查 <code>is not None</code> 才用。</p>
+                </div>
                 <div class="intro-block">
-                    <p><strong>为什么是 list 而不是 tensor？</strong> 因为不同样本的音频长度不同（帧数不同），无法 stack 成一个规整的 tensor，所以用 list 逐样本存。为什么含 <code>None</code>？批次里有的样本是纯文本（没音频），<code>batch_mask</code> 把它们<strong>过滤</strong>掉只送有效样本给编码器，但返回时要在原位置补 <code>None</code> 占位，保证 <code>out[i]</code> 和原 batch 的第 i 个样本对应。<strong>下游 <code>inject_audio_features</code> 用 <code>af = audio_feats[b] if audio_feats[b] is not None else None</code> 来兼容这个 <code>None</code></strong>——读源码时如果在这里看到 <code>None</code> 检查，就知道是处理「这个样本没音频」的情况。</p>
+                    <p><strong>为什么是 list 而不是 tensor？</strong> 因为不同样本的音频长度不同（帧数不同），无法 stack 成一个规整的 tensor，所以用 list 逐样本存。为什么含 <code>None</code>？批次里有的样本是纯文本（没音频），<code>batch_mask</code> 把它们<strong>过滤</strong>掉只送有效样本给编码器，但返回时要在原位置补 <code>None</code> 占位，保证 <code>out[i]</code> 和原 batch 的第 i 个样本对应。<strong>下游 <code>inject_audio_features</code> 用 <code>af = audio_feats[b] if audio_feats[b] is not None else None</code> 来兼容这个 <code>None</code></strong>。</p>
                 </div>
             </div>
         </section>
@@ -511,6 +514,7 @@ for i, al in enumerate(out.audio_logits):
         # ... 真采样</code></pre>
                 <div class="intro-block">
                     <p>这个设计很直观：模型在「自言自语」（思考）时不该出声，等想清楚了（输出完 <code>&lt;/think&gt;\n\n</code>）才开始合成语音。注意 <code>think_end_ids = [26, 234, 234]</code> 就是 &lt;/think&gt; 换行换行的三个 token id。</p>
+                    <p><strong>为什么 <code>think_end_step = step + 2</code> 而不是直接用 <code>step</code>？</strong>这里 <code>step</code> 是"刚检测到 <code>&lt;/think&gt;\n\n</code> 时已生成的 token 数"。加 2 是给 Talker 留一段<strong>从"思考模式"切换到"发声模式"的缓冲</strong>——结合上一页讲的交错延迟（每层比上一层慢 1 步、整体比文本慢 1 步），再额外多这 2 步，让第 0 层音频也有足够时间"启动"。换句话说，<strong>音频不是在 <code>&lt;/think&gt;</code> 结束的瞬间就出声，而是再等约 3 步</strong>（1 步基础延迟 + 2 步缓冲），避免思考末尾的静默和首个音频帧撞在一起产生爆音。</p>
                 </div>
             </div>
         </section>
@@ -806,6 +810,7 @@ return out</code></pre>
 if text_finished and all(audio_stop_pos[i] is not None for i in range(8)): break   # 两边都停才 break</code></pre>
                 <div class="intro-block">
                     <p>注意音频侧的停止判据是 <code>code &gt;= 2048</code>，不是只判 <code>== 2050</code>。这是因为码本 0-2047 是正常音频码，而 <strong>2048 及以上都是控制码</strong>（<code>audio_pad_token=2049</code> / <code>audio_stop_token=2050</code> / <code>audio_spk_token=2051</code>）——只要模型在某一层吐出了控制码，就认为这一层该结束了。</p>
+                    <p><strong>码本空间的完整划分</strong>：Talker 的输出词表 <code>audio_vocab_size=2112</code>。其中 <strong>0-2047</strong>（共 2048 个）是 Mimi 真实音频码；<strong>2049/2050/2051</strong> 是三个已启用的控制码（pad/stop/spk）；<strong>2048 和 2052-2111</strong> 是<strong>预留位</strong>，当前代码未使用——留这些空位是为了未来扩展（比如加新的控制信号），也保证控制码和音频码在数值上彻底隔开。所以用 <code>&gt;= 2048</code> 当判据比 <code>&gt;= 2049</code> 更稳妥，能一并兜住预留位。</p>
                     <p>由于交错延迟，文本先结束，音频还会再跑几步把剩余的码本层补齐。所以你会看到终端里「文本打完了，但 Talker 还在输出几帧音频」的现象——这是正常的。</p>
                 </div>
             </div>

@@ -40,6 +40,7 @@
                         <tr><td>★☆☆</td><td>3. 改模型配置</td><td>理解参数量从哪来</td></tr>
                         <tr><td>★★☆</td><td>4. 可视化注意力</td><td>看见模型「在看哪」</td></tr>
                         <tr><td>★★☆</td><td>5. 跟踪张量形状</td><td>在脑子里跑通 forward</td></tr>
+                        <tr><td>★★☆</td><td>5½. 拆解双路径</td><td>亲手验证 Thinker→Talker 的 Bridge</td></tr>
                         <tr><td>★★☆</td><td>6. 调采样参数</td><td>驾驭模型的「性格」</td></tr>
                         <tr><td>★★★</td><td>7. 小数据训练</td><td>跑完整训练流水线</td></tr>
                         <tr><td>★★★</td><td>8. 搭 Web Demo</td><td>做个能用的产品</td></tr>
@@ -171,6 +172,36 @@ def forward(self, input_ids):
                 </div>
                 <p><strong>该观察什么</strong>：从 Embedding 到 8 个 Block 再到 lm_head，<code>(1, T, 768)</code> 这个形状是不是一直不变？只有最后 lm_head 把 768 变成 6400？为什么中间维度稳定（因为残差连接要求输入输出同维）？</p>
                 <p>这个练习直接验证阶段 2 和阶段 3 讲的所有形状约定。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实践 5½：拆解双路径</h3>
+                <h4>Thinker 和 Talker 到底怎么协作</h4>
+                <p><strong>目标</strong>：这是阶段 3 全模态架构的唯一动手练习。在 Bridge 处插桩，<strong>亲手对比「Thinker 的隐状态传给 Talker vs 不传」</strong>，看清双路径到底在干什么。</p>
+                <p><strong>背景</strong>：Talker 的输入里有一项是从 Thinker 第 3 层（<code>bridge_layer</code>）抽出来的隐藏状态，经 <code>embed_proj</code> 投影后注入。这一步是 Thinker→Talker 的「意图传递」。</p>
+                <pre><code class="language-python"># 在 MiniMindOmni.forward 里，Talker 组装输入那一段（约第 296 行附近）
+# 找到 bridge 状态被注入的位置，加一个开关做对照实验
+
+# 原始：用 Thinker 第 bridge_layer 层的隐状态
+bridge_h = thinker_hidden[config.bridge_layer]          # (1, T, 768)
+talker_input = ... + self.talker.embed_proj(bridge_h)   # 注入
+
+# 对照：把 bridge_h 替换成全零，看 Talker 还能不能生成有意义的声音
+bridge_h_zero = torch.zeros_like(bridge_h)
+talker_input = ... + self.talker.embed_proj(bridge_h_zero)  # 不传意图</code></pre>
+                <p><strong>该观察什么</strong>：</p>
+                <ul>
+                    <li><strong>正常</strong>（传 bridge）：Talker 生成的 8 层码本解码后，是清晰、连贯的人声。</li>
+                    <li><strong>对照</strong>（bridge 全零）：Talker 收不到 Thinker 的「想法」，生成的音频会变成<strong>含混的噪声或毫无意义的呜咽</strong>——因为它根本不知道该「说」什么。</li>
+                </ul>
+                <div class="warning">
+                    <p><strong>这个对比会非常直观。</strong>如果对照实验里声音变废了，说明 Bridge 这条线确实承载了「文本意图」——它不是可有可无的装饰，而是 Talker 能说话的前提。这正是 MiniMind-O 区别于「ASR+LLM+TTS 简单串联」的关键：Thinker 和 Talker 通过张量深度耦合，而非各干各的。</p>
+                </div>
+                <div class="intro-block">
+                    <p><strong>延伸</strong>：再试试把 <code>bridge_layer</code> 从第 3 层改成第 0 层或第 7 层（在 config 里改），看输出音质怎么变。第 3 层是经验证过的甜点——太浅（第 0 层）意图还没成形，太深（第 7 层）信息已过于特定。</p>
+                </div>
             </div>
         </section>
 

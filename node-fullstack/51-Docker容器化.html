@@ -7,8 +7,6 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
     <link rel="stylesheet" href="./references/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
 </head>
 <body>
     <main id="presentation">
@@ -18,6 +16,21 @@
             <h1>Docker 容器化</h1>
             <p>告别"在我机器上能跑"的环境噩梦</p>
         </section>
+        <!-- 学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>🎯 学习目标</h3>
+                <h4>学完本章，你将能够：</h4>
+                <ul>
+                    <li>理解 Docker 核心概念：镜像、容器、Volume 和网络</li>
+                    <li>编写 Dockerfile 并使用多阶段构建优化镜像</li>
+                    <li>使用 Docker Compose 编排多容器应用</li>
+                    <li>配置开发环境热重载和生产环境最佳实践</li>
+                    <li>发布镜像到 Docker Hub 并管理版本</li>
+                </ul>
+            </div>
+        </section>
+
 
         <!-- 问题驱动 -->
         <section class="slide">
@@ -91,76 +104,117 @@
             <div class="slide-content">
                 <h3>容器架构</h3>
                 <h4>Docker 如何在宿主系统上运行容器</h4>
-                <pre class="mermaid">
-graph TB
-    subgraph 宿主系统
-        subgraph Docker Engine
-            subgraph 容器1["容器: Node.js App"]
-                A1[Express 服务器]
-                A2[应用代码]
-            end
-            subgraph 容器2["容器: PostgreSQL"]
-                B1[数据库进程]
-                B2[数据文件]
-            end
-            subgraph 容器3["容器: Redis"]
-                C1[缓存进程]
-            end
-        end
-        D[Docker Daemon]
-    end
-    E[客户端: docker / docker compose]
-    E -->|API 请求| D
-    D --> 容器1
-    D --> 容器2
-    D --> 容器3
-    容器1 ---|Network| 容器2
-    容器1 ---|Network| 容器3
-    容器2 -.->|Volume 持久化| B2
-                </pre>
+                                <div class="ai-diagram">
+                    <h4>图：Docker 容器架构与运行时</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：展示 Docker 容器架构，包含 Docker Engine、多个容器和客户端
+                    - 左侧是一个圆角矩形"宿主系统"，内嵌"Docker Engine"大框
+                    - Docker Engine 内部有三个并排的容器框：Node.js App（含 Express 服务器和应用代码）、PostgreSQL（含数据库进程和数据文件）、Redis（含缓存进程）
+                    - 容器之间有"Network"连线，PostgreSQL 到数据文件有"Volume 持久化"虚线
+                    - 右侧是"客户端: docker / docker compose"，通过"API 请求"箭头指向 Docker Engine 内的 Docker Daemon
+                    - 整体配色：蓝色系为主，容器用浅色背景，连线用深色箭头</p>
+                </div>
             </div>
         </section>
 
-        <!-- 安装与验证 -->
+        <!-- 安装 Docker -->
         <section class="slide">
             <div class="slide-content">
-                <h3>安装与验证</h3>
-                <h4>三步搞定 Docker 环境</h4>
-                <pre><code class="language-bash"># macOS / Windows: 下载 Docker Desktop
-# https://www.docker.com/products/docker-desktop
-
-# Ubuntu / Debian:
+                <h3>安装 Docker</h3>
+                <h4>各平台安装方式与国内镜像加速</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Docker Desktop (Win/macOS)</h4>
+                        <p>下载官方安装包，包含 GUI 设置、Kubernetes 支持。</p>
+                    </div>
+                    <div class="card">
+                        <h4>apt install (Ubuntu)</h4>
+                        <p>服务器环境建议直接安装 Docker Engine，新版本使用 docker.io 或 Docker 官方 repo。</p>
+                    </div>
+                    <div class="card">
+                        <h4>验证安装</h4>
+                        <p>运行 <code>docker run hello-world</code> 确保环境正确启动，成功即可开始使用。</p>
+                    </div>
+                    <div class="card">
+                        <h4>国内镜像加速</h4>
+                        <p>配置加速源解决国际访问问题，如 docker.ucloud.cn 等。</p>
+                    </div>
+                </div>
+                <pre><code class="language-bash"># Ubuntu/Debian 安装 (最新版本方式)
+$ curl -fsSL https://get.docker.com | sh
+# 或者使用 apt
 $ sudo apt-get update
 $ sudo apt-get install -y docker-ce docker-ce-cli docker-compose-plugin
 
-# 验证安装
+# 免去每次加 sudo
+$ sudo usermod -aG docker $USER
+$ newgrp docker
+
+# 验证
 $ docker --version
 Docker version 24.x.x
 
 $ docker run hello-world
-Hello from Docker!</code></pre>
+# 输出 Hello from Docker! 表示成功</code></pre>
+                <pre><code class="language-bash"># 国内镜像加速配置 /etc/docker/daemon.json
+{
+  "registry-mirrors": [
+    "https://docker.ucloud.cn",
+    "https://docker.m.daocloud.io",
+    "https://&lt;your-id&gt;.mirror.aliyuncs.com"
+  ]
+}
+
+# 保存后重启 Docker
+$ sudo systemctl restart docker
+
+# 验证加速是否生效
+$ docker info | grep -A 5 "Registry Mirrors"</code></pre>
+                <h4>常见问题排查</h4>
+                <pre><code class="language-bash"># 问题1: permission denied
+# 原因：当前用户未加入 docker 组
+$ sudo usermod -aG docker $USER
+$ newgrp docker
+
+# 问题2: 无法连接 Docker Hub
+# 检查网络，尝试国内镜像加速
+$ docker info | grep -i mirror
+
+# 问题3: 容器无法访问外部网络
+# 检查 DNS 配置
+$ docker run --rm alpine ping -c 3 8.8.8.8
+$ docker run --rm alpine ping -c 3 google.com</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>Windows 版本需要 WSL2 后端，macOS 版本支持 Apple Silicon 和 x86 镜像。建议测试完毕再进展后续章节。
+                </div>
             </div>
         </section>
 
-        <!-- 常用命令 -->
+        <!-- Dockerfile 指令速查 -->
         <section class="slide">
             <div class="slide-content">
-                <h3>常用命令</h3>
-                <h4>日常开发最常用的 Docker 命令</h4>
-                <pre><code class="language-bash"># 镜像管理
-$ docker pull node:20-alpine        # 拉取镜像
-$ docker images                      # 列出本地镜像
-$ docker build -t my-app:latest .    # 构建镜像
-
-# 容器管理
-$ docker run -d -p 3000:3000 --name my-app my-app:latest
-$ docker ps                          # 查看运行中容器
-$ docker logs -f my-app              # 实时查看日志
-$ docker exec -it my-app sh          # 进入容器终端
-
-# 清理
-$ docker system prune                # 清理未使用资源
-$ docker volume prune                # 清理未使用卷</code></pre>
+                <h3>Dockerfile 指令速查</h3>
+                <h4>12 个最常用的 Dockerfile 指令</h4>
+                <table>
+                    <thead><tr><th>指令</th><th>作用</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>FROM</strong></td><td>指定基础镜像</td><td><code>FROM node:20-alpine</code></td></tr>
+                        <tr><td><strong>WORKDIR</strong></td><td>设置工作目录</td><td><code>WORKDIR /app</code></td></tr>
+                        <tr><td><strong>COPY</strong></td><td>复制文件到容器</td><td><code>COPY package*.json ./</code></td></tr>
+                        <tr><td><strong>RUN</strong></td><td>执行命令（构建时）</td><td><code>RUN npm ci</code></td></tr>
+                        <tr><td><strong>ENV</strong></td><td>设置环境变量</td><td><code>ENV NODE_ENV=production</code></td></tr>
+                        <tr><td><strong>EXPOSE</strong></td><td>声明容器监听端口</td><td><code>EXPOSE 3000</code></td></tr>
+                        <tr><td><strong>USER</strong></td><td>切换运行用户</td><td><code>USER appuser</code></td></tr>
+                        <tr><td><strong>CMD</strong></td><td>容器启动默认命令</td><td><code>CMD ["node", "dist/index.js"]</code></td></tr>
+                        <tr><td><strong>ENTRYPOINT</strong></td><td>容器入口点（不可覆盖）</td><td><code>ENTRYPOINT ["node"]</code></td></tr>
+                        <tr><td><strong>ARG</strong></td><td>构建时参数</td><td><code>ARG NODE_VERSION=20</code></td></tr>
+                        <tr><td><strong>HEALTHCHECK</strong></td><td>健康检查配置</td><td><code>HEALTHCHECK CMD curl -f http://localhost:3000/health</code></td></tr>
+                        <tr><td><strong>VOLUME</strong></td><td>声明挂载点</td><td><code>VOLUME /data</code></td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>CMD vs ENTRYPOINT：</strong>CMD 指定默认命令，可被命令行参数覆盖；通常组合使用 <code>ENTRYPOINT ["node"]</code> + <code>CMD ["dist/index.js"]</code>，运行时只替换 CMD 部分。</p>
+                </div>
             </div>
         </section>
 
@@ -180,49 +234,30 @@ $ docker volume prune                # 清理未使用卷</code></pre>
                 <pre><code class="language-dockerfile"># 第一阶段：构建
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npm run build
+RUN npm run build &amp;&amp; npm prune --production
 
 # 第二阶段：运行
-FROM node:20-alpine AS runner
+FROM node:20-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 
 # 创建非 root 用户
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 appuser
+RUN addgroup -g 1001 -S appgroup &amp;&amp; \
+    adduser -S appuser -u 1001 -G appgroup
 
-# 只复制构建产物
-COPY --from=builder --chown=appuser:nodejs /app/dist ./dist
-COPY --from=builder --chown=appuser:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=appuser:nodejs /app/package.json ./
+COPY --from=builder --chown=appuser:appgroup /app/dist ./dist
+COPY --from=builder --chown=appuser:appgroup /app/node_modules ./node_modules
+COPY --from=builder --chown=appuser:appgroup /app/package.json ./
 
 USER appuser
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=3s \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
-
+HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:3000/health || exit 1
 CMD ["node", "dist/index.js"]</code></pre>
-            </div>
-        </section>
-
-        <!-- 构建效果对比 -->
-        <section class="slide">
-            <div class="slide-content">
-                <h3>构建效果对比</h3>
-                <h4>多阶段构建的收益一目了然</h4>
-                <table>
-                    <thead><tr><th>方式</th><th>镜像大小</th><th>包含内容</th><th>安全性</th></tr></thead>
-                    <tbody>
-                        <tr><td>单阶段无优化</td><td>~1.2 GB</td><td>源码 + devDeps + 工具</td><td>低</td></tr>
-                        <tr><td>多阶段构建</td><td>~180 MB</td><td>编译产物 + prod 依赖</td><td>高</td></tr>
-                        <tr><td>多阶段 + standalone</td><td>~80 MB</td><td>仅运行时文件</td><td>最高</td></tr>
-                    </tbody>
-                </table>
-                <div class="warning">
-                    <strong>永远不要在镜像中硬编码密钥。</strong>使用 <code>-e</code> 参数或 Docker Secrets 传递敏感配置。确保 <code>.env</code> 在 <code>.dockerignore</code> 中。
+                <div class="intro-block">
+                    <p>最终镜像只包含 <code>dist/</code> 和 <code>node_modules/</code>，不含源码和构建工具。Alpine 基础镜像仅 ~5MB，加上 Node 应用一般不超过 100MB。</p>
                 </div>
             </div>
         </section>
@@ -231,73 +266,194 @@ CMD ["node", "dist/index.js"]</code></pre>
         <section class="slide">
             <div class="slide-content">
                 <h3>.dockerignore</h3>
-                <h4>排除不需要的文件，加速构建</h4>
-                <pre><code class="language-plaintext">node_modules
+                <h4>排除不需要进入镜像的文件</h4>
+                <pre><code class="language-text"># .dockerignore
+node_modules
 npm-debug.log
-dist
 .git
+.gitignore
 .env
 .env.local
-README.md
-.vscode
-coverage
-Dockerfile
+*.md
+.docker
 docker-compose*.yml
-.DS_Store
-tmp</code></pre>
+Dockerfile*
+coverage
+.nyc_output
+.vscode
+.idea</code></pre>
+                <p>不写 .dockerignore，构建时会把整个项目目录（包括巨大的 <code>node_modules</code>）发给 Docker daemon，导致构建极慢且镜像臃肿。</p>
             </div>
         </section>
 
-        <!-- Part 2: Docker Compose -->
+        <!-- Part 2: 数据与网络 -->
         <section class="slide">
             <div class="slide-content">
-                <h2>Part 2: Compose 编排</h2>
-                <p>一个命令启动 Node + PostgreSQL + Redis 全套环境。</p>
+                <h2>Part 2: 数据与网络</h2>
+                <p>容器是临时的，数据是永久的，服务是隔离的，通信是必要的。Volume 确保数据不丢。</p>
             </div>
         </section>
 
-        <!-- docker-compose.yml -->
+        <!-- Volume 数据持久化 -->
         <section class="slide">
             <div class="slide-content">
-                <h3>Compose 编排</h3>
-                <h4>三个服务，一个文件搞定</h4>
-                <pre class="mermaid">
-graph LR
-    subgraph Docker Compose
-        N[Nginx :80] --> A[Node.js App :3000]
-        A --> DB[(PostgreSQL :5432)]
-        A --> R[(Redis :6379)]
-    end
-    U[用户] --> N
-                </pre>
-                <pre><code class="language-yaml"># docker-compose.yml
+                <h3>Volume 数据持久化</h3>
+                <h4>容器毁了，数据还在</h4>
+                <p><strong>容器是临时</strong>的。容器删除后，内部文件就消失了。但数据库数据、用户上传文件显然不能跟着一起消失。</p>
+                <table>
+                    <thead><tr><th>类型</th><th>命令</th><th>生命周期</th><th>适用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td>匿名卷</td><td><code>VOLUME /data</code></td><td>随容器删除</td><td>临时缓存</td></tr>
+                        <tr><td>具名卷</td><td><code>docker volume create my-vol</code></td><td>独立于容器</td><td>数据库数据</td></tr>
+                        <tr><td>Bind Mount</td><td><code>-v $(pwd):/app</code></td><td>绑定宿主目录</td><td>开发环境代码同步</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-bash"># 创建具名卷
+$ docker volume create pgdata
+
+# 启动容器时挂载
+$ docker run -d --name pg \
+    -v pgdata:/var/lib/postgresql/data \
+    -e POSTGRES_PASSWORD=secret \
+    postgres:16-alpine
+
+# 容器删了，数据还在
+$ docker rm -f pg
+$ docker volume ls          # pgdata 仍存在
+
+# 新容器挂载同一个卷，数据自动恢复
+$ docker run -d --name pg-new \
+    -v pgdata:/var/lib/postgresql/data \
+    -e POSTGRES_PASSWORD=secret \
+    postgres:16-alpine</code></pre>
+                <div class="warning">
+                    <strong>关键场景：数据库容器。</strong>PostgreSQL、MySQL、MongoDB 等数据库容器必须使用具名卷挂载数据目录，否则容器一删数据全丢。
+                </div>
+            </div>
+        </section>
+
+        <!-- 容器网络 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>容器网络</h3>
+                <h4>服务之间如何互相发现对方</h4>
+                                <div class="ai-diagram">
+                    <h4>图：Docker Compose 容器网络拓扑</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：展示 docker-compose 创建的 bridge 网络，包含三个服务容器
+                    - 顶部是"宿主"，通过端口映射 3000:3000 和 5432:5432 连接到下方网络
+                    - 下方是一个虚线框标注"docker-compose 统一网络 (bridge)"
+                    - 网络内部有三个并排的圆角矩形：app:3000、db:5432、redis:6379
+                    - app 到 db 有箭头标注"通过服务名 db:5432 连接"
+                    - app 到 redis 有箭头标注"通过服务名 redis:6379 连接"
+                    - 整体配色：绿色系为主，网络框用虚线，容器用浅色背景</p>
+                </div>
+                <table>
+                    <thead><tr><th>驱动</th><th>说明</th><th>适用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td>bridge</td><td>默认驱动，容器通过虚拟网络通信</td><td>单机多容器网络</td></tr>
+                        <tr><td>host</td><td>容器直接使用宿主机网络协议栈</td><td>高性能需求</td></tr>
+                        <tr><td>none</td><td>无网络接口</td><td>离线批处理</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-yaml"># Compose 默认创建统一 bridge 网络
+# 容器间通过"服务名"互相访问，无需知道 IP
 services:
   app:
-    build: .
-    ports: ["3000:3000"]
     environment:
-      - DATABASE_URL=postgresql://postgres:secret@db:5432/myapp
-      - REDIS_URL=redis://redis:6379
+      DATABASE_URL: postgres://user:pass@db:5432/mydb
+      REDIS_URL: redis://redis:6379</code></pre>
+                <div class="intro-block">
+                    <p>这个比喻只是为了帮你建立直观感受：容器网络就像办公室电话分机，每个容器有一个"分机号"（服务名），拨打分机就能接通对应容器。实际上 Docker 通过内置 DNS 实现服务名到容器 IP 的解析。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 自定义网络 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自定义网络</h3>
+                <h4>隔离不同项目的容器</h4>
+                <pre><code class="language-bash"># 创建自定义网络
+$ docker network create project-a-net
+$ docker network create project-b-net
+
+# 容器连接到指定网络
+$ docker run -d --name app-a --network project-a-net nginx
+$ docker run -d --name app-b --network project-b-net nginx
+
+# app-a 和 app-b 无法互相通信，实现项目间隔离</code></pre>
+                <p>自定义网络可以提供自动 DNS 解析，容器通过服务名即可互相访问，无需使用 IP 地址。不同网络的容器默认隔离。</p>
+            </div>
+        </section>
+
+        <!-- Part 3: Compose -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: Compose 编排</h2>
+                <p>一个文件定义整套基础设施。</p>
+            </div>
+        </section>
+
+        <!-- Compose 示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>docker-compose.yml</h3>
+                <h4>Node + Postgres + Redis，一个文件搞定</h4>
+                <pre><code class="language-yaml">version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://user:pass@db:5432/myapp
+      REDIS_URL: redis://redis:6379
     depends_on:
-      db: { condition: service_healthy }
-    restart: unless-stopped
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
 
   db:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: myapp
-      POSTGRES_PASSWORD: secret
-    volumes: [postgres-data:/var/lib/postgresql/data]
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U user -d myapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
 
   redis:
     image: redis:7-alpine
-    volumes: [redis-data:/data]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - backend
 
 volumes:
-  postgres-data:
-  redis-data:</code></pre>
+  pgdata:
+  redis_data:
+
+networks:
+  backend:</code></pre>
             </div>
         </section>
 
@@ -320,8 +476,64 @@ services:
       - "9229:9229"          # 调试端口</code></pre>
                 <pre><code class="language-bash">$ docker compose up -d              # 启动所有服务
 $ docker compose logs -f app        # 查看 app 日志
-$ docker compose exec db psql -U postgres -d myapp
+$ docker compose exec db psql -U user -d myapp
 $ docker compose down               # 停止所有服务</code></pre>
+            </div>
+        </section>
+
+        <!-- Docker Hub 镜像发布 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Docker Hub 镜像发布</h3>
+                <h4>构建、打标签、推送，让镜像进入公共仓库</h4>
+                <pre><code class="language-bash"># 1. 注册 Docker Hub 账号并登录
+$ docker login
+Username: your-username
+Password: ********
+
+# 2. 构建本地镜像
+$ docker build -t your-username/my-node-app:v1.0 .
+
+# 3. 推送到 Docker Hub
+$ docker push your-username/my-node-app:v1.0
+
+# 4. 任何人都可以拉取并运行
+$ docker run -d -p 3000:3000 your-username/my-node-app:v1.0</code></pre>
+                <div class="intro-block">
+                    <p><strong>私有仓库：</strong>企业内部可用 Harbor、GitLab Registry 或云商容器镜像服务托管私有镜像，避免代码泄露并加速内网拉取。</p>
+                </div>
+                <h4>镜像版本管理策略</h4>
+                <p>使用 semantic versioning（Major.Minor.Patch）方式标注镜像版本，例如 <code>v1.0.0</code>、<code>v1.1.0</code>、<code>v1.1.1</code>。同时维护 <code>latest</code> 标签指向最新稳定版。</p>
+            </div>
+        </section>
+
+        <!-- 生产最佳实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>生产最佳实践</h3>
+                <h4>安全与效率并重</h4>
+                <table>
+                    <thead><tr><th>实践</th><th>说明</th><th>收益</th></tr></thead>
+                    <tbody>
+                        <tr><td>Alpine 基础镜像</td><td>最小化攻击面，镜像通常 &lt;100MB</td><td><code>FROM node:20-alpine</code></td></tr>
+                        <tr><td>非 root 用户运行</td><td>降低容器内权限</td><td><code>USER appuser</code></td></tr>
+                        <tr><td>多阶段构建</td><td>不包含构建工具和源码</td><td><code>FROM ... AS builder</code></td></tr>
+                        <tr><td>.dockerignore</td><td>排除 node_modules、.git 等</td><td>加速构建，减小上下文</td></tr>
+                        <tr><td>镜像安全扫描</td><td>定期检测 CVE 漏洞</td><td><code>docker scout cve my-app</code></td></tr>
+                    </tbody>
+                </table>
+                <h4>镜像安全扫描</h4>
+                <pre><code class="language-bash"># 使用 Docker Scout 扫描
+$ docker scout cve my-node-app:latest
+
+# 使用 Trivy 扫描（第三方工具）
+$ trivy image my-node-app:latest
+
+# 扫描后修复: 升级基础镜像或修补 CVE 源码</code></pre>
+                <p>经过这些最佳实践，你的镜像会更小、更安全、更适合生产部署。</p>
+                <div class="warning">
+                    <strong>资源限制：</strong>不要让容器使用无限的资源；日志记录应使用 json-file 驱动并限制大小，避免日志写满硬盘空间。
+                </div>
             </div>
         </section>
 
@@ -384,15 +596,89 @@ CMD ["node", "dist/index.js"]</code></pre>
     image: redis:7-alpine</code></pre>
                         </div>
                     </div>
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：创建一个具名 volume 存储 PostgreSQL 数据，验证容器销毁后数据不丢。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-bash"># 1. 创建具名卷
+$ docker volume create pgdata
+
+# 2. 启动 PostgreSQL 容器
+$ docker run -d --name pg-test \
+    -v pgdata:/var/lib/postgresql/data \
+    -e POSTGRES_PASSWORD=test123 \
+    postgres:16-alpine
+
+# 3. 写入数据
+$ docker exec -it pg-test psql -U postgres -c "CREATE TABLE test (id INT);"
+$ docker exec -it pg-test psql -U postgres -c "INSERT INTO test VALUES (1);"
+
+# 4. 销毁容器
+$ docker rm -f pg-test
+
+# 5. 重新启动，验证数据还在
+$ docker run -d --name pg-test2 \
+    -v pgdata:/var/lib/postgresql/data \
+    -e POSTGRES_PASSWORD=test123 \
+    postgres:16-alpine
+$ docker exec -it pg-test2 psql -U postgres -c "SELECT * FROM test;"
+# 输出: 1 —— 数据完好无损</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习四（生产构建）</h3>
+                        <p><strong>任务</strong>：使用 <code>docker build</code> 构建你的 Node.js 应用镜像，并用 <code>docker run</code> 启动容器，验证 3000 端口可访问。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-bash"># 构建镜像
+$ docker build -t my-node-app:v1.0 .
+
+# 启动容器
+$ docker run -d -p 3000:3000 --name my-app my-node-app:v1.0
+
+# 验证访问
+$ curl http://localhost:3000
+# 应该返回 HTTP 200
+
+# 查看日志
+$ docker logs -f my-app</code></pre>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
 
         <!-- 收尾 -->
-        <section class="slide title-slide">
+                <!-- 要点总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📝 要点总结</h3>
+                <h4>本章核心知识点</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>镜像构建</h4>
+                        <p>多阶段构建分离编译和运行环境，大幅缩小镜像体积</p>
+                    </div>
+                    <div class="card">
+                        <h4>数据持久化</h4>
+                        <p>Volume 让容器数据不随容器销毁而丢失，Bind Mount 方便开发</p>
+                    </div>
+                    <div class="card">
+                        <h4>Compose 编排</h4>
+                        <p>一个 yml 文件定义多服务应用，一键启动完整开发环境</p>
+                    </div>
+                    <div class="card">
+                        <h4>生产实践</h4>
+                        <p>非 root 用户 + 健康检查 + 资源限制 = 安全的生产容器</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+<section class="slide title-slide">
             <h1>下一章</h1>
             <p>Docker 让应用可以一致地运行在任何环境。下一章我们学习 <strong>CI/CD</strong>——让代码推送到 main 分支后自动构建、测试、部署。</p>
-        
             <div class="chapter-turn-nav">
                 <a href="./50-端到端类型安全tRPC.html" class="chapter-turn-prev">← 上一章：端到端类型安全tRPC</a>
                 <a href="./52-持续集成与持续部署.html" class="chapter-turn-next">下一章：持续集成与持续部署 →</a>
@@ -400,7 +686,6 @@ CMD ["node", "dist/index.js"]</code></pre>
         </section>
 
     </main>
-
 
     <div class="progress-bar-container">
         <div id="progress-bar"></div>

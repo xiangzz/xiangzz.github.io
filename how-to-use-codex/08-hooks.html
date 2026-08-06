@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>08 Hooks 事件驱动</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- SLIDE 1: 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 08 章</div>
+            <h1>Hooks 事件驱动</h1>
+            <p>在 Codex 的关键时刻自动出手——无人值守的约束与自动化</p>
+            <strong>10 种生命周期事件 × command 处理器 = 确定性自动化</strong>
+        </section>
+
+        <!-- SLIDE 2: 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>总在事后才发现问题</h2>
+                <h4>那些"记得做"的事情，总被忘记</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>密钥又泄露了</h4>
+                        <p>Codex 生成的代码里不小心硬编码了 API Key。PR 发出去后才被发现——<strong>已经推送到了公开仓库</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>格式又被破坏了</h4>
+                        <p>每次 Codex 改完文件都要手动跑 prettier。一忙起来就忘了，<strong>CI 直接红灯</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>审查日志空空如也</h4>
+                        <p>出了问题想回溯：Codex 在那个会话里到底改了哪些文件？<strong>没有记录，没有审计</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>约束全靠嘴说</h4>
+                        <p>你在 prompt 里写了"不要修改 .env"，Codex 有时候还是改了。<strong>口头约定不如钩子可靠</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>解决方案：</strong>用 Hooks 在 Codex 的生命周期关键节点注入自己的逻辑——在工具使用前拦截、在使用后自动修复、在会话结束时记录审计。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 3: 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>已经熟悉 Codex CLI 基本交互的开发者</li>
+                            <li>希望自动化代码审查与格式化的团队</li>
+                            <li>需要审计 AI 操作的安全敏感项目</li>
+                            <li>想在 AI 工作流中注入自定义约束的工程师</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该已经能</h4>
+                        <ul>
+                            <li>理解 10 种生命周期事件的触发时机</li>
+                            <li>配置 command 处理器并掌握 stdin/stdout 协议</li>
+                            <li>用 matcher 正则精确控制 hook 作用范围</li>
+                            <li>用 Trust 模型保障 hook 安全</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>这些内容暂时先不碰</h4>
+                        <ul>
+                            <li>Plugin 提供的 hook 源（plugin hooks）</li>
+                            <li>Hook 引擎的 SDK 级扩展</li>
+                            <li>跨平台 command 适配的深层细节</li>
+                            <li>多租户 hook 调度策略</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>前置知识：</strong>建议先完成第 01–05 章，尤其是 AGENTS.md 和 Subagents 章节，因为 hook 系统与这些配置紧密关联。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 4: Hooks 是什么 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Hooks 是什么</h2>
+                <h4>在 Codex 生命周期关键节点注入自定义逻辑</h4>
+                <p>Hooks 让你可以在 Codex 执行过程中的<strong>特定事件</strong>触发时，运行自己的脚本或 AI 代理。它就像是一个事件监听器系统——你告诉 Codex："当 X 发生时，先执行 Y，再决定是否继续。"</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>事件驱动</h4>
+                        <p>Hooks 不是轮询，而是被动响应。当特定生命周期事件发生时（比如工具被调用、用户提交 prompt），系统自动触发你配置的处理器。</p>
+                    </div>
+                    <div class="card">
+                        <h4>可拦截</h4>
+                        <p>PreToolUse 和 PermissionRequest 这类前置 hook 可以<strong>中止后续操作</strong>。你的脚本返回退出码 <code>2</code>，Codex 就会停止当前动作。</p>
+                    </div>
+                    <div class="card">
+                        <h4>可注入</h4>
+                        <p>SessionStart 的 hook 输出可以作为<strong>额外上下文</strong>注入到模型的对话中，让每次会话开始都带上自定义信息。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>一句话：</strong>Hooks = 在 Codex 关键时刻自动执行的"插件"，让你无需修改 Codex 本身就能扩展其行为。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 5: 10 种生命周期事件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>10 种生命周期事件</h2>
+                <h4>从会话开始到结束，全覆盖</h4>
+                <p>Codex 定义了 10 种生命周期事件，覆盖了一个完整会话的所有关键时刻。每个事件对应 <code>config.toml</code> 中 <code>[hooks]</code> 下的一个字段。</p>
+                <table style="width:100%; border-collapse:collapse; margin: 1em 0;">
+                    <thead>
+                        <tr style="background: var(--surface-muted);">
+                            <th style="padding: 0.6em 1em; text-align:left; border-bottom: 2px solid var(--border-color);">事件</th>
+                            <th style="padding: 0.6em 1em; text-align:left; border-bottom: 2px solid var(--border-color);">触发时机</th>
+                            <th style="padding: 0.6em 1em; text-align:left; border-bottom: 2px solid var(--border-color);">可拦截</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);"><code>SessionStart</code></td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">会话开始，模型加载前</td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">输出注入为上下文</td></tr>
+                        <tr><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);"><code>UserPromptSubmit</code></td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">用户提交 prompt 后</td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">可拦截</td></tr>
+                        <tr><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);"><code>PermissionRequest</code></td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">请求权限时</td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">可拦截（允许/拒绝）</td></tr>
+                        <tr style="background: var(--surface-subtle);"><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);"><code>PreToolUse</code></td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">工具调用<strong>前</strong></td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);"><strong>可拦截</strong></td></tr>
+                        <tr style="background: var(--surface-subtle);"><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);"><code>PostToolUse</code></td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">工具调用<strong>后</strong></td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">只记录/后处理</td></tr>
+                        <tr><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);"><code>SubagentStart</code></td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">子代理启动时</td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">可注入上下文</td></tr>
+                        <tr><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);"><code>SubagentStop</code></td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">子代理结束时</td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">可拦截（拒绝结果）</td></tr>
+                        <tr><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);"><code>PreCompact</code></td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">对话压缩前</<td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">可干预压缩</td></tr>
+                        <tr><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);"><code>PostCompact</code></td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">对话压缩后</td><td style="padding: 0.5em 1em; border-bottom: 1px solid var(--border-color);">只记录</td></tr>
+                        <tr><td style="padding: 0.5em 1em;"><code>Stop</code></td><td style="padding: 0.5em 1em;">会话结束（退出）</td><td style="padding: 0.5em 1em;">可清理/记录</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>记忆口诀：</strong>Start → Prompt → Permission → Pre → Post → Sub Start/Stop → Compact → Stop。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 6: 事件分组理解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>事件的三种角色</h2>
+                <h4>不是所有事件都一样——理解它们的差异</h4>
+                <p>10 种事件虽然触发时机不同，但从"能做什么"的角度可以分为三大类：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>🔴 拦截型（Gatekeeper）</h4>
+                        <p><strong>PreToolUse、PermissionRequest、UserPromptSubmit</strong></p>
+                        <p>这些事件的 hook <strong>可以中止后续操作</strong>。脚本返回非零退出码，Codex 就会停止当前动作。适合做安全检查、敏感信息过滤。</p>
+                    </div>
+                    <div class="card">
+                        <h4>🟡 注入型（Context Injector）</h4>
+                        <p><strong>SessionStart、SubagentStart</strong></p>
+                        <p>这些事件的 hook 标准输出会被<strong>作为额外上下文注入到模型对话中</strong>。适合自动收集 git 状态、环境信息等。</p>
+                    </div>
+                    <div class="card">
+                        <h4>🟢 观察型（Observer）</h4>
+                        <p><strong>PostToolUse、PostCompact、Stop、SubagentStop</strong></p>
+                        <p>主要用于记录与后处理。退出码<strong>不会拦截</strong>已执行的工具调用，但 PostToolUse / Stop 可通过 stdout JSON 返回 <code>continue: false</code> 来终止整个会话。适合审计日志、自动格式化。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 7: command 处理器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>command 处理器</h2>
+                <h4>Codex Hooks 唯一的处理器类型——运行可执行脚本</h4>
+                <div class="info-block">
+                    <strong>开启 Hooks：</strong>Hooks 位于 feature flag 之后。在 <code>config.toml</code> 中声明 <code>[features]</code> 段并设置 <code>hooks = true</code>（旧版键名 <code>codex_hooks</code> 仍作弃用别名可用）。
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>输入：stdin JSON</h4>
+                        <p>事件上下文通过 <strong>stdin</strong> 以 JSON 传入脚本。共享字段包括 <code>session_id</code>、<code>cwd</code>、<code>hook_event_name</code>、<code>model</code>；turn 级事件还带 <code>turn_id</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>输出：退出码决定结果</h4>
+                        <ul>
+                            <li><code>0</code> — 成功放行</li>
+                            <li><code>2</code> — <strong>拦截</strong>，stderr 作为拒绝理由</li>
+                            <li>其他非零 — hook 故障，记录后跳过（fail-open，<strong>不拦截</strong>）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>输出：stdout JSON（可选）</h4>
+                        <p>部分事件支持 stdout 返回结构化 JSON：SessionStart / UserPromptSubmit 可注入额外上下文；PreToolUse 可返回 <code>permissionDecision: "deny"</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>处理器可用字段</h4>
+                        <ul>
+                            <li><code>command</code>：要执行的命令（必填）</li>
+                            <li><code>timeout</code>：超时秒数，默认 600（可选）</li>
+                            <li><code>statusMessage</code>：执行时显示的状态文本（可选）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>易错点：</strong>用 <code>exit 1</code> 试图拦截是<strong>无效的</strong>——Codex 只把它当作脚本出错。拦截必须用 <code>exit 2</code> 或返回 deny JSON。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 8: TOML 配置基础 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>TOML 配置基础</h2>
+                <h4>在 config.toml 中声明你的 hook 规则</h4>
+                <p>Hook 配置可放在 <code>~/.codex/config.toml</code>、<code>~/.codex/hooks.json</code>，或项目级 <code>.codex/config.toml</code>、<code>.codex/hooks.json</code>。多个来源的匹配 hook 会<strong>全部加载</strong>（叠加，非覆盖）。每个事件字段是一个数组，数组元素称为 <strong>MatcherGroup</strong>。</p>
+                <pre><code class="language-toml"># 一个完整的 MatcherGroup 结构
+[[hooks.PreToolUse]]
+matcher = "^(Write|Edit)$"          # 可选：正则匹配工具名
+
+[[hooks.PreToolUse.hooks]]
+type = "command"                     # 处理器类型
+command = "python .codex/hooks/write_check.py"  # 执行的命令
+timeout = 10                        # 超时秒数
+statusMessage = "检查写入..."        # 状态栏显示文本</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>matcher 的作用</h4>
+                        <p><code>matcher</code> 是一个正则表达式。<strong>匹配对象因事件而异</strong>：</p>
+                        <ul>
+                            <li><code>PreToolUse</code> / <code>PostToolUse</code> / <code>PermissionRequest</code> — 匹配<strong>工具名</strong>（如 <code>"Bash"</code>、<code>"Edit|Write"</code>、<code>"mcp__.*"</code>）</li>
+                            <li><code>SessionStart</code> — 匹配<strong>启动来源</strong>（<code>"startup|resume|clear"</code>）</li>
+                            <li><code>UserPromptSubmit</code> / <code>Stop</code> — <strong>不支持</strong> matcher，配置了也会被忽略</li>
+                            <li><code>"*"</code> 或省略 — 匹配所有</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>每个事件可以配置<strong>多个</strong> MatcherGroup，它们会按顺序依次执行。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 9: 配置示例 — 多规则组合 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置示例：多规则组合</h2>
+                <h4>同一个事件，多个规则叠加</h4>
+                <p>下面是一个完整的 Hooks 配置示例，展示两个 PreToolUse 规则叠加使用：</p>
+                <pre><code class="language-toml"># 规则 1：写入/编辑前安全检查
+[[hooks.PreToolUse]]
+matcher = "^(Write|Edit)$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "python .codex/hooks/write_check.py"
+timeout = 10
+statusMessage = "检查写入操作..."
+
+# 规则 2：所有工具调用都记录审计日志
+[[hooks.PreToolUse]]
+matcher = "*"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "echo $(date) >> .codex/audit.log"
+timeout = 5
+statusMessage = "记录审计日志..."</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>执行方式</h4>
+                        <p>当用户让 Codex 执行 <code>Write</code> 操作时：</p>
+                        <ol>
+                            <li>规则 1 和规则 2 <strong>同时并发触发</strong></li>
+                            <li>规则 1 — <code>write_check.py</code> 检查是否允许写入</li>
+                            <li>规则 2 — 记录审计日志（不受规则 1 结果影响）</li>
+                            <li>若规则 1 拦截（exit 2）→ Write 操作被中止</li>
+                        </ol>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>关键：</strong>多个匹配的 command hook <strong>并发执行</strong>，互不阻塞。拦截由退出码 <code>2</code> 或 deny JSON 决定，与 hook 执行顺序无关。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 10: 实战场景一 — PreToolUse 拦截危险命令 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 1：PreToolUse 拦截危险命令</h2>
+                <h4>不让 rm -rf 或危险 git push 偷偷溜过去</h4>
+                <p>最常见的用途——在工具执行前检查命令是否安全。下面是一个拦截器的实现：</p>
+                <pre><code class="language-python">#!/usr/bin/env python3
+"""PreToolUse hook：检查 Bash 命令是否安全"""
+import json
+import sys
+import re
+
+# 从 stdin 读取事件上下文（JSON 格式）
+context = json.loads(sys.stdin.read())
+# 命令嵌套在 tool_input.command 中（Bash / apply_patch 工具）
+command = context.get("tool_input", {}).get("command", "")
+
+# 定义危险模式
+DANGEROUS_PATTERNS = [
+    r"rm\s+-rf\s+/",
+    r"git\s+push\s+--force",
+    r"DROP\s+TABLE",
+    r"DELETE\s+FROM\s+\w+\s*$",
+]
+
+for pattern in DANGEROUS_PATTERNS:
+    if re.search(pattern, command):
+        # 输出拒绝原因到 stderr
+        print(f"🚫 危险操作已拦截：{pattern}", file=sys.stderr)
+        sys.exit(2)  # 退出码 2 = 拦截操作
+
+sys.exit(0)  # 零 = 放行
+</code></pre>
+                <pre><code class="language-toml"># config.toml
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "python .codex/hooks/safety_check.py"
+timeout = 5
+statusMessage = "安全检查中..."</code></pre>
+                <div class="info-block">
+                    <strong>工作原理：</strong> Codex 准备调用 Bash 工具时，先调用你的脚本。脚本通过 stdin 获取 <code>tool_input.command</code>，检查后返回 0（放行）或 2（拦截）。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 11: 实战场景二 — PostToolUse 自动格式化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 2：PostToolUse 自动格式化</h2>
+                <h4>每次写完代码自动跑 prettier / eslint</h4>
+                <p>Codex 写完文件后，自动触发格式化工具——你再也不需要手动 cleanup。</p>
+                <pre><code class="language-toml"># config.toml：写入后自动格式化
+[[hooks.PostToolUse]]
+matcher = "apply_patch|Edit|Write"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "python3 .codex/hooks/auto_format.py"
+timeout = 15
+statusMessage = "自动格式化中..."</code></pre>
+                <pre><code class="language-python">#!/usr/bin/env python3
+"""auto_format.py：PostToolUse 写入后自动格式化"""
+import json, sys, re, subprocess
+
+ctx = json.loads(sys.stdin.read())
+# apply_patch 的 tool_input.command 包含 patch 内容
+patch = ctx.get("tool_input", {}).get("command", "")
+# 从 patch 头部提取被修改的文件路径（+++ b/路径）
+files = re.findall(r"^\+\+\+ b/(.+)$", patch, re.MULTILINE)
+
+for f in files:
+    subprocess.run(["npx", "prettier", "--write", f], timeout=10)</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么用 PostToolUse 而不是 PreToolUse？</h4>
+                        <p>格式化是<strong>事后操作</strong>——文件已经写好了，跑 prettier 不会影响 Codex 的决策。如果用 PreToolUse，修改了待写内容，反而会让 Codex 困惑。</p>
+                    </div>
+                    <div class="card">
+                        <h4>退出码不拦截</h4>
+                        <p>PostToolUse 的退出码<strong>不会拦截</strong>已执行的工具调用——它只通知你工具已执行完。若需终止会话，要通过 stdout JSON 返回 <code>{ "continue": false }</code>。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 12: 实战场景三 — SessionStart 注入 git 上下文 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 3：SessionStart 注入 git 上下文</h2>
+                <h4>每次会话自动告诉 Codex 当前分支和状态</h4>
+                <p>SessionStart hook 的标准输出会作为<strong>额外上下文</strong>注入到模型对话中。这是"自动给 Codex 提供环境信息"的最佳方式。</p>
+                <pre><code class="language-python">#!/usr/bin/env python3
+"""SessionStart hook：收集 git 上下文"""
+import subprocess
+
+branch = subprocess.getoutput("git branch --show-current")
+status = subprocess.getoutput("git status --short")
+diff_stat = subprocess.getoutput("git diff --stat HEAD")
+
+print(f"## 当前 Git 状态\n")
+print(f"- 分支: {branch}")
+print(f"- 变更文件:\n{status}")
+print(f"- diff 统计:\n{diff_stat}")
+</code></pre>
+                <pre><code class="language-toml"># config.toml
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "python .codex/hooks/git_context.py"
+timeout = 10
+statusMessage = "收集 Git 上下文..."</code></pre>
+                <div class="key-point">
+                    <strong>效果：</strong>每次开始新会话，Codex 会自动知道"你在 feature/login 分支，已修改了 3 个文件"。无需每次重复告诉它。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 13: 实战场景四 — SubagentStop 审计日志 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 4：SubagentStop 审计日志</h2>
+                <h4>记录每个子代理做了什么</h4>
+                <p>当子代理完成任务返回时，SubagentStop 事件触发。你可以在这里记录子代理的执行结果，构建完整的审计追踪。</p>
+                <pre><code class="language-json">// hook 脚本从 stdin 收到的 JSON（通用字段）：
+{
+  "hook_event_name": "SubagentStop",
+  "session_id": "sess-abc123",
+  "turn_id": "turn-xyz",
+  "cwd": "/path/to/repo",
+  "model": "gpt-5-codex"
+}</code></pre>
+                <pre><code class="language-toml"># config.toml：审计所有子代理结束事件
+[[hooks.SubagentStop]]
+matcher = "*"
+
+[[hooks.SubagentStop.hooks]]
+type = "command"
+command = "python .codex/hooks/audit_subagent.py"
+timeout = 5
+statusMessage = "审计日志记录..."</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>SubagentStop 能拦截吗？</h4>
+                        <p>可以。如果 hook 返回退出码 <code>2</code>，子代理的结果会被<strong>标记为被拒绝</strong>——主代理会看到这个子代理"失败"了，可能重新调度。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 14: 实战场景五 — UserPromptSubmit 拦截敏感信息 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 5：UserPromptSubmit 拦截敏感信息</h2>
+                <h4>防止把密码、密钥发给 AI</h4>
+                <p>用户可能在 prompt 里粘贴包含密钥的内容。UserPromptSubmit hook 可以在 prompt 到达模型之前检测并拦截。</p>
+                <pre><code class="language-python">#!/usr/bin/env python3
+"""UserPromptSubmit hook：检测敏感信息"""
+import json
+import re
+import sys
+
+context = json.loads(sys.stdin.read())
+prompt = context.get("prompt", "")
+
+SENSITIVE_PATTERNS = {
+    "AWS Key": r"AKIA[0-9A-Z]{16}",
+    "OpenAI Key": r"sk-[a-zA-Z0-9]{48}",
+    "Private Key": r"-----BEGIN.*PRIVATE KEY-----",
+    "Password in URL": r"://[^:]+:[^@]+@",
+}
+
+for name, pattern in SENSITIVE_PATTERNS.items():
+    if re.search(pattern, prompt):
+        print(f"🚫 检测到敏感信息：{name}", file=sys.stderr)
+        print("请移除后重新提交。", file=sys.stderr)
+        sys.exit(1)
+
+sys.exit(0)
+</code></pre>
+                <div class="info-block">
+                    <strong>使用建议：</strong>配合 CI 中的 secret scanning，这是最后一道防线——防止开发者在与 Codex 协作时无意泄露密钥。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 15: Trust 模型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Trust 模型</h2>
+                <h4>第一次运行要让 Codex 信任你的 hook</h4>
+                <p>Codex 不会无条件执行项目中的 hook 脚本——它需要你<strong>先信任这个项目</strong>。这是为了防止恶意仓库通过 hook 执行危险代码。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>首次遇到项目 hook</h4>
+                        <p>当你在一个新项目中运行 Codex 并且该项目配置了 hook 时，Codex 会<strong>提示你确认信任</strong>。你需要手动批准后，hook 才会生效。</p>
+                        <p>信任状态保存在你的用户配置中（<code>~/.codex/config.toml</code>），下次进入同一项目不再询问。</p>
+                    </div>
+                    <div class="card">
+                        <h4>信任状态查询</h4>
+                        <p>Codex 会显示每个 hook 的 <code>trustStatus</code> 字段：</p>
+                        <ul>
+                            <li><code>"trusted"</code> — 已信任，正常执行</li>
+                            <li><code>"untrusted"</code> — 未信任，不会执行</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>⚠️ 自动化环境的处理</h4>
+                        <p>用户级 hook（<code>~/.codex/</code>）不受项目信任限制，始终加载。CI 中推荐把 hook 放在<strong>用户级配置</strong>中，避免依赖项目信任。</p>
+                        <div class="warning">
+                            <strong>注意：</strong>不要盲目信任来源不明的项目 hook——恶意仓库可能通过 hook 执行危险代码。<strong>仅在你完全控制 hook 源时信任项目</strong>。
+                        </div>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>安全原则：</strong>Trust 模型确保恶意仓库不能通过在你的 <code>config.toml</code> 中偷偷插入 hook 来执行任意代码——你必须显式信任该项目。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 16: 安全注意事项 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全注意事项</h2>
+                <h4>Hook 脚本本身也是攻击面</h4>
+                <p>Hooks 给了你巨大的权力，但也引入了新的风险。以下是必须注意的安全事项：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>供应链安全</h4>
+                        <p>如果你的 hook 脚本依赖 npm/pip 包，这些包可能被投毒。<strong>锁定依赖版本</strong>，定期审计，不要随意引入新依赖。</p>
+                    </div>
+                    <div class="card">
+                        <h4>命令注入</h4>
+                        <p>在 shell 脚本中直接拼接用户输入是危险的——Codex 可能通过 prompt 注入恶意内容。<strong>始终对输入做转义或校验</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>权限最小化</h4>
+                        <p>hook 脚本应该只拥有完成任务所需的<strong>最小权限</strong>。不要给 hook 脚本 root 访问权，不要让它能访问无关数据。</p>
+                    </div>
+                    <div class="card">
+                        <h4>超时保护</h4>
+                        <p>永远为 hook 设置 <code>timeout</code>。一个卡住的 hook 脚本会阻塞整个 Codex 会话——设置了超时，Codex 会在超时后继续或中止。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>核心原则：</strong>Hook 脚本是你代码的一部分。用和对待生产代码同样的严格程度来审查它——因为它拥有类似的执行权限。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 17: 调试技巧 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>调试技巧</h2>
+                <h4>让 Hook 不再"黑盒"</h4>
+                <p>Hook 脚本不像普通命令那样有直接的终端输出。以下是几个实用的调试方法：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>写入日志文件</h4>
+                        <p>在 hook 脚本中打开日志文件，记录入参和中间状态。这是最简单有效的调试方式：</p>
+                        <pre><code class="language-python">with open(".codex/hook_debug.log", "a") as f:
+    f.write(f"stdin: {sys.stdin.read()}\n")</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>stderr 输出可见</h4>
+                        <p>hook 脚本写到 <code>stderr</code> <strong>会显示在 Codex 的终端输出中</strong>。用 <code>print(..., file=sys.stderr)</code> 做实时调试。</p>
+                    </div>
+                    <div class="card">
+                        <h4>检查 trust 状态</h4>
+                        <p>如果 hook 没生效，第一步检查信任状态。在 Codex TUI 中运行 <code>/hooks</code> 查看当前加载的 hook 列表，确认项目是否已被信任、hook 是否被加载。</p>
+                    </div>
+                    <div class="card">
+                        <h4>先手动测试脚本</h4>
+                        <p>不要在 Codex 里"盲测" hook 脚本。先在命令行手动运行：<code>echo '{"command":"test"}' | python hook.py</code>，确保脚本本身没问题。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 18: 小结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>小结</h2>
+                <h4>你已经掌握了 Codex Hooks 的核心</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>10 种生命周期事件</h4>
+                        <p>从 SessionStart 到 Stop，覆盖了会话的完整生命周期。分为拦截型、注入型、观察型三类。</p>
+                    </div>
+                    <div class="card">
+                        <h4>command 处理器</h4>
+                        <p>Codex Hooks <strong>唯一</strong>的处理器类型：运行可执行脚本，通过 stdin 接收 JSON 上下文，用退出码（0 放行 / 2 拦截）和 stdout JSON 返回决策。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Matcher 正则精确控制</h4>
+                        <p>用正则表达式过滤 hook 的作用范围，让规则精确匹配特定工具或场景。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Trust 模型保障安全</h4>
+                        <p>首次运行需要确认信任，防止恶意仓库偷偷执行 hook。<code>--dangerously-bypass-hook-trust</code> 仅限自动化。</p>
+                    </div>
+                    <div class="card">
+                        <h4>5 个实战场景</h4>
+                        <p>PreToolUse 拦截危险命令、PostToolUse 自动格式化、SessionStart 注入 git 上下文、SubagentStop 审计日志、UserPromptSubmit 拦截敏感信息。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>下一步：</strong>第 09 章<strong>沙箱与权限</strong>——理解 Codex 如何在你电脑上安全地执行命令，以及 permission 体系如何与 hook 协同工作。
+                </div>
+            </div>
+        </section>
+
+    
+    
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+        </main>
+<script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

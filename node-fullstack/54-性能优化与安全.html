@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -7,8 +7,6 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
     <link rel="stylesheet" href="./references/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
 </head>
 <body>
     <main id="presentation">
@@ -18,6 +16,21 @@
             <h1>性能优化与安全</h1>
             <p>让应用又快又安全——全栈开发者的最后两把刷子</p>
         </section>
+        <!-- 学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>🎯 学习目标</h3>
+                <h4>学完本章，你将能够：</h4>
+                <ul>
+                    <li>使用 Redis 缓存和数据库连接池优化后端性能</li>
+                    <li>理解前端性能优化策略：懒加载、代码分割和图片优化</li>
+                    <li>防御常见安全威胁：XSS、CSRF、SQL 注入和速率攻击</li>
+                    <li>配置 CORS、CSP 等安全响应头</li>
+                    <li>安全管理和轮换密钥与依赖审计</li>
+                </ul>
+            </div>
+        </section>
+
 
         <!-- 问题驱动 -->
         <section class="slide">
@@ -96,6 +109,43 @@ app.put('/api/users/:id', async (req, res) =&gt; {
             </div>
         </section>
 
+
+        <!-- 连接池 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据库连接池</h3>
+                <h4>避免每次请求都重建连接</h4>
+                <p>建立数据库连接是一个<strong>昂贵</strong>的操作——TCP 握手、TLS 协商、权限校验，单次可能要 50-200ms。连接池在应用启动时预先创建一组连接，请求到来时直接复用。</p>
+                <pre><code class="language-typescript">// Prisma 内置连接池，通过 URL 参数配置
+// .env
+DATABASE_URL="postgresql://user:pass@localhost:5432/mydb?connection_limit=20&amp;pool_timeout=30"</code></pre>
+                <table>
+                    <thead><tr><th>参数</th><th>作用</th><th>建议值</th></tr></thead>
+                    <tbody>
+                        <tr><td>connection_limit</td><td>最大连接数</td><td>CPU 核心数 x 2 + 1</td></tr>
+                        <tr><td>pool_timeout</td><td>获取连接等待时间</td><td>10-30s</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>Prisma 默认连接池大小为 <code>num_physical_cpus * 2 + 1</code>。在 Serverless 环境中，由于实例频繁冷启动，建议使用 <code>Prisma Data Proxy</code> 或 PgBouncer 等外部池化方案。</p>
+                </div>
+                <h4>连接池监控</h4>
+                <pre><code class="language-typescript">// 监控连接池状态（Prisma 内置指标）
+const metrics = await prisma.$metrics.json();
+console.log(metrics.counters);
+
+// 告警阈值：活跃连接 &gt; 80% 最大限制时需扩容
+// 告警阈值：等待请求数 &gt; 0 时排查慢查询</code></pre>
+                <table>
+                    <thead><tr><th>指标</th><th>健康范围</th><th>异常处理</th></tr></thead>
+                    <tbody>
+                        <tr><td>active connections</td><td>&lt; 80% of limit</td><td>增加 pool_size</td></tr>
+                        <tr><td>waiting requests</td><td>0</td><td>优化慢查询 / 加 pool</td></tr>
+                        <tr><td>avg acquire time</td><td>&lt; 50ms</td><td>检查网络 / 连接泄漏</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
         <!-- 数据库索引 -->
         <section class="slide">
             <div class="slide-content">
@@ -156,6 +206,96 @@ const posts = await prisma.post.findMany({
             </div>
         </section>
 
+
+        <!-- 组件懒加载 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组件懒加载</h3>
+                <h4>按需加载，减少首屏体积</h4>
+                <p>首屏只需要展示核心内容，图表、地图、富文本编辑器等<strong>重组件</strong>可以等用户真正需要时再下载。</p>
+                <pre><code class="language-typescript">// React.lazy + Suspense
+import { lazy, Suspense } from 'react';
+
+const HeavyChart = lazy(() =&gt; import('@/components/HeavyChart'));
+const RichEditor = lazy(() =&gt; import('@/components/RichEditor'));
+
+function AnalyticsPage() {
+  return (
+    &lt;div&gt;
+      &lt;h1&gt;数据分析&lt;/h1&gt;
+      &lt;Suspense fallback={&lt;div&gt;加载中...&lt;/div&gt;}&gt;
+        &lt;HeavyChart /&gt;
+      &lt;/Suspense&gt;
+    &lt;/div&gt;
+  );
+}
+
+// Vue 3 defineAsyncComponent
+import { defineAsyncComponent } from 'vue';
+const AsyncMap = defineAsyncComponent(() =&gt;
+  import('@/components/Map.vue')
+);</code></pre>
+                <pre><code class="language-typescript">// 路由级别代码分割（React Router v6）
+import { lazy } from 'react';
+import { createBrowserRouter } from 'react-router-dom';
+
+const Settings = lazy(() =&gt; import('./pages/Settings'));
+const Profile = lazy(() =&gt; import('./pages/Profile'));
+
+const router = createBrowserRouter([
+  { path: '/settings', element: &lt;Settings /&gt; },
+  { path: '/profile',  element: &lt;Profile /&gt; },
+]);</code></pre>
+            </div>
+        </section>
+        <!-- 压缩与 HTTP 缓存 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>压缩与 HTTP 缓存</h3>
+                <h4>减小体积 + 避免重复传输</h4>
+                <p>Gzip 或 Brotli 压缩可以将文本资源体积减少 <strong>60%-80%</strong>。HTTP 缓存让浏览器在资源未变更时直接使用本地副本。</p>
+                <pre><code class="language-typescript">// Express 压缩中间件
+import compression from 'compression';
+
+app.use(compression({
+  level: 6,               // 压缩级别 1-9
+  threshold: 1024,        // 大于 1KB 才压缩
+  filter: (req, res) =&gt; {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+}));</code></pre>
+                <pre><code class="language-typescript">// 静态资源长期缓存（带 hash 文件名）
+app.use('/static', express.static('public', {
+  maxAge: '1y',            // 缓存 1 年
+  immutable: true,         // 文件内容不变
+}));
+
+// API 响应短期缓存
+app.get('/api/config', (req, res) =&gt; {
+  res.set('Cache-Control', 'public, max-age=300'); // 5 分钟
+  res.json(config);
+});
+
+// 资源变更时协商缓存
+res.set({
+  'ETag': '"33a64df5"',
+  'Last-Modified': 'Thu, 01 Jul 2026 00:00:00 GMT',
+});</code></pre>
+                <table>
+                    <thead><tr><th>策略</th><th>响应头</th><th>适用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td>强缓存</td><td>Cache-Control: max-age=31536000</td><td>带 hash 的静态资源</td></tr>
+                        <tr><td>协商缓存</td><td>ETag / If-None-Match</td><td>API 响应、HTML</td></tr>
+                        <tr><td>不缓存</td><td>Cache-Control: no-store</td><td>敏感数据、实时信息</td></tr>
+                    </tbody>
+                </table>
+                <h4>Brotli 压缩</h4>
+                <p>Brotli 比 Gzip 再压缩 <strong>15%-25%</strong>，但压缩速度慢，适合<strong>预压缩</strong>静态资源。</p>
+                <pre><code class="language-typescript">import shrinkRay from 'shrink-ray-current';
+app.use(shrinkRay());  // 优先使用 Brotli，降级到 Gzip</code></pre>
+            </div>
+        </section>
         <!-- 代码分割 -->
         <section class="slide">
             <div class="slide-content">
@@ -214,7 +354,38 @@ const Map = dynamic(() =&gt; import('@/components/Map'), {
             </div>
         </section>
 
-        <!-- Part 3: 安全 -->
+                <!-- 前端性能监控 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>前端性能监控</h3>
+                <h4>用数据驱动性能优化</h4>
+                <p>优化前先测量。<strong>Web Vitals</strong> 是 Google 提出的核心指标，帮助开发者从用户视角评估页面体验。</p>
+                <pre><code class="language-typescript">// web-vitals 库上报核心指标
+import { onCLS, onINP, onLCP } from 'web-vitals';
+
+function report(metric) {
+  navigator.sendBeacon('/analytics', JSON.stringify({
+    name: metric.name,     // CLS / INP / LCP
+    value: metric.value,   // 毫秒或分数
+    rating: metric.rating, // good / needs-improvement / poor
+  }));
+}
+
+onCLS(report);   // 累积布局偏移
+onINP(report);   // 交互到下一次绘制
+onLCP(report);   // 最大内容渲染</code></pre>
+                <table>
+                    <thead><tr><th>指标</th><th>含义</th><th>优秀</th><th>需改进</th></tr></thead>
+                    <tbody>
+                        <tr><td>LCP</td><td>最大内容渲染时间</td><td>&lt; 2.5s</td><td>2.5-4s</td></tr>
+                        <tr><td>INP</td><td>交互到下一次绘制</td><td>&lt; 200ms</td><td>200-500ms</td></tr>
+                        <tr><td>CLS</td><td>累积布局偏移</td><td>&lt; 0.1</td><td>0.1-0.25</td></tr>
+                    </tbody>
+                </table>
+                <p>建议将性能数据接入 CI，每次部署自动对比基线，性能回退 &gt; 10% 时触发告警。</p>
+            </div>
+        </section>
+<!-- Part 3: 安全 -->
         <section class="slide">
             <div class="slide-content">
                 <h2>Part 3: 安全防御</h2>
@@ -222,6 +393,173 @@ const Map = dynamic(() =&gt; import('@/components/Map'), {
             </div>
         </section>
 
+
+        <!-- Part 3: 请求安全 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 请求安全</h2>
+                <p>速率限制、跨域控制、内容安全策略——防御恶意请求。</p>
+            </div>
+        </section>
+        <!-- 速率限制深入 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>速率限制深入</h3>
+                <h4>滑动窗口 vs 固定窗口，分布式计数</h4>
+                <p>简单的每分钟 100 次限制可能被<strong>窗口边界突刺攻击</strong>绕过——在两个窗口的交界点各发 100 次，实际 200 次只在 1 秒内完成。</p>
+                <pre><code class="language-typescript">// express-rate-limit：完整配置
+import rateLimit from 'express-rate-limit';
+
+// 反向代理（Nginx / ELB / Cloudflare）后必须设置 trust proxy，
+// 否则 req.ip 永远是代理回环地址（如 127.0.0.1），限流会退化成"全站共享一个桶"。
+// 设为代理层数（通常是 1），不要设为 true（会有 IP 欺骗风险）。
+app.set('trust proxy', 1);
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,    // 15 分钟
+  limit: 100,                   // 每个 IP 最大请求数
+  standardHeaders: 'draft-7',   // 返回 RateLimit-* 头
+  legacyHeaders: false,         // 禁用 X-RateLimit-* 头
+  message: { error: '请求过于频繁，请 15 分钟后再试' },
+  // 用默认 keyGenerator 即可，它会读取上面 trust proxy 解析后的 req.ip。
+  // 不要自己读 req.headers['x-forwarded-for']——该头部可被客户端任意伪造，攻击者能借此绕过限流。
+  skip: (req) =&gt; req.path === '/health',  // 健康检查不限速
+});
+
+app.use('/api/', apiLimiter);</code></pre>
+                <div class="warning">
+                    <strong>反代场景下最容易踩的两个限流坑：</strong>① 没设 <code>trust proxy</code>，导致所有请求的 <code>req.ip</code> 都是 <code>127.0.0.1</code>，限流对全站失效；② 自己读 <code>x-forwarded-for</code> 头当 key，而该头<strong>可被任意伪造</strong>，攻击者换个 IP 字符串就能绕过限流。正确做法是设置 <code>trust proxy</code> 后用默认 <code>keyGenerator</code>，让 Express 安全地解析真实客户端 IP。
+                </div>
+                <table>
+                    <thead><tr><th>算法</th><th>优点</th><th>缺点</th></tr></thead>
+                    <tbody>
+                        <tr><td>固定窗口</td><td>实现简单，内存少</td><td>边界突刺问题</td></tr>
+                        <tr><td>滑动窗口</td><td>平滑限流，无突刺</td><td>内存稍多，实现复杂</td></tr>
+                        <tr><td>令牌桶</td><td>允许合理突发流量</td><td>参数调优复杂</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-typescript">// 通过 RateLimit 标准化头返回配额信息
+app.get('/api/data', (req, res) =&gt; {
+  // 响应头：RateLimit-Limit: 100, RateLimit-Remaining: 95
+  res.json({ ok: true });
+});</code></pre>
+                <pre><code class="language-typescript">// 分布式环境：使用 Redis 存储计数
+import { RedisStore } from 'rate-limit-redis';
+import { createClient } from 'redis';
+
+const client = createClient({ url: process.env.REDIS_URL });
+await client.connect();
+
+const limiter = rateLimit({
+  store: new RedisStore({
+    sendCommand: (...args: string[]) =&gt; client.sendCommand(args),
+  }),
+  windowMs: 60 * 1000,
+  limit: 100,
+});</code></pre>
+            </div>
+        </section>
+        <!-- CORS 配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CORS 跨域资源共享</h3>
+                <h4>控制哪些来源可以访问你的 API</h4>
+                <p><strong>同源策略</strong>是浏览器安全的基础——默认情况下，网页只能请求同协议、同域名、同端口的资源。CORS（跨域资源共享）是允许特定来源访问的机制。</p>
+                <pre><code class="language-typescript">// 基础配置：允许特定来源
+import cors from 'cors';
+
+app.use(cors({
+  origin: ['https://myapp.com', 'https://admin.myapp.com'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,            // 允许携带 Cookie
+  maxAge: 86400,                // 预检请求缓存 24 小时
+}));</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>当 <code>credentials: true</code> 时，不能使用 <code>origin: '*'</code>。浏览器会拒绝带通配符 origin + 凭证的组合。必须显式指定允许的来源列表。
+                </div>
+                <pre><code class="language-typescript">// 动态来源验证（多租户场景）
+const allowedDomains = ['.myapp.com', 'localhost:3000'];
+
+app.use(cors({
+  origin: (origin, callback) =&gt; {
+    // 允许无 origin 的请求（如移动端、Postman）
+    if (!origin) return callback(null, true);
+
+    const isAllowed = allowedDomains.some(domain =&gt;
+      origin === domain || origin.endsWith(domain)
+    );
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('Origin ' + origin + ' not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));</code></pre>
+            </div>
+        </section>
+        <!-- CSP 内容安全策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CSP 内容安全策略</h3>
+                <h4>告诉浏览器哪些资源可以加载和执行</h4>
+                <p>Content-Security-Policy 响应头是一个<strong>深度防御</strong>层——即使攻击者成功注入了恶意脚本，CSP 也能阻止其执行。</p>
+                <pre><code class="language-typescript">// 使用 Helmet 配置 CSP
+import helmet from 'helmet';
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],           // 默认只允许同源
+      scriptSrc: ["'self'", "'nonce-abc123'"],  // 脚本仅同源 + nonce
+      styleSrc: ["'self'", "'unsafe-inline'"],  // 样式允许内联
+      imgSrc: ["'self'", "data:", "https://cdn.myapp.com"],
+      connectSrc: ["'self'"],           // fetch/XHR 仅同源
+      fontSrc: ["'self'", "https://fonts.googleapis.com"],
+      objectSrc: ["'none'"],            // 禁止 Flash 等插件
+      baseUri: ["'self'"],              // 限制 &lt;base&gt; 标签
+      formAction: ["'self'"],           // 表单提交仅同源
+      frameAncestors: ["'none'"],       // 禁止被 iframe 嵌入
+    },
+  },
+  // 其他安全头也一并启用
+  crossOriginEmbedderPolicy: true,
+  crossOriginOpenerPolicy: true,
+  crossOriginResourcePolicy: { policy: "same-origin" },
+}));</code></pre>
+                <pre><code class="language-typescript">// 对应生成的 HTTP 响应头
+// Content-Security-Policy: default-src 'self';
+//   script-src 'self' 'nonce-abc123';
+//   style-src 'self' 'unsafe-inline';
+//   img-src 'self' data: https://cdn.myapp.com;
+//   connect-src 'self';
+//   font-src 'self' https://fonts.googleapis.com;
+//   object-src 'none';
+//   base-uri 'self';
+//   form-action 'self';
+//   frame-ancestors 'none'</code></pre>
+                <h4>Nonce 与 Hash 白名单</h4>
+                <p>如果页面需要内联脚本，可以使用 <code>nonce</code> 或 <code>hash</code> 白名单放行特定内联代码。</p>
+                <pre><code class="language-typescript">import { randomBytes } from 'crypto';
+
+app.use((req, res, next) =&gt; {
+  res.locals.nonce = randomBytes(16).toString('hex');
+  next();
+});
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      scriptSrc: ['self', (req, res) =&gt; `'nonce-${res.locals.nonce}'`],
+    },
+  },
+}));
+
+// &lt;script nonce="&lt;%= nonce %&gt;"&gt;initApp();&lt;/script&gt;</code></pre>
+            </div>
+        </section>
         <!-- XSS -->
         <section class="slide">
             <div class="slide-content">
@@ -380,6 +718,103 @@ res.cookie('refreshToken', refreshToken, {
             </div>
         </section>
 
+
+        <!-- Part 4: 依赖与环境安全 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 依赖与环境安全</h2>
+                <p>依赖审计、密钥管理——让供应链和环境配置不再成为短板。</p>
+            </div>
+        </section>
+        <!-- 依赖审计工具链 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>依赖审计工具链</h3>
+                <h4>从手动检查到自动化门禁</h4>
+                <p><code>npm audit</code> 对比依赖版本与已知漏洞数据库（Advisory Database）。但仅靠 npm audit 不够——还需要<strong>持续监控</strong>和<strong>自动修复</strong>机制。</p>
+                <table>
+                    <thead><tr><th>工具</th><th>定位</th><th>特点</th></tr></thead>
+                    <tbody>
+                        <tr><td>npm audit</td><td>命令行检查</td><td>内置，零配置</td></tr>
+                        <tr><td>Dependabot</td><td>GitHub 原生</td><td>自动提 PR 升级</td></tr>
+                        <tr><td>Renovate</td><td>跨平台</td><td>高度可配置，支持分组</td></tr>
+                        <tr><td>Snyk</td><td>深度安全平台</td><td>容器、IaC 扫描</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-yaml"># .github/workflows/security.yml
+name: Security Audit
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'  # 每周一早上 6 点
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm audit --audit-level=high
+        continue-on-error: false</code></pre>
+                <div class="intro-block">
+                    <p>Dependabot 配置（.github/dependabot.yml）可以指定哪些依赖需要自动更新、review 人等。对于关键安全依赖，建议设置自动合并低风险升级。</p>
+                </div>
+            </div>
+        </section>
+        <!-- 密钥管理最佳实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>密钥管理最佳实践</h3>
+                <h4>环境隔离 + 最小权限 + 定期轮换</h4>
+                <p>密钥管理不是"存到 .env 就完了"。生产环境需要<strong>集中式</strong>管理，审批流程，以及泄漏后的<strong>快速响应</strong>能力。</p>
+                <pre><code class="language-typescript">// 1. 环境分离 —— 开发 / 测试 / 生产各自独立密钥
+// .env.development
+DATABASE_URL=postgresql://localhost/devdb
+JWT_SECRET=dev-only-not-secret
+
+// .env.production（由部署平台注入，不入库）
+DATABASE_URL=postgresql://prod-db.internal:5432/app
+JWT_SECRET=（32+ 字节强随机值）</code></pre>
+                <table>
+                    <thead><tr><th>存储方案</th><th>适用场景</th><th>安全等级</th></tr></thead>
+                    <tbody>
+                        <tr><td>.env + .gitignore</td><td>本地开发</td><td>基础</td></tr>
+                        <tr><td>GitHub Secrets</td><td>CI/CD 流水线</td><td>良好</td></tr>
+                        <tr><td>云 KMS (AWS/GCP)</td><td>中大型应用</td><td>优秀</td></tr>
+                        <tr><td>HashiCorp Vault</td><td>企业级</td><td>最高</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>绝对禁止：</strong>
+                    <br>&#8226;&nbsp;在任何 Git 仓库中提交 .env 文件
+                    <br>&#8226;&nbsp;在代码中硬编码 API Key 或密码
+                    <br>&#8226;&nbsp;前端代码中存放后端密钥
+                    <br>&#8226;&nbsp;多人共享同一个生产密钥
+                    <br>&#8226;&nbsp;密钥从不轮换（超过 90 天）
+                </div>
+                <h4>密钥轮换流程（双密钥过渡法）</h4>
+                <pre><code class="language-bash"># 1. 生成新密钥
+NEW_SECRET=$(openssl rand -hex 32)
+
+# 2. 服务端双密钥并行验证（过渡期 7 天）
+# 3. 7 天后下线旧密钥
+
+# 4. 客户端迁移到新密钥
+echo "密钥轮换完成"</code></pre>
+                <table>
+                    <thead><tr><th>阶段</th><th>操作</th><th>验证</th></tr></thead>
+                    <tbody>
+                        <tr><td>准备</td><td>生成新密钥，通知团队</td><td>本地测试</td></tr>
+                        <tr><td>过渡期</td><td>双密钥并行验证</td><td>监控错误日志</td></tr>
+                        <tr><td>收尾</td><td>下线旧密钥</td><td>全量回归测试</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
         <!-- 排错 -->
         <section class="slide">
             <div class="slide-content">
@@ -403,7 +838,7 @@ $ gitleaks detect --source . --verbose</code></pre>
                     <thead><tr><th>类别</th><th>措施</th><th>工具</th></tr></thead>
                     <tbody>
                         <tr><td>XSS</td><td>输入转义、CSP 头</td><td>DOMPurify、Helmet</td></tr>
-                        <tr><td>CSRF</td><td>SameSite Cookie</td><td>csurf</td></tr>
+                        <tr><td>CSRF</td><td>SameSite Cookie + Origin 校验</td><td>自实现 / csrf-csrf</td></tr>
                         <tr><td>SQL 注入</td><td>参数化查询</td><td>Prisma</td></tr>
                         <tr><td>认证</td><td>密码哈希、短 Token</td><td>bcrypt、JWT</td></tr>
                         <tr><td>HTTPS</td><td>全站 HTTPS</td><td>Let's Encrypt</td></tr>
@@ -445,8 +880,89 @@ $ npm audit fix</code></pre>
             </div>
         </section>
 
+
+        <!-- 练习三 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习三：CORS 修复</h3>
+                <h4>解决本地前后端分离的跨域障碍</h4>
+                <p><strong>场景：</strong>前端运行在 <code>http://localhost:5173</code>，后端 API 在 <code>http://localhost:3000</code>。前端调用 <code>fetch('http://localhost:3000/api/data')</code> 被浏览器拦截，控制台报 <code>Access-Control-Allow-Origin</code> 错误。</p>
+                <p><strong>任务：</strong>在后端 Express 中添加 CORS 中间件，使前端可以跨域请求，同时允许携带 Cookie。</p>
+                <div class="answer-section">
+                    <h4>参考答案</h4>
+                    <pre><code class="language-typescript">import cors from 'cors';
+
+app.use(cors({
+  origin: 'http://localhost:5173',  // 明确指定前端来源
+  credentials: true,                // 允许 Cookie
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+}));</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习四 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习四：Helmet 安全头配置</h3>
+                <h4>CSP / HSTS / X-Content-Type-Options</h4>
+                <p><strong>任务：</strong>使用 Helmet 中间件一次性启用多个安全头。要求：
+                <br>① CSP 仅允许同源脚本和样式
+                <br>② HSTS 强制 HTTPS（max-age 至少 30 天）
+                <br>③ 禁用 MIME 类型嗅探（X-Content-Type-Options: nosniff）</p>
+                <div class="answer-section">
+                    <h4>参考答案</h4>
+                    <pre><code class="language-typescript">import helmet from 'helmet';
+
+app.use(helmet());  // 自动启用 X-Content-Type-Options: nosniff 等
+
+// 手动追加 HSTS（Helmet 默认不开启严格 HSTS）
+app.use(helmet.hsts({
+  maxAge: 2592000,        // 30 天（单位：秒）
+  includeSubDomains: true,
+  preload: true,
+}));
+
+// CSP 配置（需手动启用）
+app.use(helmet.contentSecurityPolicy({
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'"],
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    imgSrc: ["'self'", "data:"],
+  },
+}));</code></pre>
+                </div>
+            </div>
+        </section>
         <!-- 课程完结 -->
-        <section class="slide title-slide">
+                <!-- 要点总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📝 要点总结</h3>
+                <h4>本章核心知识点</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>缓存策略</h4>
+                        <p>Redis 缓存热点数据，连接池复用数据库连接，索引加速查询</p>
+                    </div>
+                    <div class="card">
+                        <h4>前端性能</h4>
+                        <p>懒加载减少首屏体积，代码分割按需加载，图片格式优化</p>
+                    </div>
+                    <div class="card">
+                        <h4>安全防御</h4>
+                        <p>输入验证 + 参数化查询 + CSP = 防御 XSS/SQL 注入/CSRF</p>
+                    </div>
+                    <div class="card">
+                        <h4>密钥管理</h4>
+                        <p>环境变量 + 定期轮换 + 依赖审计 = 安全的密钥生命周期</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+<section class="slide title-slide">
             <h1>恭喜你完成了全部课程</h1>
             <p>从 JavaScript 入门到全栈部署，你已经掌握了 Node.js 全栈开发的核心技能。继续实践，持续学习，写出更好的代码。</p>
         

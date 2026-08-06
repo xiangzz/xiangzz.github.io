@@ -298,7 +298,7 @@
                             <li>用 <code>MemorySaver</code> 给图加上持久化</li>
                             <li>使用 <code>getState</code> / <code>getStateHistory</code> / <code>updateState</code> 操作检查点</li>
                             <li>理解 <code>StateSnapshot</code> 的字段含义</li>
-                            <li>用 <code>MemoryStore</code> 实现跨线程的长期记忆</li>
+                            <li>用 <code>InMemoryStore</code> 实现跨线程的长期记忆</li>
                             <li>根据场景选择合适的 Checkpointer 后端</li>
                         </ul>
                     </div>
@@ -576,7 +576,7 @@ const forks = history.filter((s) => s.metadata.source === "update");</code></pre
                         <tr>
                             <td><code>metadata</code></td>
                             <td>Record&lt;string, any&gt;</td>
-                            <td>元数据：步骤号 <code>step</code>、来源 <code>source</code>、写入时间 <code>writes</code> 等</td>
+                            <td>元数据：步骤号 <code>step</code>、来源 <code>source</code>、写入记录 <code>writes</code>（节点名 → 该节点本次写入的值）等</td>
                         </tr>
                         <tr>
                             <td><code>createdAt</code></td>
@@ -659,8 +659,8 @@ await graph.updateState(config, {
         <section class="slide">
             <div class="slide-content">
                 <h2>跨线程存储</h2>
-                <h4>检查点是线程内的，MemoryStore 用于跨线程共享数据</h4>
-                <p>检查点绑定在单个线程上，不同线程之间<strong>无法共享状态</strong>。如果你需要跨线程的记忆——比如用户偏好、长期知识库——就需要 <code>MemoryStore</code>。</p>
+                <h4>检查点是线程内的，InMemoryStore 用于跨线程共享数据</h4>
+                <p>检查点绑定在单个线程上，不同线程之间<strong>无法共享状态</strong>。如果你需要跨线程的记忆——比如用户偏好、长期知识库——就需要 <code>InMemoryStore</code>。</p>
                 <div class="warning">
                     <strong>思考题：</strong>你用 thread_id 隔离了每个对话，但发现用户在对话A里说"我喜欢深色主题"，到了对话B里 AI 就忘了这个偏好了。你需要一种跨对话共享的"长期记忆"。
                 </div>
@@ -692,7 +692,7 @@ const results = await store.search(namespace, {
 console.log(results);  // [{ key: "memory-1", value: { content: "..." }, ... }]</code></pre>
                 <p style="text-align: right; font-size: 0.85em;"><a href="./codes/05_cross_thread_store.ts">📄 完整代码：05_cross_thread_store.ts</a></p>
                 <div class="key-point">
-                    <strong>两层记忆：</strong><code>checkpointer</code>（线程内短期记忆）+ <code>MemoryStore</code>（跨线程长期记忆）。前者自动管理，后者手动读写。
+                    <strong>两层记忆：</strong><code>checkpointer</code>（线程内短期记忆）+ <code>InMemoryStore</code>（跨线程长期记忆）。前者自动管理，后者手动读写。
                 </div>
             </div>
         </section>
@@ -703,7 +703,7 @@ console.log(results);  // [{ key: "memory-1", value: { content: "..." }, ... }]<
         <section class="slide">
             <div class="slide-content">
                 <h2>语义搜索</h2>
-                <h4>给 MemoryStore 加上向量嵌入，实现语义级别的记忆检索</h4>
+                <h4>给 InMemoryStore 加上向量嵌入，实现语义级别的记忆检索</h4>
                 <p>默认的 <code>store.search()</code> 是关键词匹配。如果你需要"意思相近"的搜索——比如搜"用户喜欢什么"能匹配到"偏好深色主题"——就需要接入嵌入模型。</p>
                 <div class="warning">
                     <strong>思考题：</strong>用户问"我爱写代码"，你想从记忆中找到相关的偏好，但记忆里存的是"我是前端工程师"——关键词不匹配，搜不到。能不能按"意思"来搜索？
@@ -756,7 +756,7 @@ const embeddings = new OpenAIEmbeddings({
 const store = new InMemoryStore({
   index: {
     dims: 1536,  // 嵌入维度，取决于模型
-    embed: embeddings,  // 嵌入模型实例
+    embeddings: embeddings,  // 嵌入模型实例（字段名是复数 embeddings）
   },
 });
 
@@ -1023,7 +1023,7 @@ for await (const state of graph.getStateHistory(config)) {
                             <li><strong>超级步骤</strong>：所有计划节点执行完毕 = 一个 tick</li>
                             <li><strong>MemorySaver</strong>：两步启用——编译时传 checkpointer，调用时传 thread_id</li>
                             <li><strong>getState / getStateHistory / updateState</strong>：读写检查点的三板斧</li>
-                            <li><strong>MemoryStore</strong>：跨线程的长期记忆，支持语义搜索</li>
+                            <li><strong>InMemoryStore</strong>：跨线程的长期记忆，支持语义搜索</li>
                         </ul>
                     </div>
                     <div class="card">

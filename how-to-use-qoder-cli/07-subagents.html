@@ -1,0 +1,375 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>07 子代理 Custom Agents</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid { display: flex; flex-direction: column; }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 07 章</div>
+            <h1>子代理 Custom Agents</h1>
+            <p>把不同任务委派给不同角色的专家</p>
+            <strong>一个主代理调度，多个子代理干活——像组建一支 AI 团队</strong>
+        </section>
+        <!-- 延续 -->
+        <section class="slide">
+            <div class="slide-content" style="text-align:center;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; padding: 12px 0;">
+                    <i class="fas fa-arrow-left" style="margin-right:6px; font-size:0.75rem;"></i>Skills 让 AI 有了专业知识。这一章让 AI 学会『分工』 —— 用子代理把不同任务委派给不同角色，像组建一支 AI 团队。
+                </p>
+            </div>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>一个人扛不动</h2>
+                <h4>复杂任务里，单个 AI 上下文越来越乱</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>角色切换的混乱</h4>
+                        <p>同一个会话里，你让它先写代码、再审查代码、又写测试——它一会儿是程序员、一会儿是审查员、一会儿是测试工程师，<strong>角色切换让上下文互相干扰</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>上下文越来越长</h4>
+                        <p>所有任务的细节堆在一个会话里，token 消耗剧增，AI 还容易被早期信息带偏。</p>
+                    </div>
+                    <div class="card">
+                        <h4>权限难以细分</h4>
+                        <p>审查员只需要"读"，程序员需要"写"，但你没法给一个 AI 在不同时刻配不同权限。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>子代理解决的就是"分工"：</strong>把不同角色拆成独立的 AI，<strong>各自有隔离的上下文、专属的角色卡、最小化的权限</strong>，由主代理按需调度。像组建一支 AI 团队。
+                </div>
+            </div>
+        </section>
+
+        <!-- 什么是子代理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>什么是子代理</h2>
+                <h4>定义、白话、和主代理的关系</h4>
+                <p><strong>子代理（Custom Agent）</strong>是一种带角色卡的、上下文隔离的 AI 助手。主代理在需要时<strong>委派</strong>任务给它，它用自己的专属上下文完成后<strong>只把结果交还</strong>，过程细节不污染主会话。</p>
+                <p>说白了，子代理就像你团队里的<strong>专家同事</strong>——你是项目经理（主代理），遇到安全审查就把活交给安全专家（子代理），他关起门来查完，只给你一份报告，<strong>不影响你手里其他工作</strong>。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>主代理（你在对话的这个）</h4>
+                        <ul>
+                            <li>和你直接对话，理解整体需求</li>
+                            <li>决定把哪部分工作委派出去</li>
+                            <li>汇总各子代理的结果</li>
+                            <li>持有完整的会话上下文</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>子代理（被委派的专家）</h4>
+                        <ul>
+                            <li>有<strong>隔离的上下文</strong>，看不到主会话其他内容</li>
+                            <li>有<strong>专属角色卡</strong>，专注一类任务</li>
+                            <li>有<strong>受限的工具权限</strong>，只能干分内事</li>
+                            <li>完成后只返回结果摘要</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 为什么隔离上下文 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>隔离的价值</h2>
+                <h4>上下文隔离带来的三个核心好处</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>专注，不被带偏</h4>
+                        <p>子代理只看到委派给它的任务，不会被主会话里的早期信息干扰。<strong>审查员只关心代码质量，不会受"先写个 demo"这种上下文影响。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>省 token</h4>
+                        <p>子代理的详细工作过程不进入主会话，主会话只收到精炼结果。<strong>主代理的上下文保持精简</strong>，长任务也不会爆。</p>
+                    </div>
+                    <div class="card">
+                        <h4>权限最小化</h4>
+                        <p>每个子代理<strong>只配分内必需的工具</strong>。审查员没有 Write 权限，从机制上杜绝它误改代码。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>这个设计的哲学：</strong>"最小权限 + 上下文隔离"是安全工程的金科玉律。子代理把它引入 AI 工作流，让"委派"这件事既高效又可控。
+                </div>
+            </div>
+        </section>
+
+        <!-- 角色卡结构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>角色卡结构</h2>
+                <h4>一个子代理的定义，核心是它的角色卡</h4>
+                <p>子代理通过角色卡定义——一个带 frontmatter 的文件，说明它<strong>是谁、能干什么、能用什么工具</strong>。</p>
+                <pre><code>---
+name: code-reviewer
+description: 专业代码审查员。审查代码改动，从质量、安全、可维护性角度给出结构化反馈。在用户请求代码审查或 PR 评审时使用。
+tools: Read, Grep, Glob       # 只给读和搜的权限，不给写
+model: default                # 可指定模型
+---
+
+# Code Reviewer
+
+你是资深代码审查员。收到代码改动后：
+1. 从代码质量、安全性、可维护性三个维度评审
+2. 按严重程度（critical/major/minor）排序问题
+3. 每条问题给出：文件位置、描述、风险、修复建议
+4. 不要修改代码，只输出审查报告</code></pre>
+                <div class="key-point">
+                    <strong>三个核心字段：</strong><code>name</code>（身份）、<code>description</code>（何时委派给它）、<code>tools</code>（能用什么工具）。<strong>tools 是安全的关键</strong>——审查员绝不该有 Write。
+                </div>
+            </div>
+        </section>
+
+        <!-- 设计原则 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>设计原则</h2>
+                <h4>两个原则：单一职责、最小权限</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>单一职责</h4>
+                        <p>一个子代理<strong>只做一类事</strong>。不要写一个"全能助手"。</p>
+                        <p><strong>推荐：</strong></p>
+                        <ul>
+                            <li><code>code-reviewer</code> 只审查</li>
+                            <li><code>security-auditor</code> 只查安全</li>
+                            <li><code>test-writer</code> 只写测试</li>
+                            <li><code>doc-generator</code> 只写文档</li>
+                        </ul>
+                        <p><strong>不推荐：</strong><code>coding-helper</code>（太宽泛，模型不知道何时委派）。</p>
+                    </div>
+                    <div class="column">
+                        <h4>最小权限</h4>
+                        <p>只给子代理<strong>完成任务必需的最少工具</strong>。</p>
+                        <table>
+                            <thead>
+                                <tr><th>角色</th><th>必需工具</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>审查员</td><td>Read, Grep, Glob</td></tr>
+                                <tr><td>测试编写</td><td>Read, Write, Bash(测试命令)</td></tr>
+                                <tr><td>文档生成</td><td>Read, Write</td></tr>
+                                <tr><td>调试员</td><td>Read, Grep, Bash</td></tr>
+                            </tbody>
+                        </table>
+                        <p><em>审查员绝不能有 Write——这是底线。</em></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 创建与管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建与管理</h2>
+                <h4>用 /agents 命令一站式管理子代理</h4>
+                <p>Qoder CLI 提供 <code>/agents</code> 命令来查看、创建、编辑子代理：</p>
+                <pre><code>/agents          # 打开子代理管理界面
+/agents list     # 查看已有子代理
+/agents create   # 交互式创建新子代理</code></pre>
+                <p>创建后的子代理定义文件存储在：</p>
+                <table>
+                    <thead>
+                        <tr><th>级别</th><th>路径</th><th>作用域</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>用户级</td><td><code>~/.qoder/agents/</code></td><td>你的所有项目</td></tr>
+                        <tr><td>项目级</td><td><code>.qoder/agents/</code></td><td>仅当前项目（团队共享）</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>和技能类似的覆盖规则：</strong>项目级同名子代理覆盖用户级。团队协作时，把通用角色（code-reviewer）放用户级，项目特有角色放项目级共享。
+                </div>
+            </div>
+        </section>
+
+        <!-- 调用方式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>调用方式</h2>
+                <h4>主代理如何把任务委派给子代理</h4>
+                <p>子代理定义好后，<strong>主代理会根据你的请求自动判断是否委派</strong>（类似技能的自动触发，依据是 description）。</p>
+                <pre><code>&gt; 帮我审查这次改动
+
+（主代理识别这是审查任务 → 委派给 code-reviewer 子代理）
+（code-reviewer 用自己的上下文审查 → 返回结构化报告）
+（主代理把报告呈现给你）</code></pre>
+                <p>你也可以<strong>显式指定</strong>用某个子代理：</p>
+                <pre><code>&gt; 用 security-auditor 检查 src/auth 目录的安全问题</code></pre>
+                <div class="key-point">
+                    <strong>委派 vs 技能的区别：</strong>技能是"在同一上下文里加载专家手册"，子代理是"开一个新上下文让专家独立工作"。技能适合轻量增强，子代理适合需要<strong>隔离和独立思考</strong>的复杂任务。
+                </div>
+            </div>
+        </section>
+
+        <!-- 经典角色示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>经典角色</h2>
+                <h4>几个高复用价值的子代理模板</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>code-reviewer（代码审查员）</h4>
+                        <p><strong>职责：</strong>结构化评审代码改动。<strong>权限：</strong>只读。<strong>价值：</strong>每次提交前自动过一遍，统一审查标准。</p>
+                    </div>
+                    <div class="card">
+                        <h4>security-auditor（安全审计员）</h4>
+                        <p><strong>职责：</strong>查 SQL 注入、XSS、密钥泄露等安全问题。<strong>权限：</strong>只读 + Grep。<strong>价值：</strong>上线前必跑的安全检查。</p>
+                    </div>
+                    <div class="card">
+                        <h4>test-writer（测试工程师）</h4>
+                        <p><strong>职责：</strong>为指定函数写单元测试。<strong>权限：</strong>读 + 写测试文件 + 跑测试。<strong>价值：</strong>提升覆盖率，不占用主开发时间。</p>
+                    </div>
+                    <div class="card">
+                        <h4>debugger（调试专家）</h4>
+                        <p><strong>职责：</strong>分析报错、定位根因。<strong>权限：</strong>读 + Grep + 跑诊断命令。<strong>价值：</strong>把"看堆栈找原因"这种耗时活交给它。</p>
+                    </div>
+                    <div class="card">
+                        <h4>doc-generator（文档生成）</h4>
+                        <p><strong>职责：</strong>从代码生成 API 文档、注释。<strong>权限：</strong>读 + 写文档文件。<strong>价值：</strong>保持文档与代码同步。</p>
+                    </div>
+                    <div class="card">
+                        <h4>refactorer（重构专家）</h4>
+                        <p><strong>职责：</strong>在不改行为前提下优化代码结构。<strong>权限：</strong>读 + 写 + 跑测试（验证不改坏）。<strong>价值：</strong>安全地还技术债。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <h4>子代理相关的高频问题</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>子代理没被自动委派</h4>
+                        <p><strong>原因：</strong>description 太模糊，主代理不知道何时用它。<strong>修复：</strong>把 description 写清"做什么+何时用"；或显式指定"用 xxx-agent 做…"。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>子代理报"没有权限"</h4>
+                        <p><strong>原因：</strong>tools 字段没声明需要的工具。<strong>修复：</strong>在角色卡 frontmatter 补上 tools，如 <code>tools: Read, Write, Bash(npm test)</code>。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>子代理结果不符合预期</h4>
+                        <p><strong>原因：</strong>角色卡的指令不够具体。<strong>修复：</strong>在指令里写清输出格式、评审维度、成功标准——和写技能指令同理。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>多个子代理角色混淆</h4>
+                        <p><strong>原因：</strong>角色职责重叠。<strong>修复：</strong>确保每个子代理单一职责，description 用不同关键词区分。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>组建你的第一支 AI 团队</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习 1：创建审查员</h3>
+                        <ul>
+                            <li>用 <code>/agents create</code> 创建一个 code-reviewer</li>
+                            <li>权限只给 Read, Grep, Glob</li>
+                            <li>指令里写清评审维度和输出格式</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 2：测试委派</h3>
+                        <ul>
+                            <li>在项目里改几个文件</li>
+                            <li>说"帮我审查这次改动"</li>
+                            <li>观察主代理是否委派给你的审查员</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 3：加一个安全审计员</h3>
+                        <ul>
+                            <li>再创建 security-auditor，权限最小化</li>
+                            <li>对比两个角色的输出差异</li>
+                            <li>体会"单一职责"的价值</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 本章回顾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>带走的三个核心认知</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>子代理是专家同事</h4>
+                        <p>上下文隔离、角色卡定义、由主代理委派调度。</p>
+                    </div>
+                    <div class="card">
+                        <h4>两大设计原则</h4>
+                        <p>单一职责（一类事一个代理）、最小权限（只给必需工具）。</p>
+                    </div>
+                    <div class="card">
+                        <h4>隔离即价值</h4>
+                        <p>专注不被带偏、省 token、权限最小化——让委派既高效又安全。</p>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>子代理让你从"和一个 AI 对话"升级到"指挥一支 AI 团队"。复杂任务不再是单个 AI 的负担，而是多个专家的协作。
+                    <p style="margin-top: 16px;">下一章，让 AI 能连接外部世界——通过 MCP 接入 GitHub、数据库、浏览器等系统。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./08-mcp.html">下一章：MCP 服务</a> — 连接外部系统</li>
+                            <li><a href="./10-plugins.html">插件</a> — 把子代理打包分发</li>
+                            <li><a href="./15-sdk-workflows.html">动态工作流</a> — 大规模编排子代理</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方资源</h4>
+                        <ul>
+                            <li><a href="https://docs.qoder.com/zh/cli/custom-agents">Custom Agents 文档</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

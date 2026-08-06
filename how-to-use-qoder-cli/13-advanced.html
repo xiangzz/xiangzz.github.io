@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>13 高级特性与并发控制</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid { display: flex; flex-direction: column; }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+        <section class="slide title-slide active">
+<div class="chapter-badge">第 13 章</div>
+            <h1>高级特性与并发控制</h1>
+            <p>思考深度、Worktree 并发、上下文管理与自动化工作流</p>
+            <strong>当 CLI 能自主思考、并行执行、自动纠错，AI 才真正成为工程伙伴</strong>
+        </section>
+
+        <section class="slide">
+<h2>从基础到高级</h2>
+                <h4>你已经掌握了 CLI 的基本用法，但还需要更精细的控制和工程化能力</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>需要只读分析又要控制成本</h4>
+                        <p>让 AI 分析项目但担心它改坏文件；希望它想深一点但又不想每次都花太多 token。</p>
+                    </div>
+                    <div class="card">
+                        <h4>多任务无法并行</h4>
+                        <p>TUI 只能一次处理一个会话。同时处理 5 个 PR？没有并行会话机制。</p>
+                    </div>
+                    <div class="card">
+                        <h4>长对话越来越慢</h4>
+                        <p>聊了半小时，token 爆炸，响应变慢。需要压缩但又怕丢上下文。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>本章解决「高级控制」四类问题：</strong>① <strong>Plan 模式</strong>让 AI 只读不写；② <strong>effort</strong> 平衡深度与成本；③ <strong>Worktree</strong> 支持并发会话；④ <strong>/compact /resume</strong> 管理上下文生命周期。
+                </div>
+        </section>
+
+        <section class="slide">
+<div class="slide-content">
+                <h2>Plan 模式</h2>
+                <h4>先想清楚再动手——只读分析的安全模式</h4>
+                <p><strong>Plan 模式</strong>让 AI 偏向"规划"而非"执行"：它可以读取、分析项目，但<strong>写入需要批准</strong>（除非计划文件或显式规则允许）。</p>
+                <pre><code>qodercli --permission-mode plan
+
+&gt; 分析这个模块的架构，给出重构建议
+（AI 读取代码、分析、产出建议，但不改任何文件）</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>什么时候用 Plan</h4>
+                        <ul>
+                            <li>代码审查、架构评估</li>
+                            <li>排查问题但不急着改</li>
+                            <li>让 AI 先出方案你 review</li>
+                            <li>CI 里的只读分析任务</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>Plan vs accept_edits</h4>
+                        <p><strong>Plan</strong>：偏分析，写入受控。<br><strong>accept_edits</strong>：偏执行，写入顺畅。</p>
+                        <p>评审用 Plan，干活用 accept_edits。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+<div class="slide-content">
+                <h2>思考深度</h2>
+                <h4>/effort 调整 AI"想多久"——平衡质量与成本</h4>
+                <p>不同任务需要的思考深度不同。用 <code>/effort</code> 命令（或 <code>--effort</code> 参数）调整：</p>
+                <table>
+                    <thead>
+                        <tr><th>档位</th><th>适用场景</th><th>成本</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>低</td><td>简单任务、快速响应、批量处理</td><td>省 Credits</td></tr>
+                        <tr><td>中</td><td>日常开发、常规重构</td><td>平衡</td></tr>
+                        <tr><td>高</td><td>复杂设计、疑难 bug、架构决策</td><td>消耗大</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>选档原则：</strong>简单任务用低档（省 60%+ Credits），复杂任务才用高档。把贵的思考留给真正需要的问题——这是用 AI 的经济学。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+<div class="slide-content">
+                <h2>Worktree 并行</h2>
+                <h4>用 Git Worktree 让多个 AI 会话互不干扰</h4>
+                <p>想同时让 AI 处理多个任务（改 feature A、修 bug B、重构 C），但它们改的是同一个仓库——<strong>会互相覆盖</strong>。Git Worktree 解决这个问题。</p>
+                <p><strong>Worktree</strong> 让同一仓库的多个分支<strong>同时检出到不同目录</strong>，每个目录独立工作。Qoder CLI 支持在独立 worktree 中工作：</p>
+                <pre><code># 主仓库目录
+/projects/my-app (main 分支) → 跑测试、看主分支
+
+# worktree 1
+/projects/my-app-feat-a (feature-a 分支) → AI 改 feature A
+
+# worktree 2
+/projects/my-app-fix-b (fix-b 分支) → AI 修 bug B</code></pre>
+                <div class="info-block">
+                    <strong>每个 worktree 启动一个 qodercli 实例</strong>，它们改各自的分支，互不干扰。这让你能<strong>真正并行</strong>地让 AI 干多件事——像有了多个 AI 同事。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+<div class="slide-content">
+                <h2>上下文管理</h2>
+                <h4>/compact 压缩、/resume 恢复——长任务的续航</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>/compact — 压缩历史</h4>
+                        <p>对话太长快爆上下文时，用 <code>/compact</code> 把历史<strong>总结压缩</strong>，保留要点、丢弃冗余。</p>
+                        <p>压缩后 AI 仍记得关键决策，但 token 消耗大降。<strong>长任务中途必用</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>/resume — 恢复会话</h4>
+                        <p>昨天没干完的任务，今天用 <code>/resume</code>（或启动时 <code>-c</code>）<strong>继续上次的上下文</strong>。</p>
+                        <p>支持选择特定历史会话恢复。<strong>跨天工作流的关键</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>--max-turns — 限制轮数</h4>
+                        <p>给单次会话设最大对话轮数，防止 AI 无限循环消耗 Credits：</p>
+                        <pre><code>qodercli --max-turns=15</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>/clear — 彻底重来</h4>
+                        <p>切换到完全不同的任务，<code>/clear</code> 清空所有历史，<strong>避免旧上下文污染</strong>。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+<h2>排错指南</h2>
+                <h4>高级特性相关的高频问题</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>Plan 模式仍然修改了文件</h4>
+                        <p><strong>原因：</strong>plan 模式并非绝对只读，部分工具可能绕过。<strong>修复：</strong>配合 --permission-mode plan 使用，检查是否有 allow 规则覆盖。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>Worktree 会话混杂</h4>
+                        <p><strong>原因：</strong>多个实例搞混了分支。<strong>修复：</strong>每个 worktree 严格对应一个分支；用 -w 明确指定工作目录。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>/compact 后 AI "失忆"</h4>
+                        <p><strong>原因：</strong>压缩时丢失了关键上下文。<strong>修复：</strong>把稳定规则写入 AGENTS.md（不受 /compact 影响）；压缩后用 /status 验证。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>effort 设置不生效</h4>
+                        <p><strong>原因：</strong>模型不支持或参数拼写错误。<strong>修复：</strong>确认模型是否支持 effort；检查参数名拼写。</p>
+                    </div>
+                </div>
+        </section>
+
+        <section class="slide">
+<h2>动手练习</h2>
+                <h4>掌握高级特性的实战手法</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习 1：体验 Plan 模式</h3>
+                        <ul>
+                            <li>用 --permission-mode plan 启动</li>
+                            <li>让 AI 分析项目，观察它无法修改文件</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 2：Worktree 并行</h3>
+                        <ul>
+                            <li>用 qodercli -w 在不同分支启动两个会话</li>
+                            <li>让它们分别处理不同任务，验证互不干扰</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 3：上下文管理</h3>
+                        <ul>
+                            <li>开启一个长对话，用 /compact 压缩</li>
+                            <li>用 /resume 恢复，验证关键上下文未丢失</li>
+                        </ul>
+                    </div>
+                </div>
+        </section>
+
+        <section class="slide">
+<h2>本章回顾</h2>
+                <h4>带走的三条核心认知</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>控制手段丰富</h4>
+                        <p>Plan 模式、effort、Worktree、compact/resume 覆盖只读、成本、并发、长对话四大场景。</p>
+                    </div>
+                    <div class="card">
+                        <h4>并发即效率</h4>
+                        <p>Worktree 让多个 AI 会话互不干扰地并行，成倍提升吞吐。</p>
+                    </div>
+                    <div class="card">
+                        <h4>上下文是黄金</h4>
+                        <p>用 /compact 压缩、/resume 恢复、AGENTS.md 保底，三者组合管好长对话。</p>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>高级控制让 AI 从"需要时刻盯着"变成"可以放心托付"。掌握 Plan、effort、Worktree、上下文管理，你就有了指挥 AI 的精细摇杆。
+                    <p style="margin-top: 16px;">下一章，学习 Print 模式与 CI/CD 工程化 —— 让 CLI 走出终端，接入流水线。</p>
+                </div>
+        </section>
+
+        <section class="slide">
+<h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./14-cicd.html">下一章：Print 模式与 CI/CD 工程化 — 让 CLI 接入流水线</a></li>
+                            <li><a href="./11-permissions.html">权限系统 — 安全控制的完整规则</a></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方资源</h4>
+                        <ul>
+                            <li><a href="https://docs.qoder.com/zh/cli/advanced">高级特性官方文档</a></li>
+                            <li><a href="https://docs.qoder.com/zh/cli/using-cli">CLI 工程化官方文档</a></li>
+                        </ul>
+                    </div>
+                </div>
+        </section>
+    </main>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>
+

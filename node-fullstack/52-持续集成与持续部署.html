@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -7,8 +7,6 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
     <link rel="stylesheet" href="./references/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
 </head>
 <body>
     <main id="presentation">
@@ -18,6 +16,21 @@
             <h1>持续集成与持续部署</h1>
             <p>代码推送到 main，自动测试、构建、上线</p>
         </section>
+        <!-- 学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>🎯 学习目标</h3>
+                <h4>学完本章，你将能够：</h4>
+                <ul>
+                    <li>理解 CI/CD 的核心概念和完整工作流程</li>
+                    <li>配置 GitHub Actions 工作流实现自动化测试和构建</li>
+                    <li>使用 Matrix 构建和缓存优化 CI 性能</li>
+                    <li>实现自动部署和预览部署</li>
+                    <li>配置分支保护、环境保护和 Secrets 管理</li>
+                </ul>
+            </div>
+        </section>
+
 
         <!-- 问题驱动 -->
         <section class="slide">
@@ -34,23 +47,19 @@
             <div class="slide-content">
                 <h3>CI/CD 流程</h3>
                 <h4>从 git push 到自动部署的完整链路</h4>
-                <pre class="mermaid">
-graph LR
-    A[git push] --> B[GitHub Actions]
-    B --> C[Lint 检查]
-    B --> D[类型检查]
-    B --> E[单元测试]
-    C --> F{全部通过?}
-    D --> F
-    E --> F
-    F -->|是| G[构建 Docker 镜像]
-    F -->|否| H[通知开发者]
-    G --> I[推送镜像到 Registry]
-    I --> J[SSH 部署到服务器]
-    J --> K[健康检查]
-    K -->|通过| L[部署完成]
-    K -->|失败| M[自动回滚]
-                </pre>
+                                <div class="ai-diagram">
+                    <h4>图：CI/CD 完整流程——从 git push 到自动部署</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从左到右的流水线，展示代码推送到自动部署的完整链路
+                    - 流程结构：
+                      1. 左侧起点：git push 指向 GitHub Actions
+                      2. GitHub Actions 分出三条并行线：Lint 检查、类型检查、单元测试
+                      3. 三条线汇聚到一个菱形判断框"全部通过？"
+                      4. "是"分支：构建 Docker 镜像 → 推送镜像到 Registry → SSH 部署到服务器 → 健康检查 → 部署完成
+                      5. "否"分支：通知开发者
+                      6. 健康检查失败分支：自动回滚
+                    - 配色：通过步骤用绿色，失败/回滚用红色，判断用黄色</p>
+                </div>
             </div>
         </section>
 
@@ -144,6 +153,262 @@ jobs:
             </div>
         </section>
 
+        <!-- 缓存依赖 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>缓存依赖</h3>
+                <h4>让 CI 从 3 分钟缩短到 30 秒</h4>
+                <p>每次 CI 运行默认在全新的虚拟机里执行，不缓存任何文件。<strong>依赖安装</strong>（<code>npm ci</code>）通常占 CI 总时间的 60% 以上。<code>actions/cache</code> 可以把 <code>node_modules</code> 保存到 GitHub 的存储服务，下次直接复用。</p>
+                <p><code>actions/setup-node</code> 内置的 <code>cache: 'npm'</code> 就是对 <code>actions/cache</code> 的一行封装。原理完全相同：根据 lock 文件的 hash 生成缓存 key，如果 key 命中则跳过安装。</p>
+                <pre><code class="language-yaml">- uses: actions/cache@v4
+  with:
+    path: ~/.npm
+    key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+    restore-keys: |
+      ${{ runner.os }}-npm-</code></pre>
+                <p><code>path</code> 是要缓存的目录，<code>key</code> 是缓存的唯一标识，<code>restore-keys</code> 是回退匹配（前缀匹配）。<code>hashFiles</code> 基于文件内容生成 hash——lock 文件变了，缓存就失效。</p>
+            </div>
+        </section>
+
+        <!-- 缓存效果对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>缓存效果对比</h3>
+                <h4>一次配置，每次受益</h4>
+                <table>
+                    <thead><tr><th>场景</th><th>无缓存</th><th>有缓存</th><th>节省</th></tr></thead>
+                    <tbody>
+                        <tr><td>首次 push（冷启动）</td><td>~90s</td><td>~90s</td><td>---</td></tr>
+                        <tr><td>第二次 push（lock 文件未变）</td><td>~90s</td><td>~15s</td><td>83%</td></tr>
+                        <tr><td>node 小版本升级</td><td>~90s</td><td>~20s</td><td>78%</td></tr>
+                        <tr><td>新增一个依赖</td><td>~90s</td><td>~85s</td><td>---</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>最佳实践：<strong>永远缓存 lock 文件对应的依赖</strong>。不要缓存 <code>node_modules</code> 本身（体积大、跨平台不稳定），而是缓存 npm 的下载缓存目录 <code>~/.npm</code>。</p>
+                </div>
+                <pre><code class="language-yaml"># 完整示例：带缓存的 setup-node
+- uses: actions/setup-node@v4
+  with:
+    node-version: '20'
+    cache: 'npm'    # 等价于上面的 actions/cache 配置</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>不要用 <code>node_modules</code> 作为 cache path。不同操作系统的编译产物不同，且目录体积可能超过 GitHub 的 10GB 缓存限制。始终缓存 npm/yarn 的<strong>下载缓存目录</strong>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 分支保护与环境保护 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>分支保护与环境保护</h3>
+                <h4>给 main 分支加一把锁</h4>
+                <p>CI 跑完了，但谁能直接把代码推到 main？如果有人直接 <code>git push origin main</code> 跳过了 PR 审查，CI 就没有意义了。<strong>分支保护规则</strong>强制所有代码必须经过 PR + CI 才能合并。</p>
+                <table>
+                    <thead><tr><th>规则</th><th>作用</th><th>配置位置</th></tr></thead>
+                    <tbody>
+                        <tr><td>Require a pull request</td><td>禁止直接 push，必须走 PR</td><td>Branches → Protection Rules</td></tr>
+                        <tr><td>Require status checks</td><td>CI 必须通过才能合并</td><td>Branch protection → Status checks</td></tr>
+                        <tr><td>Require approvals</td><td>至少 N 人批准</td><td>Branch protection → Review</td></tr>
+                        <tr><td>Environments</td><td>部署到 production 需要审批</td><td>Environments → Protection rules</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 保护规则配置步骤 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>配置保护规则</h3>
+                <h4>Settings → Branches → Add rule</h4>
+                <ol style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                    <li>进入仓库 <strong>Settings</strong> → <strong>Branches</strong></li>
+                    <li>点击 <strong>Add branch protection rule</strong></li>
+                    <li>Branch name pattern 填 <code>main</code></li>
+                    <li>勾选 <strong>Require a pull request before merging</strong></li>
+                    <li>勾选 <strong>Require status checks to pass</strong>，搜索并添加 CI job 名称（如 <code>lint</code>、<code>test</code>）</li>
+                    <li>点击 <strong>Save changes</strong></li>
+                </ol>
+                <pre><code class="language-yaml"># 此时 GitHub 会显示：
+# "✓ lint — Job succeeded"
+# "✓ test — Job succeeded"
+# 只有这两个检查都通过，PR 的 Merge 按钮才会变绿</code></pre>
+                <div class="intro-block">
+                    <p>Environments 审批：在 <strong>Settings → Environments → production</strong> 中添加 <em>Required reviewers</em>，部署到生产环境前必须有人手动批准。这样即便 CI 通过，部署也不会自动发生——除非有人点击 Approve。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Matrix 构建 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Matrix 构建</h3>
+                <h4>一次配置，多版本测试</h4>
+                <p>你的代码需要在 Node 18、20、22 上都能跑。手动写三个 job 太蠢——用 <code>strategy.matrix</code> 自动生成多个组合。</p>
+                <pre><code class="language-yaml">jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18, 20, 22]
+        os: [ubuntu-latest, windows-latest]
+        exclude:
+          - os: windows-latest
+            node-version: 18
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm ci
+      - run: npx vitest run</code></pre>
+                <p>上面的配置会生成 <strong>3 x 2 = 6</strong> 个并行任务（减去 exclude 的 1 个 = 5 个）。<code>fail-fast: false</code> 确保一个失败不影响其他任务继续运行。</p>
+                <div class="warning">
+                    <strong>注意：</strong>Matrix 任务数量 = 各维度长度的乘积。4 个 Node 版本 x 3 个 OS = 12 个任务。GitHub Free 计划每月只有 2000 分钟额度，注意控制矩阵大小。
+                </div>
+            </div>
+        </section>
+
+        <!-- 环境变量与上下文 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>环境变量与上下文</h3>
+                <h4>GitHub Actions 的内置变量</h4>
+                <p>GitHub Actions 提供了丰富的<strong>上下文变量</strong>，可以在 workflow 中直接引用，无需手动配置。</p>
+                <table>
+                    <thead><tr><th>变量</th><th>说明</th><th>示例值</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>${{ github.event_name }}</code></td><td>触发事件类型</td><td><code>push</code></td></tr>
+                        <tr><td><code>${{ github.ref_name }}</code></td><td>分支或 tag 名</td><td><code>main</code></td></tr>
+                        <tr><td><code>${{ github.sha }}</code></td><td>完整的 commit SHA</td><td><code>abc123def456...</code></td></tr>
+                        <tr><td><code>github.actor</code></td><td>触发者用户名</td><td><code>xiangzz</code></td></tr>
+                        <tr><td><code>github.repository</code></td><td>仓库名</td><td><code>user/repo</code></td></tr>
+                        <tr><td><code>github.run_number</code></td><td>当前运行编号</td><td><code>42</code></td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-yaml"># 实用技巧：只在 main 分支推送时部署
+deploy:
+  needs: test
+  if: github.ref_name == 'main'
+  runs-on: ubuntu-latest
+  steps:
+    - run: echo "Deploying commit ${{ github.sha }}"
+
+# 自定义环境变量
+env:
+  NODE_ENV: production
+  API_URL: https://api.example.com</code></pre>
+                <div class="intro-block">
+                    <p><code>env</code> 可以定义在 workflow、job、step 三个级别。step 级别的变量会覆盖 job 级别，job 级别会覆盖 workflow 级别。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Secrets 最佳实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Secrets 最佳实践</h3>
+                <h4>安全地管理敏感信息</h4>
+                <p>数据库密码、API 密钥、SSH 私钥——这些都不能写在代码里。GitHub Secrets 提供了加密存储和安全的引用方式。</p>
+                <table>
+                    <thead><tr><th>层级</th><th>作用域</th><th>设置位置</th></tr></thead>
+                    <tbody>
+                        <tr><td>Repository</td><td>当前仓库</td><td>Settings → Secrets → Actions</td></tr>
+                        <tr><td>Organization</td><td>组织内所有仓库</td><td>Organization Settings → Secrets</td></tr>
+                        <tr><td>Environment</td><td>特定环境</td><td>Environment → Secrets</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-yaml"># 引用 Secret（Secret 值会自动在日志中脱敏）
+steps:
+  - name: Deploy
+    env:
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      API_KEY: ${{ secrets.API_KEY }}
+    run: |
+      echo "Connecting to database..."
+      psql -h localhost -U admin -p $DB_PASSWORD</code></pre>
+                <div class="warning">
+                    <strong>安全警告：</strong>Secret 会自动在日志中脱敏（显示为 <code>***</code>），但不要 <code>echo $SECRET</code>。虽然 GitHub 会脱敏，但你自己的脚本可能会意外泄露。永远通过 <code>env</code> 传递 Secret，不要直接嵌入命令字符串。
+                </div>
+            </div>
+        </section>
+
+        <!-- 可复用 Workflow -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>可复用 Workflow</h3>
+                <h4>避免重复配置</h4>
+                <p>多个项目需要相同的 CI 配置？用 <code>workflow_call</code> 创建可复用的 workflow，像函数一样调用。</p>
+                <pre><code class="language-yaml"># .github/workflows/reusable-test.yml
+name: Reusable Test
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        required: true
+        type: string
+    secrets:
+      api-key:
+        required: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ inputs.node-version }}' }
+      - run: npm ci
+      - run: API_KEY=${{ secrets.api-key }} npx vitest run</code></pre>
+                <pre><code class="language-yaml"># 在另一个 workflow 中调用
+jobs:
+  call-test:
+    uses: ./.github/workflows/reusable-test.yml
+    with:
+      node-version: '20'
+    secrets:
+      api-key: ${{ secrets.MY_API_KEY }}</code></pre>
+                <div class="intro-block">
+                    <p>可复用 workflow 类似于编程中的"函数"——定义一次，多处调用。当需要更新 CI 逻辑时，只改一处即可。还支持从其他仓库调用：<code>uses: org/repo/.github/workflows/test.yml@main</code>。</p>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- 手动触发 Workflow -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>手动触发 Workflow</h3>
+                <h4><code>workflow_dispatch</code>——按需运行</h4>
+                <p>有时候你想手动触发一个 workflow（比如手动部署某个 tag，或者清理缓存）。<code>workflow_dispatch</code> 让你可以在 GitHub UI 上点击按钮运行 workflow。</p>
+                <pre><code class="language-yaml">on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '部署环境'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      tag:
+        description: '镜像标签 (留空使用 latest)'
+        required: false
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "Deploying to ${{ github.event.inputs.environment }}"
+          echo "Tag: ${{ github.event.inputs.tag }}"</code></pre>
+                <div class="intro-block">
+                    <p>配置后，在 GitHub 的 Actions 页面会出现一个 "Run workflow" 按钮。点击后可以选择输入参数。这对于生产环境的手动部署非常有用。</p>
+                </div>
+            </div>
+        </section>
+
         <!-- Part 2: 自动部署 -->
         <section class="slide">
             <div class="slide-content">
@@ -152,7 +417,311 @@ jobs:
             </div>
         </section>
 
-        <!-- 部署到 VPS -->
+                <!-- Part 3: 部署策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 部署策略</h2>
+                <p>不止是自动部署——还要会回滚、会预览、会安全上线。</p>
+            </div>
+        </section>
+
+        <!-- 预览部署 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>预览部署</h3>
+                <h4>每个 PR 自动获得独立 URL</h4>
+                <p>每次提交 PR，CI 系统自动为这个分支构建一个<strong>临时环境</strong>，生成一个独立 URL（如 <code>https://pr-42.example.app</code>）。产品经理、设计师可以直接打开链接查看效果，无需拉代码到本地运行。</p>
+                <table>
+                    <thead><tr><th>平台</th><th>原生支持？</th><th>URL 格式</th></tr></thead>
+                    <tbody>
+                        <tr><td>Vercel</td><td>是</td><td><code>project-abc123-pr42.vercel.app</code></td></tr>
+                        <tr><td>Railway</td><td>是</td><td><code>pr-42.up.railway.app</code></td></tr>
+                        <tr><td>Netlify</td><td>是</td><td><code>pr-42--project.netlify.app</code></td></tr>
+                        <tr><td>自托管 Docker</td><td>需手动实现</td><td>Nginx 动态路由</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-yaml"># 自托管方案：为每个 PR 启动独立容器
+# .github/workflows/preview.yml
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build &amp; Deploy Preview
+        run: |
+          docker build -t preview-pr${{ github.event.number }} .
+          docker stop preview-pr${{ github.event.number }} 2>/dev/null || true
+          docker run -d --name preview-pr${{ github.event.number }} \
+            -p 8000:3000 preview-pr${{ github.event.number }}</code></pre>
+                <div class="intro-block">
+                    <p>自托管方案的核心思路：用 Nginx 做反向代理，根据子域名路由到不同端口的容器。<code>pr-42.example.app</code> 映射到 <code>localhost:8042</code>。PR 合并后自动清理容器。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 回滚策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>回滚策略</h3>
+                <h4>出事了怎么办——三种经典方案</h4>
+                <p>部署失败不可避免，关键是<strong>多快能恢复</strong>。不同的回滚策略在速度、资源成本、风险之间取舍。</p>
+                <table>
+                    <thead><tr><th>策略</th><th>原理</th><th>回滚速度</th><th>资源开销</th></tr></thead>
+                    <tbody>
+                        <tr><td>蓝绿部署</td><td>两套环境并行，切换流量</td><td>最快（秒级）</td><td>2x</td></tr>
+                        <tr><td>滚动更新</td><td>逐个替换实例</td><td>中（分钟级）</td><td>1x + 少量</td></tr>
+                        <tr><td>金丝雀发布</td><td>先让 5% 流量走新版本</td><td>快（分钟级）</td><td>1x + 少量</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-bash"># Docker 回滚：切回上一个镜像标签
+# 查看历史镜像标签
+$ docker images myapp
+REPOSITORY   TAG        IMAGE ID       CREATED
+myapp        v1.2.3     abc123         2 hours ago
+myapp        v1.2.2     def456         1 day ago
+
+# 回滚到 v1.2.2
+$ docker stop myapp-latest
+$ docker run -d --name myapp-latest \
+    -p 3000:3000 myapp:v1.2.2
+
+# 或者用 docker-compose
+$ docker compose down
+$ IMAGE_TAG=v1.2.2 docker compose up -d</code></pre>
+                <div class="warning">
+                    <strong>关键原则：</strong>永远给每个构建打版本号（Git commit SHA 或 semver），不要用 <code>latest</code> 标签部署生产。<code>latest</code> 是不可变的——你永远不知道它指向哪里。用 <code>myapp:abc1234</code> 才能精确回滚。
+                </div>
+            </div>
+        </section>
+
+        <!-- 部署通知 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>部署通知</h3>
+                <h4>让团队知道部署结果</h4>
+                <p>部署成功或失败，团队应该第一时间知道。GitHub Actions 可以发送 Slack、Discord、邮件通知。</p>
+                <pre><code class="language-yaml">- name: Notify Slack on failure
+  if: failure()
+  uses: slackapi/slack-github-action@v1
+  with:
+    payload: |
+      {{
+        "text": "Deploy FAILED for ${{ github.ref_name }}",
+        "blocks": [{{
+          "type": "section",
+          "text": {{
+            "type": "mrkdwn",
+            "text": "Commit ${{ github.sha }} failed to deploy. Check the Actions log."
+          }}
+        }}]
+      }}
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+- name: Notify Slack on success
+  if: success()
+  uses: slackapi/slack-github-action@v1
+  with:
+    payload: |
+      {{
+        "text": "Deployed ${{ github.ref_name }} (${{ github.sha }})"
+      }}
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}</code></pre>
+                <div class="intro-block">
+                    <p>最佳实践：只在失败时通知（成功时保持安静）。频繁的成功通知会让人忽略真正重要的失败告警。使用 <code>if: failure()</code> 条件控制通知时机。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 健康检查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>健康检查</h3>
+                <h4>部署后自动验证服务状态</h4>
+                <p>部署完成不等于服务正常。<strong>健康检查</strong>在部署后自动请求服务的 <code>/health</code> 端点，确认服务真正启动成功。</p>
+                <pre><code class="language-yaml">- name: Health check
+  run: |
+    for i in $(seq 1 10); do
+      if curl -sf ${{ secrets.SERVER_URL }}/health; then
+        echo "Health check passed"
+        exit 0
+      fi
+      echo "Attempt $i failed, retrying..."
+      sleep 5
+    done
+    echo "Health check failed after 10 attempts"
+    exit 1
+
+- name: Rollback on failure
+  if: failure()
+  run: |
+    echo "Rolling back to previous version..."
+    docker compose down
+    docker compose up -d</code></pre>
+                <p>上面的脚本会尝试 10 次，每次间隔 5 秒。如果全部失败，则触发回滚。</p>
+                <div class="intro-block">
+                    <p>你的应用应该暴露一个 <code>/health</code> 端点，返回 200 状态码表示健康。可以检查数据库连接、Redis 连接等关键依赖。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 完整 CD 工作流示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>完整 CD 工作流</h3>
+                <h4>从 push 到部署的完整流水线</h4>
+                <p>把前面学的所有概念组合起来，就是一个生产级的 CD 工作流。</p>
+                <pre><code class="language-yaml"># .github/workflows/deploy.yml
+name: Deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ matrix.node-version }}', cache: 'npm' }
+      - run: npm ci
+      - run: npx vitest run
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build &amp; Push Docker image
+        run: |
+          docker build -t myapp:${{ github.sha }} .
+          docker push myapp:${{ github.sha }}
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            docker pull myapp:${{ github.sha }}
+            docker stop myapp || true
+            docker run -d --name myapp -p 3000:3000 myapp:${{ github.sha }}
+      - name: Health check
+        run: |
+          sleep 10
+          curl -sf ${{ secrets.SERVER_URL }}/health || exit 1</code></pre>
+            </div>
+        </section>
+
+        <!-- 多环境部署 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>多环境部署</h3>
+                <h4>staging → production 流水线</h4>
+                <p>生产环境通常有多个部署阶段：<strong>开发环境 → 预发布 → 生产</strong>。每个环境独立配置，逐步验证。</p>
+                <pre><code class="language-yaml">jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          echo "Deploying to staging..."
+          # 部署到 staging 服务器
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          echo "Deploying to production..."
+          # 部署到生产服务器</code></pre>
+                <p>只有 staging 部署成功后，才会触发 production 部署。production 环境还需要人工审批。</p>
+                <div class="intro-block">
+                    <p>环境隔离的关键：每个环境使用独立的数据库、独立的配置。staging 环境的代码和生产环境完全一致，只是数据不同。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错：常见 CI 问题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>排错：CI 性能优化</h3>
+                <h4>让 CI 跑得更快</h4>
+                <p>CI 慢是开发者最大的痛点之一。以下是常见的优化手段：</p>
+                <table>
+                    <thead><tr><th>问题</th><th>解决方案</th><th>预期效果</th></tr></thead>
+                    <tbody>
+                        <tr><td>依赖安装慢</td><td>使用 <code>cache: 'npm'</code></td><td>-75s</td></tr>
+                        <tr><td>测试串行</td><td>拆分为并行 job</td><td>-50% 总时间</td></tr>
+                        <tr><td>镜像构建慢</td><td>使用 <code>docker/build-push-action</code> 的 cache</td><td>-60s</td></tr>
+                        <tr><td>全量测试</td><td>只跑变更相关的测试（<code>paths-filter</code>）</td><td>-30% 时间</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-yaml"># 只在前端代码变更时跑前端测试
+frontend-test:
+  needs: changes
+  if: ${{ needs.changes.outputs.frontend == 'true' }}
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - run: npm ci
+    - run: npx vitest run --project=frontend
+
+# 检测哪些目录有变更
+changes:
+  runs-on: ubuntu-latest
+  outputs:
+    frontend: ${{ steps.filter.outputs.frontend }}
+  steps:
+    - uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        filters: |
+          frontend:
+            - 'src/frontend/**'
+          backend:
+            - 'src/backend/**'</code></pre>
+            </div>
+        </section>
+
+
+        <!-- 排错：CI 超时 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>排错：CI 超时与失败</h3>
+                <h4>常见问题的诊断方法</h4>
+                <table>
+                    <thead><tr><th>症状</th><th>诊断</th><th>解决方案</th></tr></thead>
+                    <tbody>
+                        <tr><td>Job 卡住不动</td><td>是否有 pause 或等待输入？</td><td>添加 <code>timeout-minutes: 10</code></td></tr>
+                        <tr><td>偶发性失败</td><td>网络问题或竞态条件？</td><td>添加重试逻辑或 <code>continue-on-error</code></td></tr>
+                        <tr><td>Secret 为 empty</td><td>Secret 名称拼写错误？</td><td>区分大小写，检查拼写</td></tr>
+                        <tr><td>Permission denied</td><td>Token 权限不足？</td><td>检查 <code>permissions</code> 配置</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-bash"># 使用 act 在本地调试 GitHub Actions
+$ npm install -g act
+$ act push                    # 模拟 push 事件
+$ act pull_request           # 模拟 PR 事件
+$ act -j test               # 只运行 test job
+$ act --secret-file .env    # 使用本地 secrets</code></pre>
+                <p><code>act</code> 工具用 Docker 在本地运行 GitHub Actions workflow，可以快速调试而不需要反复 push。</p>
+            </div>
+        </section>
+
+<!-- 部署到 VPS -->
         <section class="slide">
             <div class="slide-content">
                 <h3>部署到 VPS</h3>
@@ -242,11 +811,11 @@ jobs:
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^)
           git log --pretty=format:"- %s (%h)" $PREV_TAG..HEAD > changelog.txt
       - name: Create GitHub Release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         with:
-          tag_name: ${{ github.ref }}
-          body_path: changelog.txt</code></pre>
+          body_path: changelog.txt
+          generate_release_notes: true</code></pre>
             </div>
         </section>
 
@@ -322,13 +891,82 @@ jobs:
         with: { node-version: '20' }
       - run: npm audit --audit-level=high</code></pre>
                         </div>
+                    </div>                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：修改本章的 <code>ci.yml</code>，添加基于 <code>package-lock.json</code> hash 的缓存步骤，让第二次 CI 运行跳过依赖下载。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-yaml"># 在 steps 中添加 cache 步骤（位于 setup-node 之前）
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-20-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-npm-
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npx vitest run</code></pre>
+                        </div>
                     </div>
+                    <div class="practice-step">
+                        <h3>练习四</h3>
+                        <p><strong>任务</strong>：为你的仓库配置分支保护规则，要求 PR 必须通过 CI 的 <code>lint</code> 和 <code>test</code> 检查才能合并到 main。</p>
+                        <div class="answer-section">
+                            <h4>配置步骤</h4>
+                            <ol style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                                <li>进入 GitHub 仓库 → <strong>Settings</strong> → <strong>Branches</strong></li>
+                                <li>点击 <strong>Add branch protection rule</strong>，pattern 填 <code>main</code></li>
+                                <li>勾选 <strong>Require a pull request before merging</strong></li>
+                                <li>勾选 <strong>Require status checks to pass before merging</strong></li>
+                                <li>搜索 <code>lint</code> 和 <code>test</code>，选中作为 required checks</li>
+                                <li>点击 <strong>Create</strong> 保存</li>
+                            </ol>
+<pre><code class="language-yaml"># 验证：直接 push 到 main 会被拒绝
+$ git push origin main
+remote: error: GH006: Protected branch update failed for refs/heads/main.
+remote: error: 2 of 2 required status checks have not succeeded.</code></pre>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </section>
 
         <!-- 收尾 -->
-        <section class="slide title-slide">
+                <!-- 要点总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📝 要点总结</h3>
+                <h4>本章核心知识点</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>CI 工作流</h4>
+                        <p>push 触发 → 安装依赖 → 运行测试 → 构建产物，自动化质量门禁</p>
+                    </div>
+                    <div class="card">
+                        <h4>缓存优化</h4>
+                        <p>缓存 node_modules 和构建产物，CI 时间从分钟级降到秒级</p>
+                    </div>
+                    <div class="card">
+                        <h4>自动部署</h4>
+                        <p>测试通过后自动部署到预览/生产环境，减少人为失误</p>
+                    </div>
+                    <div class="card">
+                        <h4>安全实践</h4>
+                        <p>Secrets 管理敏感信息，环境保护规则控制部署权限</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+<section class="slide title-slide">
             <h1>下一章</h1>
             <p>CI/CD 让部署自动化。下一章我们学习 <strong>部署与运维</strong>——从 PaaS 到传统 VPS，从 PM2 到 Nginx。</p>
         

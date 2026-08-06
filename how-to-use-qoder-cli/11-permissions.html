@@ -1,0 +1,485 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>11 权限系统</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid { display: flex; flex-direction: column; }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 11 章</div>
+            <h1>权限系统</h1>
+            <p>六种模式 + 细粒度规则，安全地把活交给 AI</p>
+            <strong>权限不是束缚，是让你敢放手让 AI 干活的底气</strong>
+        </section>
+        <!-- 延续 -->
+        <section class="slide">
+            <div class="slide-content" style="text-align:center;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; padding: 12px 0;">
+                    <i class="fas fa-arrow-left" style="margin-right:6px; font-size:0.75rem;"></i>扩展篇到此为止。进入控制篇 —— 权限系统是安全地把 AI 交出去的基础：六种模式 + 细粒度规则，让你敢放手让 AI 干活。
+                </p>
+            </div>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>怕它乱来</h2>
+                <h4>AI 能改文件、能跑命令——万一改坏或删错怎么办</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>担心删库</h4>
+                        <p>AI 跑 shell 命令时，万一执行了 <code>rm -rf</code> 或 <code>git push --force</code>，损失不可逆。</p>
+                    </div>
+                    <div class="card">
+                        <h4>担心改坏配置</h4>
+                        <p>AI 修改 <code>.git</code>、<code>.env</code>、CI 配置这类敏感文件，可能让项目直接挂掉。</p>
+                    </div>
+                    <div class="card">
+                        <h4>自动化时没人盯</h4>
+                        <p>在 CI 跑 AI，没人能确认每一步——既想让它自主，又怕失控。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>权限系统就是为"既敢放手又不失控"设计的：</strong>它给每一次工具调用<strong>三选一的裁决</strong>——允许、询问、拒绝。配合六种模式和细粒度规则，你能在任何场景精确控制 AI 的行为边界。
+                </div>
+            </div>
+        </section>
+
+        <!-- 三种结果 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三种结果</h2>
+                <h4>每次工具调用前，权限系统给出三种裁决之一</h4>
+                <p>Qoder CLI 在<strong>每次工具调用前</strong>做权限检查，结果只有三种：</p>
+                <table>
+                    <thead>
+                        <tr><th>结果</th><th>含义</th><th>行为</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>allow</code></td><td>允许</td><td>立即执行工具</td></tr>
+                        <tr><td><code>ask</code></td><td>询问</td><td>交互式会话弹确认；非交互式转为拒绝</td></tr>
+                        <tr><td><code>deny</code></td><td>拒绝</td><td>阻止这次工具调用</td></tr>
+                    </tbody>
+                </table>
+                <p>权限适用于<strong>所有工具</strong>：文件读写、Bash 命令、Web 抓取、MCP 工具、子代理调用等。</p>
+                <div class="info-block">
+                    <strong>核心理念：</strong>不是"AI 能干什么由 AI 决定"，而是"由你的权限规则决定"。AI 想做的每个动作，都要先过权限这道闸。
+                </div>
+            </div>
+        </section>
+
+        <!-- 六种模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>六种模式</h2>
+                <h4>用 --permission-mode 选择会话的默认行为</h4>
+                <table>
+                    <thead>
+                        <tr><th>模式</th><th>适用场景</th><th>行为</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>default</code></td>
+                            <td>常规交互式使用</td>
+                            <td>安全读取自动执行；敏感操作请求确认</td>
+                        </tr>
+                        <tr>
+                            <td><code>accept_edits</code></td>
+                            <td>日常编码任务</td>
+                            <td>自动批准工作目录内的安全文件编辑</td>
+                        </tr>
+                        <tr>
+                            <td><code>plan</code></td>
+                            <td>评审、排查、规划</td>
+                            <td>偏规划，写入需批准</td>
+                        </tr>
+                        <tr>
+                            <td><code>auto</code></td>
+                            <td>不弹确认的自动化</td>
+                            <td>不弹窗，安全操作自动批，风险操作拒</td>
+                        </tr>
+                        <tr>
+                            <td><code>bypass_permissions</code></td>
+                            <td>仅可信本地实验</td>
+                            <td>跳过大多数批准（仍非无条件放行）</td>
+                        </tr>
+                        <tr>
+                            <td><code>dont_ask</code></td>
+                            <td>必须不弹窗的 headless</td>
+                            <td>从不询问，需询问的一律拒绝</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>新手记住三个就够：</strong>日常用 <code>default</code>，嫌确认烦用 <code>accept_edits</code>，做 CI 自动化用 <code>auto</code> 或 <code>dont_ask</code>。其余两个进阶再用。
+                </div>
+            </div>
+        </section>
+
+        <!-- 模式详解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模式怎么选</h2>
+                <h4>不同场景下的推荐选择</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>本地开发（default）</h4>
+                        <p>新手默认。读取自动通过，写文件和跑命令要确认。<strong>最安全</strong>，适合学习阶段和敏感项目。</p>
+                    </div>
+                    <div class="card">
+                        <h4>日常编码（accept_edits）</h4>
+                        <p>写代码时最常用。文件编辑不再逐个确认，但<strong>危险 shell 命令仍会问</strong>。效率与安全的平衡点。</p>
+                    </div>
+                    <div class="card">
+                        <h4>代码审查（plan）</h4>
+                        <p>只想让 AI 看和分析，不想它改东西。读取顺畅，写入受控。<strong>review 场景首选</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>CI 自动化（auto / dont_ask）</h4>
+                        <p>无人值守。<code>auto</code> 自动批准安全操作、拒绝风险操作；<code>dont_ask</code> 更严格，需询问的一律拒。<strong>第 14 章详解</strong>。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>关于 bypass_permissions：</strong>它等价于 <code>--dangerously-skip-permissions</code>（也叫 <code>--yolo</code>）。<strong>只在完全可信的沙盒环境用</strong>，且部分安全检查仍会拦截危险操作——它不是无条件放行。
+                </div>
+            </div>
+        </section>
+
+        <!-- 设置默认模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>设置默认</h2>
+                <h4>不想每次启动都带参数，就持久化配置</h4>
+                <p>用 <code>--permission-mode</code> 只对本次会话生效。想持久默认值，在 settings 里配置：</p>
+                <pre><code>{
+  "general": {
+    "defaultPermissionMode": "accept_edits"
+  }
+}</code></pre>
+                <div class="info-block">
+                    <strong>重要约束：</strong>非默认模式（accept_edits/plan/auto 等）<strong>只在可信目录中生效</strong>。如果当前目录未被信任，Qoder 会回退到 <code>default</code>。<code>bypass_permissions</code> 还可能被安全设置禁用。
+                </div>
+                <div class="key-point">
+                    <strong>settings 建议值：</strong><code>default</code>、<code>accept_edits</code>、<code>plan</code>、<code>auto</code>。需要 bypass 时，<strong>通过命令行参数启动</strong>而非写进默认配置——避免你忘了自己开着 bypass。
+                </div>
+            </div>
+        </section>
+
+        <!-- 决策顺序 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>决策顺序</h2>
+                <h4>权限判定的优先级，理解它才能写对规则</h4>
+                <p>Qoder 按<strong>固定顺序</strong>评估权限，早判断的优先：</p>
+                <ol>
+                    <li>先检查 <code>deny</code> 规则——命中直接拒</li>
+                    <li>在 <code>auto</code> 模式下，必须直接得到 allow 或 deny，不弹窗</li>
+                    <li><code>ask</code> 规则和工具自身检查，<strong>先于</strong>宽泛 allow 执行</li>
+                    <li>安全检查仍可能中断宽泛规则或 bypass 模式</li>
+                    <li>再应用工具级 <code>allow</code> 规则和模式自动允许</li>
+                    <li>非交互式会话中，结果仍是 ask 会转为 deny</li>
+                </ol>
+                <div class="warning">
+                    <strong>关键含义：</strong>宽泛的 allow 规则<strong>不等于</strong>所有动作都静默执行。例如危险 shell 命令仍可能要求确认，可疑路径仍可能被阻止——<strong>deny 和安全检查永远优先</strong>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 配置规则 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置规则</h2>
+                <h4>持久权限规则写在 settings 文件中</h4>
+                <p>规则按 <code>allow</code>、<code>ask</code>、<code>deny</code> 三组组织，写在以下文件：</p>
+                <pre><code>~/.qoder/settings.json              # 用户级（所有项目）
+${project}/.qoder/settings.json     # 项目级（团队共享，提交 Git）
+${project}/.qoder/settings.local.json  # 本地级（个人，不提交）</code></pre>
+                <pre><code>{
+  "permissions": {
+    "allow": [
+      "Read(/src/**)",
+      "Edit(/src/**)",
+      "Bash(npm run test:*)"
+    ],
+    "ask": [
+      "Bash(npm publish:*)",
+      "WebFetch"
+    ],
+    "deny": [
+      "Read(*.pem)",
+      "Bash(rm -rf:*)"
+    ]
+  }
+}</code></pre>
+                <div class="info-block">
+                    <strong>三级文件分工：</strong>用户级放个人偏好；项目级随 Git 提交供团队共享；本地级（<code>settings.local.json</code>）放个人审批，加进 <code>.gitignore</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 规则语法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>规则语法</h2>
+                <h4>三种形式，覆盖从粗到细的需求</h4>
+                <table>
+                    <thead>
+                        <tr><th>形式</th><th>含义</th><th>示例</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>ToolName</code></td><td>作用于整个工具</td><td><code>WebFetch</code></td></tr>
+                        <tr><td><code>ToolName(content)</code></td><td>作用于特定路径/命令/模式</td><td><code>Read(/src/**)</code></td></tr>
+                        <tr><td><code>*</code></td><td>工具级匹配所有工具</td><td><code>*</code></td></tr>
+                    </tbody>
+                </table>
+                <p>规范工具名：<code>Read</code>、<code>Edit</code>、<code>Write</code>、<code>Bash</code>、<code>Grep</code>、<code>Glob</code>、<code>WebFetch</code>、<code>WebSearch</code>、<code>Agent</code>，以及 <code>mcp__github__create_issue</code> 这类 MCP 工具名。</p>
+                <div class="warning">
+                    <strong>括号转义：</strong>内容里含括号要转义，否则会被当成规则语法：
+                    <pre><code>"Bash(python -c \"print\\(1\\)\")"</code></pre>
+                    <code>ToolName(*)</code> 会被视为工具级规则，等同于 <code>ToolName</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 文件访问规则 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件规则</h2>
+                <h4>用路径模式精确控制读写范围</h4>
+                <p>读取规则用 <code>Read(...)</code>，写入规则用 <code>Edit(...)</code>（覆盖 Edit/Write/NotebookEdit）。某路径的 Edit allow 会<strong>隐含允许读取</strong>同路径。路径用 gitignore 风格匹配：</p>
+                <table>
+                    <thead>
+                        <tr><th>模式</th><th>含义</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>/src/**</code></td><td>相对规则源根目录的路径（项目级相对项目根）</td></tr>
+                        <tr><td><code>~/Documents/**</code></td><td>相对 home 目录</td></tr>
+                        <tr><td><code>//tmp/data/**</code></td><td>从系统根 <code>/</code> 开始的绝对路径（双斜杠）</td></tr>
+                        <tr><td><code>*.secret</code></td><td>不带根的文件名模式，任意位置匹配</td></tr>
+                    </tbody>
+                </table>
+                <pre><code>"deny": [
+  "Read(*.pem)",          // 禁止读密钥
+  "Edit(/.git/**)",       // 禁止改 git 内部
+  "Edit(//etc/**)"        // 禁止改系统配置
+]</code></pre>
+                <div class="info-block">
+                    <strong>受保护路径：</strong><code>.git</code>、<code>.vscode</code>、<code>.idea</code>、<code>.husky</code>、<code>.mcp.json</code>、<code>.bashrc</code> 等会改变执行行为或凭据的路径，<strong>默认模式下需明确批准</strong>，<code>auto</code> 模式下直接拒绝。
+                </div>
+            </div>
+        </section>
+
+        <!-- Bash 规则 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Bash 规则</h2>
+                <h4>最需要细控的工具——精确匹配、前缀、通配</h4>
+                <table>
+                    <thead>
+                        <tr><th>规则</th><th>匹配内容</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>Bash(npm run build)</code></td><td>精确匹配这条命令</td></tr>
+                        <tr><td><code>Bash(npm run test:*)</code></td><td>匹配 <code>npm run test</code> 及以其开头的命令</td></tr>
+                        <tr><td><code>Bash(git log *)</code></td><td>glob 风格通配</td></tr>
+                    </tbody>
+                </table>
+                <pre><code>"allow": ["Bash(git status)", "Bash(git log:*)", "Bash(npm run test:*)"],
+"ask":    ["Bash(npm publish:*)", "Bash(git push:*)"],
+"deny":   ["Bash(rm -rf:*)", "Bash(sudo:*)"]</code></pre>
+                <div class="warning">
+                    <strong>Shell 匹配是保守的：</strong>
+                    <ul>
+                        <li><code>deny</code> 和 <code>ask</code> 穿透 wrapper 和环境变量前缀——<code>Bash(rm -rf:*)</code> 能拦截被包装的破坏性命令</li>
+                        <li>前缀/通配 allow <strong>不会</strong>静默批准复合命令，除非每个片段都能独立允许</li>
+                        <li>危险命令（破坏性删除、force push）即使有宽泛 allow 仍可能强制确认；<code>auto</code> 模式下直接拒</li>
+                    </ul>
+                    <strong>别用 <code>Bash</code> 或 <code>Bash(*)</code> 这种宽泛规则</strong>——等于把整个 shell 开放，极其危险。
+                </div>
+            </div>
+        </section>
+
+        <!-- Web 和 MCP -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Web 与 MCP</h2>
+                <h4>网络访问和外部工具的权限控制</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Web 工具</h4>
+                        <p>用工具级规则控制。所有 fetch 都确认用 ask，禁网用 deny：</p>
+                        <pre><code>{
+  "ask": ["WebFetch"],
+  "deny": ["WebSearch"]
+}</code></pre>
+                        <p>某些项目或会话要完全断网，deny WebFetch 即可。</p>
+                    </div>
+                    <div class="column">
+                        <h4>MCP 工具</h4>
+                        <p>用完整限定名 <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>：</p>
+                        <pre><code>{
+  "allow": ["mcp__context7__*"],
+  "ask": ["mcp__github__create_issue"]
+}</code></pre>
+                        <p>支持 <code>mcp__github__*</code>（某 server 全部）、<code>mcp__*</code>（所有 MCP）。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>按需启用 server：</strong>某次运行只用指定 MCP server，用 <code>--allowed-mcp-server-names context7,github</code>。或在 server 配置里用 <code>alwaysAllow</code> 自动放行。
+                </div>
+            </div>
+        </section>
+
+        <!-- 命令行覆盖与非交互 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>覆盖与 CI</h2>
+                <h4>命令行一次性覆盖 + 非交互式场景</h4>
+                <p><strong>命令行覆盖</strong>（一次性会话）：</p>
+                <pre><code>qodercli --permission-mode accept_edits
+qodercli --allowed-tools 'Read,Grep,Bash(git status)'
+qodercli --disallowed-tools 'Bash(rm -rf:*),mcp__github__delete_repo'
+qodercli --tools 'Read,Grep,Edit'   # 限制本次可用工具</code></pre>
+                <p><strong>非交互式会话</strong>（print mode、CI）的特殊处理：</p>
+                <ul>
+                    <li>无法弹确认，任何 <code>ask</code> 都转为 <code>deny</code></li>
+                    <li>自动化时<strong>优先配置精确的 allow 规则</strong>，而非依赖模式</li>
+                    <li>需要编辑文件用 <code>accept_edits</code></li>
+                    <li>要严格 fail-closed 用 <code>dont_ask</code></li>
+                    <li>可信环境确需宽泛执行才用 <code>bypass_permissions</code></li>
+                </ul>
+                <div class="key-point">
+                    <strong>CI 最佳实践：</strong>用项目级 settings 配精确 allow 规则（只允许需要的命令和路径）+ <code>auto</code> 或 <code>dont_ask</code> 模式。这是"既自主又安全"的标准组合，第 14 章会完整演示。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <h4>权限相关的高频问题</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>accept_edits 没生效</h4>
+                        <p><strong>原因：</strong>当前目录未受信任，回退成了 default。<strong>修复：</strong>先信任该目录；或在可信目录运行。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>allow 规则没放行</h4>
+                        <p><strong>原因：</strong>规则语法错（括号没转义）、路径模式不对、或被 deny/安全检查优先拦截。<strong>修复：</strong>核对语法；用 <code>/config</code> 看生效规则；deny 优先于 allow，检查是否冲突。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>CI 里 AI 啥都做不了</h4>
+                        <p><strong>原因：</strong>非交互式 ask 转 deny，没配 allow 规则。<strong>修复：</strong>在项目 settings 加精确 allow；或用 accept_edits/auto 模式。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>危险命令还是被拦</h4>
+                        <p><strong>这是设计如此，不是 bug。</strong>即使 bypass 模式，危险 shell 仍可能被安全检查拦截。如确需执行，在可信环境手动跑。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>为你的项目搭一套合理的权限配置</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习 1：体验不同模式</h3>
+                        <ul>
+                            <li>分别用 <code>default</code> 和 <code>accept_edits</code> 启动</li>
+                            <li>让 AI 改同一个文件，感受确认次数的差异</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 2：写项目权限规则</h3>
+                        <ul>
+                            <li>在 <code>.qoder/settings.json</code> 配置：allow 常用测试命令、deny 危险命令</li>
+                            <li>禁止读写 <code>*.pem</code> 和 <code>.env</code></li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 3：只读会话</h3>
+                        <ul>
+                            <li>用 <code>--permission-mode plan</code> 启动</li>
+                            <li>让 AI 分析项目，观察它无法改文件</li>
+                            <li>体会 plan 模式在 review 中的价值</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 本章回顾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>带走的三个核心认知</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>三种结果六种模式</h4>
+                        <p>allow/ask/deny 三种裁决，default/accept_edits/plan/auto/bypass/dont_ask 六种模式。</p>
+                    </div>
+                    <div class="card">
+                        <h4>规则可细到路径和命令</h4>
+                        <p>Read/Edit 按路径，Bash 按命令前缀，MCP 按 server/tool。deny 永远优先。</p>
+                    </div>
+                    <div class="card">
+                        <h4>CI 用精确 allow + auto</h4>
+                        <p>非交互式 ask 转 deny，所以自动化要预先配好 allow 规则。</p>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>权限系统是 Qoder CLI 安全的基石。它让你<strong>敢把活交给 AI</strong>——因为你知道，AI 能做的事，永远在你画的圈里。
+                    <p style="margin-top: 16px;">下一章，学习 Quest 模式——在权限保护下，把一个完整需求端到端委派给 AI。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./12-quest.html">下一章：Quest 模式</a> — Spec 驱动的自主委派</li>
+                            <li><a href="./13-advanced.html">高级特性</a> — CI/CD 中权限的实战应用</li>
+                            <li><a href="./09-hooks.html">钩子</a> — 和权限配合的自动化检查</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方资源</h4>
+                        <ul>
+                            <li><a href="https://docs.qoder.com/zh/cli/permissions">权限官方文档</a> — 完整规则语法与判定顺序</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

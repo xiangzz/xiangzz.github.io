@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -7,8 +7,6 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
     <link rel="stylesheet" href="./references/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
 </head>
 <body>
     <main id="presentation">
@@ -18,6 +16,21 @@
             <h1>部署与运维</h1>
             <p>让应用在互联网上稳定运行</p>
         </section>
+        <!-- 学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>🎯 学习目标</h3>
+                <h4>学完本章，你将能够：</h4>
+                <ul>
+                    <li>将应用部署到 Vercel、Railway 等 PaaS 平台</li>
+                    <li>管理多环境配置和启动时环境变量校验</li>
+                    <li>使用 Pino 实现结构化日志记录</li>
+                    <li>配置 PM2 进程管理和 Nginx 反向代理</li>
+                    <li>集成 Sentry 错误追踪和健康检查端点</li>
+                </ul>
+            </div>
+        </section>
+
 
         <!-- 问题驱动 -->
         <section class="slide">
@@ -96,13 +109,180 @@ buildCommand = "npm run build"
 startCommand = "node dist/index.js"
 healthcheckPath = "/health"
 restartPolicyType = "on_failure"</code></pre>
+
+
+        <!-- Part 2: 环境管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 环境管理</h2>
+                <p>"怎么跑"与"在哪儿跑"分开 —— 同一份代码，不同环境不同配置。</p>
+            </div>
+        </section>
+
+        <!-- 环境变量管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>环境变量管理</h3>
+                <h4>development / staging / production 各司其职</h4>
+                <table>
+                    <thead><tr><th>环境</th><th>用途</th><th>数据来源</th></tr></thead>
+                    <tbody>
+                        <tr><td>development</td><td>本地开发</td><td><code>.env.local</code>（不入库）</td></tr>
+                        <tr><td>staging</td><td>预发测试</td><td>平台 UI / Vault</td></tr>
+                        <tr><td>production</td><td>线上对外</td><td>平台 UI / Secret（加密）</td></tr>
+                    </tbody>
+                </table>
+                <p>代码与环境解耦：同一份构建产物在不同环境注入不同的环境变量即可运行。本地用 <code>.env</code> 文件；线上优先使用平台提供的 Secret 管理（Vercel Env、Railway Variables、Vault 等），千万不要把 <code>.env</code> 文件上传到服务器。</p>
+                <pre><code class="language-bash"># 本地开发：创建 .env（确保被 .gitignore 排除）
+DATABASE_URL=postgresql://user:pass@localhost:5432/devdb
+JWT_SECRET=dev-only-secret-change-me
+REDIS_URL=redis://localhost:6379
+LOG_LEVEL=debug
+
+# .env.example 用作模板提交到仓库，真实值留空
+DATABASE_URL=
+JWT_SECRET=</code></pre>
+            </div>
+        </section>
+
+        <!-- dotenv + Zod 校验 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>启动时校验环境变量</h3>
+                <h4><code>dotenv</code> + <code>zod</code> —— 少一个变量立刻崩，比线上 500 强</h4>
+                <p>运行时才发现的配置错误代价高昂。用 TypeScript + <a href="https://zod.dev">Zod</a> 在入口文件最前面做一次 schema 校验；缺字段、类型错、端口越界都立刻报错退出。</p>
+                <pre><code class="language-typescript">// src/config/env.ts
+import { z } from 'zod';
+import dotenv from 'dotenv';
+
+// 开发环境读取 .env；线上由平台注入环境变量，不读文件
+if (process.env.NODE_ENV === 'development') {
+  dotenv.config({ path: '.env.local' });
+}
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'staging', 'production'])
+    .default('development'),
+  PORT: z.coerce.number().int().positive().default(3000),
+  DATABASE_URL: z.string().url(),
+  JWT_SECRET: z.string().min(32, 'secret too short'),
+  REDIS_URL: z.string().url().optional(),
+  LOG_LEVEL: z.enum(['trace','debug','info','warn','error'])
+    .default('info'),
+});
+
+const parsed = envSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  // 启动时直接失败——比线上 500 好得多
+  console.error(
+    'Invalid env:\n',
+    JSON.stringify(parsed.error.flatten().fieldErrors, null, 2)
+  );
+  process.exit(1);
+}
+
+export const env = parsed.data;</code></pre>
+            </div>
+        </section>
+
+        <!-- 数据库连接池 -->
+        <section class="slide">
+        <div class="slide-content">
+        <h3>数据库连接池配置</h3>
+        <h4>连接数不是越多越好 —— 按 CPU 核数和实例数反推</h4>
+        <p>每个 Node.js 实例与 PostgreSQL 之间维持一个连接池。连接数过少会排队等待；过多则浪费数据库资源甚至被打满。经验公式：<code>pool_size = (CPU核数 * 2) + 有效磁盘数</code>，再除以实例数。</p>
+        <pre><code class="language-typescript">// Prisma schema (prisma/schema.prisma)
+        datasource db {
+          provider = "postgresql"
+          url      = env("DATABASE_URL")
+          // 连接池大小通过 URL 参数传递
+        }
+        
+        // .env
+        // 单实例 4 核：pool_size=10
+        DATABASE_URL="postgresql://user:pass@host:5432/mydb?connection_limit=10&amp;pool_timeout=30"
+        
+        // 多实例（PM2 cluster 4 workers）：每个 worker 5 个连接
+        DATABASE_URL="postgresql://user:pass@host:5432/mydb?connection_limit=5&amp;pool_timeout=30"</code></pre>
+        <pre><code class="language-bash"># 查看当前 PG 连接数
+        $ psql -c "SELECT count(*) FROM pg_stat_activity WHERE datname='mydb';"
+        # 查看最大连接数（默认 100）
+        $ psql -c "SHOW max_connections;"</code></pre>
+        </div>
+        </section>
+
+
+        <!-- 日志管理：为什么不用 console.log -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>日志管理：别再用 console.log</h3>
+                <h4>结构化日志 + 分级输出，定位问题快十倍</h4>
+                <p><code>console.log</code> 输出的是<strong>纯文本字符串</strong>，grep 不到字段、过滤不了级别、stdout 缓冲还可能丢日志。生产环境推荐 JSON 结构化日志，能被 Loki / ELK / Datadog 直接采集，按 <code>serviceName</code>、<code>level</code>、<code>traceId</code> 聚合查询。</p>
+                <table>
+                    <thead><tr><th>级别</th><th>使用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td>trace</td><td>进出函数、极其详细</td></tr>
+                        <tr><td>debug</td><td>本地排查，线上关闭</td></tr>
+                        <tr><td>info</td><td>启动完成、关键业务节点</td></tr>
+                        <tr><td>warn</td><td>降级、重试、可恢复异常</td></tr>
+                        <tr><td>error</td><td>不可恢复错误，需要介入</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-bash"># .env（示例）
+LOG_LEVEL=info          # 生产
+LOG_LEVEL=debug         # 本地</code></pre>
+            </div>
+        </section>
+
+        <!-- Pino + Express 中间件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Pino：最快的 Node.js 日志库</h3>
+                <h4>低开销 + 自带 Express 中间件 <code>pino-http</code></h4>
+                <p><a href="https://github.com/pinojs/pino">Pino</a> 把序列化推迟到 Worker 线程，单线程每秒可写数十万条日志。<code>pino-http</code> 自动给每个请求打一条 info 日志（method、url、status、响应时间），并提供绑定当前请求上下文的子 logger。</p>
+                <pre><code class="language-bash">$ npm install pino pino-http
+$ npm install -D pino-pretty     # 开发时用，生产不装</code></pre>
+                <pre><code class="language-typescript">// src/logger.ts
+import pino from 'pino';
+import { env } from './config/env';
+
+export const logger = pino({
+  level: env.LOG_LEVEL,
+  // 开发环境：彩色、可读输出；生产环境：JSON 到 stdout
+  transport: env.NODE_ENV === 'development'
+    ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'HH:SS' } }
+    : undefined,
+  base: {
+    service: 'my-app',
+    version: process.env.npm_package_version ?? '0.0.0',
+  },
+});</code></pre>
+                <pre><code class="language-typescript">// src/index.ts —— 接入 Express 请求日志
+import express from 'express';
+import pinoHttp from 'pino-http';
+import { logger } from './logger';
+
+const app = express();
+
+// 每个请求自动打 info 日志：method / url / status / 耗时
+app.use(pinoHttp({ logger }));
+
+app.get('/api/users/:id', async (req, res) =&gt; {
+  // req.log 是绑定当前请求上下文的子 logger
+  req.log.info({ userId: req.params.id }, 'fetching user');
+  const user = await getUser(req.params.id);
+  res.json(user);
+});</code></pre>
+            </div>
+        </section>
             </div>
         </section>
 
         <!-- Part 2: 传统部署 -->
         <section class="slide">
             <div class="slide-content">
-                <h2>Part 2: 传统 VPS</h2>
+                <h2>Part 5: 传统 VPS</h2>
                 <p>PM2 + Nginx + SSL，完全掌控你的服务器。</p>
             </div>
         </section>
@@ -221,7 +401,7 @@ $ sudo certbot renew --dry-run</code></pre>
         <!-- Part 3: 监控 -->
         <section class="slide">
             <div class="slide-content">
-                <h2>Part 3: 监控与日志</h2>
+                <h2>Part 4: 监控与日志</h2>
                 <p>知道出问题了，才能解决问题。</p>
             </div>
         </section>
@@ -305,6 +485,261 @@ try {
     extra: { userId: currentUser.id },
   });
 }</code></pre>
+
+
+        <!-- Part 3: 进阶运维 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 进阶运维</h2>
+                <p>零停机、全球加速、可灰度 —— 让部署不再是"心惊胆战"的时刻。</p>
+            </div>
+        </section>
+
+        <!-- 部署策略对比 -->
+        <section class="slide">
+        <div class="slide-content">
+        <h3>部署策略对比</h3>
+        <h4>滚动更新 / 蓝绿部署 / 金丝雀发布</h4>
+        <p>不同业务场景需要不同的部署策略。小型项目用 PM2 reload 就够了；中大型系统需要更精细的流量控制。</p>
+        <table>
+        <thead><tr><th>策略</th><th>原理</th><th>优点</th><th>缺点</th></tr></thead>
+        <tbody>
+        <tr><td>滚动替换</td><td>逐台重启 worker</td><td>简单、资源少</td><td>版本短暂共存</td></tr>
+        <tr><td>蓝绿部署</td><td>两套环境切流量</td><td>秒级回滚</td><td>资源翻倍</td></tr>
+        <tr><td>金丝雀发布</td><td>先放 5% 流量</td><td>风险可控</td><td>需要网关支持</td></tr>
+        </tbody>
+        </table>
+        <pre><code class="language-bash"># 蓝绿部署示意（Nginx 切换 upstream）
+        # 当前：green 在跑
+        $ ln -sfn /var/www/green /var/www/current
+        $ nginx -s reload
+        
+        # 出问题：秒级切回 blue
+        $ ln -sfn /var/www/blue /var/www/current
+        $ nginx -s reload
+        
+        # 金丝雀：Nginx split_clients 按比例分流
+        split_clients "${remote_addr}${http_user_agent}" $app_variant {
+            5%     canary;
+            *      stable;
+        }</code></pre>
+        </div>
+        </section>
+
+
+        <!-- 零停机部署 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>零停机部署</h3>
+                <h4><code>pm2 reload</code> 热重载 vs <code>pm2 restart</code> 冷重启</h4>
+                <p><code>restart</code> 先杀后起，期间所有请求失败；<code>reload</code> 会先启动新 worker，等其 ready 后再优雅关掉旧 worker —— 整个过程服务不中断。前提是应用必须支持优雅关闭（Graceful Shutdown）。</p>
+                <table>
+                    <thead><tr><th>命令</th><th>行为</th><th>影响</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>pm2 restart</code></td><td>杀进程再启</td><td>所有在途请求失败</td></tr>
+                        <tr><td><code>pm2 reload</code></td><td>滚动替换 worker</td><td>对新请求零影响</td></tr>
+                        <tr><td><code>pm2 gracefulReload</code</td><td>同 reload，走 IPC</td><td>同上</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-bash"># ecosystem.config.js —— 关键：cluster 模式 + wait_ready
+module.exports = {
+  apps: [{
+    name: 'my-app',
+    script: 'dist/index.js',
+    instances: 'max',          // 按 CPU 核数起多个 worker
+    exec_mode: 'cluster',
+    wait_ready: true,          // 等 process.send('ready') 再视为启动完成
+    listen_timeout: 8000,      // 8 秒未 ready 视为失败
+    kill_timeout: 5000,        // 给旧 worker 5 秒优雅关闭
+    max_memory_restart: '500M',
+  }],
+};</code></pre>
+                <pre><code class="language-bash">
+
+        <!-- 优雅关闭 -->
+        <section class="slide">
+        <div class="slide-content">
+        <h3>优雅关闭（Graceful Shutdown）</h3>
+        <h4>收到 SIGTERM 后：停止接收新请求 → 处理完在途请求 → 关闭连接 → 退出</h4>
+        <p>零停机部署的前提是应用能正确处理 <code>SIGTERM</code>。PM2 reload 发出 SIGTERM 后等待 <code>kill_timeout</code>，超时则强杀。应用必须自己关闭 HTTP server、数据库连接、消息队列消费者。</p>
+        <pre><code class="language-typescript">// src/graceful-shutdown.ts
+        import { Server } from 'http';
+        import { prisma } from './db';
+        import { logger } from './logger';
+        
+        export function setupGracefulShutdown(server: Server) {
+          let isShuttingDown = false;
+        
+          const shutdown = async (signal: string) =&gt; {
+            if (isShuttingDown) return;
+            isShuttingDown = true;
+            logger.info({ signal }, 'shutdown initiated');
+        
+            // 1. 停止接收新请求
+            server.close((err) =&gt; {
+              if (err) logger.error({ err }, 'error closing server');
+              else logger.info('http server closed');
+            });
+        
+            // 2. 关闭数据库连接
+            await prisma.$disconnect();
+            logger.info('database disconnected');
+        
+            // 3. 通知 PM2 已就绪退出（配合 wait_ready）
+            process.exit(0);
+          };
+        
+          process.on('SIGTERM', () =&gt; shutdown('SIGTERM'));
+          process.on('SIGINT',  () =&gt; shutdown('SIGINT'));
+        }
+        
+        // src/index.ts
+        import { setupGracefulShutdown } from './graceful-shutdown';
+        const server = app.listen(env.PORT, () =&gt; {
+          logger.info(`listening on :${env.PORT}`);
+          process.send?.('ready');   // 通知 PM2：我已就绪
+        });
+        setupGracefulShutdown(server);</code></pre>
+        </div>
+        </section>
+#!/usr/bin/env bash
+# deploy.sh —— 零停机一键部署
+set -euo pipefail
+
+echo '⬇️  pulling code...'
+git pull origin main
+
+echo '📦 installing deps...'
+npm ci --omit=dev
+
+echo '🔨 building...'
+npm run build
+
+echo '🗃️  running migrations...'
+npm run migrate
+
+echo '🔄 reloading PM2 (zero-downtime)...'
+pm2 reload ecosystem.config.js --update-env
+
+echo '✅ deploy done'</code></pre>
+            </div>
+        </section>
+
+        <!-- Nginx upstream 滚动更新 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Nginx upstream 滚动更新</h3>
+                <h4>多实例场景下，逐台摘流量、更新、加回</h4>
+                <p>当应用跑在多台服务器或同一台多个端口上，Nginx 的 <code>upstream</code> 配合健康检查可以实现逐台滚动更新，比单机 PM2 reload 更可控。</p>
+                <pre><code class="language-nginx"># /etc/nginx/conf.d/upstream.conf
+upstream node_backend {
+    server 127.0.0.1:3000;
+    server 127.0.0.1:3001;
+    server 127.0.0.1:3002;
+    server 127.0.0.1:3003;
+}
+
+server {
+    listen 80;
+    location / {
+        proxy_pass http://node_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_next_upstream error timeout http_502;
+    }
+}</code></pre>
+                <pre><code class="language-bash"># 滚动更新单台：先标记 down，更新完再恢复
+curl -X POST 'http://nginx-api/servers/3001/down'
+pm2 reload my-app --only 3001
+sleep 5
+curl -X POST 'http://nginx-api/servers/3001/up'</code></pre>
+            </div>
+        </section>
+
+        <!-- CDN 与静态资源 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CDN 与静态资源加速</h3>
+                <h4>把"离用户最近"这件事交给专业服务商</h4>
+                <p>CDN（Content Delivery Network）在全球各地部署边缘节点，把静态资源缓存到离用户最近的位置。用户请求不再跨洋回源，延迟从 200ms 降到 20ms。</p>
+                                <div class="ai-diagram">
+                    <h4>图：CDN 工作原理——全球边缘节点加速</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：展示 CDN 全球分发网络，包含用户、边缘节点和源站
+                    - 顶部是三个用户：纽约用户（🇺🇸）、上海用户（🇨🇳）、柏林用户（🇩🇪）
+                    - 用户通过"边缘节点"箭头指向中间的 CDN Edge 大框
+                    - CDN Edge 向下通过"缓存未命中时回源"虚线箭头指向底部的"源站 Nginx / S3"
+                    - 边缘节点旁边标注"边缘节点"，源站旁边标注"源站"
+                    - 整体配色：橙色系表示 CDN，蓝色表示用户，灰色表示源站</p>
+                </div>
+                <table>
+                    <thead><tr><th>CDN 服务</th><th>免费额度</th><th>特点</th></tr></thead>
+                    <tbody>
+                        <tr><td>Cloudflare</td><td>无限流量（免费套餐）</td><td>自带 DDoS 防护、Workers</td></tr>
+                        <tr><td>AWS CloudFront</td><td>1TB / 月（首年）</td><td>与 S3 / EC2 深度集成</td></tr>
+                        <tr><td>Vercel Edge</td><td>100GB 带宽</td><td>Next.js 原生支持</td></tr>
+                        <tr><td>阿里云 DCDN</td><td>按量付费</td><td>国内节点多、ICP 支持</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 静态资源 hash 命名长期缓存 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>静态资源长期缓存</h3>
+                <h4>文件名带 hash，缓存一年也不怕</h4>
+                <p>构建工具（Vite / Webpack / Next.js）会给静态资源生成内容 hash —— 文件内容变了，文件名就变了。这样可以对静态资源设置 <code>Cache-Control: max-age=31536000, immutable</code>，大幅提升二次访问速度。</p>
+                <pre><code class="language-bash"># 构建产物示例
+assets/
+  index-a1b2c3d4.js        # 内容变了 → hash 变了 → URL 变了
+  vendor-e5f6g7h8.js
+  style.i9j0k1l2.css</code></pre>
+                <pre><code class="language-nginx"># Nginx 配置：静态资源长期缓存，HTML 不缓存
+server {
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location / {
+        expires -1;   # HTML 每次都回源
+        proxy_pass http://node_backend;
+    }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 故障恢复 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>故障恢复清单</h3>
+                <h4>出问题时按顺序排查，别慌</h4>
+                <p>线上故障第一原则：<strong>先恢复，再追因</strong>。能回滚就回滚，能重启就重启，保留现场日志留到事后分析。</p>
+                <table>
+                    <thead><tr><th>步骤</th><th>命令 / 操作</th><th>目的</th></tr></thead>
+                    <tbody>
+                        <tr><td>1. 确认范围</td><td><code>curl -I https://your.app/health</code></td><td>全站 or 单接口</td></tr>
+                        <tr><td>2. 看监控</td><td>Sentry / Grafana / PM2 monit</td><td>定位异常源</td></tr>
+                        <tr><td>3. 看日志</td><td><code>pm2 logs --nostream --lines 200</code></td><td>找 stack trace</td></tr>
+                        <tr><td>4. 回滚</td><td><code>git revert HEAD &amp;&amp; pm2 reload all</code></td><td>先恢复</td></tr>
+                        <tr><td>5. 复盘</td><td>写 postmortem，加告警</td><td>防止复发</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-bash"># 一键回滚脚本
+#!/usr/bin/env bash
+set -euo pipefail
+echo '⏪ reverting last commit...'
+git revert --no-edit HEAD
+npm run build
+pm2 reload all
+revert_exit=$?
+if [ $revert_exit -ne 0 ]; then
+  echo '❌ reload failed, resetting git...'
+  git reset --hard HEAD@{1}
+  exit 1
+fi
+echo '✅ rollback done'</code></pre>
             </div>
         </section>
 
@@ -352,11 +787,108 @@ $ pm2 monit                      # 实时监控内存和 CPU</code></pre>
 # 最后访问平台分配的域名验证</code></pre>
                     </div>
                 </div>
+
+
+                    <div class="practice-step">
+                        <h3>练习三</h3>
+                        <p><strong>任务</strong>：编写一个 bash 脚本 <code>deploy.sh</code>，实现零停机部署：拉代码 → 安装依赖 → 构建 → 迁移 → <code>pm2 reload all</code>。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-bash">#!/usr/bin/env bash
+set -euo pipefail
+
+echo '⬇️  pulling code...'
+git pull origin main
+
+echo '📦 installing deps...'
+npm ci --omit=dev
+
+echo '🔨 building...'
+npm run build
+
+echo '🗃️  running migrations...'
+npm run migrate
+
+echo '🔄 reloading all PM2 apps (zero-downtime)...'
+pm2 reload all
+
+echo '✅ deploy done'</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习四</h3>
+                        <p><strong>任务</strong>：配置 Pino，让开发环境输出彩色可读日志，生产环境输出 JSON 到 stdout。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-typescript">import pino from 'pino';
+
+const isDev = process.env.NODE_ENV === 'development';
+
+export const logger = pino({
+  level: process.env.LOG_LEVEL ?? (isDev ? 'debug' : 'info'),
+  transport: isDev
+    ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'HH:SS' } }
+    : undefined,
+  base: { service: 'my-app' },
+});</code></pre>
+                        </div>
+                    </div>
+            </div>
+        </section>
+
+        <!-- 安全加固 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>上线前安全加固清单</h3>
+                <h4>别让部署日变成被黑日</h4>
+                <p>部署完不等于结束。下面这些是生产环境最容易忽略的安全项，每条都可能成为攻击入口。</p>
+                <table>
+                    <thead><tr><th>项目</th><th>做法</th></tr></thead>
+                    <tbody>
+                        <tr><td>Helmet 头</td><td><code>app.use(helmet())</code> —— X-Frame-Options / CSP / HSTS</td></tr>
+                        <tr><td>CORS 白名单</td><td>只允许业务域名，不要 <code>*</code></td></tr>
+                        <tr><td>Rate Limiting</td><td><code>express-rate-limit</code> —— 单 IP 限流</td></tr>
+                        <tr><td>.env 不入库</td><td><code>.gitignore</code> + 平台 Secret 管理</td></tr>
+                        <tr><td>依赖漏洞</td><td><code>npm audit</code> / GitHub Dependabot</td></tr>
+                        <tr><td>最小权限</td><td>数据库账号只给必要权限，不要用 superuser</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-typescript">// 最小权限示例：应用账号只读 + 写特定表
+// migration 用高权限账号，运行时用受限账号
+// DATABASE_URL=migrator:pass@host/db       ← 仅迁移时用
+// DATABASE_URL=app_user:pass@host/db       ← 运行时用
+// app_user 权限: SELECT/INSERT/UPDATE/DELETE ON app_schema.*</code></pre>
             </div>
         </section>
 
         <!-- 收尾 -->
-        <section class="slide title-slide">
+                <!-- 要点总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📝 要点总结</h3>
+                <h4>本章核心知识点</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>PaaS 部署</h4>
+                        <p>Vercel/Railway 等平台让部署变得简单，专注代码而非基础设施</p>
+                    </div>
+                    <div class="card">
+                        <h4>日志管理</h4>
+                        <p>结构化日志 + 级别控制 + 集中收集，快速定位生产问题</p>
+                    </div>
+                    <div class="card">
+                        <h4>进程管理</h4>
+                        <p>PM2 提供自动重启、负载均衡和日志管理，生产环境必备</p>
+                    </div>
+                    <div class="card">
+                        <h4>监控告警</h4>
+                        <p>健康检查 + Sentry 错误追踪 + 性能指标 = 可观测的生产系统</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+<section class="slide title-slide">
             <h1>下一章</h1>
             <p>应用跑起来了，但用户抱怨慢？下一章是最后一章——<strong>性能优化与安全</strong>，让应用又快又安全。</p>
         

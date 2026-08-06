@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>06 Agent Plugins</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧩</text></svg>">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ========== Slide 1: Title ========== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 06 章</div>
+            <h1>Agent Plugins</h1>
+            <p>把"规则 + 工具 + 能力"打包成一个可分发、可迁移、可共享的单元</p>
+            <strong>一个 Plugin 就是一整套工作流——写一次，装到哪都生效</strong>
+        </section>
+
+        <!-- ========== Slide 2: Problem Opening ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>重复造轮子</h2>
+                <h4>你已经在第 04、05 章调好了 Skill 和 MCP，但它们是"散装"的</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>换项目全得重配</h4>
+                        <p>你在 A 项目调好了 3 个 MCP server、2 个 Skill、一段 AGENTS.md 规则。换到 B 项目，要把这些<strong>逐个再抄一遍</strong>——能不能打包带走？</p>
+                    </div>
+                    <div class="card">
+                        <h4>没法分发给队友</h4>
+                        <p>你写了一套"提交前自动 lint + 生成 commit message"的工作流，想让团队所有人都用上。但现在只能<strong>口口相传、手动复制文件</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>从别的工具搬过来</h4>
+                        <p>你之前用 Cursor、Claude Code，攒了一堆规则和工具配置。来到 Codex，<strong>难道要手动逐条重写？</strong></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>本章解决这三件事：</strong>用 <strong>Plugin</strong> 把能力打包分发，用 marketplace 让团队<strong>开箱即用</strong>，用 <strong>/import</strong> 从其它工具一键迁移。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 3: Before You Start ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>已读完前 4 章，会写 Skill、会配 MCP 的读者</li>
+                            <li>想在多个项目间复用同一套配置的开发者</li>
+                            <li>需要把团队工作流标准化、分发给成员的负责人</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完你应该能</h4>
+                        <ul>
+                            <li>解释 Plugin 是什么、和 Skill / MCP 的关系</li>
+                            <li>从零写出一个可用的 Plugin 并验证它生效</li>
+                            <li>用 marketplace 机制分发 Plugin 给团队</li>
+                            <li>用 /import 从其它工具迁移设置</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章先不讲</h4>
+                        <ul>
+                            <li>Skill 的写法细节（第 04 章）</li>
+                            <li>MCP server 的 stdio/HTTP 配置（第 05 章）</li>
+                            <li>Subagents 编排（第 07 章）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block"><strong>版本要求：</strong>Plugin 体系于 <strong>2026-03-26</strong> 发布（随 Codex CLI 更新推出，对应 <code>rust-v*</code> 版本系列）。<code>/import</code> 对 Cursor / Claude Code 的迁移支持在 <strong>0.145.0（2026-07-21）</strong>扩展。请先 <code>codex --version</code> 确认为较新版本。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 4: What is a Plugin ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>什么是 Plugin</h2>
+                <h4>一句话：Plugin 是一个打包了"Skill + MCP + App"的可分发单元</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>定义</h4>
+                        <p>Plugin 是一个带 <strong>manifest（<code>.codex-plugin/plugin.json</code>）</strong> 的目录，里面可以装 Skills、MCP server 配置、App 集成——<strong>一个包，多种东西</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>白话</h4>
+                        <p>如果说 Skill 是一把螺丝刀，MCP 是接的一根电线，那 Plugin 就是一个<strong>工具箱</strong>——打开它，里面螺丝刀、电线、说明书全有，直接拎着走。</p>
+                    </div>
+                </div>
+                <div class="warning"><strong>比喻卸甲：</strong>这个"工具箱"只是帮你建立直观印象。在 Codex 内部，Plugin 是一组被 <code>.codex-plugin/plugin.json</code> 索引的<strong>文本文件</strong>，安装时被 Codex 解析注册——它不是二进制，而是<strong>一组带清单的配置</strong>。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 5: Plugin vs Skill vs MCP ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三者怎么分</h2>
+                <h4>Plugin / Skill / MCP 的边界，一张表说清</h4>
+                <table class="comparison-table"><thead><tr><th>概念</th><th>本质</th><th>粒度</th><th>能否独立分发</th></tr></thead><tbody>
+                    <tr><td><strong>Skill</strong></td><td>一段可触发的方法论（SKILL.md）</td><td>单一能力</td><td>可，但通常作为 Plugin 的一部分</td></tr>
+                    <tr><td><strong>MCP</strong></td><td>一个外部工具进程（server）</td><td>单一工具连接</td><td>不直接，靠 .mcp.json 声明</td></tr>
+                    <tr><td><strong>Plugin</strong></td><td>打包上述内容的容器</td><td>一个完整工作流</td><td>是，这正是它的设计目的</td></tr>
+                </tbody></table>
+                <div class="key-point"><strong>记忆口诀：</strong>Skill 是"会做的事"，MCP 是"接的工具"，Plugin 是"打包送人的整套"。Plugin 可以同时包含前两者——它是前两章内容的<strong>容器和载体</strong>。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 6: Plugin Directory Structure ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>目录结构</h2>
+                <h4>一个 Plugin 就是一个自包含的目录，manifest 在 .codex-plugin/ 子目录里</h4>
+                <pre><code class="language-text">my-plugin/
+├── .codex-plugin/
+│   └── plugin.json     ← manifest（必需）：Plugin 的"身份证"
+├── skills/             ← 可选：打包的 Skills
+│   └── lint-fix/
+│       └── SKILL.md
+├── .mcp.json           ← 可选：MCP server 配置
+├── .app.json           ← 可选：App / 连接器映射
+└── assets/             ← 可选：图标、logo、截图</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>必需 vs 可选</h4>
+                        <p>只有 <code>.codex-plugin/plugin.json</code> 是<strong>必需</strong>的——它是 Plugin 的身份证。其余文件按需添加：<code>skills/</code>、<code>.mcp.json</code>、<code>.app.json</code> 都可单独或缺省。</p>
+                    </div>
+                    <div class="card">
+                        <h4>和 Skill 目录的区别</h4>
+                        <p>第 04 章的 Skill 目录里只有 <code>SKILL.md</code>。Plugin 目录多了 <code>.codex-plugin/plugin.json</code> 作为 manifest——<strong>有没有这个 manifest，是 Plugin 和裸 Skill 的分界线</strong>。</p>
+                    </div>
+                </div>
+                <div class="warning"><strong>注意路径：</strong>manifest 不是放在根目录的 <code>plugin.json</code>，而是放在 <code>.codex-plugin/plugin.json</code>。点前缀目录容易被忽略，别漏掉。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 7: Manifest Fields ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Manifest 详解</h2>
+                <h4>.codex-plugin/plugin.json 决定 Plugin 如何被发现、加载、展示</h4>
+                <pre><code class="language-json">{
+  "name": "my-commit-helper",
+  "version": "1.0.0",
+  "description": "提交前自动 lint 修复 + 生成规范 commit message",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Commit Helper",
+    "shortDescription": "lint + 提交规范一站式"
+  }
+}</code></pre>
+                <table class="comparison-table"><thead><tr><th>字段</th><th>必需</th><th>作用</th></tr></thead><tbody>
+                    <tr><td><code>name</code></td><td>是</td><td>Plugin 的唯一标识，用 <strong>kebab-case</strong>（如 my-plugin）。Codex 用它做组件命名空间</td></tr>
+                    <tr><td><code>version</code></td><td>建议</td><td>语义化版本，市场分发和升级时区分新旧</td></tr>
+                    <tr><td><code>description</code></td><td>建议</td><td>一句话说明用途，展示在插件目录里</td></tr>
+                    <tr><td><code>skills</code></td><td>否</td><td>指向 skills 目录（字符串如 <code>"./skills/"</code>）或数组</td></tr>
+                    <tr><td><code>mcpServers</code></td><td>否</td><td>指向一个 <code>.mcp.json</code>，声明依赖的 MCP server</td></tr>
+                    <tr><td><code>apps</code></td><td>否</td><td>指向一个 <code>.app.json</code>，声明依赖的 app / 连接器映射</td></tr>
+                    <tr><td><code>interface</code></td><td>否</td><td>控制安装界面如何展示（displayName、capabilities 等）</td></tr>
+                </tbody></table>
+                <div class="key-point"><strong>最小可用：</strong>只要一个 <code>.codex-plugin/plugin.json</code> 带 <code>name</code> 字段，就是个合法 Plugin。其余字段按你要打包的内容逐步添加。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 8: Build a Plugin - Part 1 ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>从零造一个 Plugin（1/3）</h2>
+                <h4>场景：把"提交前自动 lint + 生成 commit message"打包成团队可用的 Plugin</h4>
+                <p>有两种方式起步——用内置脚手架，或手动建目录。</p>
+                <pre><code class="language-text"># 方式 A（推荐）：用内置 skill 脚手架自动生成
+$ codex
+&gt; $plugin-creator
+# 它会交互式问你名称、描述，自动生成 .codex-plugin/plugin.json
+# 还能顺便生成一个本地 marketplace 条目用于测试
+
+# 方式 B：手动建目录
+$ mkdir -p my-commit-helper/.codex-plugin
+$ mkdir -p my-commit-helper/skills/lint-fix</code></pre>
+                <pre><code class="language-json">// my-commit-helper/.codex-plugin/plugin.json
+{
+  "name": "my-commit-helper",
+  "version": "1.0.0",
+  "description": "提交前自动 lint 修复，并生成规范 commit message",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}</code></pre>
+                <div class="info-block"><strong>为什么推荐 $plugin-creator：</strong>它不只生成 manifest，还会帮你搭好本地 marketplace 条目（后面讲为什么这很关键）。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 9: Build a Plugin - Part 2 ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>从零造一个 Plugin（2/3）</h2>
+                <h4>第二步：填充 Skills 和 MCP 配置——用的就是前两章的格式</h4>
+                <pre><code class="language-markdown">// skills/lint-fix/SKILL.md —— 复用第 04 章的写法
+---
+name: lint-fix
+description: 提交前运行 lint 并自动修复。当用户说
+ "提交""commit""帮我修 lint 错误"时触发。
+---
+# Lint 自动修复
+1. 运行 `npm run lint -- --fix`
+2. 汇报修复了哪些文件
+3. 若有无法自动修复的，逐条列出原因</code></pre>
+                <pre><code class="language-json">// .mcp.json —— 复用第 05 章的配置格式
+{
+  "servers": {
+    "github": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"]
+    }
+  }
+}</code></pre>
+                <div class="info-block"><strong>看到规律了吗：</strong>Plugin 的内容文件，<strong>用的就是第 04、05 章的格式</strong>——Plugin 没有发明新格式，它只是把已有的 Skills 和 MCP 装进一个带 <code>.codex-plugin/plugin.json</code> 的目录。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 10: Install & Verify ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>从零造一个 Plugin（3/3）</h2>
+                <h4>第三步：通过 marketplace 让 Codex 发现它，再安装验证</h4>
+                <p>Codex 不扫描随意丢进目录的文件夹——它只从<strong>marketplace（插件清单）</strong>里发现 Plugin。你得先注册一个本地 marketplace：</p>
+                <pre><code class="language-json">// ~/.agents/plugins/marketplace.json（个人级）
+// 或 .agents/plugins/marketplace.json（仓库级，团队共享）
+{
+  "name": "local",
+  "plugins": [
+    {
+      "name": "my-commit-helper",
+      "source": {
+        "source": "local",
+        "path": "./plugins/my-commit-helper"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}</code></pre>
+                <pre><code class="language-text"># 重启 Codex，打开插件目录
+$ codex
+&gt; /plugins
+# 在目录里找到 my-commit-helper → 选择 Install</code></pre>
+                <div class="key-point"><strong>验证闭环：</strong>装上 → 在 <code>/plugins</code> 里看到状态是 Installed → 提问"我们的提交规范是什么"看规则是否注入 → 说"帮我提交"看 Skill/MCP 是否触发。四步都通，这个 Plugin 才算"活了"。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 11: Runtime Mechanism ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行时发生了什么</h2>
+                <h4>Plugin 被加载时，Codex 解析 manifest 并注册各组件</h4>
+                <pre><code class="language-text">Codex 启动
+  │
+  ├─ 1. 读取已配置的 marketplace（~/.agents/plugins/marketplace.json
+  │     和 .agents/plugins/marketplace.json）
+  │
+  ├─ 2. 解析每个已安装 Plugin 的 .codex-plugin/plugin.json
+  │
+  ├─ 3. 注册 skills 字段指向的 SKILL.md
+  │     → 进入"可用 Skill 池"
+  │       （仍走第 04 章的渐进式加载：先读 frontmatter，匹配才加载 body）
+  │
+  └─ 4. 注册 mcpServers 字段指向的 .mcp.json
+        → 进入"可用工具池"
+          （仍走第 05 章的机制：stdio / http，启动子进程或连接）</code></pre>
+                <div class="warning"><strong>关键认知：</strong>Plugin 不"运行"任何东西——它只是一个<strong>装载清单</strong>。真正干活的是它装的两样东西：Skill（进匹配池）、MCP（进工具池）。Plugin 的价值在于<strong>把散件的安装原子化为一步</strong>。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 12: Plugin Directory & Lifecycle ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>插件目录与生命周期</h2>
+                <h4>用 /plugins 打开交互式目录，在里面浏览、安装、管理</h4>
+                <pre><code class="language-text">$ codex
+&gt; /plugins
+# 打开 Plugin Directory，CLI 按 marketplace 分组展示
+# 顶部有 marketplace 源标签切换（如官方源、本地源等）
+#   底部是 marketplace 源切换 + Add Marketplace 按钮
+# 在 CLI 里可以：
+#   - 浏览各 marketplace 下的 Plugin
+#   - 打开 Plugin 详情 → Install plugin
+#   - 对已装 Plugin 按空格键切换启用状态</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>安装</h4>
+                        <p>在目录里找到 Plugin，选择 <strong>Install plugin</strong>。Codex 把它写入 <code>~/.codex/plugins/</code>，注册其中的 skills 和 MCP 工具。</p>
+                    </div>
+                    <div class="card">
+                        <h4>启用 / 禁用（保留安装）</h4>
+                        <p>在 CLI 目录里对已装 Plugin<strong>按空格键</strong>切换启用状态；或在 <code>~/.codex/config.toml</code> 里写 <code>[plugins."name@source"]</code> + <code>enabled = false</code> 后重启。</p>
+                    </div>
+                    <div class="card">
+                        <h4>卸载</h4>
+                        <p>重新打开该 Plugin 详情，选择 <strong>Uninstall plugin</strong>。注意：卸载只移除 Plugin 包，它捆绑的 app 连接仍留在 ChatGPT 里，需另行管理。</p>
+                    </div>
+                </div>
+                <div class="info-block"><strong>需要凭证时：</strong>如果 Plugin 的 MCP server 需要 API key，安装时或<strong>首次使用时</strong>会提示输入，不会在安装时硬编码。</div>
+                <div class="info-block"><strong>不是命令行子命令：</strong>Codex 没有 <code>/plugin install</code>、<code>/plugin list</code> 这类语法。一切通过 <code>/plugins</code> 打开的<strong>交互式目录</strong>完成。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 13: Marketplace Mechanism ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Marketplace 机制</h2>
+                <h4>Plugin 的发现与分发，都靠 marketplace 这个 JSON 清单</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>什么是 marketplace</h4>
+                        <p>一个 JSON 文件，列出若干 Plugin 及其来源路径。Codex 启动时读取它，把列出的 Plugin 显示在插件目录里供人安装。</p>
+                    </div>
+                    <div class="card">
+                        <h4>两个作用域</h4>
+                        <ul>
+                            <li><strong>仓库级</strong>：<code>.agents/plugins/marketplace.json</code> + <code>./plugins/</code>，提交 Git 后团队共享</li>
+                            <li><strong>个人级</strong>：<code>~/.agents/plugins/marketplace.json</code> + <code>~/.codex/plugins/</code>，只给自己用</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-bash"># 用 CLI 添加远程 marketplace（GitHub 仓库）
+$ codex plugin marketplace add owner/repo
+$ codex plugin marketplace add owner/repo --ref main
+
+# 刷新 / 移除已配置的 marketplace
+$ codex plugin marketplace upgrade marketplace-name
+$ codex plugin marketplace remove marketplace-name</code></pre>
+                <div class="key-point"><strong>关键转变：</strong>以前是"每个人自己配 Skill + MCP"，现在是"一个人打包成 Plugin + 注册到 marketplace，整个团队 clone 后开箱即用"。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 14: Official Directory & Sources ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>目录里的来源</h2>
+                <h4>/plugins 实际是两层结构：过滤标签 + marketplace 源</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>过滤标签（顶部）</h4>
+                        <ul>
+                            <li><strong>按 marketplace 分组</strong>：CLI 按 marketplace 源分组展示 Plugin</li>
+                            <li><strong>Installed</strong>：已安装的 Plugin</li>
+                            <li><strong>官方精选</strong>：OpenAI 官方维护的 Plugin（GitHub、Slack 等）</li>
+                            <li><strong>Workspace</strong>：当前仓库级 marketplace 里的</li>
+                        </ul>
+                        <p style="font-size: 0.85em; color: #888;">注：具体标签名称可能因 CLI / App 版本而异，以你本地的 <code>/plugins</code> 界面为准。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Marketplace 源（底部）</h4>
+                        <ul>
+                            <li><strong>默认官方源</strong>：OpenAI 维护的公共 Plugin 目录</li>
+                            <li>用 <strong>Add Marketplace</strong> 按钮接入更多源（GitHub 仓库、团队私有源等）</li>
+                            <li>也可在命令行用 <code>codex plugin marketplace add &lt;owner/repo&gt;</code> 添加</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block"><strong>典型官方 Plugin：</strong>GitHub、Gmail、Google Drive、Slack、Linear、Notion、Figma、Sentry、Vercel 等，都在 <strong>OpenAI Curated</strong> 标签下。</div>
+                <div class="warning"><strong>安全提醒：</strong>从外部 marketplace 安装前，务必看一眼 Plugin 的 <code>.codex-plugin/plugin.json</code> 和 <code>.mcp.json</code>——它会获得哪些权限（网络、文件、token）。Plugin 能装的不只是能力，还有<strong>它的全部权限</strong>。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 15: Security Review ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安装前的权限审查</h2>
+                <h4>Plugin = Skill + MCP，也就等于两者的权限总和</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>看 manifest</h4>
+                        <p>检查 <code>skills</code>（会注入可触发能力）、<code>mcpServers</code>（会接入外部工具）。这些字段决定了 Plugin 装上后能干什么。</p>
+                    </div>
+                    <div class="card">
+                        <h4>看 .mcp.json</h4>
+                        <p>里面的 server 有没有<strong>网络访问、文件读写、敏感 token</strong>。一个恶意的 MCP server 能干的事，装它的 Plugin 也能干。</p>
+                    </div>
+                    <div class="card">
+                        <h4>最小验证</h4>
+                        <p>陌生 Plugin 先配合第 09 章的 <code>read_only</code> 沙箱试跑，确认行为正常再放开权限。</p>
+                    </div>
+                </div>
+                <div class="key-point"><strong>原则：</strong>只装可信来源。Plugin 把"分散配置"变成了"一键安装"，便利性提升了，但<strong>一次错误安装的破坏面也更大</strong>。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 16: /import Command ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>/import 迁移</h2>
+                <h4>从其它工具一键搬设置过来——这是进入 Plugin 生态的另一条入口</h4>
+                <pre><code class="language-text">$ codex
+&gt; /import</code></pre>
+                <p>执行 <code>/import</code> 后，Codex 会引导你选择来源工具，然后迁移以下内容：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>能迁移什么</h4>
+                        <ul>
+                            <li><strong>settings</strong>：审批策略、模型偏好等配置</li>
+                            <li><strong>MCP servers</strong>：工具连接直接搬过来</li>
+                            <li><strong>plugins</strong>：已装的插件</li>
+                            <li><strong>sessions</strong>：历史会话记录</li>
+                            <li><strong>commands</strong>：自定义 slash 命令</li>
+                            <li><strong>project memories</strong>：项目级长期记忆</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>支持来源</h4>
+                        <ul>
+                            <li><strong>Cursor</strong>：规则文件、MCP 配置</li>
+                            <li><strong>Claude Code</strong>：CLAUDE.md、MCP、plugins、memories</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point"><strong>为什么放在这章：</strong>/import 搬过来的"规则 + MCP + 插件"，本质就是一堆<strong>待整理的 Plugin 原料</strong>。迁过来后，你可以再用本章的方法把它们打包成一个自己的 Plugin。</div>
+                <div class="info-block"><strong>版本背景：</strong><code>/import</code> 最初在 v0.140.0 引入（仅支持 Claude Code），v0.145.0（2026-07-21）扩展到 Cursor 并新增 project-scoped memories 迁移。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 17: /import in Practice ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>迁移实战</h2>
+                <h4>从 Claude Code 搬到 Codex 的完整流程</h4>
+                <pre><code class="language-text"># 1. 确保 Claude Code 的配置还在默认位置
+#    （~/.claude/ 或项目内 .claude/）
+
+# 2. 在 Codex 里执行
+$ codex
+&gt; /import
+# 选择来源：Claude Code
+
+# 3. Codex 扫描并展示可迁移项
+#    [x] CLAUDE.md → 转写为 AGENTS.md
+#    [x] 3 个 MCP servers
+#    [x] memories (12 条)
+
+# 4. 确认 → 自动写入 Codex 配置</code></pre>
+                <!-- <div class="info-block"><strong>预判解惑：</strong>CLAUDE.md 会被转写为 Codex 的 <code>AGENTS.md</code>（第 02 章讲过），不是原样丢弃。MCP 配置写入 <code>.mcp.json</code>，可在迁移后再用 <code>/mcp</code>微调。</div> -->
+            </div>
+        </section>
+
+        <!-- ========== Slide 18: Common Mistake 1 ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 1</h2>
+                <h4>manifest 放错位置（不是根目录的 plugin.json）</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>症状</h4>
+                        <p>你建了个目录，在根目录放了 <code>plugin.json</code>，结果 <code>/plugins</code> 目录里根本看不到它。</p>
+                    </div>
+                    <div class="card">
+                        <h4>原因</h4>
+                        <p>Codex 只认 <code>.codex-plugin/plugin.json</code> 这个<strong>子目录路径</strong>。根目录的 <code>plugin.json</code> 会被忽略——这是最常见的疏漏。</p>
+                    </div>
+                </div>
+                <div class="key-point"><strong>解决：</strong>manifest 必须放在 <code>my-plugin/.codex-plugin/plugin.json</code>。注意那个点前缀目录，它容易被漏掉。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 19: Common Mistake 2 ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 2</h2>
+                <h4>没注册 marketplace，指望"丢进目录就能被发现"</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>症状</h4>
+                        <p>你把 Plugin 文件夹复制进了 <code>~/.codex/plugins/</code>，重启 Codex，但 <code>/plugins</code> 里看不到它。</p>
+                    </div>
+                    <div class="card">
+                        <h4>原因</h4>
+                        <p>Codex 不扫描随意放置的文件夹——它只读 <strong>marketplace 清单</strong>（<code>~/.agents/plugins/marketplace.json</code> 或 <code>.agents/plugins/marketplace.json</code>）里列出的 Plugin。</p>
+                    </div>
+                </div>
+                <div class="warning"><strong>解决：</strong>用 <code>$plugin-creator</code> 生成 marketplace 条目，或手动在 <code>marketplace.json</code> 里加一条 <code>source.path</code> 指向你的 Plugin 目录，再重启 Codex。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 20: Common Mistake 3 ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 3</h2>
+                <h4>把不该共享的 secret 提交进仓库</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>症状</h4>
+                        <p>团队 Plugin 提交进 Git 后，队友 clone 下来，MCP server 报鉴权失败——或者更糟，你的 token 泄露了。</p>
+                    </div>
+                    <div class="card">
+                        <h4>原因</h4>
+                        <p>Plugin 里的 <code>.mcp.json</code> 直接硬编码了 token。这和第 05 章的 .mcp.json 是<strong>同一个坑</strong>，只是搬进了 Plugin。</p>
+                    </div>
+                </div>
+                <div class="key-point"><strong>解决：</strong>用环境变量引用（<code>"env": { "GITHUB_TOKEN": "$GH_TOKEN" }</code>），把 secret 留在每人本地的环境里。Plugin 仓库只放配置，不放凭证。需要凭证的 Plugin 在<strong>首次运行时弹窗提示输入</strong>。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 21: Plugin vs Hand-written Config ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>何时该打包</h2>
+                <h4>Plugin 不是万能的，看场景选</h4>
+                <table class="comparison-table"><thead><tr><th>场景</th><th>推荐</th><th>原因</th></tr></thead><tbody>
+                    <tr><td>个人一次性脚本</td><td>手写配置</td><td>打包成本 &gt; 收益</td></tr>
+                    <tr><td>团队多人复用</td><td>Plugin + marketplace</td><td>一份分发，人人一致</td></tr>
+                    <tr><td>对外发布工作流</td><td>Plugin + 公开 marketplace</td><td>版本管控、可发现</td></tr>
+                    <tr><td>跨工具迁移</td><td>/import</td><td>搬的是配置，不是包</td></tr>
+                </tbody></table>
+                <div class="info-block"><strong>官方建议：</strong>还在一个仓库、一条个人工作流里反复改，就先用<strong>本地 Skill</strong>。想跨团队共享、想打包 App/MCP 配置、想发稳定版本了，才上 Plugin。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 22: Quick Reference ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>速查表</h2>
+                <table class="comparison-table"><thead><tr><th>功能</th><th>命令 / 位置</th><th>说明</th></tr></thead><tbody>
+                    <tr><td>打开插件目录</td><td><code>/plugins</code></td><td>交互式浏览、安装、卸载</td></tr>
+                    <tr><td>Plugin 脚手架</td><td><code>$plugin-creator</code></td><td>生成 manifest + marketplace 条目</td></tr>
+                    <tr><td>添加 marketplace</td><td><code>codex plugin marketplace add &lt;owner/repo&gt;</code></td><td>接入远程插件源</td></tr>
+                    <tr><td>刷新 marketplace</td><td><code>codex plugin marketplace upgrade</code></td><td>拉取最新插件列表</td></tr>
+                    <tr><td>仓库级 marketplace</td><td><code>.agents/plugins/marketplace.json</code></td><td>团队共享，提交 Git</td></tr>
+                    <tr><td>个人级 marketplace</td><td><code>~/.agents/plugins/marketplace.json</code></td><td>只给自己用</td></tr>
+                    <tr><td>从它工具迁移</td><td><code>/import</code></td><td>Cursor / Claude Code → Codex</td></tr>
+                </tbody></table>
+            </div>
+        </section>
+
+        <!-- ========== Slide 23: Try It Yourself ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>三个递进的小任务，每个都给出"做对了应该看到什么"</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>练习 1：最小 Plugin</h4>
+                        <p>用 <code>$plugin-creator</code> 生成一个最小 Plugin，注册到本地 marketplace。<strong>预期：</strong>执行 <code>/plugins</code> 后，在 <strong>Workspace</strong> 标签下能看到它。</p>
+                    </div>
+                    <div class="card">
+                        <h4>练习 2：打包一个真实能力</h4>
+                        <p>把第 04 章写的某个 Skill，加 <code>.codex-plugin/plugin.json</code> 打包成 Plugin，通过 marketplace 安装。<strong>预期：</strong>装好后能像原来一样触发那个 Skill。</p>
+                    </div>
+                    <div class="card">
+                        <h4>练习 3：思考题</h4>
+                        <p>如果你的团队有 10 个人、3 个项目，什么样的内容适合做成 Plugin 分发？什么样的留在各自的 AGENTS.md 里？</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 24: Check Understanding ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>检查理解</h2>
+                <h4>试着不看上面，回答这几个问题</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <ul>
+                            <li>Plugin、Skill、MCP 三者的核心区别是什么？</li>
+                            <li>manifest 必须放在哪个路径？为什么根目录的 plugin.json 不行？</li>
+                            <li>Plugin 被加载时，它的内容各自去了哪里？</li>
+                            <li>为什么光把 Plugin 文件夹丢进 <code>~/.codex/plugins/</code> 不够，还得注册 marketplace？</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block"><strong>如果答得上来：</strong>你已经掌握了 Codex 的 Plugin 体系——把零散的规则、能力、工具，打包成可流动的整体。接下来第 07 章我们会进入 Subagents——让 Codex 分裂成多个专家并行工作。</div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 25: Summary ========== -->
+        <section class="slide title-slide">
+            <div class="chapter-badge">第 06 章 总结</div>
+            <h2>本章要点</h2>
+            <div class="card-grid" style="max-width: 800px; margin: 30px auto;">
+                <div class="card">
+                    <h4>Plugin 是什么</h4>
+                    <ul>
+                        <li>打包"Skills + MCP + App"的<strong>可分发容器</strong></li>
+                        <li>标志是 <code>.codex-plugin/plugin.json</code>（manifest），放在点前缀子目录里</li>
+                        <li>内容文件复用第 04、05 章的格式，没有发明新东西</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h4>怎么用</h4>
+                    <ul>
+                        <li>浏览/安装：<code>/plugins</code> 打开交互式目录</li>
+                        <li>分发：marketplace 清单（仓库级或个人级）</li>
+                        <li>脚手架：<code>$plugin-creator</code> 一键生成</li>
+                        <li>迁移：<code>/import</code> 从 Cursor / Claude Code 搬配置</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="conclusion" style="max-width: 800px; margin-top: 20px; text-align: left;">
+                <strong>下一步：</strong>第 07 章 Subagents —— Plugin 让你把能力<strong>打包分发</strong>，Subagents 则让 Codex 分裂成多个专家并行工作，处理更复杂的任务。
+            </div>
+        </section>
+
+    
+    
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+
+        </main>
+<script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

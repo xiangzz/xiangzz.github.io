@@ -58,7 +58,7 @@
                 <p>白话：你想用哪个模型，只需写一行 <code>提供商名:模型名</code>。比如 <code>openai:gpt-5.4</code> 就是 OpenAI 的 GPT-5.4，<code>anthropic:claude-sonnet-4-6</code> 就是 Anthropic 的 Claude。</p>
                 <p>使用 <code>provider:model</code> 格式传给 <code>createDeepAgent</code>，冒号前面是提供商前缀，冒号后面是模型标识符。提供商前缀用于选择对应的 LangChain 集成。</p>
                 <pre><code class="language-javascript">// 格式：provider:model
-"google_genai:gemini-3.1-pro-preview"
+"google-genai:gemini-3.1-pro-preview"
 "openai:gpt-5.4"
 "anthropic:claude-sonnet-4-6"
 "baseten:zai-org/GLM-5.1"    // 带命名空间的 ID
@@ -98,7 +98,7 @@
                         </tr>
                         <tr>
                             <td><strong>OpenAI</strong></td>
-                            <td><code>gpt-5.4</code>、<code>gpt-4o</code>、<code>gpt-4o-mini</code>、<code>o4-mini</code>、<code>gpt-5.2-codex</code>、<code>o3</code></td>
+                            <td><code>gpt-5.4</code>、<code>gpt-4o</code>、<code>gpt-4o-mini</code>、<code>o4-mini</code>、<code>gpt-5.2-codex</code>、<code>gpt-5.5</code></td>
                         </tr>
                         <tr>
                             <td><strong>Anthropic</strong></td>
@@ -114,7 +114,7 @@
                     <strong>开源权重模型</strong>可通过 OpenRouter、Fireworks 或 Ollama 等提供商使用。例如：<code>openrouter:deepseek/deepseek-v4-pro</code>、<code>ollama:minimax-m2.7:cloud</code>。
                 </div>
                 <div class="key-point">
-                    <strong>选择建议：</strong>如果你不确定用哪个模型，先从 <code>google_genai:gemini-3.1-pro-preview</code> 或 <code>openai:gpt-5.4</code> 开始——它们在文件操作和信息检索两项上均拿到 100%。
+                    <strong>选择建议：</strong>如果你不确定用哪个模型，先从 <code>google-genai:gemini-3.1-pro-preview</code> 或 <code>openai:gpt-5.4</code> 开始——它们在文件操作和信息检索两项上均拿到 100%。
                 </div>
             </div>
         </section>
@@ -262,7 +262,7 @@ import { createDeepAgent } from "deepagents";
 // 用通用工厂方法初始化模型，字符串指定提供商和模型
 // reasoningEffort 控制推理深度，"medium" 为中等，可选 "low"/"high"
 const model = await initChatModel(
-  "google_genai:gemini-3.1-pro-preview",
+  "google-genai:gemini-3.1-pro-preview",
   { reasoningEffort: "medium" }
 );
 // 将已配置的模型实例传入，Agent 直接使用它
@@ -304,20 +304,20 @@ const agent = createDeepAgent({ model });</code></pre>
                 <h4>用 ProviderProfile 统一管理模型参数</h4>
                 <p>白话：ProviderProfile 就像"模型配置模板"。你可以写一个模板说"所有 OpenAI 模型温度设 0"，再写一个说"GPT-5.4 额外开启推理功能"——它们会自动合并。</p>
                 <p><code>ProviderProfile</code> 封装了在使用 <code>provider:model</code> 字符串创建 Agent 时应用的初始化参数。它支持<strong>两级注册</strong>，且两者可以共存、自动合并。</p>
-                <pre><code class="language-python">from deepagents import ProviderProfile, register_provider_profile
+                <pre><code class="language-javascript">import { ProviderProfile, registerProviderProfile } from "deepagents";
 
-# 提供商级别：所有 openai 模型都设置 temperature=0
-register_provider_profile(
-    "openai",
-    ProviderProfile(init_kwargs={"temperature": 0}),
-)
+// 提供商级别：所有 openai 模型都设置 temperature=0
+registerProviderProfile(
+  "openai",
+  new ProviderProfile({ temperature: 0 }),
+);
 
-# 模型级别：gpt-5.4 额外设置 reasoning_effort
-# 会继承上面提供商级别的 temperature=0
-register_provider_profile(
-    "openai:gpt-5.4",
-    ProviderProfile(init_kwargs={"reasoning_effort": "medium"}),
-)</code></pre>
+// 模型级别：gpt-5.4 额外设置 reasoningEffort
+// 会继承上面提供商级别的 temperature=0
+registerProviderProfile(
+  "openai:gpt-5.4",
+  new ProviderProfile({ reasoningEffort: "medium" }),
+);</code></pre>
                 <div class="card-grid">
                     <div class="card">
                         <h4>提供商级别</h4>
@@ -370,7 +370,7 @@ const configurableModel = createMiddleware({
 });
 
 const agent = await createDeepAgent({
-  model: "google_genai:gemini-3.1-pro-preview",  // 默认模型（首次调用时使用）
+  model: "google-genai:gemini-3.1-pro-preview",  // 默认模型（首次调用时使用）
   middleware: [configurableModel],                 // 注册中间件
   contextSchema,                                   // 绑定上下文 schema
 });</code></pre>
@@ -389,7 +389,7 @@ const agent = await createDeepAgent({
                 <pre><code class="language-javascript">// 用 Google 模型调用——context.model 指定模型，中间件会拦截并切换
 const result1 = await agent.invoke(
   { messages: [{ role: "user", content: "分析这段代码" }] },
-  { context: { model: "google_genai:gemini-3.1-pro-preview" } },
+  { context: { model: "google-genai:gemini-3.1-pro-preview" } },
 );
 
 // 切换到 OpenAI 模型——同一个 agent 实例，无需重建
@@ -483,7 +483,7 @@ const result3 = await agent.invoke(
                         <h4>官方文档</h4>
                         <ul>
                             <li><a href="https://reference.langchain.com/javascript/langchain/chat_models/universal/initChatModel">init_chat_model API</a> -- 模型初始化参考</li>
-                            <li><a href="https://github.com/langchain-ai/deepagents/tree/main/libs/evals#readme">评测套件</a> -- 模型评测详情和运行记录</li>
+                            <li><a href="https://github.com/langchain-ai/deepagentsjs/tree/main/libs/evals#readme">评测套件</a> -- 模型评测详情和运行记录</li>
                             <li><a href="https://js.langchain.com/docs/integrations/chat/">聊天模型集成</a> -- 各提供商配置选项</li>
                         </ul>
                     </div>

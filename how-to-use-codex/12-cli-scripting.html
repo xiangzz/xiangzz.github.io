@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>12 CLI 与脚本化</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⌨️</text></svg>">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 12 章</div>
+            <h1>CLI 与脚本化</h1>
+            <p>把 Codex 从交互式助手变成可编程引擎 —— 含 OSS 本地模型</p>
+            <strong>exec · mcp-server · Python SDK · TypeScript SDK · Ollama / LM Studio</strong>
+        </section>
+
+        <!-- Slide 02: 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>明明能自动，偏要手动？</h2>
+                <h4>"每次都要打开终端敲一遍，太浪费时间了。"</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>CI/CD 无法接入</h4>
+                        <p>你想在 GitHub Actions 里自动 review PR、生成 changelog、跑测试修复 —— 但 Codex 只能交互使用，<strong>无法嵌入流水线</strong>。每次 push 都只能靠人肉盯着。</p>
+                    </div>
+                    <div class="card">
+                        <h4>批量任务低效</h4>
+                        <p>需要给 50 个文件加文档注释、重构 20 个 API 端点、扫描整个仓库的安全漏洞。Codex 一个一个帮你改没问题，但<strong>你得发 50 次指令</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>隐私敏感任务</h4>
+                        <p>处理客户数据、内部机密代码、合规审查 —— 你不希望任何数据离开本地机器。但云端模型的 API 调用意味着<strong>数据要上云</strong>，这是合规红线。</p>
+                    </div>
+                </div>
+                <div class="key-point"><strong>本章的答案：</strong>Codex 不只是 REPL。它可以作为 CLI 工具、MCP 服务器、SDK 库，甚至连接本地 OSS 模型运行 —— 把 AI 能力编织进你的自动化流程。</div>
+            </div>
+        </section>
+
+        <!-- Slide 03: 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁学</h4>
+                        <ul>
+                            <li>想把 Codex 集成到 CI/CD 工作流的 DevOps 工程师</li>
+                            <li>希望批量处理代码任务的开发者</li>
+                            <li>有数据隐私需求的团队（金融、医疗、法律）</li>
+                            <li>想构建基于 Codex 的自动化产品的平台工程师</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完你应该能</h4>
+                        <ul>
+                            <li>用 <code>codex exec</code> 编写非交互式脚本</li>
+                            <li>用 Python / TypeScript SDK 构建工作流</li>
+                            <li>把 Codex 作为 MCP Server 暴露给其他工具</li>
+                            <li>连接 Ollama / LM Studio 处理敏感数据</li>
+                            <li>诊断常见配置和权限错误</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>暂时不涉及</h4>
+                        <ul>
+                            <li>Codex IDE 扩展（VS Code / JetBrains）</li>
+                            <li>企业部署和模型代理（Responses API Proxy）</li>
+                            <li>模型微调与训练</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block"><strong>前置知识：</strong>假设你已读完第 1-6 章，熟悉 Codex CLI 的使用和配置。需要 Codex CLI 已完成 <code>codex login</code> 认证。</div>
+            </div>
+        </section>
+
+        <!-- Slide 04: exec 命令概览 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>codex exec 是什么？</h2>
+                <h4>Codex 的非交互执行模式</h4>
+                <p>当你输入 <code>codex</code> 时，启动的是<strong>交互式 REPL</strong>（读取-求值-输出循环）。输入 <code>codex exec</code> 则进入<strong>一次性执行模式</strong>：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>交互模式</h4>
+                        <ul>
+                            <li>启动等待用户输入</li>
+                            <li>多轮对话共享上下文</li>
+                            <li>适合探索性任务</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>exec 模式</h4>
+                        <ul>
+                            <li>接收 prompt，执行，退出</li>
+                            <li>可写进 shell 脚本</li>
+                            <li>适合自动化流水线</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code># 交互模式
+codex
+&gt; explain this function
+
+# exec 模式
+codex exec "explain this function"</code></pre>
+                <div class="key-point"><strong>核心区别：</strong>exec 模式不会等待用户继续输入，执行完毕后进程退出并返回退出码 —— 这正是 CI/CD 工具所需要的。</div>
+            </div>
+        </section>
+
+        <!-- Slide 05: prompt 参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>prompt 参数详解</h2>
+                <h4>三种传入指令的方式</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>位置参数</h4>
+                        <pre><code>codex exec "fix the login bug"</code></pre>
+                        <p>最直接。prompt 作为最后的参数传入。</p>
+                    </div>
+                    <div class="card">
+                        <h4>stdin 管道</h4>
+                        <pre><code>cat issue.txt | codex exec -</code></pre>
+                        <p>用 <code>-</code> 占位：prompt 从标准输入读取。适合长文本或文件内容。</p>
+                    </div>
+                    <div class="card">
+                        <h4>混合模式</h4>
+                        <pre><code>echo "上下文" | codex exec "总结以下"</code></pre>
+                        <p>prompt 参数 + stdin 同时存在时，stdin 内容作为 <code>&lt;stdin&gt;</code> 块附加到 prompt 末尾。</p>
+                    </div>
+                </div>
+                <div class="info-block"><strong>技巧：</strong>在脚本中推荐用 stdin 避免 shell 转义问题 —— 把 prompt 写入 heredoc 或变量再管道传入。</div>
+            </div>
+        </section>
+
+        <!-- Slide 06: --json -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>--json 结构化输出</h2>
+                <h4>让脚本能解析 Codex 的每一步</h4>
+                <p>加上 <code>--json</code> 后，Codex 输出 <strong>JSONL</strong>（每行一个 JSON 对象）到 stdout，而不是纯文本。事件类型包括 <code>thread.started</code>、<code>turn.started</code>、<code>turn.completed</code>、<code>turn.failed</code>、<code>item.started</code>、<code>item.completed</code>、<code>error</code>。</p>
+                <pre><code>codex exec --json "list all TODO comments" | while read -r line; do
+  echo "$line" | jq -r '.type'
+done</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>JSONL 事件类型</h4>
+                        <ul>
+                            <li><code>thread.started</code> — 线程开始</li>
+                            <li><code>turn.started</code> — 轮次开始</li>
+                            <li><code>item.started</code> — 某个 item 开始执行</li>
+                            <li><code>item.completed</code> — item 完成（<code>item.type</code> 区分消息/命令/文件变更）</li>
+                            <li><code>turn.completed</code> — 轮次结束（含 <code>usage</code> token 统计）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>实用管道</h4>
+                        <pre><code># 只提取最终回复（item.type 为 agent_message 的 item.completed）
+codex exec --json "fix this" | jq -r \
+  'select(.type=="item.completed" \
+   and .item.type=="agent_message") \
+   | .item.text'
+
+# 或用 --output-last-message 直接写入文件（更简单）
+codex exec --output-last-message result.txt "fix this"</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 07: -s 沙箱模式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>-s 沙箱模式</h2>
+                <h4>控制代码能触碰什么</h4>
+                <p><code>--sandbox</code>（短写 <code>-s</code>）决定 Codex 执行中对文件系统和网络的访问权限：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>read-only</h4>
+                        <pre><code>codex exec -s read-only "review this PR"</code></pre>
+                        <p>只能读取文件，不能写入。适合纯审查、分析任务。</p>
+                    </div>
+                    <div class="card">
+                        <h4>workspace-write</h4>
+                        <pre><code>codex exec -s workspace-write "fix lint errors"</code></pre>
+                        <p>默认值。可在工作区目录内读写文件，但受目录边界限制。</p>
+                    </div>
+                    <div class="card">
+                        <h4>danger-full-access</h4>
+                        <pre><code>codex exec -s danger-full-access "install deps"</code></pre>
+                        <p>无任何限制。仅在沙箱隔离环境（容器）中使用。</p>
+                    </div>
+                </div>
+                <div class="key-point"><strong>CI/CD 推荐：</strong>在 GitHub Actions 中优先用 <code>read-only</code> 做审查，<code>workspace-write</code> 做修复。绝不在共享 runner 上用 <code>danger-full-access</code>。</div>
+            </div>
+        </section>
+
+        <!-- Slide 08: -p 与 --cd -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>-p profile 与 --cd</h2>
+                <h4>控制执行环境与行为</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>-p / --profile</h4>
+                        <pre><code>codex exec -p fast "quick review"
+codex exec -p thorough "deep audit"</code></pre>
+                        <p>选择预配置的 permission profile，控制 Codex 的"冒险倾向"。</p>
+                    </div>
+                    <div class="card">
+                        <h4>--cd 切换工作目录</h4>
+                        <pre><code>codex exec --cd ./packages/api \
+  "refactor this module"</code></pre>
+                        <p>让 Codex 在指定目录下执行，避免路径问题。<strong>CI 中必用</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>--full-auto</h4>
+                        <pre><code>codex exec --full-auto "fix lint errors"</code></pre>
+                        <p><code>--sandbox workspace-write</code> 的便捷别名，CI 中最常用。</p>
+                    </div>
+                    <div class="card">
+                        <h4>--output-last-message</h4>
+                        <pre><code>codex exec -o result.txt "summarize"</code></pre>
+                        <p>把最终回复写入文件。CI 中提取结果最简单的方式。</p>
+                    </div>
+                </div>
+                <pre><code># 组合示例：在指定目录用快速模式审查
+codex exec --cd src/ -p fast -s read-only \
+  --json "review security issues"</code></pre>
+            </div>
+        </section>
+
+        <!-- Slide 09: exec 参数速查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>exec 核心参数速查</h2>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>参数</th><th>短写</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>PROMPT</code></td><td>—</td><td>位置参数，执行指令</td></tr>
+                        <tr><td><code>-</code></td><td>—</td><td>从 stdin 读取 prompt</td></tr>
+                        <tr><td><code>--json</code></td><td>—</td><td>JSONL 结构化输出</td></tr>
+                        <tr><td><code>--sandbox</code></td><td><code>-s</code></td><td>沙箱模式</td></tr>
+                        <tr><td><code>--profile</code></td><td><code>-p</code></td><td>权限配置 profile</td></tr>
+                        <tr><td><code>--cd DIR</code></td><td><code>-C</code></td><td>执行目录</td></tr>
+                        <tr><td><code>--model MODEL</code></td><td><code>-m</code></td><td>指定模型</td></tr>
+                        <tr><td><code>--full-auto</code></td><td>—</td><td>workspace-write 便捷别名</td></tr>
+                        <tr><td><code>--output-last-message</code></td><td><code>-o</code></td><td>最终回复写入文件</td></tr>
+                        <tr><td><code>--output-schema FILE</code></td><td>—</td><td>结构化输出 schema</td></tr>
+                        <tr><td><code>--ephemeral</code></td><td>—</td><td>不持久化 session 文件</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Slide 10: 交互 vs exec 对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>交互模式 vs exec 模式</h2>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>维度</th><th>交互模式</th><th>exec 模式</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>启动方式</strong></td><td><code>codex</code></td><td><code>codex exec "prompt"</code></td></tr>
+                        <tr><td><strong>输入</strong></td><td>终端 stdin 逐行</td><td>参数 / stdin / 管道</td></tr>
+                        <tr><td><strong>输出</strong></td><td>终端富文本渲染</td><td>stdout（纯文本或 JSONL）</td></tr>
+                        <tr><td><strong>退出码</strong></td><td>始终 0</td><td>非零表示执行失败</td></tr>
+                        <tr><td><strong>上下文</strong></td><td>多轮共享历史</td><td>单轮（可用 thread 恢复）</td></tr>
+                        <tr><td><strong>沙箱</strong></td><td>首次需确认</td><td>命令行直接指定</td></tr>
+                        <tr class="highlight"><td><strong>适用场景</strong></td><td>探索、调试、学习</td><td>CI/CD、批量处理、脚本</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point"><strong>选择原则：</strong>需要"等用户下一步指示"用交互模式；定义好所有输入让 Codex 跑完就走用 exec 模式。</div>
+            </div>
+        </section>
+
+        <!-- Slide 11: mcp-server 简介 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>codex mcp-server</h2>
+                <h4>让 Codex 成为其他工具的后端</h4>
+                <p><code>codex mcp-server</code> 是 CLI 独有的子命令：把 Codex 引擎作为 <strong>MCP 服务器</strong> 暴露出去。其他 MCP 客户端（自定义工具、IDE 插件、Agent 框架）可以通过 <strong>标准 stdio 管道</strong> 连接到它。</p>
+                <pre><code># 直接连接
+codex mcp-server | your_mcp_client
+
+# 也可以作为 MCP server 添加到 ~/.codex/config.toml
+# 让其他 Codex 实例能调用它</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>协议</h4>
+                        <p>JSON-RPC 2.0 over stdio，换行分隔。兼容任何 MCP 客户端实现。</p>
+                    </div>
+                    <div class="card">
+                        <h4>暴露工具</h4>
+                        <p><code>codex()</code> — 发起执行请求<br><code>codex-reply()</code> — 继续已有对话</p>
+                    </div>
+                    <div class="card">
+                        <h4>使用场景</h4>
+                        <p>构建自定义 Agent 框架、在 IDE 中嵌入 Codex、编排多个 Codex 实例协作。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 12: mcp-server 协议 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>mcp-server 协议细节</h2>
+                <h4>JSON-RPC 2.0 —— 轻量、通用、可调试</h4>
+                <p>codex mcp-server 使用标准 MCP 传输协议。消息格式严格遵循 JSON-RPC 2.0 规范，通过 stdio 的一行一个 JSON 进行通信。</p>
+                <pre><code>// 客户端 → 服务器：列出可用工具
+{ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }
+
+// 服务器 → 客户端：工具定义
+{ "jsonrpc": "2.0", "id": 1, "result": {
+  "tools": [
+    { "name": "codex", "description": "Execute a Codex turn" },
+    { "name": "codex-reply", "description": "Reply to an existing thread" }
+  ]
+}}</code></pre>
+                <pre><code>// 客户端 → 服务器：调用 codex 工具
+{ "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+  "params": {
+    "name": "codex",
+    "arguments": { "prompt": "fix the bug", "threadId": null }
+  }
+}
+
+// 服务器 → 客户端：响应
+{ "jsonrpc": "2.0", "id": 2,
+  "result": { "content": [{"type": "text", "text": "Fixed."}] }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- Slide 13: mcp-server 工具定义 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>mcp-server 暴露的工具</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>codex(prompt, threadId?)</h4>
+                        <p><strong>发起一次新的 Codex 执行。</strong></p>
+                        <ul>
+                            <li><code>prompt</code>（必填）— 指令文本</li>
+                            <li><code>threadId</code>（选填）— 指定已有线程则继续对话</li>
+                        </ul>
+                        <p>返回：执行结果的 content items 数组。</p>
+                    </div>
+                    <div class="card">
+                        <h4>codex-reply(threadId, prompt)</h4>
+                        <p><strong>在已有线程中追加回复。</strong></p>
+                        <ul>
+                            <li><code>threadId</code>（必填）— 目标线程 ID</li>
+                            <li><code>prompt</code>（必填）— 追加的指令</li>
+                        </ul>
+                        <p>返回：线程的新一轮执行结果。</p>
+                    </div>
+                </div>
+                <div class="info-block"><strong>实现提示：</strong>mcp-server 的内部引擎和 <code>codex exec</code> 是同一个 —— 都调用 Codex 的 Rust 核心。区别只在于入口和协议形式。</div>
+            </div>
+        </section>
+
+        <!-- Slide 14: mcp-server 实战 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>mcp-server 实战演示</h2>
+                <h4>用 Python 连接 codex mcp-server</h4>
+                <pre><code>import json, subprocess
+
+proc = subprocess.Popen(
+    ["codex", "mcp-server"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    text=True
+)
+
+def rpc(method, params=None):
+    msg = {"jsonrpc": "2.0", "id": 1, "method": method}
+    if params: msg["params"] = params
+    proc.stdin.write(json.dumps(msg) + "\n")
+    proc.stdin.flush()
+    return json.loads(proc.stdout.readline())
+
+# 调用 codex 工具
+result = rpc("tools/call", {
+    "name": "codex",
+    "arguments": {"prompt": "explain recursion in 2 lines"}
+})
+print(result["result"]["content"])</code></pre>
+                <div class="key-point"><strong>调试技巧：</strong>可以直接在终端运行 <code>codex mcp-server</code> 用 Ctrl+D 结束 —— 这样能看到它处理原始 JSON-RPC 消息的过程。</div>
+            </div>
+        </section>
+
+        <!-- Slide 15: Python SDK -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Python SDK —— openai-codex</h2>
+                <h4>用 Python 编排 Codex 工作流</h4>
+                <p>官方 Python SDK 提供同步 API，适合脚本和自动化任务。</p>
+                <pre><code>pip install openai-codex</code></pre>
+                <pre><code>from openai_codex import Codex
+
+with Codex() as codex:
+    thread = codex.thread_start()
+    result = thread.run(
+        "Explain this repository in three bullets."
+    )
+    print(result.final_response)</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>设计原则</h4>
+                        <ul>
+                            <li>Context manager 自动管理进程生命周期</li>
+                            <li>thread / turn 模型与 CLI 一一对应</li>
+                            <li>结果对象包含完整元数据</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>安装要求</h4>
+                        <ul>
+                            <li>Python 3.10+</li>
+                            <li>已安装 codex CLI</li>
+                            <li>已完成 codex login</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 16: Python SDK 完整示例 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Python SDK 完整示例</h2>
+                <h4>多轮对话 + 读取结果对象</h4>
+                <pre><code>from openai_codex import Codex
+
+with Codex() as codex:
+    # 启动线程
+    thread = codex.thread_start()
+
+    # 第一轮：让 Codex 分析代码
+    r1 = thread.run(
+        "Find the top 3 performance bottlenecks in src/"
+    )
+    print("分析结果:", r1.final_response)
+    print("执行项目数:", len(r1.items))
+
+    # 第二轮：基于第一轮结果继续追问
+    r2 = thread.run(
+        "Rewrite the #1 bottleneck with an optimized version"
+    )
+    print("修复结果:", r2.final_response)</code></pre>
+                <div class="key-point"><strong>线程复用：</strong>同一 thread 对象上的多次 run() 调用会自动累积上下文 —— 就像交互式对话一样，但以编程方式控制。</div>
+            </div>
+        </section>
+
+        <!-- Slide 17: Python SDK 异步 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Python SDK 异步用法</h2>
+                <h4>asyncio 并发多个 Codex 任务</h4>
+                <pre><code>import asyncio
+from openai_codex import AsyncCodex
+
+async def main():
+    async with AsyncCodex() as codex:
+        thread = await codex.thread_start()
+
+        # 并发执行多个独立任务
+        results = await asyncio.gather(
+            thread.run("fix parse.py"),
+            thread.run("fix render.py"),
+            thread.run("fix route.py"),
+        )
+        for r in results:
+            print(r.final_response[:200])
+
+asyncio.run(main())</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么需要异步？</h4>
+                        <p>I/O 密集型任务（pipe 到 Codex 进程）不用阻塞主线程。多个 Codex 实例可以并行处理不同文件。</p>
+                    </div>
+                    <div class="card">
+                        <h4>注意</h4>
+                        <p>同一线程上的并发 run() 会按顺序排队。要真正并行，需要创建多个独立线程。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 18: Python SDK Sandbox -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Python SDK Sandbox 控制</h2>
+                <h4>逐 turn 细粒度权限</h4>
+                <p>Python SDK 允许在 <code>thread_start()</code> 和 <code>run()</code> 级别分别设置沙箱模式：</p>
+                <pre><code>from openai_codex import Codex, Sandbox
+
+with Codex() as codex:
+    # 线程级别：workspace-write
+    thread = codex.thread_start(sandbox=Sandbox.workspace_write)
+
+    # 第一轮：正常写操作
+    thread.run("Add input validation to the form")
+
+    # 第二轮覆盖为 read-only（只审查）
+    review = thread.run(
+        "Review the diff only.",
+        sandbox=Sandbox.read_only  # 覆盖线程默认
+    )
+    print(review.final_response)</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>三个层级</h4>
+                        <ul>
+                            <li><code>Sandbox.read_only</code> — 只读</li>
+                            <li><code>Sandbox.workspace_write</code> — 默认</li>
+                            <li><code>Sandbox.full_access</code> — 无限制</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>覆盖语义</h4>
+                        <p>run() 级别的 sandbox 只影响当前 turn 及之后。不传则继承线程默认值。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 19: TypeScript SDK -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>TypeScript SDK</h2>
+                <h4>在 Node.js 中编排 Codex</h4>
+                <p>官方 TypeScript SDK 适合构建 CLI 工具、VS Code 扩展、GitHub Action。</p>
+                <pre><code>npm install @openai/codex-sdk</code></pre>
+                <pre><code>import { Codex } from "@openai/codex-sdk";
+
+const codex = new Codex();
+const thread = codex.startThread();
+const turn = await thread.run(
+  "Diagnose the test failure and propose a fix"
+);
+
+console.log(turn.finalResponse);
+console.log(turn.items);</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>传递认证信息</h4>
+                        <pre><code>const codex = new Codex({
+  baseUrl: "https://api.openai.com/v1",
+  apiKey: process.env.OPENAI_API_KEY,
+});</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>配置覆盖</h4>
+                        <pre><code>const codex = new Codex({
+  config: {
+    sandbox_workspace_write: {
+      network_access: true
+    }
+  }
+});</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 20: TypeScript resume + 事件流 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>TypeScript resume 与流式</h2>
+                <h4>恢复已有线程 + 事件监听</h4>
+                <pre><code>// 恢复已有线程
+const threadId = "&lt;thread-id&gt;";
+const thread2 = codex.resumeThread(threadId);
+const result2 = await thread2.run(
+  "Pick up where you left off"
+);
+console.log(result2.finalResponse);</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>SDK vs codex exec</h4>
+                        <p>SDK 控制的是<strong>本地 Codex 进程</strong>（通过 app-server JSON-RPC），不是直接调用 OpenAI API。认证由本地 <code>codex login</code> 管理，无需在 SDK 代码中传 apiKey。</p>
+                    </div>
+                    <div class="card">
+                        <h4>何时用 SDK vs exec</h4>
+                        <ul>
+                            <li><strong>SDK</strong>：需要 thread 管理、多轮编程对话、自定义事件处理</li>
+                            <li><strong>exec</strong>：简单的一次性脚本、CI 流水线</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 21: OSS 本地模型 场景 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>OSS 本地模型</h2>
+                <h4>数据不出本机的 Codex</h4>
+                <p>Codex 支持连接本地运行的 <strong>Ollama</strong> 或 <strong>LM Studio</strong> 作为模型后端。所有推理在本地完成，<strong>无需 API 调用</strong>。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>处理 HIPAA / GDPR / PCI 合规数据</li>
+                            <li>内网隔离环境（无互联网）</li>
+                            <li>降低 API 成本（大量自动化任务）</li>
+                            <li>模型行为可审计（本地可复现）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>支持的提供者</h4>
+                        <ul>
+                            <li><strong>Ollama</strong> — localhost:11434</li>
+                            <li><strong>LM Studio</strong> — localhost:1234</li>
+                        </ul>
+                        <p>通过 <code>oss_provider</code> 配置项或 <code>--oss</code> 标志启用。</p>
+                    </div>
+                </div>
+                <div class="key-point"><strong>关键限制：</strong>本地模型的代码能力取决于所选模型。代码任务推荐 7B+ 参数的 instruct 模型，如 codellama、deepseek-coder、qwen2.5-coder。</div>
+            </div>
+        </section>
+
+        <!-- Slide 22: OSS 配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>OSS 配置方式</h2>
+                <h4>config.toml 与环境变量</h4>
+                <p>在 <code>~/.codex/config.toml</code> 中声明 OSS provider：</p>
+                <pre><code># ~/.codex/config.toml
+[model_providers.my-local]
+name = "My Local LLM"
+base_url = "http://localhost:11434/v1"
+wire_api = "chat"
+
+# 指定 provider
+model_provider = "my-local"</code></pre>
+                <p>更简单的方式 —— 用 <code>--oss</code> 标志或 <code>oss_provider</code> 配置：</p>
+                <pre><code># 方式 1：命令行标志（默认 Ollama）
+codex --oss "fix the build"
+
+# 方式 2：config.toml 指定 OSS provider
+# oss_provider = "lmstudio"   # 或 "ollama"
+
+# 方式 3：自定义 provider（非标端口等）
+# [model_providers.my-ollama]
+# name = "My Ollama"
+# base_url = "http://localhost:8080/v1"
+# model_provider = "my-ollama"</code></pre>
+            </div>
+        </section>
+
+        <!-- Slide 23: OSS 模型要求 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>OSS 模型要求</h2>
+                <h4>不是所有模型都适合 Codex</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>硬指标</h4>
+                        <ul>
+                            <li>支持 OpenAI-compatible /v1 API</li>
+                            <li>至少 7B 参数（代码任务推荐 14B+）</li>
+                            <li>支持 system prompt</li>
+                            <li>支持 tool calling（function calling）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>推荐模型</h4>
+                        <ul>
+                            <li><strong>codellama:13b</strong> — Meta，代码专精</li>
+                            <li><strong>deepseek-coder:6.7b</strong> — 体积小能力强</li>
+                            <li><strong>qwen2.5-coder:7b</strong> — 阿里，中文支持好</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>Codex 自动行为</h4>
+                        <p>首次运行时，Codex 会检查模型是否已 pull。如果不存在，会<strong>自动拉取</strong>（显示进度条）。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 24: OSS 限制 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>OSS 限制与权衡</h2>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>维度</th><th>云端模型 (GPT)</th><th>本地模型 (OSS)</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>代码质量</strong></td><td>SOTA，一步到位</td><td>依赖模型，可能需要多轮</td></tr>
+                        <tr><td><strong>延迟</strong></td><td>2-10s（取决于 prompt）</td><td>0.5-30s（取决于硬件）</td></tr>
+                        <tr><td><strong>数据隐私</strong></td><td>数据上 API</td><td><strong>数据不出本机</strong></td></tr>
+                        <tr><td><strong>成本</strong></td><td>按 token 计费</td><td><strong>零 API 费用</strong></td></tr>
+                        <tr><td><strong>网络</strong></td><td>需要互联网</td><td><strong>完全离线</strong></td></tr>
+                        <tr class="highlight"><td><strong>工具支持</strong></td><td>所有 feature</td><td>部分 behavior 可能退化</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning"><strong>注意：</strong>本地模型在复杂多文件重构、精确 diff 生成等任务上可能不如 GPT-5.6 / gpt-5.6-mini。建议简单任务用 OSS，复杂任务回退到云端。</div>
+            </div>
+        </section>
+
+        <!-- Slide 25: 实战 1 CI 自动化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 1：CI 自动化</h2>
+                <h4>用 codex exec + --json 嵌入 GitHub Actions</h4>
+                <p>在 CI 中自动 review PR、生成 changelog、检查安全漏洞：</p>
+                <pre><code># .github/workflows/codex-review.yml
+name: Codex Code Review
+on: [pull_request]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node (for codex CLI)
+        uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+      - name: Codex Review
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          codex exec \
+            --cd "$GITHUB_WORKSPACE" \
+            -s read-only \
+            --json "Review this PR for bugs, security issues, and style problems."
+          echo "Review complete."</code></pre>
+                <div class="key-point"><strong>最佳实践：</strong>CI 中始终用 <code>-s read-only</code> 或 <code>-s workspace-write</code>，避免 <code>danger-full-access</code>。把结果输出为 JSON 便于后续步骤解析。</div>
+            </div>
+        </section>
+
+        <!-- Slide 26: 实战 2 批量处理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 2：批量处理文件</h2>
+                <h4>for loop + codex exec 批处理</h4>
+                <p>给仓库中每个 Python 文件添加类型注解：</p>
+                <pre><code>#!/bin/bash
+# 批量为 Python 文件添加类型注解
+for file in $(find src/ -name "*.py"); do
+  echo "Processing: $file"
+  codex exec \
+    --cd "$(dirname $file)" \
+    -s workspace-write \
+    "Add type annotations to every function. Do not change logic."
+  if [ $? -ne 0 ]; then
+    echo "ERROR: Failed on $file" >&2
+    exit 1
+  fi
+done
+echo "All files processed."</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>错误处理</h4>
+                        <p>检查 <code>$?</code> 退出码 —— 非零意味着 Codex 执行失败。可记录并跳过继续。</p>
+                    </div>
+                    <div class="card">
+                        <h4>并行化</h4>
+                        <p>对独立文件可用 GNU <code>parallel</code> 或 <code>xargs -P</code> 加速。注意 API 并发限额。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 27: 实战 3 Python SDK -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 3：Python SDK 自动化工作流</h2>
+                <h4>"代码审计 + 修复 + 验证"流水线</h4>
+                <pre><code>from openai_codex import Codex, Sandbox
+
+def audit_and_fix(project_path: str):
+    with Codex() as codex:
+        thread = codex.thread_start(
+            sandbox=Sandbox.workspace_write
+        )
+
+        # 1. 安全审计
+        audit = thread.run(
+            "Scan for SQL injection, XSS, "
+            "and hardcoded secrets."
+        )
+        print(f"Found {len(audit.items)} issue items")
+
+        # 2. 修复
+        fix = thread.run(
+            "Fix all HIGH severity issues. "
+            "Leave MEDIUM and LOW as TODOs."
+        )
+
+        # 3. 验证（只读回顾）
+        final = thread.run(
+            "Re-review: are all HIGH issues resolved?",
+            sandbox=Sandbox.read_only
+        )
+        print("Verification:", final.final_response[:200])
+
+audit_and_fix("./myproject")</code></pre>
+            </div>
+        </section>
+
+        <!-- Slide 28: 实战 4 Ollama -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 4：Ollama 处理敏感任务</h2>
+                <h4>内部代码审查，数据零上云</h4>
+                <pre><code># 终端 1：启动 Ollama（如果未运行）
+ollama serve &
+ollama pull codellama:13b-instruct
+
+# 终端 2：运行 Codex 连接本地模型
+codex --oss \
+  --cd ./internal-docs/ \
+  -s read-only \
+  "Review this data pipeline for compliance risks."
+
+# 或者直接用 --model 覆盖
+codex exec --model codellama:13b-instruct \
+  -s read-only \
+  "Audit this code for PII leaks."</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>性能提示</h4>
+                        <p>13B 模型在消费级 GPU（如 RTX 3060 12GB）上可达 20-30 tokens/s。单文件审查足够用。</p>
+                    </div>
+                    <div class="card">
+                        <h4>降级策略</h4>
+                        <p>如果 Ollama 输出质量不够，可用 <code>--model gpt-5.6</code> 回退到云端处理复杂修复。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 29: 实战 5 mcp-server + agent -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 5：mcp-server + Python Agent</h2>
+                <h4>把 Codex 嵌入自定义 Agent 框架</h4>
+                <pre><code>#!/usr/bin/env python3
+"""一个极简的 Codex-backed Agent"""
+import json, subprocess, sys
+
+class CodexAgent:
+    def __init__(self):
+        self.proc = subprocess.Popen(
+            ["codex", "mcp-server"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True
+        )
+        self._id = 0
+
+    def call(self, name, arguments):
+        self._id += 1
+        msg = {"jsonrpc": "2.0", "id": self._id,
+               "method": "tools/call",
+               "params": {"name": name,
+                          "arguments": arguments}}
+        self.proc.stdin.write(json.dumps(msg) + "\n")
+        self.proc.stdin.flush()
+        resp = json.loads(self.proc.stdout.readline())
+        return resp.get("result", {})
+
+    def run(self, task):
+        return self.call("codex", {"prompt": task})
+
+if __name__ == "__main__":
+    agent = CodexAgent()
+    r = agent.run(sys.argv[1])
+    print(r["content"][0]["text"])</code></pre>
+                <div class="info-block"><strong>为何不直接 shell exec codex？</strong>mcp-server 保持长连接、复用引擎进程，避免每次启动开销。适合高频调用。</div>
+            </div>
+        </section>
+
+        <!-- Slide 30: 实战 5 续 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 5 续：多步 Agent 循环</h2>
+                <h4>持续对话直到任务完成</h4>
+                <pre><code>def run_until_done(agent, goal, max_turns=10):
+    """让 Codex agent 自主迭代直到任务完成"""
+    thread_id = None
+    for i in range(max_turns):
+        result = agent.call(
+            "codex" if not thread_id else "codex-reply",
+            {"prompt": goal if not thread_id
+                     else "continue from previous step",
+             "threadId": thread_id},
+        )
+        text = result["content"][0]["text"]
+        thread_id = result.get("threadId", thread_id)
+        print(f"[Turn {i+1}] {text[:300]}")
+        if "DONE" in text or "finish" in text:
+            break
+
+if __name__ == "__main__":
+    agent = CodexAgent()
+    run_until_done(agent, "fix all lint issues in src/")</code></pre>
+                <div class="key-point"><strong>设计关键：</strong>每次调用返回的 threadId 必须传递给下一次 —— 这相当于在 Agent 框架中维护会话状态。</div>
+            </div>
+        </section>
+
+        <!-- Slide 31: 实战选择指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战选择指南</h2>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>场景</th><th>推荐方式</th><th>理由</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>CI review PR</td><td><code>codex exec --json</code></td><td>退出码 + 结构化输出易解析</td></tr>
+                        <tr><td>批量处理 50 文件</td><td>Python SDK + AsyncCodex</td><td>并发控制 + 错误恢复</td></tr>
+                        <tr><td>敏感数据审计</td><td>Ollama + codex exec</td><td>数据不出本机</td></tr>
+                        <tr><td>IDE 插件后端</td><td>codex mcp-server</td><td>标准 MCP 协议连接</td></tr>
+                        <tr><td>GitHub Action</td><td>TypeScript SDK</td><td>与 actions toolkit 同生态</td></tr>
+                        <tr><td>探索/交互式</td><td><code>codex</code> 交互模式</td><td>最自然的工作方式</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Slide 32: 常见错误 上 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误（上）</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>exec prompt 被 shell 吃掉</h4>
+                        <pre><code># ❌ 错误：特殊字符被 shell 解析
+codex exec "fix bug in src/file (urgent)!"
+
+# ✅ 正确：用引号保护或 stdin
+echo "fix bug in src/file (urgent)!" | codex exec -</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>exec 退出码含义误解</h4>
+                        <pre><code># ❌ 误解：$? 反映任务结果
+codex exec "fix it"
+if [ $? -eq 0 ]; then echo "Fixed!"; fi
+
+# ✅ 正确：用 --json + jq 判断
+codex exec --json "fix it" | jq -e \
+  "select(.type==\"turn.completed\")"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>CI 中缺少认证</h4>
+                        <pre><code># ❌ 报错：not authenticated
+
+# ✅ 正确：CI 用 OPENAI_API_KEY 替代 login
+env:
+  OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}
+run: codex exec "..."</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 33: 常见错误 下 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误（下）</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Ollama 端口冲突</h4>
+                        <pre><code># ❌ 默认端口被占用
+# "connection refused on :11434"
+
+# ✅ 正确：在 config.toml 中自定义 provider
+# [model_providers.my-ollama]
+# base_url = "http://localhost:11435/v1"
+# model_provider = "my-ollama"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>Python SDK 线程未 clean up</h4>
+                        <pre><code># ❌ 进程残留
+codex = Codex()
+thread = codex.thread_start()
+# 子进程还在跑
+
+# ✅ 正确：用 context manager
+with Codex() as codex:
+    thread = codex.thread_start()
+    thread.run("...")
+# 退出 with 块自动清理</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>mcp-server 消息缺换行</h4>
+                        <pre><code># ❌ 忘记换行符
+proc.stdin.write(json.dumps(msg))
+
+# ✅ 正确：每条消息以 \n 结尾
+proc.stdin.write(json.dumps(msg) + "\n")
+proc.stdin.flush()</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Slide 34: AI 生图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Codex 脚本化生态全景</h2>
+                <div class="ai-diagram">
+                    <h4>图：Codex CLI 脚本化生态全景</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术架构图：</p>
+                    <ul>
+                        <li>中心 Codex CLI 引擎，向四周延伸四条线：</li>
+                        <li>上方：codex exec（命令行、stdin/stdout 管道、JSONL 输出）</li>
+                        <li>左方：Python SDK（Codex/AsyncCodex、thread/turn/run）</li>
+                        <li>右方：TypeScript SDK（Codex 类、config 配置）</li>
+                        <li>下方：OSS Local Models（ollama/lmstudio）</li>
+                        <li>codex mcp-server 作为"输出"方向</li>
+                        <li>配色：浅蓝背景，中心 Codex 用橙色，四条线不同颜色</li>
+                        <li>画面比例：16:9</li>
+                    </ul>
+                </div>
+                <div class="key-point"><strong>一句话总结：</strong>CLI 是入口，exec 是脚本之门，SDK 是编排之手，mcp-server 是连接之桥，OSS 是隐私之盾。</div>
+            </div>
+        </section>
+
+        <!-- Slide 35: 全系列回顾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>全系列回顾</h2>
+                <h4>11 章旅程，从安装到脚本化</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>章节</th><th>核心能力</th><th>一句话记忆</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>01 安装</td><td>环境搭建</td><td>先跑起来再说</td></tr>
+                        <tr><td>02 AGENTS.md</td><td>行为配置</td><td>告诉 AI 你是谁</td></tr>
+                        <tr><td>03 Skills</td><td>能力扩展</td><td>给 AI 装工具包</td></tr>
+                        <tr><td>04 Slash 命令</td><td>交互增强</td><td>/ 触发即时动作</td></tr>
+                        <tr><td>05 MCP</td><td>工具协议</td><td>接入外部世界</td></tr>
+                        <tr><td>06 Subagents</td><td>多代理</td><td>AI 调用 AI</td></tr>
+                        <tr><td>07 Hooks</td><td>事件驱动</td><td>关键时刻自动出手</td></tr>
+                        <tr><td>08 沙箱与权限</td><td>命令精通</td><td>理解每一行参数</td></tr>
+                        <tr><td>09 线程管理</td><td>个性化</td><td>打造专属 AI 助手</td></tr>
+                        <tr><td>10 Review 与协作</td><td>经验沉淀</td><td>少踩坑，多产出</td></tr>
+                        <tr class="highlight"><td>11 CLI 与脚本化</td><td>自动化</td><td>让 AI 工作在流水线中</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Slide 36: 学习路径 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>你的学习路径</h2>
+                <h4>从"会用"到"驾驭"</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>入门者</h4>
+                        <p>先掌握 <code>codex exec</code> + <code>--json</code>。写一个 GitHub Action 让它自动 review PR。感受自动化的快感。</p>
+                    </div>
+                    <div class="card">
+                        <h4>团队开发者</h4>
+                        <p>用 Python SDK 构建内部工具链：批量重构、安全扫描、代码文档生成。配合 Ollama 保护数据隐私。</p>
+                    </div>
+                    <div class="card">
+                        <h4>平台工程师</h4>
+                        <p>深入研究 codex mcp-server 协议，构建自定义 Agent 框架。让 IDE、CI、内部系统都能调用 Codex。</p>
+                    </div>
+                </div>
+                <div class="key-point"><strong>终点不是学会，而是融入：</strong>当 Codex 像 grep、git 一样自然地出现在你的命令行和脚本中，才算真正掌握。</div>
+            </div>
+        </section>
+
+        <!-- Slide 37: 本章总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章总结</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>核心要点</h4>
+                        <ul>
+                            <li><strong>codex exec</strong> —— 非交互执行，CI/CD 之魂</li>
+                            <li><strong>--json</strong> —— 结构化输出，脚本可解析</li>
+                            <li><strong>--sandbox</strong> —— 安全边界，权限可控</li>
+                            <li><strong>Python / TypeScript SDK</strong> —— 编排之手</li>
+                            <li><strong>codex mcp-server</strong> —— 连接之桥</li>
+                            <li><strong>Ollama / LM Studio</strong> —— 隐私之盾</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>心智模型</h4>
+                        <ul>
+                            <li>交互模式 = 对话；exec 模式 = 命令</li>
+                            <li>--json 把输出变成数据而非文本</li>
+                            <li>SDK 是 exec 的编程化封装</li>
+                            <li>mcp-server 让 Codex 可被其他工具调用</li>
+                            <li>OSS 模型 = 能力本地化，隐私优先</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block"><strong>推荐延伸阅读：</strong>OpenAI 官方 Codex CLI 文档、Ollama 模型库、MCP 协议规范、GitHub Actions 官方教程。</div>
+            </div>
+        </section>
+
+        <!-- Slide 38: 结束页 -->
+        <section class="slide title-slide">
+            <div class="chapter-badge">完结</div>
+            <h1>CLI 与脚本化</h1>
+            <p>把 Codex 从"聊天伙伴"变成"生产工具"</p>
+            <strong>第 12 章 - 全系列的最后一章</strong>
+            <div class="card-grid" style="margin-top: 40px;">
+                <div class="card">
+                    <h4>致谢</h4>
+                    <p>你读完了全部 11 章。从安装到脚本化，从交互到自动化 —— 现在 Codex 不再只是工具，而是你工作流的一部分。</p>
+                </div>
+                <div class="card">
+                    <h4>下一步</h4>
+                    <p>动手实践是最好的复习。选一个你日常重复的任务，用 <code>codex exec</code> 或 Python SDK 自动化它。你会惊讶于"原来可以这样"。</p>
+                </div>
+            </div>
+        </section>
+
+    
+    
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+        </main>
+<script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

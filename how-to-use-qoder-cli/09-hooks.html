@@ -1,0 +1,460 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>09 钩子 Hooks</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid { display: flex; flex-direction: column; }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 09 章</div>
+            <h1>钩子 Hooks</h1>
+            <p>在工具调用前后插入自动检查，让流程自己守门</p>
+            <strong>把"每次都要记得做的事"交给钩子，它永远不忘</strong>
+        </section>
+        <!-- 延续 -->
+        <section class="slide">
+            <div class="slide-content" style="text-align:center;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; padding: 12px 0;">
+                    <i class="fas fa-arrow-left" style="margin-right:6px; font-size:0.75rem;"></i>AI 能连外部系统了。这一章给它装上『自动守门』 —— 在工具调用前后自动执行检查，把团队规范沉淀为系统行为。
+                </p>
+            </div>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>总在补救</h2>
+                <h4>很多问题是"如果当时检查一下就好了"</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>提交了密钥</h4>
+                        <p>AI 帮你改了配置文件，顺手把 API Key 写进去了，你点了确认，提交了——<strong>事后才发现泄露</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>改完忘了跑测试</h4>
+                        <p>AI 改完代码你以为没事了，结果破坏了别处。如果<strong>每次改完自动跑测试</strong>，当时就能发现。</p>
+                    </div>
+                    <div class="card">
+                        <h4>不规范代码进库</h4>
+                        <p>AI 写的代码没过 lint，混进了主分支。<strong>写入前自动 lint</strong> 就能拦住。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>钩子（Hook）就是为这种"自动守门"设计的：</strong>在工具调用前后的特定时机，<strong>自动执行你预先写好的脚本</strong>——检查、拦截、提醒、补救，无需你每次记得。
+                </div>
+            </div>
+        </section>
+
+        <!-- 什么是 Hook -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>什么是 Hook</h2>
+                <h4>定义、白话、和普通脚本的区别</h4>
+                <p><strong>Hook</strong> 是 Qoder CLI 在特定事件发生时<strong>自动触发的 shell 命令</strong>。你预先配置好"当 X 事件发生时，执行 Y 脚本"，之后每次 X 发生，Y 自动跑。</p>
+                <p>说白了，Hook 就像家里的<strong>烟雾报警器</strong>——它平时不动，但一旦检测到烟雾（事件），就自动响（执行脚本）。你不用每次做饭都盯着，它替你守着。</p>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>普通脚本</h4>
+                        <ul>
+                            <li>你<strong>主动</strong>执行</li>
+                            <li>执行与否靠你记得</li>
+                            <li>和 AI 工作流无关</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Hook 脚本</h4>
+                        <ul>
+                            <li><strong>事件触发</strong>自动执行</li>
+                            <li>永远不漏，永远不忘</li>
+                            <li>嵌入 AI 的工具调用流程</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 四类事件 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>四类事件</h2>
+                <h4>Hook 能挂载到哪些时机</h4>
+                <table>
+                    <thead>
+                        <tr><th>类别</th><th>典型事件</th><th>用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>工具事件</td>
+                            <td>PreToolUse（工具调用前）、PostToolUse（工具调用后）</td>
+                            <td>拦截/检查文件操作、命令执行</td>
+                        </tr>
+                        <tr>
+                            <td>会话事件</td>
+                            <td>SessionStart（会话开始）、SessionEnd（会话结束）</td>
+                            <td>初始化环境、清理、通知</td>
+                        </tr>
+                        <tr>
+                            <td>任务事件</td>
+                            <td>任务开始、任务完成</td>
+                            <td>进度通知、状态记录</td>
+                        </tr>
+                        <tr>
+                            <td>生命周期</td>
+                            <td>停止、中断等</td>
+                            <td>收尾、保存状态</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>最常用的是工具事件</strong>——PreToolUse 在 AI 真正执行操作<strong>之前</strong>拦截，PostToolUse 在<strong>之后</strong>补救。本章重点讲这两个。
+                </div>
+            </div>
+        </section>
+
+        <!-- 三种失败策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三种策略</h2>
+                <h4>Hook 脚本的退出码，决定接下来发生什么</h4>
+                <p>Hook 脚本通过<strong>退出码（exit code）</strong>告诉 CLI 检查结果。三个码对应三种行为：</p>
+                <table>
+                    <thead>
+                        <tr><th>退出码</th><th>含义</th><th>CLI 行为</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>0</code></td>
+                            <td>通过</td>
+                            <td>检查通过，继续执行原操作</td>
+                        </tr>
+                        <tr>
+                            <td><code>1</code></td>
+                            <td>提醒</td>
+                            <td>给 AI/用户一个提示信息，但<strong>仍继续</strong></td>
+                        </tr>
+                        <tr>
+                            <td><code>2</code></td>
+                            <td>阻断</td>
+                            <td><strong>阻止</strong>原操作，把错误反馈给 AI</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>这是 Hook 最强大的能力：</strong>退出码 2 能<strong>阻止 AI 的危险操作</strong>。比如 PreToolUse 钩子检测到文件含密钥，返回 2，AI 的写入就被拦下——比事后补救强得多。
+                </div>
+            </div>
+        </section>
+
+        <!-- 环境变量 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>环境变量</h2>
+                <h4>Hook 脚本怎么知道"当前在操作什么"</h4>
+                <p>CLI 触发 Hook 时，会通过<strong>环境变量</strong>把当前操作的上下文传给脚本。常用变量：</p>
+                <table>
+                    <thead>
+                        <tr><th>变量</th><th>含义</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>$CLAUDE_TOOL_NAME</code></td><td>当前调用的工具名（如 Write、Bash）</td></tr>
+                        <tr><td><code>$CLAUDE_FILE_PATH</code></td><td>操作的文件路径</td></tr>
+                        <tr><td>其他上下文</td><td>命令内容、会话信息等</td></tr>
+                    </tbody>
+                </table>
+                <pre><code>#!/bin/bash
+# 一个 PreToolUse 钩子示例：写入前检查是否含密钥
+if grep -E "(api_key|secret|password)" "$CLAUDE_FILE_PATH"; then
+  echo "检测到疑似密钥，已阻止写入"
+  exit 2    # 阻断
+fi
+exit 0      # 通过</code></pre>
+                <div class="info-block">
+                    <strong>脚本逻辑：</strong>读取环境变量拿到要写的文件 → 用 grep 扫敏感词 → 命中就 exit 2 阻断，否则 exit 0 放行。这就是一个完整的"密钥守门员"。
+                </div>
+            </div>
+        </section>
+
+        <!-- 实战1:安全扫描 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：防密钥</h2>
+                <h4>PreToolUse 钩子——AI 写文件前扫描敏感信息</h4>
+                <p><strong>场景：</strong>防止 AI 把 API Key、密码写进代码。</p>
+                <pre><code># scripts/security-scan.sh
+#!/bin/bash
+# 检查即将写入的文件是否含敏感信息
+
+PATTERNS="(api_key|apikey|secret|password|token)\s*[:=]"
+if grep -iE "$PATTERNS" "$CLAUDE_FILE_PATH" 2>/dev/null; then
+  echo "⚠️ 检测到疑似敏感信息，写入已阻止"
+  echo "请确认是否真的需要写入这些内容"
+  exit 2
+fi
+exit 0</code></pre>
+                <p>把这个脚本注册为 PreToolUse 钩子后，<strong>每次 AI 要写文件，都会先跑这个检查</strong>。命中敏感模式就阻断，AI 收到反馈会自己调整。</p>
+                <div class="warning">
+                    <strong>模式要按项目调整：</strong>上面的正则可能误报（如变量名含 token）。根据项目实际情况细化模式，或维护一份白名单。钩子太严会让 AI 寸步难行。
+                </div>
+            </div>
+        </section>
+
+        <!-- 实战2:自动测试 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：跑测试</h2>
+                <h4>PostToolUse 钩子——AI 改完代码自动跑测试</h4>
+                <p><strong>场景：</strong>AI 每次修改源码后，自动跑相关测试，立即发现破坏。</p>
+                <pre><code># scripts/auto-test.sh
+#!/bin/bash
+# 只在修改的是源码文件时触发
+case "$CLAUDE_FILE_PATH" in
+  *.ts|*.tsx|*.js|*.jsx)
+    echo "检测到代码变更，运行测试..."
+    if npm test 2&gt;&amp;1; then
+      echo "✅ 测试通过"
+      exit 0
+    else
+      echo "❌ 测试失败，请修复"
+      exit 2     # 反馈给 AI，让它修
+    fi
+    ;;
+  *)
+    exit 0       # 非代码文件，跳过
+    ;;
+esac</code></pre>
+                <div class="key-point">
+                    <strong>这个钩子的妙处：</strong>测试失败时 exit 2，<strong>错误信息会反馈给 AI</strong>，AI 会主动去修——形成"改代码→跑测试→失败就修"的闭环，无需你盯着。
+                </div>
+            </div>
+        </section>
+
+        <!-- 实战3:会话通知 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：会话通知</h2>
+                <h4>SessionStart 钩子——会话开始时自动初始化</h4>
+                <p><strong>场景：</strong>每次开会话，自动拉取最新代码、提醒当前分支、检查环境。</p>
+                <pre><code># scripts/session-init.sh
+#!/bin/bash
+# 会话开始时的环境检查
+echo "=== 会话环境 ==="
+echo "当前分支: $(git branch --show-current 2&gt;/dev/null)"
+echo "未提交改动: $(git status --short | wc -l) 个文件"
+echo "Node: $(node --version 2&gt;/dev/null || echo '未安装')"
+echo "================"
+exit 0</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>更多 SessionStart 用途</h4>
+                        <ul>
+                            <li>自动 <code>git pull</code> 拉最新</li>
+                            <li>检查依赖是否安装</li>
+                            <li>加载项目所需环境变量</li>
+                            <li>播放提示音（macOS: <code>say "ready"</code>）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>任务完成通知</h4>
+                        <p>长任务（如 Quest）跑完时，用任务事件钩子发通知：</p>
+                        <pre><code># macOS 语音提醒
+say "任务完成了"
+
+# 或发桌面通知
+osascript -e 'display notification \
+  "Qoder 任务完成" with title "Qoder"'</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 配置方式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置方式</h2>
+                <h4>Hook 怎么注册到 CLI</h4>
+                <p>Hook 配置写在 settings 文件中，关联"事件 → 脚本"：</p>
+                <pre><code>{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "command": "bash scripts/security-scan.sh"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "command": "bash scripts/auto-test.sh"
+      }
+    ],
+    "SessionStart": [
+      { "command": "bash scripts/session-init.sh" }
+    ]
+  }
+}</code></pre>
+                <div class="info-block">
+                    <strong>matcher 字段：</strong>指定该钩子匹配哪些工具。如 <code>"Write|Edit"</code> 只在写文件时触发；<code>"Bash"</code> 只在执行命令时触发。省略 matcher 则对所有工具触发。
+                </div>
+                <div class="warning">
+                    <strong>脚本要有执行权限：</strong>注册前确保 <code>chmod +x scripts/*.sh</code>，否则钩子会因权限报错。Windows 用户用 <code>.bat</code> 或 <code>.ps1</code> 脚本。
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <h4>Hook 相关的高频问题</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>钩子没触发</h4>
+                        <p><strong>原因：</strong>配置路径不对、matcher 不匹配、脚本无执行权限。<strong>修复：</strong>确认 settings 路径；matcher 写对工具名；<code>chmod +x</code> 脚本。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>钩子报错影响正常使用</h4>
+                        <p><strong>原因：</strong>脚本本身有 bug，exit 2 误阻断。<strong>修复：</strong>先在终端单独跑脚本验证；调试期临时把 exit 2 改成 exit 1（只提醒不阻断）。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>钩子太慢拖慢工作流</h4>
+                        <p><strong>原因：</strong>脚本做太多事（如全量测试）。<strong>修复：</strong>用 matcher 缩小触发范围；只跑相关测试；耗时操作放 PostToolUse 不阻塞。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>误报太多</h4>
+                        <p><strong>原因：</strong>检查模式太宽。<strong>修复：</strong>细化正则；维护白名单；逐步收紧而非一步到位。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 排错指南 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <h4>Hook 配置中的高频问题</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>Hook 没有触发</h4>
+                        <p><strong>原因：</strong>事件类型不匹配、matcher 写错、或脚本路径不对。<strong>修复：</strong>检查事件名拼写（PreToolUse 不是 PreTool）；用通配符 * 做 matcher 测试；用绝对路径。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>Hook 脚本执行失败</h4>
+                        <p><strong>原因：</strong>脚本无执行权限、语法错误、或依赖缺失。<strong>修复：</strong>chmod +x 脚本；在终端手动运行验证；检查 shebang 行（#!/bin/bash）。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>exit 2 但没有反馈给 AI</h4>
+                        <p><strong>原因：</strong>stderr 输出未包含可读的错误信息。<strong>修复：</strong>在脚本中用 echo "错误原因" >&2 输出到 stderr；CLI 会把 stderr 作为拒绝原因反馈给 AI。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>环境变量在 Hook 中读不到</h4>
+                        <p><strong>原因：</strong>CLI 注入的变量名拼写错误，或 shell 环境不同。<strong>修复：</strong>确认变量名（ 而非 ）；在脚本开头 env | grep CLAUDE 调试。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>给你的项目装上两个守门员</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习 1：防密钥钩子</h3>
+                        <ul>
+                            <li>写一个 security-scan.sh，扫描敏感词</li>
+                            <li>注册为 PreToolUse 钩子，matcher 为 Write|Edit</li>
+                            <li>让 AI 试着写一个含 "password" 的文件，验证被阻断</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 2：会话初始化钩子</h3>
+                        <ul>
+                            <li>写一个 session-init.sh 显示分支和状态</li>
+                            <li>注册为 SessionStart 钩子</li>
+                            <li>新开会话，观察自动输出的环境信息</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 3（进阶）：自动测试</h3>
+                        <ul>
+                            <li>写 auto-test.sh，改完代码自动跑测试</li>
+                            <li>测试失败时 exit 2 反馈给 AI</li>
+                            <li>观察 AI 是否主动修复</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 本章回顾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <h4>带走的三个核心认知</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Hook 是自动守门员</h4>
+                        <p>事件触发自动执行脚本，永远不漏、永远不忘。</p>
+                    </div>
+                    <div class="card">
+                        <h4>退出码决定行为</h4>
+                        <p>0 通过、1 提醒、2 阻断——exit 2 能拦下 AI 的危险操作。</p>
+                    </div>
+                    <div class="card">
+                        <h4>环境变量传上下文</h4>
+                        <p>$CLAUDE_TOOL_NAME、$CLAUDE_FILE_PATH 让脚本知道当前操作。</p>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>钩子让你把团队的检查规范"代码化"——不再依赖人的记忆和纪律，而是由系统强制执行。这是从"手动质量"到"自动化质量"的关键一步。
+                    <p style="margin-top: 16px;">下一章，学习把这些零散的能力（技能、钩子、MCP）打包成可分发的插件。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 延伸阅读 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./10-plugins.html">下一章：插件 Plugins</a> — 打包分发你的方案</li>
+                            <li><a href="./11-permissions.html">权限系统</a> — 和 Hook 配合的安全边界</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方资源</h4>
+                        <ul>
+                            <li><a href="https://docs.qoder.com/zh/cli/hooks">Hooks 官方文档</a></li>
+                            <li><a href="https://docs.qoder.com/extensions/hooks">扩展 Hooks</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>

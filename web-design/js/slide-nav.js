@@ -58,6 +58,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // 触摸滑动翻页（移动端最自然的翻页方式）
+    // 忽略在可滚动区域内的纵向滚动，仅在横向滑动明显时翻页
+    let touchStartX = 0;
+    let touchStartY = 0;
+    document.addEventListener('touchstart', (e) => {
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+        const endX = e.changedTouches[0].screenX;
+        const endY = e.changedTouches[0].screenY;
+        const dx = touchStartX - endX;   // 横向位移
+        const dy = touchStartY - endY;   // 纵向位移
+        // 只有横向滑动占主导、且超过阈值时才翻页，避免误触
+        if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+            if (dx > 0) showNextSlide();   // 左滑 → 下一页
+            else showPrevSlide();          // 右滑 → 上一页
+        }
+    }, { passive: true });
+
     // 初始化：显示第一张幻灯片
     const initialActive = Array.prototype.findIndex.call(slides, s => s.classList.contains('active'));
     showSlide(initialActive >= 0 ? initialActive : 0);

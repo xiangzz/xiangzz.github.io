@@ -150,7 +150,7 @@ const asyncSubagents: AsyncSubAgent[] = [
     name: "researcher",                     // Supervisor 用这个名字启动任务
     description: "用于信息收集和综合的研究代理",  // 描述决定 Supervisor 何时委派
     graphId: "researcher",                   // Agent Protocol 服务端上的图 ID
-    // 省略 url → 使用 ASGI 传输（同一部署内，零网络延迟）
+    // 省略 url → 使用进程内传输（同一部署内，零网络延迟）
   },
   {
     name: "coder",
@@ -162,7 +162,7 @@ const asyncSubagents: AsyncSubAgent[] = [
 ];
 
 const agent = createDeepAgent({
-  model: "google_genai:gemini-3.1-pro-preview",
+  model: "google-genai:gemini-3.1-pro-preview",
   subagents: [...asyncSubagents],  // 注册异步子代理，Supervisor 自动获得管理工具
 });</code></pre>
                 <table>
@@ -173,7 +173,7 @@ const agent = createDeepAgent({
                         <tr><td><code>name</code></td><td><code>string</code></td><td>必填。唯一标识符，启动任务时使用</td></tr>
                         <tr><td><code>description</code></td><td><code>string</code></td><td>必填。描述功能，Supervisor 据此委派任务</td></tr>
                         <tr><td><code>graphId</code></td><td><code>string</code></td><td>必填。Agent Protocol 服务端上的图 ID</td></tr>
-                        <tr><td><code>url</code></td><td><code>string</code></td><td>可选。省略用 ASGI，设置用 HTTP</td></tr>
+                        <tr><td><code>url</code></td><td><code>string</code></td><td>可选。省略用进程内，设置用 HTTP</td></tr>
                         <tr><td><code>headers</code></td><td><code>Record</code></td><td>可选。远程服务端的额外请求头</td></tr>
                     </tbody>
                 </table>
@@ -184,18 +184,18 @@ const agent = createDeepAgent({
         <section class="slide">
             <div class="slide-content">
                 <h2>协同部署配置</h2>
-                <h4>在同一个 langgraph.json 中注册所有图实现 ASGI 传输</h4>
-                <p>对于基于 LangGraph 的部署，推荐将所有图注册在同一个 <code>langgraph.json</code> 中。这样子代理通过 ASGI 传输协同部署，零网络延迟。</p>
+                <h4>在同一个 langgraph.json 中注册所有图实现进程内传输</h4>
+                <p>对于基于 LangGraph 的部署，推荐将所有图注册在同一个 <code>langgraph.json</code> 中。这样子代理通过进程内传输协同部署，零网络延迟。</p>
                 <pre><code class="language-json">{
   "graphs": {
-    "supervisor": "./src/supervisor.py:graph",   // 编排者，负责管理子代理
-    "researcher": "./src/researcher.py:graph",   // 研究代理
-    "coder": "./src/coder.py:graph"              // 编码代理
+    "supervisor": "./src/supervisor.ts:graph",   // 编排者，负责管理子代理
+    "researcher": "./src/researcher.ts:graph",   // 研究代理
+    "coder": "./src/coder.ts:graph"              // 编码代理
   }
 }</code></pre>
                 <div class="card-grid cols-2">
                     <div class="card">
-                        <h4>ASGI 传输的优势</h4>
+                        <h4>进程内传输的优势</h4>
                         <ul>
                             <li><strong>零网络延迟</strong>——进程内函数调用</li>
                             <li>无需额外身份验证配置</li>
@@ -212,7 +212,7 @@ const agent = createDeepAgent({
                     </div>
                 </div>
                 <div class="key-point">
-                    <strong>推荐起点：</strong>先用 ASGI 协同部署，一个服务端搞定所有代理。等真正遇到扩展瓶颈时再拆分为 HTTP 远程部署。
+                    <strong>推荐起点：</strong>先用进程内协同部署，一个服务端搞定所有代理。等真正遇到扩展瓶颈时再拆分为 HTTP 远程部署。
                 </div>
             </div>
         </section>
@@ -343,10 +343,10 @@ const agent = createDeepAgent({
         <section class="slide">
             <div class="slide-content">
                 <h2>选择传输方式</h2>
-                <h4>ASGI 协同部署 vs HTTP 远程连接，各有适用场景</h4>
+                <h4>进程内协同部署 vs HTTP 远程连接，各有适用场景</h4>
                 <div class="card-grid cols-2">
                     <div class="card" style="border-top: 3px solid #059669;">
-                        <h4>ASGI 传输（推荐默认）</h4>
+                        <h4>进程内传输（推荐默认）</h4>
                         <p>省略 <code>url</code> 字段即启用。SDK 通过进程内函数调用路由，不走 HTTP。</p>
                         <ul>
                             <li>零网络延迟，性能最优</li>
@@ -389,7 +389,7 @@ const asyncSubagents: AsyncSubAgent[] = [
                 <div class="card-grid">
                     <div class="card" style="border-top: 3px solid #059669;">
                         <h4>单一部署</h4>
-                        <p>所有代理在同一服务端，使用 ASGI 传输。一个 <code>langgraph.json</code> 注册所有图。</p>
+                        <p>所有代理在同一服务端，使用进程内传输。一个 <code>langgraph.json</code> 注册所有图。</p>
                         <ul>
                             <li>管理简单，只维护一个服务端</li>
                             <li>代理间零网络延迟</li>
@@ -407,7 +407,7 @@ const asyncSubagents: AsyncSubAgent[] = [
                     </div>
                     <div class="card" style="border-top: 3px solid #D97706;">
                         <h4>混合部署</h4>
-                        <p>部分子代理 ASGI 协同部署，其他 HTTP 远程部署——灵活组合。</p>
+                        <p>部分子代理进程内协同部署，其他 HTTP 远程部署——灵活组合。</p>
                         <ul>
                             <li>核心代理零延迟，外部分离扩展</li>
                             <li>最灵活但配置稍复杂</li>
@@ -421,7 +421,7 @@ const asyncSubagents: AsyncSubAgent[] = [
     name: "researcher",
     description: "研究代理",
     graphId: "researcher",
-    // 省略 url → ASGI 协同部署（零延迟，推荐默认方式）
+    // 省略 url → 进程内协同部署（零延迟，推荐默认方式）
   },
   {
     name: "coder",
@@ -556,7 +556,7 @@ const asyncSubagents: AsyncSubAgent[] = [
                             <li>异步子代理让 Supervisor <strong>启动后立即返回</strong>，继续与用户交互</li>
                             <li>五个核心工具：<strong>start / check / update / cancel / list</strong></li>
                             <li>任务元数据存在<strong>专用通道 <code>asyncTasks</code></strong>，不受消息压缩影响</li>
-                            <li>ASGI 传输<strong>零延迟</strong>，HTTP 传输支持<strong>独立扩展</strong></li>
+                            <li>进程内传输<strong>零延迟</strong>，HTTP 传输支持<strong>独立扩展</strong></li>
                             <li>三种部署拓扑：<strong>单一 / 分离 / 混合</strong></li>
                             <li>防止轮询、ID 截断等常见问题的<strong>系统提示策略</strong></li>
                         </ul>
@@ -566,7 +566,7 @@ const asyncSubagents: AsyncSubAgent[] = [
                         <ul>
                             <li>短任务、需等结果 → 用<strong>同步子代理</strong></li>
                             <li>长任务、可并发 → 用<strong>异步子代理</strong></li>
-                            <li>开始部署 → 先用 <strong>ASGI 单一部署</strong></li>
+                            <li>开始部署 → 先用 <strong>进程内单一部署</strong></li>
                             <li>遇到瓶颈 → 拆分为 <strong>HTTP 分离部署</strong></li>
                             <li>本地开发 → 记得调整 <code>--n-jobs-per-worker</code></li>
                             <li>排查问题 → 先检查<strong>系统提示</strong>和<strong>工作线程池</strong></li>

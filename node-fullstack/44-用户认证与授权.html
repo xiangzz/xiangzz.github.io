@@ -16,6 +16,21 @@
             <h1>用户认证与授权</h1>
             <p>密码哈希、JWT、角色权限——保护你的 API</p>
         </section>
+        <!-- 学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>🎯 学习目标</h3>
+                <h4>学完本章，你将能够：</h4>
+                <ul>
+                    <li>使用 bcrypt 对密码进行安全哈希存储</li>
+                    <li>实现基于 JWT 的注册、登录和令牌刷新流程</li>
+                    <li>编写认证中间件保护受限路由</li>
+                    <li>理解 RBAC 角色权限控制模型，能实现基本的权限检查</li>
+                    <li>了解 OAuth 第三方登录的基本流程</li>
+                </ul>
+            </div>
+        </section>
+
 
         <!-- 开场 -->
         <section class="slide">
@@ -582,7 +597,19 @@ router.post('/reset-password', async (req, res) => {
             </div>
         </section>
 
-        <!-- Part 4: RBAC -->
+                <!-- 学习断点 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>☕ 学习断点</h3>
+                <h4>认证基础已完成，休息后进入授权部分</h4>
+                <p>你已经学会了密码哈希、JWT 认证和认证中间件——这是用户系统的核心安全机制。</p>
+                <p>建议：休息 5 分钟，回顾一下 JWT 的签发和验证流程。</p>
+                <div class="intro-block">
+                    <p>💡 后半部分将学习 RBAC 角色权限控制和 OAuth 第三方登录——这些是高级认证授权的常见模式。</p>
+                </div>
+            </div>
+        </section>
+<!-- Part 4: RBAC -->
         <section class="slide">
             <div class="slide-content">
                 <h2>Part 4: RBAC</h2>
@@ -809,7 +836,7 @@ router.get('/me', (req, res) => {
         <section class="slide">
             <div class="slide-content">
                 <h3>CSRF 防护代码</h3>
-                <h4>SameSite 属性 + csurf 中间件</h4>
+                <h4>SameSite + Double-submit Cookie</h4>
                 <pre><code class="language-javascript">// 方案一：SameSite Cookie（最简单，现代浏览器都支持）
 res.cookie('token', token, {
     httpOnly: true,
@@ -817,16 +844,32 @@ res.cookie('token', token, {
     secure: true,
 });
 
-// 方案二：csurf 中间件（Double-submit Cookie）
-import csrf from 'csurf';
-const csrfProtection = csrf({
-    cookie: { httpOnly: false, sameSite: 'strict' },
+// 方案二：Double-submit Cookie（无需服务端存储，自己实现约 20 行）
+import crypto from 'crypto';
+
+// 签发：把一个随机 token 同时写入 Cookie 和响应体
+router.get('/csrf-token', (req, res) => {
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+    res.cookie('csrfToken', csrfToken, {
+        httpOnly: false,        // 前端 JS 要读取后放进请求头
+        sameSite: 'strict',
+        secure: true,
+    });
+    res.json({ csrfToken });
 });
 
-// 获取 CSRF Token（登录后调用一次）
-router.get('/csrf-token', csrfProtection, (req, res) => {
-    res.json({ csrfToken: req.csrfToken() });
-});
+// 校验中间件：比对 Cookie 里的 token 与自定义请求头里的 token 是否一致
+function csrfProtection(req, res, next) {
+    const cookieToken = req.cookies.csrfToken;
+    const headerToken = req.headers['x-csrf-token'];
+    // 长度相等且恒等比较，避免时序攻击
+    if (!cookieToken || !headerToken ||
+        cookieToken.length !== headerToken.length ||
+        !crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken))) {
+        return res.status(403).json({ error: 'CSRF 校验失败' });
+    }
+    next();
+}
 
 // 需要 CSRF 保护的请求
 router.post('/transfer', csrfProtection, (req, res) => {
@@ -834,6 +877,9 @@ router.post('/transfer', csrfProtection, (req, res) => {
 });</code></pre>
                 <div class="warning">
                     <strong>如果用 Bearer Token 放在 Authorization 头中而非 Cookie，天然免疫 CSRF。</strong> 但如果你选择把 JWT 放在 httpOnly Cookie 中以防止 XSS 窃取，就必须同时做 CSRF 防护。安全没有银弹，只有权衡。
+                </div>
+                <div class="warning">
+                    <strong>避开 <code>csurf</code> 这个包。</strong>曾经最流行的 Express CSRF 中间件 <code>csurf</code> 自 2022 年起已停止维护，且其自身存在已知 CSRF 绕过漏洞，官方已明确建议弃用。上面给出的 Double-submit Cookie 自实现只有约 20 行、无第三方依赖，足够大多数场景；如果需要更完善的方案（如自动轮换 token、可配置 cookie 选项），可使用维护中的 <a href="https://github.com/Psifi-Solutions/csrf-csrf"><code>csrf-csrf</code></a> 替代。
                 </div>
             </div>
         </section>
@@ -986,12 +1032,106 @@ router.post('/reset-password', validate(resetPasswordSchema), authController.res
 }));</code></pre>
                         </div>
                     </div>
+                    <div class="practice-step">
+                        <h3>练习三：防枚举登录</h3>
+                        <p><strong>任务</strong>：下面这个登录接口有<strong>信息泄露漏洞</strong>——攻击者能通过不同的错误信息判断哪些邮箱已注册。修复它。</p>
+                        <pre><code class="language-javascript">// 漏洞代码：错误信息暴露了用户是否存在
+const user = await prisma.user.findUnique({ where: { email } });
+if (!user) throw new AppError(404, '用户不存在');     // ← 暴露了
+const match = await bcrypt.compare(password, user.password);
+if (!match) throw new AppError(401, '密码错误');        // ← 也暴露了</code></pre>
+                        <p><strong>要求</strong>：无论邮箱是否存在、密码是否正确，都返回<strong>相同</strong>的错误信息和状态码。但为了不泄露时序信息（通过响应时间判断），<code>compare</code> 仍要执行。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">router.post('/login', asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    // 统一错误：不区分"用户不存在"和"密码错误"
+    const GENERIC = '邮箱或密码错误';
+
+    // 即便用户不存在，也做一次 compare，保证响应时间一致
+    const hash = user?.password ?? '$2b$12$无效占位哈希值..............';
+    const match = await bcrypt.compare(password, hash);
+
+    if (!user || !match) throw new AppError(401, GENERIC);
+
+    // ...签发 token
+}));</code></pre>
+                            <p><strong>为什么这么做</strong>：枚举攻击（enumeration）是黑客收集有效账号的常用手段。"该邮箱未注册"这句话本身就是在帮攻击者。</p>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习四：Refresh Token 轮换</h3>
+                        <p><strong>任务</strong>：实现 refresh 接口的核心逻辑——验证旧 refresh token、签发新的一对 token，<strong>并让旧 refresh token 立即失效</strong>（防止重放）。</p>
+                        <pre><code class="language-javascript">// 假设 Redis 可用，key 格式：refresh:{userId}
+// 提示：旧 token 用过即弃，存入"黑名单"或直接覆盖
+async function refresh(oldRefreshToken) {
+    // 1. 验证旧 token 的签名和有效期
+    // 2. 检查它是否仍有效（未被吊销）
+    // 3. 签发新的 access + refresh token
+    // 4. 让旧 refresh token 失效
+    // 你的代码：
+}</code></pre>
+                        <p><strong>关键点</strong>：如果不做"用过即弃"，一个泄露的 refresh token 可以无限续期——这是 JWT 方案最危险的地方。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">async function refresh(oldRefreshToken) {
+    // 1. 验证签名 + 有效期
+    const payload = jwt.verify(oldRefreshToken, REFRESH_SECRET);
+
+    // 2. 检查是否仍是当前有效的 token（防重放）
+    const stored = await redis.get(`refresh:${payload.userId}`);
+    if (stored !== oldRefreshToken) {
+        // 旧 token 已被轮换 → 可能被盗用，吊销整个会话
+        await redis.del(`refresh:${payload.userId}`);
+        throw new AppError(401, '请重新登录');
+    }
+
+    // 3. 签发新的一对 token
+    const newAccess = signAccessToken(payload.userId);
+    const newRefresh = signRefreshToken(payload.userId);
+
+    // 4. 旧 token 立即失效：用新 token 覆盖存储
+    await redis.set(`refresh:${payload.userId}`, newRefresh, 'EX', 60 * 60 * 24 * 7);
+
+    return { accessToken: newAccess, refreshToken: newRefresh };
+}</code></pre>
+                            <p><strong>进阶思考</strong>：如果用户在两台设备上登录，上面这种"单 token 覆盖"会让一台设备的登录挤掉另一台。生产系统通常为每个设备维护独立的 refresh token，或采用"令牌家族"（token family）检测重放。</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
 
         <!-- 收尾 -->
-        <section class="slide title-slide">
+                <!-- 要点总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📝 要点总结</h3>
+                <h4>本章核心知识点</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>密码安全</h4>
+                        <p>bcrypt 哈希 + 盐值，即使数据库泄露也无法还原原始密码</p>
+                    </div>
+                    <div class="card">
+                        <h4>JWT 认证</h4>
+                        <p>Access Token + Refresh Token 双令牌策略，平衡安全性和用户体验</p>
+                    </div>
+                    <div class="card">
+                        <h4>认证中间件</h4>
+                        <p>requireAuth 中间件统一校验 Token，保护受限路由</p>
+                    </div>
+                    <div class="card">
+                        <h4>RBAC 授权</h4>
+                        <p>角色 + 权限矩阵，控制不同用户对资源的访问级别</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+<section class="slide title-slide">
             <h1>下一章</h1>
             <p>认证搞定了。下一章学习<strong>文件上传与静态资源</strong>——让用户能上传头像、图片和文档。</p>
         

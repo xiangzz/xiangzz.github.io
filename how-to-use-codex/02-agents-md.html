@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>02 AGENTS.md</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ========== Slide 1: Title ========== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 02 章</div>
+            <h1>AGENTS.md</h1>
+            <p>让 Codex 记住你的项目规则，不再每次重复说明</p>
+            <strong>一份文件，全局生效；一次写入，持久生效</strong>
+        </section>
+
+        <!-- ========== Slide 2: Problem Opening ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>从零开始</h2>
+                <h4>你反复解释同一个项目规则，Codex 全忘了</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>会话一：你教它规矩</h4>
+                        <p>"我们用 React + TypeScript，测试用 vitest，组件命名用 PascalCase。"</p>
+                        <p>Codex 照做了。问题解决。</p>
+                    </div>
+                    <div class="card">
+                        <h4>会话二：什么都没记住</h4>
+                        <p>你开新会话让它改个组件。它回到老习惯——用 plain JavaScript、camelCase 命名、jest 语法。</p>
+                        <p><strong>你又要解释一遍。第三次。第五次。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>根本原因</h4>
+                        <p>Codex 是无状态的。每次新会话，之前的对话上下文全部清空。<strong>如果你不把规则写进文件，它就不存在。</strong></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 3: Before We Start ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>已经在用 Codex CLI，发现每次都要重复说相同规则</li>
+                            <li>想为团队统一项目规范，让所有人共享</li>
+                            <li>管理多个项目，需要不同的默认行为</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>你将学会</h4>
+                        <ul>
+                            <li>创建和配置 AGENTS.md 文件</li>
+                            <li>理解文件发现与拼接机制</li>
+                            <li>用 /init 自动生成、用 /memories 管理</li>
+                            <li>设计多模块项目的分层规范</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章不覆盖</h4>
+                        <ul>
+                            <li>Skills（第 03 章）：可复用的任务指令</li>
+                            <li>MCP（第 06 章）：工具扩展</li>
+                            <li>沙箱与权限（第 09 章）：安全边界</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 4: What is AGENTS.md ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>是什么</h2>
+                <h4>给 Codex 的项目级"员工手册"</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>一句话定义</h4>
+                        <p><strong>AGENTS.md</strong> 是放在项目中的 Markdown 文件，包含 Codex 应该遵守的指令、约定和背景知识。<strong>Codex 每次启动会话时自动加载它。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>类似物</h4>
+                        <ul>
+                            <li>Claude Code 的 <code>CLAUDE.md</code></li>
+                            <li>Cursor 的 <code>.cursorrules</code></li>
+                            <li><code>.editorconfig</code>（但面向 AI，不是编辑器）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心差异：</strong>AGENTS.md 不是单一文件。Codex 可以发现并拼接路径上的多个文件——这意味着你可以在子目录放置局部规则，覆盖或补充根级约定。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 5: Discovery Mechanism ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>文件发现机制</h2>
+                <h4>Codex 怎么找到你的 AGENTS.md</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Step 1: 定位 project root</h4>
+                        <p>从当前工作目录（CWD）开始向上搜索，直到找到 <code>project_root_markers</code> 标记的目录。默认标记是 <code>.git</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Step 2: 沿路径收集</h4>
+                        <p>从 project root 开始，沿目录树向下往 CWD 方向遍历，<strong>收集每一层遇到的 AGENTS.md</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Step 3: 拼接注入</h4>
+                        <p>按从根到 CWD 的顺序，将所有发现的 AGENTS.md 内容拼接，注入到系统提示词中。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>额外文件名：</strong>除了 <code>AGENTS.md</code>，你还可以在 <code>config.toml</code> 中配置 <code>project_doc_fallback_filenames</code> 让它同时扫描 <code>CONTRIBUTING.md</code>、<code>DEVELOPMENT.md</code> 等文件。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 6: Discovery Diagram ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>发现路径可视化</h2>
+                <h4>project root 到 CWD 的完整路径</h4>
+                <div class="ai-diagram">
+                    <h4>示意：文件发现从上到下</h4>
+                    <p>项目目录结构：
+/my-project/              ← project root（有 .git）
+├── AGENTS.md           ✅ 发现！根级规则
+├── src/
+│   ├── AGENTS.md       ✅ 发现！src 子树规则
+│   ├── components/
+│   │   └── AGENTS.override.md  ✅ 发现！本地覆盖
+│   └── utils/          ❌ CWD 是这里，下面没有
+└── tests/
+    └── ...             ❌ CWD 不在这个分支上
+
+拼接顺序：AGENTS.md（根）→ AGENTS.md（src）→ AGENTS.override.md（components）
+                    </p>
+                </div>
+                <div class="key-point">
+                    <strong>重要：</strong>Codex 是往 CWD 方向搜集，不是整个项目扫描。只在 root→CWD 的这条路径上查找。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 7: Scope Rules ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>作用员规则</h2>
+                <h4>一个 AGENTS.md 管多深？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>子树覆盖</h4>
+                        <p>AGENTS.md 覆盖其所在目录的<strong>整个子树</strong>。也就是说：<code>src/AGENTS.md</code> 对 <code>src/utils/</code>、<code>src/components/</code> 等所有后代目录都生效。</p>
+                    </div>
+                    <div class="card">
+                        <h4>更深层优先</h4>
+                        <p>当两个 AGENTS.md 的内容冲突时，<strong>路径更深的文件优先级更高</strong>。<code>src/AGENTS.md</code> 的指令可以覆盖根目录 AGENTS.md 的指令。</p>
+                    </div>
+                    <div class="card">
+                        <h4>scope 关键词（可选）</h4>
+                        <p>你可以在 AGENTS.md 中使用 <code>scope</code> 关键词进一步限定适用范围。如果不指定，默认覆盖整个子树。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 8: Instruction Hierarchy ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>指令加载链</h2>
+                <h4>Codex 启动时，这些指令按顺序拼接进上下文——越靠后越优先</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>顺序</th>
+                            <th>来源</th>
+                            <th>谁控制</th>
+                            <th>典型内容</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>① 最先</td>
+                            <td>模型内置 <code>base_instructions</code></td>
+                            <td>OpenAI（不可改）</td>
+                            <td>身份、安全边界、工具使用规则</td>
+                        </tr>
+                        <tr>
+                            <td>②</td>
+                            <td><code>~/.codex/AGENTS.md</code></td>
+                            <td>你（全局）</td>
+                            <td>跨项目的个人偏好："始终先跑测试"</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td>③</td>
+                            <td>项目根 → 子目录的 <code>AGENTS.md</code></td>
+                            <td>团队 / 你</td>
+                            <td>项目约定：编码规范、测试命令、架构决策</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td>④ 最后</td>
+                            <td>你在对话中输入的 prompt</td>
+                            <td>你（实时）</td>
+                            <td>"用 Python 写这个测试"</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>越靠后 = 优先级越高。</strong>后加载的指令在上下文里位置更靠后，模型更倾向于遵循。所以你在对话里实时说的话，会覆盖 AGENTS.md 里的旧约定——但<strong>无法覆盖</strong>第①层 OpenAI 的安全规则。
+                </div>
+                <div class="warning">
+                    <strong>注：</strong>全局指令写在 <code>~/.codex/AGENTS.md</code> 里，或在 <code>config.toml</code> 中用 <code>model_instructions_file</code> 指定一个替代文件。详见 <a href="https://developers.openai.com/codex/guides/agents-md" target="_blank">官方文档</a>。
+                </div>
+                <div class="key-point">
+                    <strong>冲突时怎么办？</strong>AGENTS.md 写"用 Python"，你在对话里说"用 Go"——听你现在的。实时 prompt &gt; 预置 AGENTS.md。但 AGENTS.md 的价值在于：你不必每次对话都重复说一遍。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 9: Override File ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>覆盖文件</h2>
+                <h4>本地覆盖，不入库</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>作用</h4>
+                        <p><code>AGENTS.override.md</code> 是可选的个人覆盖文件。它和 <code>AGENTS.md</code> 放在<strong>同一目录</strong>，优先级高于同级的 <code>AGENTS.md</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>典型用途</h4>
+                        <ul>
+                            <li>个人偏好：用户名、邮箱、默认分支名</li>
+                            <li>本地路径：SDK 路径、模拟器配置</li>
+                            <li>实验性指令：不想污染团队规范的个人规则</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-bash"># .gitignore 中应包含
+AGENTS.override.md</code></pre>
+                <div class="info-block">
+                    <strong>为什么叫 override？</strong>因为它会替换或覆盖同名文件中的指令，而不是合并。放一颗"炸弹"进去，可以屏蔽掉团队规范中你不适用的部分。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 10: Config Options ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置项速查</h2>
+                <h4>在 config.toml 中自定义</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>配置项</th>
+                            <th>默认值</th>
+                            <th>作用</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>project_doc_fallback_filenames</code></td>
+                            <td><code>[]</code></td>
+                            <td>额外扫描的文件名（如 <code>["CONTRIBUTING.md", "ARCHITECTURE.md"]</code>）</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td><code>project_root_markers</code></td>
+                            <td><code>[".git"]</code></td>
+                            <td>标记项目根的目录/文件名</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-toml"># ~/.codex/config.toml 示例
+[project]
+project_root_markers = [".git", ".hg"]
+project_doc_fallback_filenames = [
+    "CONTRIBUTING.md",
+    "DEVELOPMENT.md",
+    "docs/project-rules.md",
+]</code></pre>
+            </div>
+        </section>
+
+        <!-- ========== Slide 11: Minimum Example ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最小可运行示例</h2>
+                <h4>从零创建你的第一个 AGENTS.md</h4>
+                <p>在项目根目录创建一个 <code>AGENTS.md</code>，写入几条核心指令。这就是最小可运行版本——不需要任何特殊语法，就能让 Codex 自动遵守：</p>
+                <pre><code class="language-markdown"># 项目约定
+
+## 技术栈
+- React 18 + TypeScript + Vite
+- 测试框架：vitest（不是 jest！）
+- CSS：Tailwind CSS
+
+## 编码规范
+- 组件文件用 PascalCase命名
+- 工具函数文件用 camelCase
+- 所有导出的函数必须有 JSDoc 注释
+- 不使用 any 类型，用 unknown 替代
+
+## 常用命令
+- 启动开发服务器：npm run dev
+- 运行测试：npm test
+- 构建：npm run build
+- 类型检查：npm run typecheck
+
+## 架构
+- src/components/ — 通用组件
+- src/features/ — 业务功能模块（每个子目录是一个独立 feature）
+- src/api/ — 所有 API 请求集中在此，用 TanStack Query</code></pre>
+            </div>
+        </section>
+
+        <!-- ========== Slide 12: What to Write ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>写作有效指令</h2>
+                <h4>什么该写，什么不该写</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>✅ 该写的</h4>
+                        <ul>
+                            <li><strong>具体命令：</strong>"运行测试用 <code>npm test</code>"，不是"跑一下测试"</li>
+                            <li><strong>命名规范：</strong>文件命名、变量风格、分支策略</li>
+                            <li><strong>技术决策：</strong>不用的库、避免的模式</li>
+                            <li><strong>架构约束：</strong>目录职责、模块边界、依赖方向</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>❌ 不该写的</h4>
+                        <ul>
+                            <li><strong>模糊指令：</strong>"写干净的代码"——AI 不知道你的"干净"是什么</li>
+                            <li><strong>项目管理：</strong>截止日期、人员分工、任务分配</li>
+                            <li><strong>敏感信息：</strong>API 密钥、密码、私有 token</li>
+                            <li><strong>冗长教程：</strong>不要在里面写完整的 React 教程</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 13: /init Command ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>/init 命令</h2>
+                <h4>让 Codex 帮你写 AGENTS.md 骨架</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>是什么</h4>
+                        <p><code>/init</code> 是 Codex CLI 的内置命令。执行后，它会扫描你项目的文件结构、配置文件、依赖清单，然后自动生成一份 AGENTS.md 骨架。</p>
+                    </div>
+                    <div class="card">
+                        <h4>适合场景</h4>
+                        <ul>
+                            <li>新项目，不知道从哪开始写</li>
+                            <li>接手别人的项目，想快速了解规范</li>
+                            <li>项目升级（如从 CRA 迁到 Vite），规则要更新</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-bash"># 在 Codex 会话中输入
+$ /init
+
+# Codex 会分析项目并生成 AGENTS.md 草稿
+# 你可以在此基础上编辑调整</code></pre>
+            </div>
+        </section>
+
+        <!-- ========== Slide 14: /memories Command ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>/memories</h2>
+                <h4>控制当前线程的记忆开关——别和 AGENTS.md 搞混</h4>
+                <div class="info-block">
+                    <strong>先澄清一个常见误解：</strong>Memories 和 AGENTS.md 是<strong>两个完全不同的系统</strong>。AGENTS.md 是你手写的静态项目规则（<a href="https://developers.openai.com/codex/guides/agents-md" target="_blank">官方文档</a>）；Memories 是 Codex 从历史会话中<strong>自动提取</strong>的动态背景回忆，存在 <code>~/.codex/memories/</code>，默认关闭（<a href="https://developers.openai.com/codex/memories" target="_blank">官方文档</a>）。
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Memories vs AGENTS.md</h4>
+                        <table class="comparison-table">
+                            <thead>
+                                <tr><th>对比</th><th>AGENTS.md</th><th>Memories</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>谁写的</td><td>你手写</td><td>Codex 自动提取</td></tr>
+                                <tr><td>存哪</td><td>项目目录 / <code>~/.codex/</code></td><td><code>~/.codex/memories/</code></td></tr>
+                                <tr><td>能否入库</td><td>✅ 团队共享</td><td>❌ 本地生成状态</td></tr>
+                                <tr><td>默认状态</td><td>自动加载</td><td>默认关闭</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h4>/memories 做什么</h4>
+                        <p>它是一个<strong>开关切换器</strong>，为当前线程控制两件事：</p>
+                        <ul>
+                            <li>当前对话是否<strong>使用</strong>已有的 memories</li>
+                            <li>当前对话是否<strong>生成</strong>新的 memories</li>
+                        </ul>
+                        <p>线程级选择不会改你的全局设置。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>启用前提：</strong>Memories 默认关闭。需先在 <code>config.toml</code> 中开启：
+                    <pre><code class="language-toml">[features]
+memories = true</code></pre>
+                    官方建议：<strong>必须遵守的规则放 AGENTS.md</strong>，Memories 只当辅助回忆层。
+                </div>
+                <div class="key-point">
+                    <strong>一句话总结：</strong>AGENTS.md 是"项目说明书"（你写的，每次必读）；Memories 是"经验笔记"（Codex 自动记的，可选参考）。<code>/memories</code> 只管后者。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 15: Multi-Module Scenario ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多模块实战</h2>
+                <h4>分层 AGENTS.md 策略</h4>
+                <p>大型项目往往包含多个独立模块。每个模块可能有自己的技术栈和约定。Codex 的多文件继承机制天然支持这种场景：</p>
+                <pre><code class="language-markdown"># 根目录 AGENTS.md（全局适用）
+# — 通用约定 —
+- 所有 Git 提交遵循 Conventional Commits
+- PR 标题格式：type(scope): description
+- 默认用 Node.js 20
+
+---
+
+# frontend/AGENTS.md（仅前端模块）
+# — Frontend Rules —
+- 技术栈：Next.js 14 + TypeScript + Tailwind
+- 测试：Playwright（E2E）+ Jest（单元）
+- 状态管理：只用 Zustand，不用 Redux
+
+---
+
+# backend/AGENTS.md（仅后端模块）
+# — Backend Rules —
+- 语言：Python 3.11
+- 框架：FastAPI
+- ORM：SQLAlchemy 2.0（async）
+- 不用 Django、不用 Flask</code></pre>
+                <div class="info-block">
+                    <strong>文件发现验证：</strong>进入 <code>frontend/</code> 目录启动 Codex，它会加载根目录 AGENTS.md + frontend/AGENTS.md，但<strong>不会</strong>加载 backend/AGENTS.md。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 16: Team vs Personal ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>团队 vs 个人</h2>
+                <h4>仓库规范 + 本地覆盖</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>团队 AGENTS.md（入库）</h4>
+                        <p>放在 <code>AGENTS.md</code>，提交到 Git。所有人共享。内容聚焦在<strong>不可协商的团队约定</strong>：技术选型、代码风格、安全红线、架构约束。</p>
+                    </div>
+                    <div class="card">
+                        <h4>个人 AGENTS.override.md（gitignore）</h4>
+                        <p>放在 <code>AGENTS.override.md</code>，不入库。存放<strong>个人偏好</strong>：喜欢的命名风格、本地 SDK 路径、试验性指令。不影响队友。</p>
+                    </div>
+                </div>
+                <pre><code class="language-bash"># .gitignore
+AGENTS.override.md</code></pre>
+                <div class="key-point">
+                    <strong>选择规则：</strong>如果一条规则"所有人都必须遵守"→ AGENTS.md。如果"对你个人有用但不适合所有人"→ AGENTS.override.md。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 17: Real-World Template ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战模板</h2>
+                <h4>可直接复制的完整骨架</h4>
+                <pre><code class="language-markdown"># 前端项目约定
+
+## 启动与开发
+- 安装依赖：pnpm install（必须用 pnpm，不是 npm 也不是 yarn）
+- 启动：pnpm dev
+- 端口：3000；如需修改，在 .env.local 中设置 PORT
+
+## 技术栈
+- Next.js 14 (App Router)
+- TypeScript strict mode
+- Tailwind CSS + shadcn/ui
+- 状态管理：Zustand
+
+## 编码规范
+- 组件文件：PascalCase，与组件名一致
+- 导出方式：每个组件一个文件，named export
+- API 路由：全部放在 app/api/ 目录下
+- 错误处理：统一用 ErrorBoundary，try/catch 后必须 log
+
+## 测试策略
+- 单元测试：vitest + React Testing Library
+- E2E：Playwright（配置在 playwright.config.ts）
+- 覆盖率门槛：行覆盖率 ≥ 70%
+
+## 提交规范
+- 分支命名：feat/fix/refactor/docs + 简短描述
+- 提交格式：type(scope): description
+- PR 描述中必须关联 issue 编号
+
+## 禁止事项
+- 不使用 any 类型（特殊情况需 code review 批准）
+- 不使用 @ts-ignore
+- 不在组件内直接调用 fetch（统一走 api/ 层）
+- 不提交 .env 文件</code></pre>
+            </div>
+        </section>
+
+        <!-- ========== Slide 18: Common Mistakes ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误</h2>
+                <h4>位置、冲突与长度</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>❌ 文件放错位置</h4>
+                        <p>把 AGENTS.md 放在 <code>src/</code> 里。当你在项目根目录启动 Codex 时，不会发现它——因为它是<strong>从 root 往 CWD</strong> 找，root→root 路径上没有 src/AGENTS.md。</p>
+                    </div>
+                    <div class="card">
+                        <h4>❌ 规则互相矛盾</h4>
+                        <p>根级说"用 Jest"，子级说"用 Vitest"。不明确告诉 Codex 以哪个为准，它会困惑。<strong>原则：子级覆盖根级，但语义要清晰，让 AI 推断矛盾。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>❌ 文件过长</h4>
+                        <p>500 行的 AGENTS.md 不是"详细"，是"噪音"。Codex 的上下文窗口有限，太长会导致关键指令被淹没。<strong>建议控制在 100 行以内，把细节放到具体文档里。</strong></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 19: Mistake - Gitignore ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误补充</h2>
+                <h4>别把 AGENTS.md 也忽略了</h4>
+                <div class="warning">
+                    <strong>⚠️ 新手陷阱</strong>
+                    <p>为了"保持仓库干净"，有些人在 <code>.gitignore</code> 中把 <code>AGENTS.md</code> 也加进去了。结果：队友拉下代码后，Codex 读取不到任何项目规则，全部回到默认行为。</p>
+                </div>
+                <pre><code class="language-bash"># ❌ 别这样做
+# .gitignore
+AGENTS.md
+AGENTS.override.md
+
+# ✅ 应该只 ignore override 文件
+# .gitignore
+AGENTS.override.md</code></pre>
+                <div class="key-point">
+                    <strong>记住：</strong><code>AGENTS.md</code> 是团队共享的，必须入版本控制。只有 <code>AGENTS.override.md</code> 是个人本地的，需要 gitignore。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 20: Testing Your AGENTS.md ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>验证生效</h2>
+                <h4>写好了，怎么知道有没有用？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>方法 1：直接对话测试</h4>
+                        <p>问 Codex："用什么测试框架？"、"目录结构是怎样的？"。如果它能从 AGENTS.md 提取答案，说明机制工作正常。</p>
+                    </div>
+                    <div class="card">
+                        <h4>方法 2：看系统提示词</h4>
+                        <p>在 verbose/trace 模式（某些版本支持）下查看 Codex 收到的系统提示词，确认 AGENTS.md 内容确实在其中。</p>
+                    </div>
+                    <div class="card">
+                        <h4>方法 3：对比行为</h4>
+                        <p>在同一个目录，有/无 AGENTS.md 分别启动会话，让它做同一个任务。如果输出风格不同，说明配置生效了。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 21: Evolution Strategy ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>渐进式完善</h2>
+                <h4>别想一步到位</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>阶段 1：写下最痛的点</h4>
+                        <p>如果你每次都要说"我们用 vitest 不是 jest"——加一条。完成这一步，你就已经消除了 50% 的重复。</p>
+                    </div>
+                    <div class="card">
+                        <h4>阶段 2：记录实时纠正</h4>
+                        <p>当你纠正 Codex 的某个行为时，顺手把正确规则写进 AGENTS.md。这是<strong>最自然的增量方式</strong>，比事后整理高效得多。</p>
+                    </div>
+                    <div class="card">
+                        <h4>阶段 3：定期审视</h4>
+                        <p>每月用 <code>/memories</code> 回顾一次，删掉过时的条目，合并重复的内容。健康的 AGENTS.md 应该像活文档一样演化。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 22: Skill Complement ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>与 Skills</h2>
+                <h4>规则 vs 流程</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>AGENTS.md = 规则</h4>
+                        <p>Codex <strong>应该怎么做事</strong>。是声明式的："用 vitest"、"PascalCase 命名"、"不提交 .env"。它是持续生效的项目上下文。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Skills（第 03 章）= 流程</h4>
+                        <p>Codex <strong>怎么执行特定任务</strong>。是操作性的："提交 PR 前先跑 lint 和 typecheck"、"发布前先/update changelog"。按需触发。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>选择指南：</strong>如果一个指令在任何时候都适用 → AGENTS.md。如果只在特定任务或流程中触发 → Skill。两者可以互相引用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 23: Summary ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>核心回顾</h2>
+                <h4>今天你学到了什么</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>AGENTS.md 本质</h4>
+                        <p>项目级指令文件，Codex 自动发现并加载。解决"每次从零开始"的痛苦。</p>
+                    </div>
+                    <div class="card">
+                        <h4>发现与拼接</h4>
+                        <p>从 project root（由 .git 标记）向 CWD 方向拼接所有 AGENTS.md 文件。子级优先于根级。</p>
+                    </div>
+                    <div class="card">
+                        <h4>工具链</h4>
+                        <p><code>/init</code> 自动生成骨架；<code>/memories</code> 交互式编辑器；<code>AGENTS.override.md</code> 个人覆盖。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 24: Summary Points ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>要点清单</h2>
+                <h4>下次启动前可以做的事</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>必做</h4>
+                        <ul>
+                            <li>在你的主要项目根目录创建 AGENTS.md</li>
+                            <li>写进技术栈、测试命令、命名规范三条核心规则</li>
+                            <li>用 <code>/init</code> 快速生成骨架，再编辑</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>建议做</h4>
+                            <ul>
+                            <li>在 .gitignore 中加入 AGENTS.override.md</li>
+                            <li>用 /memories 记下你个人偏好</li>
+                            <li>每次被 Codex 纠正时，顺手更新 AGENTS.md</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>警惕</h4>
+                        <ul>
+                            <li>不要忽略 AGENTS.md 本身</li>
+                            <li>不要写超过 100 行</li>
+                            <li>不要让规则互相矛盾</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 25: Transition ========== -->
+        <section class="slide title-slide">
+            <div class="chapter-badge">第 02 章</div>
+            <h1>小结</h1>
+            <p>你已经掌握了 AGENTS.md 的核心机制</p>
+            <div class="card-grid" style="max-width: 600px; margin: 30px auto;">
+                <div class="card">
+                    <h4>本章要点</h4>
+                    <ul>
+                        <li>AGENTS.md 是项目级指令文件，Codex 自动发现并加载</li>
+                        <li>从 project root 向 CWD 拼接多个文件，子级覆盖根级</li>
+                        <li>/init 自动生成，/memories 交互管理</li>
+                        <li>栈规范入库 + personal覆盖 gitignore</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="conclusion" style="max-width: 600px; margin-top: 20px; text-align: left;">
+                <strong>下一步：</strong>第 03 章 Slash Commands —— 掌握内置的 / 前缀命令，让 Codex CLI 从"聊天"变成"指令操控"。
+            </div>
+        </section>
+
+    
+    
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+
+        </main>
+<script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>
+

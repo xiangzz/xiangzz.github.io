@@ -216,7 +216,7 @@ const authHandler = async (ctx) => {
                     </div>
                 </div>
                 <div class="info-block">
-                    <strong>CLI 快捷方式：</strong><code>deepagents.toml</code> 中的 <code>[auth]</code> 部分会自动配置 Clerk、Supabase 或匿名认证。<code>[frontend]</code> 部分复用相同配置控制内置聊天 UI 的访问权限。
+                    <strong>CLI 快捷方式：</strong><code>langgraph.json</code> 中的 <code>[auth]</code> 部分会自动配置 Clerk、Supabase 或匿名认证。<code>[frontend]</code> 部分复用相同配置控制内置聊天 UI 的访问权限。
                 </div>
             </div>
         </section>
@@ -267,10 +267,10 @@ const authResult = await authClient.authenticate({
                         <h4>异步编程要点</h4>
                         <ul>
                             <li><strong>创建异步工具</strong>：原生 async 避免线程开销</li>
-                            <li><strong>异步中间件</strong>：用 <code>abefore_agent</code> 而非 <code>before_agent</code></li>
+                            <li><strong>异步中间件</strong>：中间件钩子（如 <code>beforeAgent</code>）原生支持 async</li>
                             <li><strong>异步资源生命周期</strong>：创建沙箱、连接 MCP 服务器都涉及网络调用</li>
                         </ul>
-                        <p><code>ainvoke</code>、<code>astream</code>、<code>abefore_agent</code> —— 同步方法前加 <code>a</code> 前缀</p>
+                        <p><code>invoke</code>、<code>stream</code> 本身即返回 Promise，无需额外前缀</p>
                     </div>
                     <div class="after">
                         <h4>持久化执行</h4>
@@ -369,7 +369,7 @@ export const agent = createDeepAgent({
                     <strong>版本要求：</strong><code>rt.serverInfo</code> 和 <code>rt.executionInfo</code> 命名空间模式需要 <code>deepagents&gt;=1.9.0</code>。
                 </div>
                 <div class="info-block">
-                    <strong>CLI 快捷方式：</strong>如果使用 <code>deepagents deploy</code> 部署，每用户可写内存是内置的：项目根目录下的 <code>user/AGENTS.md</code> 模板会自动按已认证用户划分作用域。有关按子 Agent 隔离的命名空间，请参阅<a href="/oss/javascript/deepagents/deploy#subagents">子 Agent</a> 文档。
+                    <strong>CLI 快捷方式：</strong>如果使用 <code>langgraph deploy</code> 部署，每用户可写内存是内置的：项目根目录下的 <code>user/AGENTS.md</code> 模板会自动按已认证用户划分作用域。有关按子 Agent 隔离的命名空间，请参阅<a href="/oss/javascript/deepagents/deploy#subagents">子 Agent</a> 文档。
                 </div>
                 <h4>命名空间配置的三种变体</h4>
                 <pre><code class="language-javascript">// 1. 助手级别：同一个助手所有用户共享
@@ -431,7 +431,7 @@ new StoreBackend({
                     </div>
                 </div>
                 <div class="info-block">
-                    <strong>CLI 快捷方式：</strong>在 <code>deepagents.toml</code> 的 <code>[sandbox]</code> 下声明沙箱提供商、模板和镜像——构建器会自动安装对应的包并连接沙箱。
+                    <strong>CLI 快捷方式：</strong>在 <code>langgraph.json</code> 的 <code>[sandbox]</code> 下声明沙箱提供商、模板和镜像——构建器会自动安装对应的包并连接沙箱。
                 </div>
             </div>
         </section>
@@ -481,8 +481,8 @@ export async function agent(config: LangGraphRunnableConfig) {
     });
   }
   return createDeepAgent({
-    model: "google_genai:gemini-3.1-pro-preview",
-    backend: await DaytonaSandbox.fromId(sandbox.id),  // 将沙箱作为文件系统后端
+    model: "google-genai:gemini-3.1-pro-preview",
+    backend: await DaytonaSandbox.connect(sandbox.id),  // 将沙箱作为文件系统后端
   });
 }</code></pre>
                 <h4 style="margin-top: 1.5rem;">助手范围沙箱</h4>
@@ -506,8 +506,8 @@ export async function agent(config: LangGraphRunnableConfig) {
     sandbox = await client.create({ labels: { assistant_id: assistantId } });
   }
   return createDeepAgent({
-    model: "google_genai:gemini-3.1-pro-preview",
-    backend: await DaytonaSandbox.fromId(sandbox.id),
+    model: "google-genai:gemini-3.1-pro-preview",
+    backend: await DaytonaSandbox.connect(sandbox.id),
   });
 }</code></pre>
                 <div class="warning">
@@ -596,7 +596,7 @@ for await (const chunk of client.runs.stream(
         <section class="slide">
             <div class="slide-content">
                 <h2>文件同步中间件</h2>
-                <h4>使用 before_agent / after_agent 钩子在沙箱边界之间移动文件</h4>
+                <h4>使用 beforeAgent / afterAgent 钩子在沙箱边界之间移动文件</h4>
                 <pre><code class="language-javascript">import { createMiddleware } from "langchain";
 import { createDeepAgent, CompositeBackend, StoreBackend } from "deepagents";
 import { DaytonaSandbox } from "@langchain/daytona";
@@ -658,7 +658,7 @@ const createSandboxSyncMiddleware = (backend: CompositeBackend) => {
 
 // 后端配置：默认路径走沙箱，/skills/ 和 /memories/ 走持久化 Store
 const backend = new CompositeBackend(
-  await DaytonaSandbox.fromId(sandbox.id),  // 默认：沙箱后端
+  await DaytonaSandbox.connect(sandbox.id),  // 默认：沙箱后端
   {
     "/skills/": new StoreBackend({           // /skills/ 路径 → 持久化存储
       namespace: (rt) => ["skills", rt.serverInfo.user.identity],
@@ -688,7 +688,7 @@ export const agent = createDeepAgent({
                 <div class="card-grid cols-2">
                     <div class="card">
                         <h4>文件传输</h4>
-                        <p>使用 <code>upload_files()</code> 和 <code>download_files()</code> 在沙箱边界之间移动数据。</p>
+                        <p>使用 <code>uploadFiles()</code> 和 <code>downloadFiles()</code> 在沙箱边界之间移动数据。</p>
                         <ul>
                             <li><strong>运行前上传</strong>：用户文件、技能脚本、配置、持久化内存</li>
                             <li><strong>完成后下载</strong>：生成的报告、图表、导出文件</li>
@@ -699,7 +699,7 @@ export const agent = createDeepAgent({
                         <p>沙箱内无法访问宿主机环境变量。两种方式提供密钥：</p>
                         <ul>
                             <li><strong>认证代理</strong>（推荐）：自动注入认证头，密钥不出沙箱</li>
-                            <li><strong>工作区密钥</strong>：Agent 服务器使用的共享密钥。如果通过 CLI 部署，<code>deepagents.toml</code> 旁的 <code>.env</code> 文件会随构建包上传，用于 Agent 服务器密钥；认证代理仅用于沙箱代码调用的内容。</li>
+                            <li><strong>工作区密钥</strong>：Agent 服务器使用的共享密钥。如果通过 CLI 部署，<code>langgraph.json</code> 旁的 <code>.env</code> 文件会随构建包上传，用于 Agent 服务器密钥；认证代理仅用于沙箱代码调用的内容。</li>
                         </ul>
                     </div>
                 </div>
@@ -749,14 +749,14 @@ export const agent = createDeepAgent({
                     </div>
                 </div>
                 <pre><code class="language-javascript">// 中间件生命周期钩子
-// before_model     → 模型调用前
-// wrap_model_call  → 包装模型调用
-// wrap_tool_call   → 包装工具调用
-// after_model      → 模型调用后
-// before_agent     → Agent 循环开始前
-// after_agent      → Agent 循环结束后</code></pre>
+// beforeModel     → 模型调用前
+// wrapModelCall  → 包装模型调用
+// wrapToolCall   → 包装工具调用
+// afterModel      → 模型调用后
+// beforeAgent     → Agent 循环开始前
+// afterAgent      → Agent 循环结束后</code></pre>
                 <div class="info-block">
-                    <strong>注意：</strong>自定义中间件目前不能通过 <code>deepagents deploy</code> 配置。要使用中间件，请通过 LangSmith Deployment 直接部署你的 Agent 模块。
+                    <strong>注意：</strong>自定义中间件目前不能通过 <code>langgraph deploy</code> 配置。要使用中间件，请通过 LangSmith Deployment 直接部署你的 Agent 模块。
                 </div>
                 <img src="https://pic1.fukit.cn/autoupload/k8cnYUDWG-dBzNLixICGUdGNrBetXpGbNs1J43c0F6g/use-dp-images/05-going-to-production-5.png" alt="图：权限与中间件双层防护" class="ai-diagram-img">
             </div>
@@ -775,7 +775,7 @@ import {
 } from "langchain";
 
 const agent = createAgent({
-  model: "google_genai:gemini-3.1-pro-preview",
+  model: "google-genai:gemini-3.1-pro-preview",
   middleware: [
     modelCallLimitMiddleware({ runLimit: 50 }),   // 单次运行最多 50 次模型调用
     toolCallLimitMiddleware({ runLimit: 200 }),    // 单次运行最多 200 次工具调用
@@ -802,7 +802,7 @@ import {
 } from "langchain";
 
 const agent = createAgent({
-  model: "google_genai:gemini-3.1-pro-preview",
+  model: "google-genai:gemini-3.1-pro-preview",
   middleware: [
     // 模型调用重试：超时、5xx 时自动重试（指数退避）
     modelRetryMiddleware({
@@ -835,7 +835,7 @@ const agent = createAgent({
 import { createAgent, piiMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "google_genai:gemini-3.1-pro-preview",
+  model: "google-genai:gemini-3.1-pro-preview",
   middleware: [
     piiMiddleware("email", { strategy: "redact", applyToInput: true }),       // 邮箱替换为 [REDACTED_EMAIL]
     piiMiddleware("credit_card", { strategy: "mask", applyToInput: true }),   // 信用卡部分遮盖如 ****-1234
@@ -979,7 +979,7 @@ stream.submit(
                         <ul>
                             <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 官方文档</a></li>
                             <li><a href="https://smith.langchain.com/">LangSmith</a> — 调试和部署平台</li>
-                            <li><a href="https://github.com/langchain-ai/deepagents">Deep Agents GitHub</a></li>
+                            <li><a href="https://github.com/langchain-ai/deepagentsjs">Deep Agents GitHub</a></li>
                         </ul>
                     </div>
                 </div>

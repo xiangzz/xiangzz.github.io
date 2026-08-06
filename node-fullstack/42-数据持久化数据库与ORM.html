@@ -16,6 +16,21 @@
             <h1>数据持久化</h1>
             <p>数据库与 ORM——让数据真正"存下来"</p>
         </section>
+        <!-- 学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>🎯 学习目标</h3>
+                <h4>学完本章，你将能够：</h4>
+                <ul>
+                    <li>理解 SQL 与 NoSQL 数据库的适用场景，能正确选型</li>
+                    <li>使用 Prisma 定义数据模型和执行数据库迁移</li>
+                    <li>实现基本的 CRUD 操作和关联查询</li>
+                    <li>理解 N+1 查询问题，能用 Prisma 的 include/select 优化</li>
+                    <li>掌握事务操作和数据库索引的基本概念</li>
+                </ul>
+            </div>
+        </section>
+
 
         <!-- 开场 -->
         <section class="slide">
@@ -818,12 +833,90 @@ const result = await Post.aggregate([
 });</code></pre>
                         </div>
                     </div>
+                    <div class="practice-step">
+                        <h3>练习三：揪出 N+1</h3>
+                        <p><strong>任务</strong>：下面这段代码有 N+1 问题。先读懂它错在哪，再用<strong>一次查询</strong>重写。</p>
+                        <pre><code class="language-javascript">// 问题代码：获取 10 篇文章及每篇文章的作者名
+const posts = await prisma.post.findMany({ take: 10 });
+for (const post of posts) {
+    const author = await prisma.user.findUnique({
+        where: { id: post.authorId }
+    });
+    console.log(post.title, author.name);
+}
+// 问题：1 次查文章 + 10 次查作者 = 11 次数据库往返</code></pre>
+                        <p><strong>提示</strong>：回顾 <code>include</code> 的用法——它能让你在查文章时"顺手"把关联的作者一起捞回来。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">// 一次查询搞定，只发 1 条 SQL
+const posts = await prisma.post.findMany({
+    take: 10,
+    include: { author: { select: { name: true } } },
+});
+for (const post of posts) {
+    console.log(post.title, post.author.name);
+}</code></pre>
+                            <p><strong>怎么自查 N+1</strong>：打开 Prisma 的 query log（<code>log: ['query']</code>），或在数据库控制台看慢查询。如果一次业务操作触发的查询数<strong>随数据条数线性增长</strong>，几乎可以断定是 N+1。</p>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习四：转账事务</h3>
+                        <p><strong>任务</strong>：实现一个 <code>transfer</code> 函数，从 A 账户扣款、给 B 账户加款，<strong>保证中途出错时两边都不变</strong>。</p>
+                        <pre><code class="language-javascript">// 账户模型（假设已存在）
+// model Account { id String @id; balance Int }
+// 提示：用 prisma.$transaction 包住两步操作
+async function transfer(fromId, toId, amount) {
+    // 你的代码：
+}</code></pre>
+                        <p><strong>关键点</strong>：扣款后、加款前如果程序崩了，钱就"消失"了。事务保证要么全成功、要么全回滚。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-javascript">async function transfer(fromId, toId, amount) {
+    await prisma.$transaction([
+        prisma.account.update({
+            where: { id: fromId },
+            data: { balance: { decrement: amount } },
+        }),
+        prisma.account.update({
+            where: { id: toId },
+            data: { balance: { increment: amount } },
+        }),
+    ]);
+    // 任一语句失败 → 整个事务回滚，两边余额都不变</code></pre>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
 
         <!-- 收尾 -->
-        <section class="slide title-slide">
+                <!-- 要点总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📝 要点总结</h3>
+                <h4>本章核心知识点</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>数据库选型</h4>
+                        <p>SQL 适合结构化数据和复杂查询，NoSQL 适合灵活 schema 和高写入场景</p>
+                    </div>
+                    <div class="card">
+                        <h4>Prisma 模型</h4>
+                        <p>schema.prisma 定义数据结构，migrate 同步数据库，generate 生成类型</p>
+                    </div>
+                    <div class="card">
+                        <h4>CRUD 与查询</h4>
+                        <p>Prisma Client 提供类型安全的数据库操作，include 解决关联查询</p>
+                    </div>
+                    <div class="card">
+                        <h4>性能优化</h4>
+                        <p>索引加速查询，事务保证一致性，避免 N+1 用 include 或 batch</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+<section class="slide title-slide">
             <h1>下一章</h1>
             <p>数据能存能查了。下一章学习<strong>API 设计与验证</strong>——让接口既好用又安全。</p>
         

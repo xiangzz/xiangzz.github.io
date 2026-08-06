@@ -219,7 +219,7 @@ const assignWorkers: ConditionalEdgeRouter&lt;typeof State, "llmCall"&gt; = (sta
   // state.sections 是编排者 LLM 拆分出的子任务列表
   // 有几个 section，就创建几个工作者
   return state.sections.map(
-    (section) =&gt; new Send("llmCall", { section })
+    (section) =&gt; new Send("llmCall", { sections: [section] })
   );
 };</code></pre>
 
@@ -287,7 +287,7 @@ const orchestrator: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
 
 // 工作者：根据子任务描述生成内容（会被 Send 动态创建多次）
 const llmCall: GraphNode&lt;typeof State&gt; = async (state) =&gt; {
-  const section = state.sections[0]; // Send 传入单个 section
+  const section = state.sections[0]; // Send 传入 { sections: [section] }，这里取第 0 个
   const msg = await llm.invoke(
     `Write a section: "${section.title}" covering: ${section.description}`
   );
@@ -573,7 +573,7 @@ const shouldContinue: ConditionalEdgeRouter&lt;typeof State, "toolNode"&gt; = (s
                 </div>
                 <pre><code class="language-javascript">import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter, Messages, START, END } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { tool } from "langchain";
+import { tool } from "@langchain/core/tools";
 import * as z from "zod";
 
 // 定义工具

@@ -294,10 +294,10 @@
         <section class="slide">
             <div class="slide-content">
                 <h2>三个前提</h2>
-                <h4>启用持久化执行只需要满足三个条件</h4>
+                <h4>两个启用条件 + 一个编码规范</h4>
                 <div class="flow-steps">
                     <div class="flow-step" style="border-top: 3px solid var(--primary-color);">
-                        <h4 style="color: var(--primary-color);">1. 启用持久化</h4>
+                        <h4 style="color: var(--primary-color);">1. 启用持久化 <small>（启用条件）</small></h4>
                         <p>编译时传入 <code>checkpointer</code></p>
                         <pre><code class="language-javascript">// MemorySaver 用于开发
 const graph = workflow.compile({
@@ -305,7 +305,7 @@ const graph = workflow.compile({
 });</code></pre>
                     </div>
                     <div class="flow-step" style="border-top: 3px solid #7C3AED;">
-                        <h4 style="color: #7C3AED;">2. 指定线程</h4>
+                        <h4 style="color: #7C3AED;">2. 指定线程 <small>（启用条件）</small></h4>
                         <p>每次调用传 <code>thread_id</code></p>
                         <pre><code class="language-javascript">// 同一任务用相同 thread_id
 const config = {
@@ -315,7 +315,7 @@ const config = {
 };</code></pre>
                     </div>
                     <div class="flow-step" style="border-top: 3px solid #D97706;">
-                        <h4 style="color: #D97706;">3. 包裹副作用</h4>
+                        <h4 style="color: #D97706;">3. 包裹副作用 <small>（编码规范，非启用所必需）</small></h4>
                         <p>用 <code>task()</code> 包装非确定性操作</p>
                         <div class="warning">
                             <strong>思考题：</strong>你的 Agent 在执行过程中会调用外部 API、写数据库。如果中途崩溃重启，所有操作会重新执行一遍——API 被重复调用、数据库被重复写入。怎么让重启后跳过已经执行过的副作用？
@@ -327,6 +327,9 @@ const result = await task(
   async () => fetch(url)
 );</code></pre>
                     </div>
+                </div>
+                <div class="key-point" style="margin-top: 12px;">
+                    <strong>区分"启用条件"与"编码规范"：</strong>持久化本身只需要 <code>checkpointer</code> + <code>thread_id</code>（前两项）就能工作；<code>task()</code> 不是启用持久化的前提，而是避免<strong>重放时副作用被重复执行</strong>的最佳实践。另外，<code>task()</code> 属于 Functional API——它通常配合 <code>entrypoint</code> 一起使用（<code>import { task, entrypoint } from "@langchain/langgraph"</code>），也可以在 <code>StateGraph</code> 节点内直接调用，本教程示例即采用后者。
                 </div>
                 <pre><code class="language-javascript">// 完整示例：满足三个前提的持久化执行图
 import { StateGraph, MemorySaver, START, END, task } from "@langchain/langgraph";
@@ -898,9 +901,9 @@ await graph.invoke(null, { ...config, command: new Command({ resume: "yes" }) })
                     <div class="card">
                         <h4>官方文档</h4>
                         <ul>
-                            <li><a href="https://langchain-ai.github.io/langgraphjs/concepts/durable_execution/">Durable Execution 概念</a> — 持久化执行的完整说明</li>
-                            <li><a href="https://langchain-ai.github.io/langgraphjs/how-tos/durable_execution/">Durable Execution 实践指南</a> — task() 用法与最佳实践</li>
-                            <li><a href="https://langchain-ai.github.io/langgraphjs/">LangGraph.js 官方文档</a> — 全部 API 参考</li>
+                            <li><a href="https://docs.langchain.com/oss/javascript/langgraph/durable-execution">Durable Execution 概念</a> — 持久化执行的完整说明</li>
+                            <li><a href="https://docs.langchain.com/oss/javascript/langgraph/functional-api">Functional API 实践指南</a> — task() / entrypoint() 用法与最佳实践</li>
+                            <li><a href="https://docs.langchain.com/oss/javascript/langgraph/">LangGraph.js 官方文档</a> — 全部 API 参考</li>
                         </ul>
                     </div>
                     <div class="card">

@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>09 沙箱与权限</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 09 章</div>
+            <h1>沙箱与权限</h1>
+            <p>给 Codex 戴上安全帽 —— Config Profiles 让不同场景拥有不同边界</p>
+            <strong>3 种沙箱模式 · 3 种审批策略 · 多 Profile 管理</strong>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>总是在事后才发现？</h2>
+                <h4>那些"早知道就该拦住它"的瞬间</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>它删了我不想删的文件</h4>
+                        <p>Codex 执行 <code>git clean -fd</code> 时你心头一紧 —— 那些未跟踪的配置文件就这样消失了。<strong>没有任何确认环节</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>它在后台悄悄联网</h4>
+                        <p>Codex 调用了外部 API，把项目数据发了出去。你甚至不知道它做了网络请求。<strong>没有网络访问限制</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>每次弹确认太烦了</h4>
+                        <p>你在做本地实验，Codex 每次写文件都要你点"允许"。第 20 次的时候你开始<strong>无脑回车</strong>，安全机制形同虚设。</p>
+                    </div>
+                </div>
+                <div class="key-point"><strong>沙箱与权限系统就是为这个设计的：</strong>用配置文件定义边界 —— 哪些文件可写、哪些命令要确认、网络是否放行。规则一旦写好，每次会话自动生效。你不需要"记得问" —— 系统永远不会忘。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁读</h4>
+                        <ul>
+                            <li>已经日常使用 Codex CLI，想加固安全边界的团队</li>
+                            <li>需要给不同项目配置不同权限的安全工程师</li>
+                            <li>希望统一团队 Codex 行为规范的 Tech Lead</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完你应该已经能</h4>
+                        <ul>
+                            <li>理解 3 种沙箱模式的差异与适用场景</li>
+                            <li>配置 approval_policy 控制命令审批流程</li>
+                            <li>使用 Config Profile 管理多套权限配置</li>
+                            <li>排查常见沙箱相关错误与权限问题</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>暂时不碰</h4>
+                        <ul>
+                            <li>沙箱底层的 Linux namespace 实现细节</li>
+                            <li>subagent 内部沙箱继承规则</li>
+                            <li>企业级 Codex 部署的组策略管理</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block"><strong>前置知识：</strong>假设你已经读过第 01–07 章，熟悉 Codex CLI 的基本使用和 config.toml 配置文件结构。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>沙箱是什么？</h2>
+                <h4>给 Codex 戴上"安全手套"</h4>
+                <p>沙箱（Sandbox）是 Codex 运行命令时的<strong>隔离环境</strong>。它决定了 Codex 能读哪些文件、能写哪些文件、能否访问网络。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>一句话理解</h4>
+                        <p>沙箱 = 一个"虚拟的工作空间"。Codex 内部的操作（读/写/删/网络）都被限制在这个盒子里。盒子之外的资源，Codex 碰不到。</p>
+                    </div>
+                    <div class="card">
+                        <h4>为什么需要它？</h4>
+                        <ul>
+                            <li><strong>防止误操作</strong>：删库跑路的命令被拦截</li>
+                            <li><strong>防止数据泄露</strong>：敏感文件不可被读取</li>
+                            <li><strong>防止外部通信</strong>：不期望的 API 调用被阻止</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-toml"># config.toml —— sandbox_mode 是顶层键
+sandbox_mode = "workspace-write"</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模式一：read-only</h2>
+                <h4>只读沙箱 —— 最安全的观察者</h4>
+                <p><code>read-only</code> 模式下，Codex <strong>不能修改任何文件</strong>。它只能读文件、运行不会产生副作用的命令。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>谁能做什么？</h4>
+                        <ul>
+                            <li>✅ 读取任意文件</li>
+                            <li>✅ 运行只读命令（<code>ls</code>、<code>cat</code>、<code>git status</code>）</li>
+                            <li>❌ 写入任何文件</li>
+                            <li>❌ 执行写操作（<code>rm</code>、<code>git push</code>）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>典型场景</h4>
+                        <ul>
+                            <li>代码审查 / review</li>
+                            <li>只读对话（问 Codex 问题）</li>
+                            <li>安全审计（Codex 分析你的代码但不碰它）</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-toml"># 只读模式配置
+sandbox_mode = "read-only"</code></pre>
+                <div class="warning"><strong>注意：</strong>read-only 模式下命令不能写文件。某些依赖写入临时目录的工具链可能受限。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模式二：workspace-write</h2>
+                <h4>工作区写入 —— 日常开发首选</h4>
+                <p><code>workspace-write</code> 是<strong>推荐默认模式</strong>。对受版本控制的目录，Codex 默认使用此模式。它可以在你的项目目录内自由读写文件，但目录外的文件仍然只读，<strong>网络默认关闭</strong>。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>谁能做什么？</h4>
+                        <ul>
+                            <li>✅ 读写项目目录内文件</li>
+                            <li>✅ 网络可配置开启（需显式设置）</li>
+                            <li>✅ 创建、删除项目内文件</li>
+                            <li>❌ 修改系统目录（<code>/etc</code>、<code>/usr</code>）</li>
+                            <li>❌ 写入其他项目目录</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>典型场景</h4>
+                        <ul>
+                            <li>日常编码任务</li>
+                            <li>运行测试和构建</li>
+                            <li>安装依赖包（需开启网络）</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-toml"># workspace-write 配置
+sandbox_mode = "workspace-write"
+
+# workspace-write 专属子配置
+[sandbox_workspace_write]
+network_access = true                          # 布尔值，不加引号
+writable_roots = ["/tmp", "/home/user/data"]   # 额外可写目录</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>模式三：danger-full-access</h2>
+                <h4>完全访问 —— 自由但危险</h4>
+                <p><code>danger-full-access</code> 模式下沙箱几乎不存在。Codex 以你的用户权限执行<strong>任何命令</strong>，没有文件系统隔离。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>谁能做什么？</h4>
+                        <ul>
+                            <li>✅ 读写任意文件</li>
+                            <li>✅ 执行任意命令</li>
+                            <li>✅ 访问网络</li>
+                            <li>✅ 安装系统级包</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>典型场景</h4>
+                        <ul>
+                            <li>本地封闭开发环境</li>
+                            <li>容器 / VM 内的开发</li>
+                            <li>系统级配置任务</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-toml"># 完全访问（慎用）
+sandbox_mode = "danger-full-access"</code></pre>
+                <div class="warning"><strong>慎用：</strong>danger-full-access 下 Codex <code>rm -rf /</code> 也能执行。只在完全信任的环境里启用。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三种模式对比</h2>
+                <h4>一眼看清差异</h4>
+                <table>
+                    <thead>
+                        <tr><th>维度</th><th>read-only</th><th>workspace-write</th><th>danger-full-access</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>项目文件读取</td><td>✅</td><td>✅</td><td>✅</td></tr>
+                        <tr><td>项目文件写入</td><td>❌</td><td>✅</td><td>✅</td></tr>
+                        <tr><td>系统文件读取</td><td>✅</td><td>✅</td><td>✅</td></tr>
+                        <tr><td>系统文件写入</td><td>❌</td><td>❌</td><td>✅</td></tr>
+                        <tr><td>网络访问</td><td>默认关闭</td><td>可配置开启</td><td>✅</td></tr>
+                        <tr><td>风险等级</td><td>🟢 低</td><td>🟡 中</td><td>🔴 高</td></tr>
+                        <tr><td>推荐场景</td><td>审查/问答</td><td>日常编码</td><td>隔离环境</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point"><strong>经验法则：</strong>不确定就选 workspace-write。只在明确需要系统级操作时才用 danger-full-access。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>审批策略：never</h2>
+                <h4>全自动 —— 零打断</h4>
+                <p><code>approval_policy = "never"</code> 意味着 Codex <strong>不弹任何审批提示</strong>。但注意：沙箱限制<strong>仍然生效</strong>——越界操作会直接失败而非弹窗。</p>
+                <pre><code class="language-toml"># 全自动模式（approval_policy 是顶层键）
+approval_policy = "never"</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>已经开启 read-only 沙箱</li>
+                            <li>CI/CD 非交互自动化流程</li>
+                            <li>沙箱已定义清晰边界的场景</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>⚠️ 风险</h4>
+                        <ul>
+                            <li>搭配 danger-full-access 极其危险</li>
+                            <li>错误命令没有人工审核环节</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>审批策略：on-request</h2>
+                <h4>按需确认 —— 平衡安全与效率</h4>
+                <p><code>approval_policy = "on-request"</code> 是<strong>官方推荐配置</strong>。沙箱内的常规操作自动执行，仅当操作需要<strong>越出沙箱边界</strong>（如写沙箱外文件、访问网络）时才弹出确认。</p>
+                <pre><code class="language-toml"># 按需审批（受版本控制目录的默认推荐值）
+approval_policy = "on-request"</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>确认时你会看到什么</h4>
+                        <ul>
+                            <li>即将执行的命令内容</li>
+                            <li>影响范围（文件路径、网络 URL）</li>
+                            <li>选项：允许本次 / 拒绝</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>与沙箱的协作</h4>
+                        <p>沙箱定义<strong>技术边界</strong>（能写哪里），审批策略定义<strong>何时问你</strong>。on-request 下沙箱内操作零打断，越界才问——兼顾效率与安全。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>审批策略：untrusted</h2>
+                <h4>每次确认 —— 最高安全门槛</h4>
+                <p><code>approval_policy = "untrusted"</code> 下<strong>每条命令</strong>都需要手动确认。</p>
+                <pre><code class="language-toml"># 每次命令都要确认
+approval_policy = "untrusted"</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>处理生产环境配置</li>
+                            <li>第一次运行不熟悉的仓库</li>
+                            <li>安全审计期间的额外谨慎</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>缺点</h4>
+                        <ul>
+                            <li>每一步都打断，效率较低</li>
+                            <li>习惯后容易"机械回车"</li>
+                            <li>降低 Codex 的自动化价值</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning"><strong>注意：</strong>never 与 untrusted 是两个极端。大部分团队最常用 <code>workspace-write</code> + <code>on-request</code> 的组合（官方 "Auto" 预设）。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>已弃用的 on-failure</h2>
+                <h4>曾经的"失败后确认"模式</h4>
+                <p><code>approval_policy = "on-failure"</code> 在早期版本中存在，命令在沙箱内失败后才请求确认。但官方文档已将其<strong>标记为弃用（deprecated）</strong>。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>官方建议</h4>
+                        <ul>
+                            <li>交互式使用 → 改用 <code>on-request</code></li>
+                            <li>非交互自动化 → 改用 <code>never</code></li>
+                            <li><code>codex exec --full-auto</code> 同样已弃用</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>为什么不推荐</h4>
+                        <ul>
+                            <li>语义不直观，容易误解</li>
+                            <li>权限升级请求行为不符合预期</li>
+                            <li>新版本可能随时移除</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning"><strong>如果你在旧教程里看到 on-failure，请替换为 on-request。</strong></div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>危险命令拦截</h2>
+                <h4>0.144.5：更强的危险命令检测，拒绝原因更清晰</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>覆盖更多 rm 形式</h4>
+                        <p>之前有些"强制删除"的变体（带各种 flag 组合的 <code>rm</code>）能绕过检测。0.144.5 <strong>补全了更多强制 rm 形式</strong>，减少漏网。</p>
+                    </div>
+                    <div class="card">
+                        <h4>拒绝原因更清楚</h4>
+                        <p>被拦截时不再只是干巴巴的"拒绝"，而是<strong>给出更清晰的原因</strong>——告诉你为什么这条命令危险，方便判断是真威胁还是误判。</p>
+                    </div>
+                </div>
+                <div class="key-point"><strong>和审批策略的关系：</strong>危险命令检测是<strong>底层硬拦截</strong>，独立于 approval_policy。即便设了 never，这些命令也会被拦——这是 Codex 给你的最后一道安全网。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>代理配置统一</h2>
+                <h4>0.146：HTTP 代理被各类请求严格遵循</h4>
+                <p>配了代理却仍有请求"漏网"直连，是企业内网最头疼的问题。0.146 起，以下流量<strong>全部遵循已配置的代理</strong>：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <ul>
+                            <li><strong>认证</strong>请求</li>
+                            <li><strong>Plugin 下载</strong></li>
+                            <li><strong>MCP 授权</strong>握手</li>
+                            <li><strong>LM Studio</strong> 连接</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block"><strong>排错价值：</strong>在内网受限环境里，如果某个 MCP server 或 plugin 死活连不上，现在可以确认<strong>它走的也是你配的代理</strong>——排除了"绕过代理直连失败"这种隐蔽原因。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>config.toml 配置</h2>
+                <h4>用文件定义安全边界</h4>
+                <pre><code class="language-toml"># $HOME/.codex/config.toml —— 全局配置
+# sandbox_mode 和 approval_policy 都是顶层键
+
+sandbox_mode = "workspace-write"
+
+# workspace-write 专属子配置段
+[sandbox_workspace_write]
+network_access = true                            # 布尔值，不加引号
+writable_roots = ["/tmp", "/var/log/myapp"]      # 额外可写目录
+
+# 审批策略（顶层键，不是 [approvals] 段）
+approval_policy = "on-request"
+
+# 审核者（顶层键）
+approvals_reviewer = "user"</code></pre>
+                <div class="info-block"><strong>配置文件位置：</strong>全局配置在 <code>$CODEX_HOME/config.toml</code>（<code>CODEX_HOME</code> 默认 <code>~/.codex</code>），项目级配置放在项目的 <code>.codex/config.toml</code>。项目级配置优先（且需项目受信任）。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>CLI 运行时覆盖</h2>
+                <h4>命令行参数优先级最高</h4>
+                <pre><code class="language-bash"># 覆盖沙箱模式（-s 是 --sandbox 简写）
+codex -s read-only
+
+# 覆盖审批策略（-a 是 --ask-for-approval 简写）
+codex -a untrusted
+
+# 同时覆盖模型 + 沙箱
+codex -m gpt-5.6 -s read-only
+
+# 叠加配置文件 Profile
+codex -p oss</code></pre>
+                <table>
+                    <thead><tr><th>参数</th><th>作用</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>-s</code> / <code>--sandbox</code></td><td>覆盖沙箱模式</td><td><code>-s danger-full-access</code></td></tr>
+                        <tr><td><code>-a</code> / <code>--ask-for-approval</code></td><td>覆盖审批策略</td><td><code>-a never</code></td></tr>
+                        <tr><td><code>-m</code> / <code>--model</code></td><td>选择模型</td><td><code>-m gpt-5.6</code></td></tr>
+                        <tr><td><code>-p</code> / <code>--profile</code></td><td>加载额外配置 Profile</td><td><code>-p work</code></td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point"><strong>优先级：</strong>CLI 参数 &gt; 项目 config.toml &gt; 全局 config.toml &gt; 默认值。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Permission Profiles（Beta）</h2>
+                <h4>用命名 Profile 定义细粒度文件/网络规则</h4>
+                <p>Codex 支持实验性的 <strong>Permission Profiles</strong> 系统，在 <code>[permissions]</code> 下定义命名 Profile，用文件系统规则 + 网络域名规则实现最小权限。</p>
+                <div class="warning"><strong>重要：</strong>Permission Profiles 与旧的 <code>sandbox_mode</code>/<code>sandbox_workspace_write</code> 设置<strong>不能混用</strong>。配了 <code>default_permissions</code> 就不要再用 <code>sandbox_mode</code>。</div>
+                <pre><code class="language-toml"># 三种内置 Profile
+# :read-only          — 只读
+# :workspace          — 工作区可写
+# :danger-full-access — 无限制
+
+# 自定义 Profile 示例
+default_permissions = "project-edit"
+
+[permissions.project-edit.workspace_roots]
+"~/code/app" = true
+"~/code/shared-lib" = true
+
+[permissions.project-edit.filesystem.":workspace_roots"]
+"." = "write"
+"**/*.env" = "deny"          # deny 规则始终优先生效
+
+[permissions.project-edit.network]
+enabled = true
+
+[permissions.project-edit.network.domains]
+"api.openai.com" = "allow"
+"*.github.com" = "allow"</code></pre>
+                <div class="info-block"><strong>关键特性：</strong>窄路径的 <code>deny</code> 规则即使被更宽的 <code>read</code>/<code>write</code> 覆盖时也<strong>始终生效</strong>。例如工作区可写但 <code>.env</code> 文件始终被拒绝。</div>
+                <div class="info-block"><strong>官方文档：</strong><a href="https://developers.openai.com/codex/permissions" target="_blank" rel="noopener">Permissions (Beta)</a> · <a href="https://developers.openai.com/codex/config-reference" target="_blank" rel="noopener">Configuration Reference</a> · <a href="https://developers.openai.com/codex/config-advanced" target="_blank" rel="noopener">Advanced Configuration</a></div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>approvals_reviewer</h2>
+                <h4>谁来"看门"？</h4>
+                <p><code>approvals_reviewer</code> 决定谁负责审批 Codex 的操作请求。它控制的是 <code>on-request</code> 策略下触发的审批提示由谁来审。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>两种模式</h4>
+                        <pre><code class="language-toml"># 由人类审批（默认，顶层键）
+approvals_reviewer = "user"
+
+# 由 AI 自动审批（审核子代理）
+approvals_reviewer = "auto_review"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>auto_review 的风险</h4>
+                        <ul>
+                            <li>AI 自行判断命令是否安全</li>
+                            <li>可能存在"AI 误判"</li>
+                            <li>建议只在 read-only 沙箱下用</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>[apps.&lt;name&gt;] 覆盖</h2>
+                <h4>为特定工具定制规则</h4>
+                <p>为不同的 <strong>App / MCP 连接器</strong>指定不同的工具审批和启用规则。<code>apps</code> 段控制的是连接器工具调用，不是 shell 命令。</p>
+                <pre><code class="language-toml"># 默认所有 App 的行为
+[apps._default]
+enabled = true                  # 默认启用所有 App 工具
+destructive_enabled = false     # 带破坏性提示的工具默认需审批
+open_world_enabled = false      # 带开放世界提示的工具默认需审批
+
+# 特定 App 覆盖（如 GitHub 连接器）
+[apps.github]
+default_tools_enabled = true
+default_tools_approval_mode = "auto"   # 自动放行该 App 的工具调用
+
+# 危险 App：始终需要审批
+[apps.docker]
+destructive_enabled = false
+default_tools_approval_mode = "prompt" # 每次都弹确认</code></pre>
+                <div class="info-block"><strong>注意：</strong><code>apps</code> 段控制的是 <strong>MCP / 连接器工具调用</strong>的审批行为，<strong>不是</strong> shell 命令。Shell 命令的审批由 <code>approval_policy</code> + <code>sandbox_mode</code> 控制。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Config Profiles 机制</h2>
+                <h4>一套配置，多种场景</h4>
+                <p>Profile 是 TOML 的"叠加层"。通过 <code>-p &lt;name&gt;</code> 加载 <code>$CODEX_HOME/&lt;name&gt;.config.toml</code>。</p>
+                <pre><code class="language-bash"># 文件结构
+$CODEX_HOME/
+├── config.toml          # 基础配置
+├── work.config.toml     
+├── personal.config.toml 
+└── oss.config.toml      
+
+codex -p work   # 加载 config.toml + work.config.toml
+codex -p oss    # 加载 config.toml + oss.config.toml</code></pre>
+                <div class="key-point"><strong>核心理念：</strong>基础配置放全局，差异配置放 Profile。<code>-p</code> 叠加时，Profile 覆盖同名字段。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Profile：work</h2>
+                <h4>工作项目 —— 适度防御</h4>
+                <pre><code class="language-toml"># $CODEX_HOME/work.config.toml
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false          # 断网
+
+approval_policy = "on-request"
+approvals_reviewer = "user"     # 人工审批</code></pre>
+                <div class="info-block"><strong>特征：</strong>内网开发、无外网、越界操作需要人确认。适合对代码泄露敏感的企业环境。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Profile：personal</h2>
+                <h4>个人项目 —— 舒适高效</h4>
+                <pre><code class="language-toml"># $CODEX_HOME/personal.config.toml
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true
+writable_roots = ["/tmp", "/home/user/downloads"]
+
+approval_policy = "on-request"  # 沙箱内零打断</code></pre>
+                <div class="info-block"><strong>特征：</strong>联网自由，可写 /tmp。沙箱内操作自动放行，越界才确认。适合本地个人开发。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Profile：oss</h2>
+                <h4>开源 repo —— 只读审查</h4>
+                <pre><code class="language-toml"># $CODEX_HOME/oss.config.toml
+sandbox_mode = "read-only"
+
+approval_policy = "never"</code></pre>
+                <div class="key-point"><strong>为什么 read-only + never？</strong>纯审查场景，Codex 只读文件输出意见，不需要交互确认，零打断。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：workspace-write + 网络</h2>
+                <h4>npm install 全流程</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>场景</h4>
+                        <p>让 Codex 初始化一个新的 Express 项目，需要 <code>npm init</code>、<code>npm install</code>。</p>
+                    </div>
+                </div>
+                <pre><code class="language-toml"># config.toml
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true            # npm install 需要网络
+
+approval_policy = "on-request"   # 沙箱内零打断，越界才确认</code></pre>
+                <pre><code class="language-bash">$ codex "帮我初始化一个 Express 项目"
+> ✅ npm init -y          (沙箱内 — 自动执行)
+> ✅ npm install express  (沙箱内 + 网络 — 自动执行)
+> ✅ npm i -D typescript  (沙箱内 + 网络 — 自动执行)
+> ✅ npx tsc --init       (沙箱内 — 自动执行)</code></pre>
+                <div class="info-block"><strong>关键：</strong>所有操作都在沙箱内，on-request 下零打断。只有越出沙箱边界（如写项目外文件）才会弹出确认。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：只读 + /review</h2>
+                <h4>绝对安全的审查</h4>
+                <pre><code class="language-bash">codex -s read-only
+&gt; 请 review src/auth.ts 的安全性</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Codex 能做什么</h4>
+                        <ul>
+                            <li>✅ 读取 <code>src/auth.ts</code> 及相关文件</li>
+                            <li>✅ 分析安全漏洞并输出报告</li>
+                            <li>❌ 修改任何文件（沙箱禁止）</li>
+                            <li>❌ 上网搜索（read-only 默认断网）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>为什么最安全</h4>
+                        <ul>
+                            <li>Prompt 里写"修复它"也无效</li>
+                            <li>Prompt injection 无法破墙</li>
+                            <li>审计日志清晰：只有读取</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：多 Profile 切换</h2>
+                <h4>用 alias 管理场景</h4>
+                <pre><code class="language-bash"># ~/.zshrc or ~/.bashrc
+alias codex-work='codex -p work'
+alias codex-dev='codex -p personal'
+alias codex-review='codex -s read-only -a never'
+
+$ codex-work "写一个支付模块"
+$ codex-dev "做个 side project 首页"
+$ codex-review "review 这个 PR"</code></pre>
+                <div class="info-block"><strong>进阶：</strong>在项目 <code>.codex/config.toml</code> 中直接写差异配置，进入该项目目录时自动叠加生效（无需 <code>-p</code> 指定）。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Profile 叠加规则</h2>
+                <h4>字段如何合并？</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>规则</h4>
+                        <ul>
+                            <li><strong>标量</strong>：Profile 覆盖基础</li>
+                            <li><strong>数组</strong>：Profile 覆盖（不追加！）</li>
+                            <li><strong>表段</strong>：合并后覆盖同名字段</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-toml"># config.toml (基础)
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false
+writable_roots = ["/tmp"]
+
+# personal.config.toml (Profile)
+[sandbox_workspace_write]
+network_access = true
+writable_roots = ["/tmp", "/home/user/downloads"]
+
+# 最终生效：
+# network_access = true        ← Profile 覆盖
+# writable_roots = ["/tmp", "/home/user/downloads"]  ← 整个数组被替换</code></pre>
+                <div class="warning"><strong>数组不是追加！</strong>Profile 的 <code>writable_roots</code> 会<strong>替换</strong>整个基础数组，而不是在后面追加。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：Profile 切换演示</h2>
+                <h4>同一任务，不同行为</h4>
+                <table>
+                    <thead><tr><th>Profile</th><th>sandbox</th><th>approval</th><th>运行 "git push"</th></tr></thead>
+                    <tbody>
+                        <tr><td>work</td><td>workspace-write</td><td>on-request + 人工</td><td>弹出确认 ✅</td></tr>
+                        <tr><td>personal</td><td>workspace-write</td><td>on-request</td><td>沙箱内自动 ✅</td></tr>
+                        <tr><td>oss</td><td>read-only</td><td>never</td><td>沙箱拒绝 ❌</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block"><strong>同一个 <code>git push</code>，三种命运。</strong>这就是 Profile 管理的价值所在。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 1：沙箱审批冲突</h2>
+                <h4>on-request + danger-full-access</h4>
+                <pre><code class="language-toml"># 危险组合
+sandbox_mode = "danger-full-access"
+approval_policy = "on-request"</code></pre>
+                <div class="warning"><strong>问题：</strong>danger-full-access 下没有沙箱边界，on-request 的"越界才问"失去意义。既不安全也不高效。</div>
+                <pre><code class="language-toml"># 修复：用 workspace-write 保持边界
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true
+
+approval_policy = "on-request"</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 2：忘开网络</h2>
+                <h4>npm install 突然失败</h4>
+                <pre><code class="language-toml">sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false  # ← 问题所在</code></pre>
+                <pre><code class="language-bash">$ codex "安装依赖"
+> Error: ECONNREFUSED registry.npmjs.org</code></pre>
+                <div class="warning"><strong>原因：</strong>workspace-write 下 <code>network_access</code> <strong>默认为 false</strong>（网络默认关闭）。需要显式设为 true。</div>
+                <pre><code class="language-toml"># 修复
+[sandbox_workspace_write]
+network_access = true</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 3：数组覆盖陷阱</h2>
+                <h4>Profile 丢了基础可写目录</h4>
+                <pre><code class="language-toml"># config.toml（基础）
+[sandbox_workspace_write]
+writable_roots = ["/tmp/data", "/cache"]
+
+# work.config.toml（Profile）
+[sandbox_workspace_write]
+writable_roots = ["/tmp/work"]  # 替换整个数组！</code></pre>
+                <div class="warning"><strong>结果：</strong><code>/tmp/data</code> 和 <code>/cache</code> 不再可写。Profile 的数组<strong>替换</strong>而非追加基础数组。</div>
+                <pre><code class="language-toml"># 修复：完整列出所有需要的目录
+# work.config.toml
+[sandbox_workspace_write]
+writable_roots = ["/tmp/data", "/cache", "/tmp/work"]</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 4：reviewer 误用</h2>
+                <h4>AI 自己审自己</h4>
+                <pre><code class="language-toml"># 危险
+sandbox_mode = "danger-full-access"
+approval_policy = "on-request"
+approvals_reviewer = "auto_review"</code></pre>
+                <div class="warning"><strong>问题：</strong>沙箱完全打开 + AI 自行判断安全性 = 无安全边界。Codex 可能为了完成任务跳过安全检查。</div>
+                <pre><code class="language-toml"># 修复：高风险必须人工 + 保留沙箱
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+approvals_reviewer = "user"</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 5：-p 顺序</h2>
+                <h4>多 Profile 层层叠加</h4>
+                <pre><code class="language-bash"># 可以接多个 profile
+codex -p work -p personal  # work 先加载，personal 后加载（后者优先）</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>加载顺序</h4>
+                        <ol>
+                            <li>加载全局 <code>config.toml</code></li>
+                            <li>按顺序加载每个 <code>-p</code> Profile</li>
+                            <li>后面的 Profile 覆盖前面的同名字段</li>
+                        </ol>
+                    </div>
+                </div>
+                <div class="info-block"><strong>建议：</strong>不要叠加两个以上 Profile，否则覆盖关系难以追踪。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>沙箱速查表</h2>
+                <h4>快速参考</h4>
+                <table>
+                    <thead><tr><th>你想…</th><th>CLI 参数</th><th>config.toml</th></tr></thead>
+                    <tbody>
+                        <tr><td>只读审查</td><td><code>-s read-only</code></td><td><code>sandbox_mode = "read-only"</code></td></tr>
+                        <tr><td>日常写代码</td><td>默认推荐</td><td><code>sandbox_mode = "workspace-write"</code></td></tr>
+                        <tr><td>写系统文件</td><td><code>-s danger-full-access</code></td><td><code>sandbox_mode = "danger-full-access"</code></td></tr>
+                        <tr><td>开启联网</td><td>—</td><td><code>[sandbox_workspace_write]<br>network_access = true</code></td></tr>
+                        <tr><td>启动不加确认</td><td><code>-a never</code></td><td><code>approval_policy = "never"</code></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>审批策略速查</h2>
+                <h4>三种有效策略</h4>
+                <table>
+                    <thead><tr><th>策略</th><th>行为</th><th>最配沙箱</th><th>推荐度</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>never</code></td><td>不弹确认</td><td><code>read-only</code></td><td>⭐⭐⭐ 审查/CI</td></tr>
+                        <tr><td><code>on-request</code></td><td>越界才确认</td><td><code>workspace-write</code></td><td>⭐⭐⭐⭐⭐ 日常</td></tr>
+                        <tr><td><code>untrusted</code></td><td>每条确认</td><td><code>danger-full-access</code></td><td>⭐⭐ 高安全</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning"><strong>已弃用：</strong><code>on-failure</code> 不再推荐。交互式用 <code>on-request</code>，非交互用 <code>never</code>。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>总结</h2>
+                <h4>给 Codex 一个边界</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>今天学到了什么</h4>
+                        <ul>
+                            <li>3 种沙箱模式：read-only / workspace-write / danger-full-access</li>
+                            <li>3 种审批策略：never / on-request / untrusted（+ 弃用的 on-failure）</li>
+                            <li>CLI 运行时覆盖：<code>-s</code> / <code>-a</code> / <code>-m</code> / <code>-p</code></li>
+                            <li>Config Profile 管理多场景</li>
+                            <li>approvals_reviewer + [apps] 细粒度控制</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>核心原则</h4>
+                        <ul>
+                            <li><strong>沙箱越宽，审批越严</strong></li>
+                            <li><strong>Profile 用差异</strong></li>
+                            <li><strong>数组覆盖需谨慎</strong></li>
+                            <li><strong>高风险人工审</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point"><strong>下一步：</strong>第 10 章 Thread Management —— 多会话管理、上下文传递、对话分支。</div>
+            </div>
+        </section>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 →</button>
+    </div>
+    </main>
+<script src="./references/slide-nav.js"></script>
+<script src="./references/slide-toc.js"></script>
+</body>
+</html>

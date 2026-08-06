@@ -136,8 +136,8 @@ const agent = createDeepAgent({ model: "google-genai:gemini-3.1-pro-preview" });
 
 // 方式二：initChatModel（需要调参） —— 通过 provider 字段指定提供商
 import { initChatModel } from "langchain";
-const model = await initChatModel("gpt-5.4");
-const agent = createDeepAgent({ model, temperature: 0 });
+const model = await initChatModel("openai:gpt-5.5", { temperature: 0 });
+const agent = createDeepAgent({ model });
 
 // 方式三：模型类实例（完全控制） —— 可设置 apiKey、temperature 等所有参数
 import { ChatOpenAI } from "@langchain/openai";
@@ -186,7 +186,7 @@ const agent = createDeepAgent({
                             <td><strong>Azure OpenAI</strong></td>
                             <td><code>azure_openai:</code></td>
                             <td>gpt-5.4</td>
-                            <td><code>@langchain/azure</code></td>
+                            <td><code>@langchain/azure-openai</code></td>
                         </tr>
                         <tr>
                             <td><strong>AWS Bedrock</strong></td>
@@ -466,7 +466,7 @@ const logToolCallsMiddleware = createMiddleware({
 });
 
 // 中间件按数组顺序依次执行，可叠加多个
-const agent = await createDeepAgent({
+const agent = createDeepAgent({
   model: "openai:gpt-5.4",
   tools: [getWeather],
   middleware: [logToolCallsMiddleware],
@@ -502,6 +502,11 @@ const customMiddlewareBad = createMiddleware({
                 <p>解释器为代理提供了一个 QuickJS 运行时。当代理需要<strong>批量处理数据、组合工具调用、在代码中处理错误</strong>时，解释器非常有用。</p>
                 <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
 import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
+// 注意：npm 包 @langchain/quickjs 的部分版本实际导出的是 createQuickJSMiddleware
+// （此时工具名为 js_eval 而非 eval）。若上述 import 报错，请改用：
+//   import { createQuickJSMiddleware } from "@langchain/quickjs";
+//   middleware: [createQuickJSMiddleware()]
+// 两者是同一能力的不同封装层，详见官方文档。
 
 // 添加 eval 工具：Agent 可以在 QuickJS 沙箱中执行 JavaScript
 // 适用于批量处理数据、组合工具调用、复杂错误处理等场景
@@ -708,7 +713,7 @@ const backend = new StateBackend();
 const skillUrl = "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/main/examples/skills/langgraph-docs/SKILL.md";
 const skillContent = await (await fetch(skillUrl)).text();
 
-const agent = await createDeepAgent({
+const agent = createDeepAgent({
   model: "openai:gpt-5.4",
   backend,
   checkpointer,
@@ -741,7 +746,7 @@ const checkpointer = new MemorySaver();
 // 获取记忆文件
 const agentsMd = await (await fetch("https://.../AGENTS.md")).text();
 
-const agent = await createDeepAgent({
+const agent = createDeepAgent({
   model: "openai:gpt-5.4",
   memory: ["/AGENTS.md"],   // 记忆文件路径，每次调用都会加载（与技能的按需加载不同）
   checkpointer,
@@ -796,7 +801,7 @@ const weatherReportSchema = z.object({
 });
 
 // 设置 responseFormat 后，Agent 会返回结构化 JSON 而非自由文本
-const agent = await createDeepAgent({
+const agent = createDeepAgent({
   responseFormat: weatherReportSchema,  // schema 中的 .describe() 帮助模型理解字段含义
   tools: [internetSearch],
 });
@@ -824,7 +829,7 @@ console.log(result.structuredResponse);
                 <p>沙箱是一种特殊的后端——代理在隔离环境中运行，拥有自己的文件系统和 shell。你希望代理能写文件、跑命令，但<strong>不想让它改你本地机器</strong>时，用沙箱。</p>
                 <pre><code class="language-javascript">import { createDeepAgent } from "deepagents";
 import { ChatAnthropic } from "@langchain/anthropic";
-import { DenoSandbox } from "@langchain/deno";
+import { DenoSandbox, createDenoSandboxFactoryFromSandbox } from "@langchain/deno";
 
 // 创建并初始化沙箱 —— 隔离环境，Agent 的代码执行不影响本地机器
 const sandbox = await DenoSandbox.create({
@@ -836,7 +841,7 @@ try {
   const agent = createDeepAgent({
     model: new ChatAnthropic({ model: "claude-opus-4-6" }),
     systemPrompt: "You are a JavaScript coding assistant.",
-    backend: sandbox,    // 将沙箱作为文件系统后端，Agent 在其中执行代码
+    backend: createDenoSandboxFactoryFromSandbox(sandbox),    // 用沙箱构造后端工厂，Agent 在其中执行代码
   });
 
   const result = await agent.invoke({

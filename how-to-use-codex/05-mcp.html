@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>05 MCP 外部工具</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔗</text></svg>">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 05 章</div>
+            <h1>MCP 外部工具</h1>
+            <p>给 Codex 装上第三只眼——调用外部 API、数据库和自定义工具</p>
+            <strong>从"只能聊天"到"连接一切"</strong>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>反复切换的痛苦</h2>
+                <h4>你正在用 Codex 写代码，却需要不断跳出终端去查外部信息</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>查文档要切浏览器</h4>
+                        <p>Codex 不知道最新的 API 参数，你只能打开官网查完再粘回来——<strong>来回切换 20 次</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>查数据库要开客户端</h4>
+                        <p>你需要确认表结构、字段类型，只能切到 DBeaver 或 pgAdmin，复制粘贴结果。</p>
+                    </div>
+                    <div class="card">
+                        <h4>查日志要登服务器</h4>
+                        <p>你想让 Codex 分析线上报错，但它访问不了你的日志平台。每次都要你手动喂数据。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>核心矛盾：</strong>Codex 模型本身无法联网、无法访问私有系统。它需要一个"手"来触碰外部世界——这就是 MCP。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>前置知识</h4>
+                        <ul>
+                            <li>已完成第 01 章：能正常启动 Codex CLI</li>
+                            <li>了解 JSON 基本语法（key-value 结构）</li>
+                            <li>对终端命令行有基本认知</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>学完能做什么</h4>
+                        <ul>
+                            <li>为 Codex 接入实时文档、数据库等外部工具</li>
+                            <li>三种方式配置 MCP server</li>
+                            <li>甚至把 Codex 自身暴露为 MCP server 供其他 agent 调用</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章不覆盖</h4>
+                        <ul>
+                            <li>MCP 协议的底层实现细节（JSON-RPC 2.0 帧格式）</li>
+                            <li>如何从零开发一个 MCP server</li>
+                            <li>OAuth 认证流程（高级 HTTP server 场景）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>示例环境：</strong>Windows + PowerShell。macOS / Linux 命令语法相同。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>MCP 是什么</h2>
+                <h4>Model Context Protocol——让 AI 模型调用外部工具的标准化协议</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>一句话解释</h4>
+                        <p>MCP 就像 USB 接口——<strong>定义了模型与外部工具之间插拔的统一标准</strong>。只要 tool 实现 MCP 协议，任何兼容的 AI client 都能调用它。</p>
+                    </div>
+                    <div class="card">
+                        <h4>三个核心概念</h4>
+                        <ul>
+                            <li><strong>MCP Server：</strong>提供外部能力的程序</li>
+                            <li><strong>MCP Client：</strong>消费 server 能力的程序（Codex CLI）</li>
+                            <li><strong>Transport：</strong>通信方式（stdio 或 HTTP）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="ai-diagram">
+                    <h4>MCP 架构示意</h4>
+                    <p><strong>画面：</strong>左侧 Codex CLI (Client) 方块，右侧多个 MCP Server 方块（GitHub、Database、Docs）。</p>
+                    <p><strong>关系：</strong>Client 与 Server 双向箭头连线，标注 stdio 或 HTTP。</p>
+                    <p><strong>标注：</strong>连线标注"MCP Protocol (JSON-RPC 2.0)"。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三种配置方式</h2>
+                <h4>告诉 Codex 去哪里找 MCP server，有三种等价途径</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>方式一：.mcp.json</h4>
+                        <p>放在项目根目录的 JSON 文件。<strong>可提交到 Git</strong>，团队共享。</p>
+                        <pre><code class="language-bash">my-project/
++-- .mcp.json      <- MCP 配置
++-- AGENTS.md
++-- src/</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>方式二：config.toml</h4>
+                        <p>写在 Codex 配置文件的 <code>[mcp_servers]</code> 段。适合个人全局配置。</p>
+                    </div>
+                    <div class="card">
+                        <h4>方式三：CLI 动态</h4>
+                        <p>用 <code>codex mcp add</code> 命令临时添加。<strong>不写文件</strong>，即时生效，适合快速试用。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>.mcp.json 格式</h2>
+                <h4>最常用的配置方式——项目级 JSON 文件</h4>
+                <pre><code class="language-json">{
+  "servers": {
+    "github": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"]
+    },
+    "openai-docs": {
+      "transport": "http",
+      "url": "https://developers.openai.com/mcp"
+    }
+  }
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>顶层结构</h4>
+                        <p><code>servers</code> 是一个对象，<strong>key 就是 server 名称</strong>，value 是 transport 配置。Codex 启动时自动读取。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>stdio 模式</h2>
+                <h4>Codex 启动子进程，通过标准输入输出通信</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>本地安装的工具（npm/pip/apt 安装）</li>
+                            <li>需要访问本机文件系统的 tool</li>
+                            <li>需要环境变量注入的私有 API</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>配置字段</h4>
+                        <ul>
+                            <li><code>"transport": "stdio"</code></li>
+                            <li><code>"command"</code>：可执行文件路径</li>
+                            <li><code>"args"</code>：命令行参数数组</li>
+                            <li><code>"env"</code>：（可选）环境变量</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-json">"my-server": {
+  "transport": "stdio",
+  "command": "node",
+  "args": ["./my-mcp-server.js"],
+  "env": { "API_KEY": "sk-..." }
+}</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>HTTP 模式</h2>
+                <h4>通过网络 URL 连接远程 MCP server</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>公开托管的 MCP 服务（如 OpenAI Docs MCP）</li>
+                            <li>需要在多机器间共享的 server</li>
+                            <li>不想安装本地依赖的场景</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>配置字段</h4>
+                        <ul>
+                            <li><code>"transport": "http"</code></li>
+                            <li><code>"url"</code>：MCP server 的 HTTPS 端点</li>
+                            <li><code>"headers"</code>：（可选）自定义请求头</li>
+                        </ul>
+                    </div>
+                </div>
+                <pre><code class="language-json">"openai-docs": {
+  "transport": "http",
+  "url": "https://developers.openai.com/mcp",
+  "headers": {
+    "Authorization": "Bearer your-token"
+  }
+}</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>config.toml 内联</h2>
+                <h4>在全局配置中直接声明 MCP server</h4>
+                <p>Codex 支持在 <code>config.toml</code> 中使用 <code>[mcp_servers]</code> 段：</p>
+                <pre><code class="language-toml">[mcp_servers.github]
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+
+[mcp_servers.openai-docs]
+transport = "http"
+url = "https://developers.openai.com/mcp"</code></pre>
+                <div class="intro-block">
+                    <strong>何时选用：</strong>Toml 内联适合不想新增 .mcp.json 的场景；.mcp.json 更适合团队共享。两种等价，可同时使用。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>CLI 管理命令</h2>
+                <h4>用 codex mcp 子命令动态管理 server</h4>
+                <table style="width:100%; border-collapse:collapse;">
+                    <thead><tr>
+                        <th style="text-align:left; padding:8px; border-bottom:2px solid #ccc;">命令</th>
+                        <th style="text-align:left; padding:8px; border-bottom:2px solid #ccc;">作用</th>
+                    </tr></thead>
+                    <tbody>
+                        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><code>codex mcp add &lt;name&gt; -- &lt;cmd&gt; [args...]</code></td><td style="padding:8px; border-bottom:1px solid #eee;">添加 stdio server</td></tr>
+                        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><code>codex mcp add &lt;name&gt; --url &lt;url&gt;</code></td><td style="padding:8px; border-bottom:1px solid #eee;">添加 HTTP server</td></tr>
+                        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><code>codex mcp list</code></td><td style="padding:8px; border-bottom:1px solid #eee;">列出所有 server</td></tr>
+                        <tr><td style="padding:8px;"><code>codex mcp remove &lt;name&gt;</code></td><td style="padding:8px;">移除 server</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point"><strong>小贴士：</strong><code>--</code> 是分隔符——之前是 MCP 参数，之后是命令原文透传。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：OpenAI Docs</h2>
+                <h4>用一个命令让 Codex 实时查阅开发者文档</h4>
+                <pre><code class="language-bash">$ codex mcp add openaiDeveloperDocs --url https://developers.openai.com/mcp</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>这行做了什么</h4>
+                        <ol>
+                            <li>注册名为 <code>openaiDeveloperDocs</code> 的 MCP server</li>
+                            <li>使用 HTTP transport 连接官方端点</li>
+                            <li>Codex 启动后自动加载 server 的所有工具</li>
+                        </ol>
+                    </div>
+                    <div class="card">
+                        <h4>如何使用</h4>
+                        <p>启动 Codex 后直接问：</p>
+                        <pre><code>用户：response_format 参数支持哪些类型？</code></pre>
+                        <p>Codex <strong>自动调用 MCP 工具</strong>查询最新文档，而非依赖训练数据。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>验证已添加</h2>
+                <h4>用 list 命令确认 server 注册成功</h4>
+                <pre><code class="language-bash">$ codex mcp list
+  openaiDeveloperDocs (http)  connected
+    url: https://developers.openai.com/mcp
+    tools: query_docs, search_docs</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>输出解读</h4>
+                        <ul>
+                            <li><strong>connected：</strong>server 可达，工具已加载</li>
+                            <li><strong>tools：</strong>server 暴露的所有可调用工具</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>移除不需要的</h4>
+                        <pre><code class="language-bash">$ codex mcp remove openaiDeveloperDocs
+Removed MCP server: openaiDeveloperDocs</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：GitHub MCP</h2>
+                <h4>让 Codex 直接操作你的 GitHub 仓库</h4>
+                <pre><code class="language-json">{
+  "servers": {
+    "github": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_YourTokenHere"
+      }
+    }
+  }
+}</code></pre>
+                <div class="warning"><strong>安全提醒：</strong>Token 不要直接写进 .mcp.json 并提交 Git！</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>GitHub MCP 能力</h2>
+                <h4>接入后 Codex 可以代劳这些操作</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>issue 管理</h4>
+                        <ul><li>列出 open issues</li><li>创建新 issue</li><li>评论 / 关闭 issue</li></ul>
+                    </div>
+                    <div class="card">
+                        <h4>PR 操作</h4>
+                        <ul><li>列出待审核的 PR</li><li>查看 diff 和 CI 状态</li><li>创建 PR</li></ul>
+                    </div>
+                    <div class="card">
+                        <h4>代码浏览</h4>
+                        <ul><li>按关键词搜索代码</li><li>查看文件内容</li><li>列出目录结构</li></ul>
+                    </div>
+                </div>
+                <pre><code>用户：列出 openai/codex 仓库中带 "bug" 标签的 open issue
+Codex：[调用 github MCP list_issues] 找到了 3 个...</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Server 级别配置</h2>
+                <h4>除了 transport，还有 env、timeout 等字段</h4>
+                <pre><code class="language-json">"my-server": {
+  "transport": "stdio",
+  "command": "python",
+  "args": ["./server.py"],
+  "env": {
+    "DATABASE_URL": "postgresql://localhost/mydb"
+  },
+  "timeout": 30,
+  "enabled": true
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card"><h4>env</h4><p>注入子进程的环境变量。<strong>不共享父进程</strong>——只写在这里 server 才能读到。</p></div>
+                    <div class="card"><h4>timeout</h4><p>单次调用超时秒数，默认 30 秒。复杂查询可调高。</p></div>
+                    <div class="card"><h4>enabled</h4><p><code>false</code> 可临时禁用 server 而不删除配置。</p></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>过滤生效 Server</h2>
+                <h4>只启用当前任务需要的 server</h4>
+                <pre><code class="language-toml">enabled_mcpjson_servers = ["github", "openaiDeveloperDocs"]
+# 或排除特定 server
+disabled_mcpjson_servers = ["database"]</code></pre>
+                <div class="intro-block"><strong>为什么？</strong>工具越多，上下文窗口占用越大，响应越慢。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>网络访问权限</h2>
+                <h4>HTTP 模式的 server 需要开启网络权限</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>沙箱环境下</h4>
+                        <p>Codex 启用沙箱时默认不开放网络。需要显式允许：</p>
+                        <pre><code class="language-toml">[sandbox_workspace_write]
+network_access = true</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>stdio 不需要</h4>
+                        <p>stdio server 在本地执行，网络调用不受沙箱限制。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>反向操作：暴露 Codex</h2>
+                <h4>把 Codex 自身作为 MCP server 给其他 agent 调用</h4>
+                <div class="card-grid">
+                    <div class="card"><h4>这是什么</h4><p>Codex 不仅能当 client，还能反向作为 MCP server——让其他 AI agent 把代码生成当作工具调用。</p></div>
+                    <div class="card"><h4>协议</h4><p><strong>JSON-RPC 2.0 over stdio</strong>。标准协议，任何 MCP client 都能对接。</p></div>
+                    <div class="card"><h4>状态</h4><p><strong>实验性功能</strong>。API 可能变更，适合尝鲜和原型开发。</p></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>mcp-server 命令</h2>
+                <h4>一行命令启动 Codex MCP server</h4>
+                <pre><code class="language-bash">$ codex mcp-server</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>输出</h4>
+                        <p>通过 stdio 以 JSON-RPC 2.0 帧通信。可管道传给 client：</p>
+                        <pre><code class="language-bash">$ codex mcp-server | your_mcp_client</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>暴露的工具</h4>
+                        <ul>
+                            <li><code>codex/exec</code>——执行自然语言任务</li>
+                            <li><code>codex/status</code>——查询当前会话状态</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Python 连接示例</h2>
+                <h4>用 Python SDK 连接 Codex MCP server</h4>
+                <pre><code class="language-python">import asyncio
+
+async def main():
+    process = await asyncio.create_subprocess_exec(
+        "codex", "mcp-server",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+    )
+    reader = process.stdout
+    # 初始化握手、调用工具...
+    response = await reader.read()
+    print(f"Codex 暴露的工具: {response}")
+
+asyncio.run(main())</code></pre>
+                <div class="key-point"><strong>关键思路：</strong>Codex 变成另一个 agent 手里的"工具"——这就是 agent 编排的常见模式。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>编排场景</h2>
+                <h4>把 Codex 嵌入更大的 agent 工作流</h4>
+                <div class="card-grid">
+                    <div class="card"><h4>代码审查流水线</h4><p>主 agent 调用 Codex MCP 生成代码，再调用 linter MCP 检查。</p></div>
+                    <div class="card"><h4>自动化运维</h4><p>编排 agent 调用 Codex MCP 生成修复脚本，经审批后执行。</p></div>
+                    <div class="card"><h4>CI/CD 管道</h4><p>CI 服务器运行轻量 MCP client，测试失败时调用 Codex 生成修复 PR。</p></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全注意</h2>
+                <h4>MCP server 能做的事，Codex 就能做——谨慎授权</h4>
+                <div class="card-grid">
+                    <div class="card"><h4>信任已知来源</h4><p>只添加来自官方库、知名厂商或自己编写的 MCP server。</p></div>
+                    <div class="card"><h4>审查配置</h4><p>提交 PR 前人工 review server 地址和命令。</p></div>
+                    <div class="card"><h4>最小权限</h4><p>给 server 的 token 只授予最小必要权限。</p></div>
+                </div>
+                <div class="warning"><strong>红线：</strong>永远不要将 admin 密钥放进 .mcp.json 并提交 Git。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>连接更稳了</h2>
+                <h4>0.146：认证变化时刷新，健康连接不中断</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>认证变了自动刷新</h4>
+                        <p>当你重新登录、token 轮换或切换账号时，<strong>MCP 连接和 Apps 工具会自动刷新</strong>，不用手动重启每个 server。</p>
+                    </div>
+                    <div class="card">
+                        <h4>健康连接不断</h4>
+                        <p>重连机制现在<strong>不中断仍在健康的连接</strong>——只重建出问题的那部分，避免"一个 server 抖动，全部重连"。</p>
+                    </div>
+                </div>
+                <div class="info-block"><strong>实际影响：</strong>长会话里偶尔的认证过期、网络波动，不再让所有 MCP 工具集体掉线。你大概率感知不到这次改进——因为本来该报错的地方，现在静默恢复了。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误</h2>
+                <h4>server 启动失败？先排查这些</h4>
+                <div class="card-grid">
+                    <div class="card"><h4>启动失败</h4><p><strong>原因：</strong>command 路径错误或依赖未安装。</p><p><strong>修复：</strong>终端直接运行 command + args。</p><pre><code class="language-bash">$ npx -y @modelcontextprotocol/server-github</code></pre></div>
+                    <div class="card"><h4>transport 错误</h4><p><strong>原因：</strong>写了 tcp 或其他无效值。</p><p><strong>修复：</strong>只允许 stdio 或 http。JSON key 不要拼错。</p></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 (2)</h2>
+                <div class="card-grid">
+                    <div class="card"><h4>PATH 环境问题</h4><p><strong>原因：</strong>子进程找不到 npx / node / python。</p><p><strong>修复：</strong>在 env 中显式指定 PATH。</p></div>
+                    <div class="card"><h4>HTTP 连接超时</h4><p><strong>原因：</strong>URL 不可达、网络受限。</p><p><strong>修复：</strong>先用 curl -I 测试。确认是否要 network_access = true。</p></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>综合示例</h2>
+                <h4>多 server 混合配置</h4>
+                <pre><code class="language-json">{
+  "servers": {
+    "github": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_TOKEN": "$GH_TOKEN" }
+    },
+    "openai-docs": {
+      "transport": "http",
+      "url": "https://developers.openai.com/mcp"
+    },
+    "notion": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@mcp/server-notion"],
+      "enabled": false
+    }
+  }
+}</code></pre>
+                <div class="intro-block"><strong>要点：</strong>混合 stdio + HTTP；用 enabled: false 临时禁用；$GH_TOKEN 引用环境变量。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>调试技巧</h2>
+                <h4>server 出了问题怎么排查</h4>
+                <div class="card-grid">
+                    <div class="card"><h4>单独运行 server</h4><p>先脱离 Codex，终端直接运行 command + args。</p><pre><code class="language-bash">$ npx -y @modelcontextprotocol/server-github</code></pre></div>
+                    <div class="card"><h4>查看详细日志</h4><pre><code class="language-toml">[logging]
+level = "debug"</code></pre></div>
+                    <div class="card"><h4>验证 JSON 合法</h4><p>一个多余逗号就导致全部不加载。</p><pre><code class="language-bash">$ python -m json.tool .mcp.json</code></pre></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>MCP 生态</h2>
+                <h4>可用 server 远不止这两个</h4>
+                <div class="card-grid">
+                    <div class="card"><h4>官方集合</h4><p><code>modelcontextprotocol/servers</code> 维护数十个官方实现：数据库、浏览器、Git、Slack 等。</p></div>
+                    <div class="card"><h4>社区贡献</h4><p>越来越多公司发布自己的 MCP server。任何 HTTP API 都可以包装。</p></div>
+                    <div class="card"><h4>自建 server</h4><p>用 Python mcp 包或 TypeScript SDK 几行代码就能创建。</p></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>CLI vs 文件</h2>
+                <h4>什么时候用哪种方式</h4>
+                <table style="width:100%; border-collapse:collapse;">
+                    <thead><tr>
+                        <th style="text-align:left; padding:8px; border-bottom:2px solid #ccc;">场景</th>
+                        <th style="text-align:left; padding:8px; border-bottom:2px solid #ccc;">推荐方式</th>
+                        <th style="text-align:left; padding:8px; border-bottom:2px solid #ccc;">理由</th>
+                    </tr></thead>
+                    <tbody>
+                        <tr><td style="padding:8px; border-bottom:1px solid #eee;">团队项目</td><td style="padding:8px; border-bottom:1px solid #eee;">.mcp.json</td><td style="padding:8px; border-bottom:1px solid #eee;">可提交 Git 共享</td></tr>
+                        <tr><td style="padding:8px; border-bottom:1px solid #eee;">个人全局</td><td style="padding:8px; border-bottom:1px solid #eee;">config.toml</td><td style="padding:8px; border-bottom:1px solid #eee;">所有项目都能用</td></tr>
+                        <tr><td style="padding:8px; border-bottom:1px solid #eee;">快速试用</td><td style="padding:8px; border-bottom:1px solid #eee;">codex mcp add</td><td style="padding:8px; border-bottom:1px solid #eee;">一行命令，不留痕</td></tr>
+                        <tr><td style="padding:8px;">排除/过滤</td><td style="padding:8px;">config.toml</td><td style="padding:8px;">enabled/disabled 列表</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手练习</h2>
+                <h4>三步完成你的第一个 MCP 接入</h4>
+                <div class="practice-container" style="flex-direction: column; gap: 20px;">
+                    <div class="practice-step"><h3>试一个试</h3><pre><code class="language-bash">$ codex mcp add openaiDeveloperDocs --url https://developers.openai.com/mcp</code></pre></div>
+                    <div class="practice-step"><h3>改一个改</h3><p>创建 <code>.mcp.json</code>，加入 GitHub MCP server。单独运行确认。</p></div>
+                    <div class="practice-step"><h3>查一个查</h3><p>启动 Codex，问一个你不确定的问题。观察是否自动查询。</p></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>进阶阅读</h2>
+                <h4>想深入了解 MCP 生态？从这里开始</h4>
+                <div class="card-grid">
+                    <div class="card"><h4>官方协议规范</h4><p><code>modelcontextprotocol.io</code>——完整规范文档。</p></div>
+                    <div class="card"><h4>官方 Server 列表</h4><p><code>github.com/modelcontextprotocol/servers</code>——精选 server 实现。</p></div>
+                    <div class="card"><h4>自建 Server 教程</h4><p><code>modelcontextprotocol.io/quickstart</code>——5 分钟用 Python 创建。</p></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章回顾</h2>
+                <div class="card-grid">
+                    <div class="card"><h4>核心概念</h4><ul><li>MCP = Model Context Protocol</li><li>Server / Client / Transport 三件套</li><li>两种 transport：stdio + HTTP</li></ul></div>
+                    <div class="card"><h4>三种配置</h4><ul><li>.mcp.json——项目级</li><li>config.toml——全局内联</li><li>codex mcp add——CLI 动态</li></ul></div>
+                    <div class="card"><h4>独特亮点</h4><ul><li>codex mcp-server 反向暴露</li><li>enabled/disabled 过滤</li><li>HTTP 需 network_access</li></ul></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide title-slide">
+            <div class="chapter-badge">第 05 章</div>
+            <h1>小结</h1>
+            <p>Codex 不再只是终端里的对话框——它是一个连接外部世界的节点</p>
+            <div class="card-grid" style="max-width: 800px; margin: 30px auto;">
+                <div class="card">
+                    <h4>本章要点</h4>
+                    <ul>
+                        <li>MCP 让 Codex 调用外部工具（stdio / HTTP）</li>
+                        <li>三种配置方式：.mcp.json / config.toml / CLI 命令</li>
+                        <li>用 codex mcp-server 反向暴露 Codex 给其他 agent</li>
+                        <li>安全第一：最小权限、审查配置、不硬编码密钥</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="conclusion" style="max-width: 800px; margin-top: 20px; text-align: left;">
+                <strong>下一步：</strong>第 06 章 Agent Plugins —— MCP 是单点工具连接，Plugins 则把 MCP、Skills、AGENTS.md 打包成一个可分享、可迁移的能力包。
+            </div>
+        </section>
+
+    
+    
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+        </main>
+<script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

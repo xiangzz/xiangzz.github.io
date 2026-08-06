@@ -362,6 +362,21 @@ eval_sample(model, tokenizer, args, idx, prompt, audio_inputs, f"mix-...", pixel
         <section class="slide">
             <div class="slide-content">
                 <h3>解码三步走</h3>
+                <p>Talker 吐出来的是一串串 8 层整数码本，人耳听不懂。要变成能播放的声音，<strong>依次走三步</strong>（对应 <code>eval_omni.py</code> 第 71-82 行）：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>① 整理成码本张量</h4>
+                        <p>把生成的帧列表筛出有效帧（每帧必须 8 层齐整），转置后加一维 batch，拼成 <code>(1, 8, T)</code> 的整数张量——Mimi 解码器要求的输入形状。</p>
+                    </div>
+                    <div class="card">
+                        <h4>② 清零控制码</h4>
+                        <p>把 <code>≥2049</code> 的特殊码（pad/stop/spk）<strong>清零</strong>（不是删除），它们不是真实声音，留着会让解码出杂音。下一页详讲。</p>
+                    </div>
+                    <div class="card">
+                        <h4>③ Mimi 解码 + 存盘</h4>
+                        <p>送进 <code>mimi_model.decode()</code> 得到 24kHz 波形，先写 WAV，再用 pydub 转 64kbps 的 MP3，最后删掉中间的 WAV。</p>
+                    </div>
+                </div>
                 <div class="ai-diagram">
                   <h4>图：音频从码本还原为波形的流程</h4>
                   <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：

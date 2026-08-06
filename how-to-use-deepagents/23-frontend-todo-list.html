@@ -54,8 +54,8 @@
         <section class="slide">
             <div class="slide-content">
                 <h2>工作原理</h2>
-                <h4>LangGraph Agent 的自定义状态键 + useStream hook 的实时同步</h4>
-                <p>在 LangGraph Agent 中，状态不仅限于消息。你可以定义<strong>自定义状态键</strong>来保存任意数据。本例中就是一个 <code>todos</code> 数组。当 Agent 执行计划时，它将每个待办项的状态从 <code>"pending"</code> 更新为 <code>"in_progress"</code> 再到 <code>"completed"</code>。</p>
+                <h4>DeepAgents 内置的 todos 状态 + useStream hook 的实时同步</h4>
+                <p>在 LangGraph Agent 中，状态不仅限于消息。除了你可以自己定义的自定义状态键，DeepAgents 还内置了 <code>todos</code> 数组来保存 Agent 的任务计划——它由内置的 <code>todoListMiddleware</code> 自动注入，<strong>无需手动定义</strong>。当 Agent 执行计划时，它通过内置的 <code>write_todos</code> 工具把每个待办项的状态从 <code>"pending"</code> 更新为 <code>"in_progress"</code> 再到 <code>"completed"</code>。</p>
                 <div class="flow-steps">
                     <div class="flow-step">
                         <h4>1. 用户提交</h4>
@@ -78,17 +78,14 @@
                         <p>组件响应式更新视图</p>
                     </div>
                 </div>
-                <pre><code class="language-javascript">// Agent 端：在 LangGraph 状态注解中定义 todos 自定义状态键
+                <pre><code class="language-javascript">// Agent 端：todos 是 DeepAgents 内置状态键，
+// 由 createAgent({ middleware: [todoListMiddleware()] }) 自动注入，
+// 开发者无需（也不应）在 Annotation 中手动定义它。
+// Agent 通过内置的 write_todos 工具更新 todo 列表（每次调用替换整个数组）。
 const AgentState = Annotation({
   // messages 是 LangGraph 的标准状态键，使用内置的消息归并器
   messages: Annotation({ reducer: messagesReducer }),
-  // 自定义状态键：todos 数组，保存 Agent 的任务计划
-  todos: Annotation({
-    // 归并器：如果有新值就替换，否则保留旧值
-    reducer: (prev, next) => next ?? prev,
-    // 默认值为空数组
-    default: () => [],
-  }),
+  // 在这里你只需定义自己的自定义状态键；todos 会由中间件自动加入
 });
 
 // 前端：useStream hook 建立与 Agent 的流式连接
@@ -204,7 +201,7 @@ const todos = computed(
                         <h4>Angular 实现</h4>
                         <pre><code class="language-javascript">import { Component, computed }
   from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { injectStream } from "@langchain/angular";
 import type { myAgent } from "./agent";
 
 const AGENT_URL = "http://localhost:2024";
@@ -224,8 +221,8 @@ const AGENT_URL = "http://localhost:2024";
   `,
 })
 export class TodoAgentComponent {
-  // Angular 中 useStream 返回 Signal 包装的响应式对象
-  stream = useStream&lt;typeof myAgent&gt;({
+  // Angular 中 injectStream 返回 Signal 包装的响应式对象
+  stream = injectStream&lt;typeof myAgent&gt;({
     apiUrl: AGENT_URL,
     assistantId: "deep_agent_todo_list",
   });
@@ -488,8 +485,8 @@ const percentage = todos.length
         <section class="slide">
             <div class="slide-content">
                 <h2>自定义状态</h2>
-                <h4>stream.values 可以暴露 Agent 定义的任何自定义状态——todos 只是开始</h4>
-                <p>此模式演示了一个强大的原则：<code>stream.values</code> 不限于消息，它暴露你的 Agent 定义的<strong>任何自定义状态键</strong>。</p>
+                <h4>stream.values 可暴露内置的 todos 以及你自定义的任何状态键</h4>
+                <p>此模式演示了一个强大的原则：<code>stream.values</code> 不限于消息，它暴露 Agent 状态中的所有键——既包括 DeepAgents 内置的 <code>todos</code>，也包括你在状态模式中<strong>自定义的状态键</strong>。</p>
                 <div class="card-grid">
                     <div class="card">
                         <h4>进度指标</h4>
@@ -512,12 +509,12 @@ const percentage = todos.length
                         <p>适用于：研究助手、文献综述</p>
                     </div>
                 </div>
-                <pre><code class="language-javascript">// 除了 todos，stream.values 还可访问 Agent 定义的任何自定义状态键
+                <pre><code class="language-javascript">// 除内置的 todos 外，stream.values 还可访问你在状态模式中定义的自定义状态键
 const document = stream.values?.document;                 // Agent 正在构建的文档
 const sources = stream.values?.sources ?? [];             // Agent 收集的引用来源
 const confidence = stream.values?.confidence_score;       // Agent 的置信度评分</code></pre>
                 <div class="key-point">
-                    <strong>零配置：</strong>自定义状态键在你的 LangGraph 图的状态模式中定义。<code>useStream</code> hook 会自动将它们包含在 <code>stream.values</code> 中，无需任何额外的客户端配置。
+                    <strong>零配置：</strong>内置的 <code>todos</code> 由 <code>todoListMiddleware</code> 自动注入；而 <code>progress</code>、<code>document</code>、<code>decisions</code>、<code>sources</code> 等自定义状态键则在你 LangGraph 图的状态模式中由你自己定义。<code>useStream</code> hook 会自动将它们一并包含在 <code>stream.values</code> 中，无需任何额外的客户端配置。
                 </div>
             </div>
         </section>
@@ -716,7 +713,7 @@ const confidence = stream.values?.confidence_score;       // Agent 的置信度�
                     <div class="card">
                         <h4>你学到了什么</h4>
                         <ul>
-                            <li>通过 <code>todos</code> 自定义状态键跟踪 Agent 执行进度</li>
+                            <li>通过 DeepAgents 内置的 <code>todos</code> 状态键跟踪 Agent 执行进度</li>
                             <li><code>useStream</code> hook 通过 <code>stream.values</code> 暴露自定义状态</li>
                             <li>Todo 接口：<code>status</code>（三态）+ <code>content</code>（描述）</li>
                             <li>构建 TodoList、ProgressBar、TodoItem 三层组件</li>

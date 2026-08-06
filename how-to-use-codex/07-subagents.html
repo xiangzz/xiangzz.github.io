@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>07 Subagents 多代理</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+        <!-- SLIDE 1: 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 07 章</div>
+            <h1>Subagents 多代理</h1>
+            <p>让 AI 团队并行工作，而不是一个人扛所有任务</p>
+            <strong>从单兵作战到多代理协作的跨越</strong>
+        </section>
+
+        <!-- SLIDE 2: 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>一个人扛不住</h2>
+                <h4>当任务越来越复杂，单个代理开始力不从心</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>角色混乱</h4>
+                        <p>你让同一个代理既写代码、又做审查、又跑测试。它忘了自己该专注什么——<strong>上下文越堆越多，质量越来越差</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>上下文膨胀</h4>
+                        <p>一个会话塞了 50 个文件的修改历史。代理开始"遗忘"你最早说的话，输出变得<strong>前后矛盾</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>审查走过场</h4>
+                        <p>让代理自己审查自己的代码？它当然说"没问题"。<strong>自己当自己的裁判</strong>，等于没有裁判。</p>
+                    </div>
+                    <div class="card">
+                        <h4>安全风险</h4>
+                        <p>一个拥有全部权限的代理，一旦被误导，可能删库、泄露密钥。<strong>权限越大，风险越大</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>解决方案：</strong>把大任务拆成小任务，分给多个专门的子代理并行处理。这就是 Subagents 的设计哲学。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 3: 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>已经熟悉 Codex CLI 基本交互的开发者</li>
+                            <li>需要并行处理多个子任务（审查、测试、重构）的人</li>
+                            <li>想通过角色分离提升代码质量的团队</li>
+                            <li>希望降低单个代理权限暴露面的安全敏感用户</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完后你应该已经能</h4>
+                        <ul>
+                            <li>理解 Subagent 的隔离机制与生命周期</li>
+                            <li>用 spawn_agent 工具创建并调度子代理</li>
+                            <li>配置 agent_type 与模型切换策略</li>
+                            <li>用多代理模式做并行安全审查</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>这些内容暂时先不碰</h4>
+                        <ul>
+                            <li>自定义 agent_type 的深层扩展</li>
+                            <li>跨会话持久化代理（persistent agents）</li>
+                            <li>SDK 层面的代理编排 API</li>
+                            <li>企业级多租户代理调度</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>前置知识：</strong>建议先完成第 01–05 章，尤其是 AGENTS.md 和 MCP 章节，因为子代理会继承这些配置。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 4: Subagent 是什么 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Subagent 是什么</h2>
+                <h4>一个独立的 AI 助手，有自己的上下文和权限</h4>
+                <p>Subagent（子代理）是由主代理（root agent）<strong>临时创建</strong>的 AI 工作单元。它像一个短期雇员：被分配任务、独立执行、交付结果、然后离开。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>独立上下文</h4>
+                        <p>子代理看不到主代理的对话历史。它只拿到你通过 <code>message</code> 传入的任务描述。<strong>信息隔离 = 专注</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>受限权限</h4>
+                        <p>子代理可以只拥有完成任务所需的最小工具集。比如一个"探索者"只需要读文件，不需要执行 Bash。<strong>最小权限 = 安全</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>临时生命周期</h4>
+                        <p>子代理完成任务后自动关闭，不占用资源。没有"常驻后台"的概念。<strong>用完即走 = 节省</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>一句话总结：</strong>Subagent = 隔离上下文 + 单一职责 + 最小权限 + 临时生命周期。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 5: 为什么需要多代理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>为什么需要多代理</h2>
+                <h4>单代理模式的三个根本瓶颈</h4>
+                <table>
+                    <thead><tr><th>瓶颈</th><th>表现</th><th>多代理解法</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>上下文窗口有限</strong></td><td>塞满后遗忘、前后矛盾</td><td>每个子代理只看到自己需要的上下文</td></tr>
+                        <tr><td><strong>串行执行慢</strong></td><td>审查必须等写完才能开始</td><td>写代码和做审查可以同时跑</td></tr>
+                        <tr><td><strong>角色冲突</strong></td><td>自己审自己 = 没有审查</td><td>独立子代理做审查，视角客观</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>类比：</strong>一个全能程序员 vs 一个开发团队。前者什么都能做，但一次只能做一件事；后者可以并行，但需要协调。Subagents 就是后者。
+                </div>
+            </div>
+        </section>
+        <!-- SLIDE 6: Multi-Agent V2 架构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Multi-Agent V2 架构</h2>
+                <h4>主代理协调，子代理执行</h4>
+                <p>Codex 的 Multi-Agent V2 采用经典的<strong>主从架构</strong>（master-worker）。主代理是唯一的协调者，负责理解你的需求、拆分任务、分发给子代理、汇总结果。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>主代理（Root Agent）</h4>
+                        <ul>
+                            <li>直接与你对话</li>
+                            <li>理解需求、拆分任务</li>
+                            <li>通过 <code>spawn_agent</code> 创建子代理</li>
+                            <li>汇总子代理结果，给你最终回复</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>子代理（Child Agent）</h4>
+                        <ul>
+                            <li>独立执行分配的任务</li>
+                            <li>拥有隔离的上下文</li>
+                            <li>完成后自动返回结果</li>
+                            <li>不能创建自己的子代理（depth=1）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+<strong>注意：</strong>默认 <code>agents.max_depth = 1</code>，子代理不能再 spawn 子代理，防止无限递归。这是一个真实的配置参数——调大会允许更深嵌套，但也增加 token 消耗和 fan-out 风险（fan-out 即"扇出"：每个子代理再 spawn 多个子代理，数量像树杈一样层层扩散，1 → 3 → 9 → 27……指数级增长，迅速耗尽并发上限和 token 预算）。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 7: 生命周期流程图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>生命周期</h2>
+                <h4>spawn → 执行 → 返回 → 关闭</h4>
+                <div class="ai-diagram">
+                    <h4>图：多代理交互流程——spawn、执行、返回、关闭</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个 Root Agent 在左侧，通过 spawn_agent 工具向右发射箭头，连接到多个 Child Agent 方框
+                    - 流程步骤：RootTool → ChildInput（注入任务）→ ChildThread（独立执行）→ ChildResult（返回结果）→ RootNotice（通知主代理）→ CloseTool（关闭子代理）
+                    - 每个 Child Agent 标注其 agent_type（explorer/worker）和独立上下文区域
+                    - 用虚线框表示"上下文隔离"——子代理看不到主代理的对话历史
+                    - 配色建议：浅蓝背景，Root Agent 用橙色，Child Agent 用绿色，箭头用深灰
+                    - 画面比例：16:9
+                    </p>
+                </div>
+                <div class="key-point">
+                    <strong>关键：</strong>子代理的生命周期由主代理管理。主代理决定何时创建、何时等待、何时关闭。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 8: 核心特性 - 上下文隔离 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>上下文隔离</h2>
+                <h4>子代理看不到主代理的对话历史</h4>
+                <p>每个子代理拿到的是<strong>独立的上下文窗口</strong>。它不知道主代理之前聊了什么，不知道其他子代理的存在，只知道你通过 <code>message</code> 或 <code>items</code> 传入的任务。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>好处</h4>
+                        <ul>
+                            <li>避免上下文膨胀——每个子代理的窗口都很小</li>
+                            <li>防止信息泄露——子代理不会意外暴露主代理的敏感信息</li>
+                            <li>专注任务——子代理不会被无关对话干扰</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>代价</h4>
+                        <ul>
+                            <li>子代理不知道全局背景</li>
+                            <li>你需要在 <code>message</code> 里写清楚所有必要信息</li>
+                            <li>子代理之间不能直接通信（必须通过主代理中转）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>设计原则：</strong>宁可多写一点任务描述，也不要让子代理因为缺少上下文而做出错误判断。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 9: 核心特性 - 单一职责 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>单一职责</h2>
+                <h4>每个子代理只做一件事，把它做好</h4>
+                <p>多代理的核心哲学是<strong>分工</strong>。不要创建一个"全能子代理"，而是创建多个各司其职的专才。</p>
+                <table>
+                    <thead><tr><th>职责</th><th>agent_type</th><th>典型任务</th></tr></thead>
+                    <tbody>
+                        <tr><td>探索</td><td><code>explorer</code></td><td>读文件、搜索代码、理解架构</td></tr>
+                        <tr><td>执行</td><td><code>worker</code></td><td>写代码、改文件、跑测试</td></tr>
+                        <tr><td>审查</td><td><code>default</code></td><td>代码审查、安全扫描、质量评估</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>原则：</strong>如果一个子代理的任务描述超过 3 句话，考虑拆成两个。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 10: 核心特性 - 最小权限 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最小权限</h2>
+                <h4>只给完成任务所需的最少工具</h4>
+                <p>子代理的权限应该被限制在<strong>刚好够用</strong>的范围内。一个只需要读文件的子代理，不应该有 Bash 执行权限。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么重要</h4>
+                        <ul>
+                            <li>防止子代理被 prompt injection 误导后执行危险操作</li>
+                            <li>减少意外修改的可能性</li>
+                            <li>符合安全最佳实践（principle of least privilege）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>如何实现</h4>
+                        <ul>
+                            <li>通过 <code>agent_type</code> 限制工具集</li>
+                            <li>在 <code>message</code> 中明确禁止某些操作</li>
+                            <li>配合沙箱模式进一步限制文件系统访问</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>安全提醒：</strong>永远不要让一个你不信任的子代理拥有 <code>exec</code> 或 <code>write</code> 权限。审查型任务应该用只读的 <code>explorer</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 11: 核心特性 - 并行执行 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>并行执行</h2>
+                <h4>多个子代理同时跑，效率翻倍</h4>
+                <p>当多个子任务之间没有依赖关系时，主代理可以<strong>同时 spawn 多个子代理</strong>并行执行。这是多代理相比单代理最大的效率优势。</p>
+                <div class="ai-diagram">
+                    <h4>图：并行执行示意图——主代理同时 spawn 三个子代理</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和：
+                    - 画面顶部是一个 Root Agent，向下同时发射三条箭头
+                    - 三条箭头分别连接三个并排的 Child Agent 方框
+                    - 每个方框标注不同的任务：安全审查、质量审查、测试运行
+                    - 三个方框底部汇聚到一条线，标注"汇总结果"
+                    - 用时钟图标表示"同时执行"
+                    - 配色：浅灰背景，三个子代理用不同浅色区分
+                    - 画面比例：16:9
+                    </p>
+                </div>
+                <div class="info-block">
+                    <strong>并行上限：</strong>默认配置下最多 6 个并发子代理（<code>max_threads = 6</code>）。超过后自动排队，等正在运行的线程完成后继续。
+                </div>
+            </div>
+        </section>
+        <!-- SLIDE 12: spawn_agent 工具概览 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>spawn_agent 工具</h2>
+                <h4>创建子代理的核心工具</h4>
+                <p><code>spawn_agent</code> 是主代理用来创建子代理的工具。调用后，子代理立即开始独立执行，主代理可以继续做其他事或等待结果。</p>
+                <pre><code class="language-json">{
+  "message": "审查 src/auth/ 目录下的所有文件，找出安全漏洞",
+  "model": "gpt-5.4",
+  "reasoning_effort": "medium"
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>必填参数</h4>
+                        <ul>
+                            <li><code>message</code> — 任务描述（字符串）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>可选参数</h4>
+                        <ul>
+                            <li><code>items</code> — 多模态任务描述（文本+图片）</li>
+                            <li><code>fork_context</code> — 是否继承主代理上下文（布尔，默认 false）</li>
+                            <li><code>model</code> — 指定模型</li>
+                            <li><code>reasoning_effort</code> — 推理力度</li>
+                            <li><code>service_tier</code> — 服务层级</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>V1 vs V2 差异：</strong>当前大多数模型（gpt-5.4 及以下）使用 <code>multi_agent_v1__spawn_agent</code>，参数如上。gpt-5.5/5.6 会强制使用 V2，其 schema 不同——<code>fork_context</code> 变为 <code>fork_turns</code>（"all"/"recent"/"none"），且 <code>task_name</code> 必填。详见 <a href="https://github.com/openai/codex/issues/31097" target="_blank">issue #31097</a>。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 13: 参数详解 - message 和 items -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参数：message 与 items</h2>
+                <h4>告诉子代理该做什么</h4>
+                <p><code>message</code> 是最常用的参数——一段纯文本任务描述。<code>items</code> 支持多模态，可以混入图片。</p>
+                <pre><code class="language-json">// 纯文本任务
+{
+  "message": "分析 src/utils/parser.js 的性能瓶颈，给出优化建议"
+}
+
+// 多模态任务（文本 + 截图）
+{
+  "items": [
+    { "type": "text", "text": "这个错误发生在点击提交按钮时" },
+    { "type": "image_url", "image_url": { "url": "data:image/png;base64,..." } }
+  ]
+}</code></pre>
+                <div class="key-point">
+                    <strong>写作技巧：</strong>任务描述要具体。不要写"审查代码"，要写"审查 src/auth/login.ts，重点关注 SQL 注入和 XSS 漏洞"。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 14: 内置角色类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>内置角色类型</h2>
+                <h4>三种内置 agent 定义了不同的能力边界</h4>
+                <p>Codex 内置了三种角色，各有不同的工具权限和适用场景。选错类型 = 给审计员发了把锤子。</p>
+                <table>
+                    <thead><tr><th>类型</th><th>能力</th><th>适用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>default</code></td><td>完整工具集（读/写/执行）</td><td>通用任务，需要修改代码的场景</td></tr>
+                        <tr><td><code>explorer</code></td><td>只读工具（搜索/读取）</td><td>代码探索、架构理解、安全审查</td></tr>
+                        <tr><td><code>worker</code></td><td>写工具（读/写/执行）</td><td>代码修改、测试执行、构建任务</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>如何指定角色：</strong>在 V1 中，<code>agent_type</code> 不在正式 schema 中，但后端会接受。最可靠的方式是直接写进 <code>message</code>："你是一个只读代码审查代理，只报告问题不修改文件"。V2 中则通过 <code>.codex/agents/*.toml</code> 自定义角色文件 + <code>task_name</code> 来激活。
+                </div>
+                <div class="warning">
+                    <strong>选择建议：</strong>如果任务只需要"看"不需要"改"，永远用 <code>explorer</code> 或在 message 中明确要求只读。这是最安全的默认选择。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 15: 参数详解 - model -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参数：model</h2>
+                <h4>为不同任务选不同模型</h4>
+                <p>子代理可以独立于主代理选择模型。这是<strong>成本优化</strong>的关键手段——简单任务用便宜模型，复杂任务用强模型。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>主代理用强模型</h4>
+                        <pre><code class="language-bash">$ codex -m gpt-5.5</code></pre>
+                        <p>主代理负责理解需求、拆分任务、汇总结果，需要最强的推理能力。</p>
+                    </div>
+                    <div class="card">
+                        <h4>子代理用性价比模型</h4>
+                        <pre><code class="language-json">{
+  "model": "gpt-5.4-mini",
+  "message": "搜索所有 TODO 注释"
+}</code></pre>
+                        <p>简单搜索任务不需要最强模型，用便宜模型省成本。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>成本意识：</strong>一个典型多代理会话中，子代理的 token 消耗可能占 70%。选对模型能省大量费用。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 16: 参数详解 - reasoning_effort 和 service_tier -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参数：推理与服务</h2>
+                <h4>控制思考深度和服务质量</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>reasoning_effort</h4>
+                        <ul>
+                            <li><code>low</code> — 快速响应，浅层推理</li>
+                            <li><code>medium</code> — 平衡（默认）</li>
+                            <li><code>high</code> — 深度推理，慢但更准</li>
+                        </ul>
+                        <p>适合需要复杂逻辑分析的审查任务。</p>
+                    </div>
+                    <div class="card">
+                        <h4>service_tier</h4>
+                        <ul>
+                            <li><code>default</code> — 标准服务</li>
+                            <li><code>priority</code> — 优先处理（低延迟）</li>
+                            <li><code>flex</code> — 弹性处理（可能排队，但更便宜）</li>
+                        </ul>
+                        <p>非紧急的后台审查任务可以用 <code>flex</code> 省钱。</p>
+                    </div>
+                </div>
+                <pre><code class="language-json">{
+  "reasoning_effort": "high",
+  "service_tier": "flex",
+  "message": "深度分析这个 PR 的架构影响"
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- SLIDE 17: 参数详解 - fork_context -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>参数：fork_context</h2>
+                <h4>是否继承主代理的会话上下文</h4>
+                <p><code>fork_context</code> 控制子代理是否能看到主代理的对话历史。</p>
+                <table>
+                    <thead><tr><th>值</th><th>行为</th><th>适用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>false</code>（默认）</td><td>完全隔离，只看到 <code>message</code> 传入的内容</td><td>大多数场景，安全且专注</td></tr>
+                        <tr><td><code>true</code></td><td>继承主代理的对话历史作为背景</td><td>子代理需要理解完整背景才能工作</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>慎用 fork_context: true：</strong>继承上下文会消耗子代理的上下文窗口，可能导致它"看到太多"而分心。大多数情况下，把必要信息直接写进 <code>message</code> 更好。
+                </div>
+                <div class="info-block">
+                    <strong>V2 演进：</strong>在 MultiAgentV2（gpt-5.5/5.6）中，此参数升级为 <code>fork_turns</code>，取值变为 <code>"all"</code> / <code>"recent"</code> / <code>"none"</code>，默认值改为 <code>"all"</code>（全历史继承），行为有较大差异。
+                </div>
+            </div>
+        </section>
+        <!-- SLIDE 18: 等待与汇总 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>等待与汇总</h2>
+                <h4>Codex 自动等待所有子代理完成</h4>
+                <p>当多个子代理在运行时，Codex 会<strong>自动等待</strong>所有请求的结果就绪，然后返回一份合并后的回复。你不需要手动调用等待工具——告诉 Codex "等全部跑完再汇总"就行。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>自然语言驱动</h4>
+                        <pre><code class="language-text">审查这个 PR，为每个维度各开一个 agent，
+等全部跑完后汇总每个结果：
+1. 安全问题  2. 代码质量  3. Bug
+4. 竞态条件  5. 测试稳定性  6. 可维护性</code></pre>
+                        <p>Codex 会自动 spawn、等待、汇总——你只需描述意图。</p>
+                    </div>
+                    <div class="card">
+                        <h4>用 /agent 检查进度</h4>
+                        <ul>
+                            <li>输入 <code>/agent</code> 切换到任意活跃线程</li>
+                            <li>查看每个子代理的实时输出</li>
+                            <li>在不打断的情况下监控执行状态</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>超时控制：</strong>对于长时间运行的命令，Codex 可以使用内置的 monitor 角色进行轮询等待，单次轮询窗口最长可达 1 小时。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 19: 运行中管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>运行中管理</h2>
+                <h4>用自然语言操控运行中的子代理</h4>
+                <p>子代理在执行过程中，你可以随时<strong>追加指令、纠正方向或紧急停止</strong>。不需要手写工具调用——直接用自然语言告诉 Codex 即可。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>使用场景</h4>
+                        <ul>
+                            <li>子代理遗漏了某些文件 → "让审查 agent 也检查一下 src/api/ 目录"</li>
+                            <li>发现子代理跑偏了 → "纠正探索 agent，重点关注认证模块"</li>
+                            <li>紧急停止 → "停掉正在运行的 worker agent"</li>
+                            <li>关闭已完成的 → "关闭已完成的审查 agent"</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>管理手段</h4>
+                        <ul>
+                            <li><code>/agent</code> — 切换到指定线程查看详情</li>
+                            <li>直接对 Codex 说 — "停掉 / 关闭 / 追加指令给某个 agent"</li>
+                            <li>Codex 会将你的意图路由到正确的子代理线程</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong>中断子代理时，已完成的操作不会回滚，但后续调用会被取消。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 20: 生命周期收尾 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>生命周期收尾</h2>
+                <h4>子代理完成后会自动清理</h4>
+                <p>子代理完成任务后通常会<strong>自动关闭</strong>。但在某些异常情况下（如主代理崩溃、网络中断），可能需要手动干预。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>自动行为</h4>
+                        <ul>
+                            <li>子代理交付结果后自动关闭</li>
+                            <li>Codex 汇总所有结果后返回一份合并回复</li>
+                            <li>线程资源自动释放</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>手动管理</h4>
+                        <ul>
+                            <li>用 <code>/agent</code> 查看所有活跃线程</li>
+                            <li>对 Codex 说 "关闭已完成的 agent"</li>
+                            <li>发现卡住的代理可以直接要求停止</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>最佳实践：</strong>在会话结束前，用 <code>/agent</code> 确认没有残留的子代理。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 21: agent_type 角色详解 - default -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>角色：default</h2>
+                <h4>全能型代理，什么都能做</h4>
+                <p><code>default</code> 类型的子代理拥有<strong>完整的工具集</strong>：读文件、写文件、执行命令、搜索代码。它像一个全栈工程师。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>能力</h4>
+                        <ul>
+                            <li>Read / Write / Edit 文件</li>
+                            <li>执行 Bash 命令</li>
+                            <li>搜索代码库</li>
+                            <li>安装依赖、运行测试</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>需要修改代码的任务</li>
+                            <li>端到端的功能开发</li>
+                            <li>构建和测试执行</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>风险：</strong>default 代理权限最大，被 prompt injection 利用时危害也最大。只在信任的任务中使用。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 22: agent_type 角色详解 - explorer -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>角色：explorer</h2>
+                <h4>只读探索者，安全又高效</h4>
+                <p><code>explorer</code> 类型的子代理默认以<strong>只读模式</strong>运行——读文件、搜索代码、分析架构。它的 <code>sandbox_mode</code> 默认设为 <code>read-only</code>，是最安全的默认选择。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>能力</h4>
+                        <ul>
+                            <li>Read 文件</li>
+                            <li>搜索代码（grep / glob）</li>
+                            <li>分析架构和依赖</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>不能做</h4>
+                        <ul>
+                            <li>❌ 修改文件</li>
+                            <li>❌ 执行命令</li>
+                            <li>❌ 安装依赖</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>最佳实践：</strong>所有审查类任务（安全审查、代码审查、架构分析）都应该用 <code>explorer</code>。注意：子代理的沙箱策略默认继承父会话，在 <code>--yolo</code> 或 workspace-write 模式下可能被覆盖——如需确保只读，在自定义 agent 中显式设置 <code>sandbox_mode = "read-only"</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 23: agent_type 角色详解 - worker -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>角色：worker</h2>
+                <h4>代码修改的执行者</h4>
+                <p><code>worker</code> 类型的子代理可以读、写、执行，但通常被配置为<strong>专注于代码修改</strong>。它像一个只负责写代码的程序员。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>与 default 的区别</h4>
+                        <p>功能上类似，但 <code>worker</code> 在语义上更强调"执行具体编码任务"。在配置中可以给它不同的工具限制或提示词。</p>
+                    </div>
+                    <div class="card">
+                        <h4>适用场景</h4>
+                        <ul>
+                            <li>按规格写代码</li>
+                            <li>重构指定模块</li>
+                            <li>修复明确的 bug</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>提示：</strong>如果你的任务描述非常具体（"按这个接口实现这个函数"），<code>worker</code> 比 <code>default</code> 更合适——它不会自作主张。
+                </div>
+            </div>
+        </section>
+        <!-- SLIDE 24: 配置概览 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置概览</h2>
+                <h4>在 config.toml 中控制多代理行为</h4>
+                <p>多代理的全局设置在 <code>~/.codex/config.toml</code> 的 <code>[agents]</code> 段中配置。当前版本默认已启用子代理功能。</p>
+                <pre><code class="language-toml">[agents]
+max_threads = 6              # 最大并发子代理线程数（默认 6）
+max_depth = 1                # 嵌套深度，root 从 0 开始（默认 1）
+job_max_runtime_seconds = 1800  # CSV 批处理任务的单 worker 超时</code></pre>
+                <div class="warning">
+                    <strong>注意：</strong>如果另外启用了 MultiAgentV2（<code>[features.multi_agent_v2]</code>），则不能同时设置 <code>agents.max_threads</code>——V2 使用自己的 <code>max_concurrent_threads_per_session</code> 参数，二者冲突会报错。
+                </div>
+                <div class="key-point">
+                    <strong>核心配置：</strong><code>max_threads</code> 控制并发数（默认 6），<code>max_depth</code> 控制嵌套深度（默认 1）。大多数情况下默认值就够了。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 25: 配置参数详解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置参数详解</h2>
+                <h4>每个参数的含义与调优建议</h4>
+                <table>
+                    <thead><tr><th>参数</th><th>默认值</th><th>含义</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>max_threads</code></td><td>6</td><td>最大并发子代理线程数。太高会触发 API 限流</td></tr>
+                        <tr><td><code>max_depth</code></td><td>1</td><td>子代理嵌套深度（root 从 0 开始）。调大会允许更深递归，但也增加 token 消耗</td></tr>
+                        <tr><td><code>job_max_runtime_seconds</code></td><td>1800</td><td>CSV 批处理任务的单 worker 超时</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block">
+                    <strong>调优建议：</strong>如果 API 限流频繁，把 <code>max_threads</code> 降到 3-4。遇到 spawn 排队等待是正常行为——超过上限的请求会自动排队，等正在运行的线程完成后继续。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 26: 自定义 Agent 角色 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义 Agent 角色</h2>
+                <h4>用 TOML 文件定义专属子代理</h4>
+                <p>除了三个内置角色，你还可以在 <code>~/.codex/agents/</code>（个人级）或 <code>.codex/agents/</code>（项目级）目录下放置 TOML 文件来定义自己的 agent。</p>
+                <pre><code class="language-toml"># .codex/agents/reviewer.toml
+name = "reviewer"
+description = "PR 审查员，关注正确性、安全性和测试覆盖"
+developer_instructions = """
+审查代码时像 owner 一样思考。
+优先关注正确性、安全性和缺失的边界测试。
+"""
+model = "gpt-5.4"
+model_reasoning_effort = "high"
+sandbox_mode = "read-only"</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>必填字段</h4>
+                        <ul>
+                            <li><code>name</code> — 角色名称</li>
+                            <li><code>description</code> — 何时使用此角色</li>
+                            <li><code>developer_instructions</code> — 角色的系统提示词</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>可选字段</h4>
+                        <ul>
+                            <li><code>model</code> / <code>model_reasoning_effort</code></li>
+                            <li><code>sandbox_mode</code> — 沙箱策略</li>
+                            <li><code>mcp_servers</code> — 专属 MCP 服务</li>
+                            <li><code>nickname_candidates</code> — 显示昵称池</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 27: 实战示例 - 并行审查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：并行安全审查</h2>
+                <h4>同时跑安全审查和质量审查</h4>
+                <p>假设你刚写完一个 PR，想同时做安全审查和质量审查。两个任务互不依赖，可以并行。</p>
+                <pre><code class="language-json">// 主代理同时 spawn 两个子代理
+spawn_agent({
+  "message": "你是一个只读安全审查代理。审查 src/auth/ 和 src/api/ 目录，找出所有安全漏洞（SQL注入、XSS、CSRF、认证绕过）",
+  "model": "gpt-5.4-mini"
+})
+
+spawn_agent({
+  "message": "你是一个只读代码质量审查代理。审查 src/auth/ 和 src/api/ 目录：命名规范、函数复杂度、重复代码、缺少测试",
+  "model": "gpt-5.4-mini"
+})</code></pre>
+                <div class="key-point">
+                    <strong>效果：</strong>两个审查同时运行，总耗时约等于单次审查时间，而不是两倍。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 28: 实战示例 - 等待与汇总 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：等待与汇总</h2>
+                <h4>Codex 自动收集结果，给你一份综合报告</h4>
+                <p>子代理完成后，Codex 自动汇总结果，生成一份结构化的审查报告。你只需在原始提示中说"等全部跑完后汇总"。</p>
+                <pre><code class="language-text"># 你只需要说：
+"等所有审查 agent 跑完后，给我一份汇总报告"
+
+# Codex 自动完成：
+# 1. 等待所有子代理返回结果
+# 2. 安全审查结果（3 个高危、5 个中危）
+# 3. 质量审查结果（2 个函数过复杂、4 处重复代码）
+# 4. 优先修复建议——交叉分析两份审查</code></pre>
+                <div class="info-block">
+                    <strong>主代理的价值：</strong>子代理各自为战，主代理负责全局视角。它能看到两个审查的交叉点——比如"这个函数既不安全又太复杂"。
+                </div>
+            </div>
+        </section>
+        <!-- SLIDE 29: 实战示例 - 复杂任务拆分 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：复杂任务拆分</h2>
+                <h4>把一个大需求拆成多个子代理并行处理</h4>
+                <p>假设你要给项目添加用户认证模块。这个任务可以拆成多个并行子任务：</p>
+                <table>
+                    <thead><tr><th>子代理</th><th>任务</th><th>角色定位</th></tr></thead>
+                    <tbody>
+                        <tr><td>A</td><td>分析现有代码结构，确定最佳集成点</td><td>explorer</td></tr>
+                        <tr><td>B</td><td>编写数据库迁移脚本</td><td>worker</td></tr>
+                        <tr><td>C</td><td>实现 JWT 认证中间件</td><td>worker</td></tr>
+                        <tr><td>D</td><td>编写单元测试</td><td>worker</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>注意：</strong>B、C、D 都修改文件，如果它们改同一个文件会冲突。确保每个子代理操作不同的文件。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 30: 实战示例 - 模型切换策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：模型切换</h2>
+                <h4>主代理用强模型，子代理用性价比模型</h4>
+                <p>成本优化的经典策略：让贵模型做决策，让便宜模型干活。</p>
+                <pre><code class="language-bash"># 启动时用强模型
+$ codex -m gpt-5.5</code></pre>
+                <pre><code class="language-json"># 子代理用性价比模型
+{
+  "model": "gpt-5.4-mini",
+  "message": "你是一个代码实现代理。按照规格实现 UserService 的 createUser 方法"
+}
+
+{
+  "model": "gpt-5.4-mini",
+  "message": "你是一个只读探索代理。搜索所有调用 UserService 的地方"
+}</code></pre>
+                <div class="key-point">
+                    <strong>成本节省：</strong>假设主代理消耗 20% token，子代理消耗 80% token。子代理从 gpt-5.5 切换到 gpt-5.4-mini，总成本可降低 60%+。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 31: 常见错误 - 并发过高 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>错误：并发过高</h2>
+                <h4>一次 spawn 太多子代理，触发限流</h4>
+                <p>看到并行很爽，于是一口气 spawn 10 个子代理。结果 API 返回 429 Rate Limited，全部失败。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>错误表现</h4>
+                        <ul>
+                            <li>API 返回 <code>429 Too Many Requests</code></li>
+                            <li>子代理启动失败或执行中断</li>
+                            <li>主代理收到大量错误通知</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>修复方法</h4>
+                        <ul>
+                            <li>把 <code>max_threads</code> 降到 3-4</li>
+                            <li>分批 spawn：先跑 3 个，完成后再跑下一批</li>
+                            <li>用 <code>service_tier: "flex"</code> 降低优先级</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>经验法则：</strong>除非任务非常简单，否则并发数不要超过 4。质量 > 速度。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 32: 常见错误 - 超时太短 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>错误：超时太短</h2>
+                <h4>子代理还没跑完就被判了死刑</h4>
+                <p>你让子代理审查一个大型代码库，但等了半天它还没返回结果——超时是 Codex 自动管理的，长时间运行的子代理可能被提前终止。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>错误表现</h4>
+                        <ul>
+                            <li>子代理运行时间过长被自动终止</li>
+                            <li><code>/agent</code> 查看状态显示超时或 error</li>
+                            <li>主代理拿到空结果或不完整结果</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>修复方法</h4>
+                        <ul>
+                            <li>根据任务复杂度合理设置超时</li>
+                            <li>简单搜索：10-15 秒</li>
+                            <li>代码审查：30-60 秒</li>
+                            <li>复杂分析：120 秒+</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>建议：</strong>宁可超时设长一点（大不了多等一会儿），也不要设太短导致任务白跑。
+                </div>
+            </div>
+        </section>
+        <!-- SLIDE 33: 常见错误 - fork_context 误用 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>错误：fork 误用</h2>
+                <h4>继承太多上下文，子代理反而表现更差</h4>
+                <p>觉得子代理需要"完整背景"，于是设了 <code>fork_context: true</code>。结果子代理的上下文窗口被主代理的对话历史占满了，真正该看的代码反而放不下。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>什么时候不该用</h4>
+                        <ul>
+                            <li>主代理的对话历史超过 100 行</li>
+                            <li>子代理只需要看几个特定文件</li>
+                            <li>任务描述可以自包含</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>什么时候可以用</h4>
+                        <ul>
+                            <li>子代理需要理解之前讨论的设计决策</li>
+                            <li>任务涉及多个文件的交叉引用</li>
+                            <li>主代理的对话历史很短（少于 20 行）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>默认选择：</strong>99% 的情况下，<code>fork_context: false</code>（默认值）是正确的。把必要信息写进 <code>message</code> 就好。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 34: 常见错误 - 任务描述模糊 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>错误：描述模糊</h2>
+                <h4>"审查代码"不是任务，是废话</h4>
+                <p>子代理不会读心术。你写"审查代码"，它不知道审查什么、用什么标准、输出什么格式。</p>
+                <table>
+                    <thead><tr><th>❌ 模糊描述</th><th>✅ 具体描述</th></tr></thead>
+                    <tbody>
+                        <tr><td>"审查代码"</td><td>"审查 src/auth/login.ts，重点关注 OWASP Top 10 漏洞，输出 JSON 格式"</td></tr>
+                        <tr><td>"优化性能"</td><td>"分析 src/api/handlers.go 中处理 /users 请求的函数，找出 N+1 查询问题"</td></tr>
+                        <tr><td>"写测试"</td><td>"为 src/utils/validator.js 中的 validateEmail 函数写单元测试，覆盖边界情况"</td></tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>黄金法则：</strong>任务描述要具体到"一个不需要任何背景知识的人也能执行"的程度。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 35: 常见错误 - 忘记检查残留子代理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>错误：忘记清理</h2>
+                <h4>资源泄漏，像不关水龙头</h4>
+                <p>子代理完成任务后通常会自动关闭，但在某些异常情况下（如主代理崩溃、网络中断），子代理可能变成"僵尸"继续占用线程资源。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>检测方法</h4>
+                        <pre><code class="language-text">/agent</code></pre>
+                        <p>用 <code>/agent</code> 列出所有活跃线程，查看有没有"卡住"的子代理。</p>
+                    </div>
+                    <div class="card">
+                        <h4>清理方法</h4>
+                        <pre><code class="language-text">关闭已完成的 agent
+停掉卡住的 worker agent</code></pre>
+                        <p>直接用自然语言告诉 Codex 关闭或停止指定的子代理。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>最佳实践：</strong>在会话结束前，用 <code>/agent</code> 确认没有残留的子代理。
+                </div>
+            </div>
+        </section>
+        <!-- SLIDE 36: 最佳实践总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践</h2>
+                <h4>多代理使用的七条军规</h4>
+                <ol>
+                    <li><strong>默认用 explorer</strong> — 不需要写权限的任务一律用只读代理</li>
+                    <li><strong>任务描述要具体</strong> — 文件路径、关注点、输出格式，一个都不能少</li>
+                    <li><strong>并发不要贪多</strong> — 3-4 个足够，超过反而触发限流</li>
+                    <li><strong>子代理用便宜模型</strong> — 主代理用强模型做决策，子代理用性价比模型干活</li>
+                    <li><strong>超时宁长勿短</strong> — 任务白跑比多等一会儿更浪费</li>
+                    <li><strong>fork_context 默认关</strong> — 把信息写进 message，不要依赖上下文继承</li>
+                    <li><strong>审查用独立代理</strong> — 永远不要让代理审查自己的代码</li>
+                </ol>
+            </div>
+        </section>
+
+        <!-- SLIDE 37: 与 MCP 的配合 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>与 MCP 配合</h2>
+                <h4>子代理也能用 MCP 工具</h4>
+                <p>子代理继承了主代理的 MCP server 配置。这意味着你可以让子代理调用外部工具——比如让一个子代理查数据库，另一个同时查日志。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>场景示例</h4>
+                        <ul>
+                            <li>子代理 A：用 <code>database</code> MCP 查表结构</li>
+                            <li>子代理 B：用 <code>logging</code> MCP 查错误日志</li>
+                            <li>子代理 C：用 <code>github</code> MCP 查相关 issue</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>注意事项</h4>
+                        <ul>
+                            <li>确保 MCP server 支持并发调用</li>
+                            <li>注意 MCP 工具的速率限制</li>
+                            <li>子代理的 MCP 权限与主代理一致</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>回顾：</strong>如果你还不熟悉 MCP，回到第 05 章学习如何配置 MCP server。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 38: 调试技巧 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>调试技巧</h2>
+                <h4>当子代理不按预期工作时</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>1. 检查任务描述</h4>
+                        <p>子代理的输出质量 100% 取决于你的任务描述。先确认 message 是否足够具体。</p>
+                    </div>
+                    <div class="card">
+                        <h4>2. 检查 agent_type</h4>
+                        <p>需要写文件但用了 <code>explorer</code>？需要只读但用了 <code>worker</code>？类型不匹配会静默失败。</p>
+                    </div>
+                    <div class="card">
+                        <h4>3. 用 /agent 查看状态</h4>
+                        <p>切换到子代理线程，看它的实时输出。是 running、completed 还是 error？</p>
+                    </div>
+                    <div class="card">
+                        <h4>4. 用自然语言追加指令</h4>
+                        <p>子代理跑偏了？直接告诉 Codex "纠正 xxx agent，让它关注 yyy"，而不是杀掉重来。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 39: 总结 -->
+        <section class="slide title-slide">
+            <div class="chapter-badge">第 07 章</div>
+            <h1>小结</h1>
+            <p>你已经掌握了 Codex 多代理的核心概念和实战技巧</p>
+            <div class="card-grid" style="max-width: 600px; margin: 30px auto;">
+                <div class="card">
+                    <h4>本章要点</h4>
+                    <ul>
+                        <li>Subagent = 隔离上下文 + 单一职责 + 最小权限 + 临时生命周期</li>
+                        <li>主代理协调，子代理执行；spawn → 执行 → 返回 → 关闭</li>
+                        <li>三种 agent_type：default（全能）、explorer（只读）、worker（执行）</li>
+                        <li>通过 model 参数实现成本优化：主代理强模型，子代理性价比模型</li>
+<li>配置 max_threads 控制并发（默认 6），max_depth 控制嵌套深度（默认 1）</li>
+                        <li>常见陷阱：并发过高、超时太短、fork_context 滥用、任务描述模糊</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="conclusion" style="max-width: 600px; margin-top: 20px; text-align: left;">
+                <strong>下一步：</strong>第 08 章 Hooks —— 在代理生命周期的关键节点插入自定义逻辑，实现自动化工作流。
+            </div>
+        </section>
+
+    
+    
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+
+        </main>
+<script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>11 Review 与协作</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔍</text></svg>">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- SLIDE 1: 封面 -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 11 章</div>
+            <h1>Review 与协作</h1>
+            <p>让评审成为你的代码质量防线</p>
+            <strong>从交互式 /review 到 GitHub 自动审查与 CI 集成</strong>
+        </section>
+
+        <!-- SLIDE 2: 痛点 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>你敢直接合并吗</h2>
+                <h4>代码改完了，但你真的放心合入主分支吗</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>代码跑通了就合并</h4>
+                        <p>你的 PR 跑通了 CI、通过了单测，你点了 Merge。但 <strong>逻辑漏洞、边界条件、错误处理被忽略</strong>——这些问题不报警，只等线上爆炸。</p>
+                    </div>
+                    <div class="card">
+                        <h4>等同事 Review</h4>
+                        <p>你发了 PR，但同事在忙、在开会、在休假。Review 队列排出三个人，<strong>一等就是两天</strong>。迭代节奏被打断，你开始做别的事，回头又忘了上下文。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Review 流于形式</h4>
+                        <p>你收到同事的 PR，扫了 5 分钟几百行 diff，最后写了 "LGTM"。你们都知道这只是走过场——<strong>没人有精力做真正的深度审查</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>AI Review 不替代人，而是兜底：</strong>在人类 Review 之前，先把明显的坑填平；在 CI 无人值守时，充当第一道关卡。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 3: 开始之前 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>写代码时需要"第二双眼睛"的 solo developer</li>
+                            <li>团队没有专职 Reviewer，想提升代码审查覆盖率</li>
+                            <li>想给 CI 加一层自动审查门禁的 DevOps 工程师</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>读完本章你会</h4>
+                        <ul>
+                            <li>用 <code>/review</code> 在 TUI 中一键审查代码改动</li>
+                            <li>用 <code>codex review</code> CLI 子命令在脚本中自动化</li>
+                            <li>配置 <code>review_model</code> 和 AGENTS.md 定制审查行为</li>
+                            <li>与 Subagents 联动，实现多维度审查</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>先别急的事</h4>
+                        <ul>
+                            <li>Review 的模型能力上限与误判边界</li>
+                            <li>如何把 Review 结果写回 GitHub PR 评论</li>
+                            <li>企业私有化部署的合规与数据脱敏</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>前置知识：</strong>假设你已经读过第 7 章（Subagents）和第 4 章（Slash Commands）。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 4: Review 核心概念 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Review 是什么</h2>
+                <h4>让 AI 充当你的审查伙伴，在改动进入主干前把关</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>只读审查</h4>
+                        <p>Codex Review 不修改你的代码。它只<strong>读取 diff 并输出发现</strong>——这是纯粹的"第二双眼睛"，不是"自动修复器"。如果需要修复，要另行发指令。</p>
+                    </div>
+                    <div class="card">
+                        <h4>外部视角</h4>
+                        <p>你写代码时用的是"创造者视角"——关注"能不能跑"。Review 用的是"审查者视角"——关注"<strong>哪里会出问题</strong>"。两种视角天然冲突，AI 帮你切换。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>原则：</strong>Review 不替你做决策，但它确保你在做决策时<strong>看过所有相关信息</strong>。
+                </div>
+                <div class="info-block"><strong>官方文档：</strong> <a href="https://developers.openai.com/codex/app/review" target="_blank" rel="noopener">Review Pane</a> · <a href="https://developers.openai.com/codex/cli/slash-commands" target="_blank" rel="noopener">Slash Commands</a></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 5: Review 三层目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Review 的三层目标</h2>
+                <h4>从低级错误到架构建议，层层递进</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>第一层：捕获低级错误</h4>
+                        <p>拼写错误、类型不匹配、逻辑矛盾、死代码。这些是<strong>最容易被发现但最容易被忽略</strong>的问题——因为你对自己的代码"太熟悉"了。</p>
+                    </div>
+                    <div class="card">
+                        <h4>第二层：识别潜在问题</h4>
+                        <p>边界条件、安全漏洞、性能隐患、并发风险。这些不会让代码报错，但会在<strong>特定场景下</strong>引发故障。</p>
+                    </div>
+                    <div class="card">
+                        <h4>第三层：提供改进建议</h4>
+                        <p>命名优化、结构重组、可测试性提升。这些不是 bug，但会让代码<strong>六个月后</strong>更容易维护。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>现实检查：</strong>AI Review 在第一层表现最好，第二层需要好的指令引导，第三层仅供参考——它不了解你的业务上下文。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 6: 三种入口 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三种入口</h2>
+                <h4>TUI、CLI、GitHub——同一个引擎，不同姿势</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>/review（TUI 交互式）</h4>
+                        <p>在 Codex TUI 中输入 <code>/review</code>，弹出范围选择菜单。结果以 inline comments 形式显示在 review pane 中。</p>
+                        <ul>
+                            <li>审查结果直接嵌入当前会话</li>
+                            <li>可继续追问，让 Codex 解释或修复</li>
+                            <li>适合：开发中途快速自查</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>codex review（CLI 子命令）</h4>
+                        <p>在终端直接运行，不进入 TUI。通过 <code>--uncommitted</code> / <code>--base</code> / <code>--commit</code> 指定范围。</p>
+                        <pre><code class="language-bash">codex review --base main
+codex review --uncommitted
+codex review --commit HEAD</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>@codex review（GitHub PR）</h4>
+                        <p>在 GitHub PR 评论中 <code>@codex review</code>，Codex 读取 diff 和仓库 AGENTS.md 规约，<strong>以标准 PR review 评论形式</strong>发布指摘。</p>
+                        <ul>
+                            <li>聚焦 P0 / P1 高优先度问题</li>
+                            <li>用 <code>@codex fix</code> 让 Codex 自动修复</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 7: 选择入口的决策树 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>选哪个入口</h2>
+                <h4>一个判断标准就够了</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>用 /review 当……</h4>
+                        <ul>
+                            <li>你正在 TUI 里写代码，想中途检查一下</li>
+                            <li>你需要和 Codex 继续对话，追问审查发现</li>
+                            <li>你想用 review pane 查看行内标注</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>用 codex review 当……</h4>
+                        <ul>
+                            <li>你在写 CI 脚本或 Shell 自动化</li>
+                            <li>不进入 TUI，直接在终端拿结果</li>
+                            <li>想精确控制审查范围（--base / --commit）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>用 @codex review 当……</h4>
+                        <ul>
+                            <li>PR 已推到 GitHub</li>
+                            <li>需要团队可见的 review 记录</li>
+                            <li>想让 Codex 直接在 PR 行内评论</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>经验法则：</strong>本地开发用 <code>/review</code>，脚本/CI 用 <code>codex review</code>，GitHub 协作用 <code>@codex review</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 8: 审查范围 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>审查范围</h2>
+                <h4>三种 diff 范围覆盖所有场景</h4>
+                <table>
+                    <thead><tr><th>范围</th><th>CLI 参数</th><th>等价 git 命令</th><th>何时用</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td>未提交改动</td>
+                            <td><code>--uncommitted</code></td>
+                            <td><code>git diff</code>（含 staged + unstaged + untracked）</td>
+                            <td>提交前自查</td>
+                        </tr>
+                        <tr>
+                            <td>分支对比</td>
+                            <td><code>--base main</code></td>
+                            <td><code>git diff main...HEAD</code></td>
+                            <td>PR 提交前</td>
+                        </tr>
+                        <tr>
+                            <td>特定 commit</td>
+                            <td><code>--commit &lt;sha&gt;</code></td>
+                            <td><code>git show &lt;sha&gt;</code></td>
+                            <td>回溯定位 bug</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>重要限制：</strong><code>codex review</code> 的范围选项（<code>--uncommitted</code> / <code>--base</code> / <code>--commit</code>）与自定义审查指令<strong>互斥</strong>——不能同时指定 <code>--base main</code> 和自定义 prompt。如需自定义审查指令，用 <code>codex exec</code> + 自然语言 prompt。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 9: 实战 1 — /review 审查未提交改动 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 1：审查未提交改动</h2>
+                <h4>写完代码，先自查再提交</h4>
+                <p>你刚改完 <code>auth.ts</code>，还没 git add。在 TUI 中输入：</p>
+                <pre><code class="language-text">&gt; /review</code></pre>
+                <p>Codex 弹出范围选择菜单：</p>
+                <pre><code>选择审查范围：
+  ❯ Uncommitted changes  (当前未提交的改动)
+    All branch changes   (当前分支 vs base branch)
+    Last turn changes    (最近一轮的改动)</code></pre>
+                <p>选择 <code>Uncommitted changes</code>，Codex 开始分析。审查结果以 <strong>inline comments</strong> 形式出现在 review pane 的对应行上：</p>
+                <pre><code>审查发现（auth.ts 未提交改动）：
+
+🔴 严重：第 42 行 token 过期时间硬编码（3600s），
+   应从配置读取，否则不同环境行为不一致。
+
+🟡 建议：第 67 行缺少对 null 的显式检查，
+   当 user 为 undefined 时会抛出 TypeError。
+
+🟢 风格：第 88 行变量名 `tmp` 过于模糊，
+   建议改为 `sanitizedEmail`。</code></pre>
+                <div class="key-point">
+                    <strong>效果：</strong>在 git commit 之前发现问题，比在 PR 里被发现便宜 10 倍。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 10: 实战 2 — codex review 审查分支 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 2：CLI 审查分支对比</h2>
+                <h4>PR 提交前的终极检查</h4>
+                <p>你在 <code>feature/login</code> 分支，准备提 PR：</p>
+                <pre><code class="language-bash">$ git checkout feature/login
+
+# 用 CLI 审查分支差异
+$ codex review --base main</code></pre>
+                <p>Codex 读取 <code>main...HEAD</code> 的完整 diff，输出优先级排序的发现：</p>
+                <pre><code>审查结果：feature/login → main（12 文件，340 行改动）
+
+🔴 严重（2）：
+  - src/auth.ts:112 — SQL 查询使用字符串拼接，存在注入风险
+  - src/api.ts:78 — 错误响应包含完整 stack trace
+
+🟡 建议（3）：
+  - src/utils.ts:45 — refreshToken 存入 localStorage，建议改用 httpOnly cookie
+  - src/handler.ts:23 — N+1 查询，可批量预加载
+  - src/types.ts:8 — 缺少 User 类型的 JSDoc
+
+✅ 正面：
+  - 密码哈希使用了 bcrypt，符合最佳实践</code></pre>
+                <div class="info-block">
+                    <strong>技巧：</strong>输出是<strong>自然语言文本</strong>，按优先级（🔴 &gt; 🟡 &gt; 🟢 &gt; ✅）排序。不是结构化 JSON。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 11: 实战 3 — 审查特定 commit -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 3：审查特定 commit</h2>
+                <h4>回溯历史，定位问题源头</h4>
+                <p>线上有 bug，怀疑是某次提交引入：</p>
+                <pre><code class="language-bash">$ git log --oneline -5
+a3f8b2c feat: add user profile page
+c7d1e4f fix: update auth middleware  ← 怀疑这个
+e2a9b1c refactor: extract helpers
+
+# 审查该 commit
+$ codex review --commit c7d1e4f</code></pre>
+                <pre><code>审查结果：c7d1e4f (fix: update auth middleware)
+
+🔴 严重：移除了 token 校验的 try-catch，
+   导致校验失败时直接 500 而非 401。
+
+🟡 建议：新增的 rate limiter 没有单元测试覆盖。</code></pre>
+                <div class="info-block">
+                    <strong>技巧：</strong>配合 <code>git bisect</code> 使用——先二分定位问题 commit，再用 <code>codex review --commit</code> 分析根因。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 12: 自定义审查指令 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义审查指令</h2>
+                <h4>用 codex exec 聚焦特定维度</h4>
+                <div class="warning">
+                    <strong>关键限制：</strong><code>codex review</code> 子命令的 <code>--base</code> / <code>--commit</code> / <code>--uncommitted</code> 选项<strong>不能</strong>与自定义审查 prompt 同时使用。需要自定义审查指令时，用 <code>codex exec</code>。
+                </div>
+                <pre><code class="language-bash"># 用 codex exec 传入自定义审查指令 + diff 内容
+$ codex exec "$(cat &lt;&lt;'EOF'
+请对以下 git diff 进行安全审查，重点关注：
+1. SQL 注入或 XSS 漏洞
+2. token 存储是否安全
+3. 错误信息是否泄露内部实现
+
+$(git diff main...HEAD)
+EOF
+)"</code></pre>
+                <p>Codex 会按你的指令聚焦输出：</p>
+                <pre><code>安全审查结果：
+
+🔴 SQL 注入：第 112 行使用字符串拼接构建查询，
+   应改用参数化查询。
+
+🟡 Token 存储：第 45 行将 refreshToken 存入 localStorage，
+   建议改用 httpOnly cookie。</code></pre>
+                <div class="key-point">
+                    <strong>原则：</strong>审查指令越具体，输出越有用。"看安全问题"不如"看 SQL 注入、XSS、token 泄露"。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 13: 审查指令模板库 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>审查指令模板库</h2>
+                <h4>拿来即用的审查清单</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>安全审查模板</h4>
+                        <pre><code>codex exec "对以下 diff 做安全审查：
+- SQL 注入、XSS、CSRF
+- 敏感数据明文存储或传输
+- 认证/授权逻辑漏洞
+- 错误信息泄露内部细节
+
+$(git diff --staged)"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>性能审查模板</h4>
+                        <pre><code>codex exec "对以下 diff 做性能审查：
+- N+1 查询问题
+- 内存泄漏（未清理的监听器、定时器）
+- 不必要的重复计算
+- 大数据量操作的复杂度
+
+$(git diff --staged)"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>可维护性模板</h4>
+                        <pre><code>codex exec "对以下 diff 做可维护性审查：
+- 命名是否清晰表达意图
+- 函数是否只做一件事
+- 是否有对应的单元测试
+- 文档注释是否完整
+
+$(git diff --staged)"</code></pre>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>建议：</strong>把这些模板存成 Shell 脚本或 AGENTS.md 片段，需要时直接调用。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 14: review_model 配置 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置审查模型</h2>
+                <h4>用 review_model 指定审查专用模型</h4>
+                <p>默认情况下，<code>/review</code> 和 <code>codex review</code> 使用当前会话的模型。你可以在 <code>config.toml</code> 中为审查指定一个不同的模型：</p>
+                <pre><code class="language-toml"># config.toml
+# 审查专用模型（不指定则用当前会话模型）
+review_model = "o3"</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么要单独指定？</h4>
+                        <ul>
+                            <li>开发时用快速模型（如 gpt-4.1-mini）</li>
+                            <li>审查时切换到深度推理模型（如 o3）</li>
+                            <li>兼顾日常效率与审查质量</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>AGENTS.md 定制审查行为</h4>
+                        <p>在 AGENTS.md 的 <strong>Review guidelines</strong> 部分编写团队审查规约，Codex 审查时会遵循：</p>
+                        <pre><code>## Review Guidelines
+- 所有公共 API 必须有 JSDoc
+- 禁止直接操作 DOM，使用框架抽象
+- 数据库查询必须参数化</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 15: GitHub PR 审查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>GitHub PR 自动审查</h2>
+                <h4>@codex review —— 团队协作的 First Responder</h4>
+                <p>在 GitHub PR 中评论 <code>@codex review</code>，Codex 会：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>审查流程</h4>
+                        <ol>
+                            <li>读取 PR diff 和仓库 AGENTS.md 规约</li>
+                            <li>添加 👚 reaction 表示正在处理</li>
+                            <li>聚焦 <strong>P0（严重）和 P1（重要）</strong>问题</li>
+                            <li>以标准 PR review 评论形式发布</li>
+                            <li>指摘直接挂在对应代码行上</li>
+                        </ol>
+                    </div>
+                    <div class="card">
+                        <h4>自动修复</h4>
+                        <p>评论 <code>@codex fix</code> 可让 Codex 在权限范围内自动修复指摘的问题。</p>
+                        <pre><code># 触发审查
+@codex review
+
+# 审查后触发修复
+@codex fix</code></pre>
+                    </div>
+                </div>
+                <div class="info-block"><strong>官方文档：</strong> <a href="https://developers.openai.com/codex/integrations/github" target="_blank" rel="noopener">Use Codex in GitHub</a></div>
+            </div>
+        </section>
+
+        <!-- SLIDE 16: CI 自动化 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战 4：CI 自动化</h2>
+                <h4>把 Review 嵌入 GitHub Actions</h4>
+                <div class="warning">
+                    <strong>注意：</strong><code>codex review</code> 输出的是<strong>自然语言文本</strong>，不是结构化 JSON。CI 中需用 grep/文本匹配判断是否有严重问题。
+                </div>
+                <pre><code class="language-yaml">name: AI Review
+on: [pull_request]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 完整历史，确保 diff 正确
+
+      - name: Install Codex
+        run: npm install -g @openai/codex
+
+      - name: Run Codex Review
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          # 审查分支差异，输出保存到文件
+          codex review --base origin/main &gt; review-output.txt 2&gt;&amp;1 || true
+          cat review-output.txt
+
+      - name: Check for critical issues
+        run: |
+          # 检查输出中是否包含严重问题标记
+          if grep -qiE '(🔴|critical|严重|P0)' review-output.txt; then
+            echo "::error::发现严重问题，请修复后再合并"
+            exit 1
+          fi
+          echo "未发现严重问题，审查通过"</code></pre>
+                <div class="key-point">
+                    <strong>效果：</strong>每次 PR 自动触发审查，严重问题直接阻断合并。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 17: CI 输出消费 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>CI 输出消费</h2>
+                <h4>审查结果如何驱动后续流程</h4>
+                <p><code>codex review</code> 的输出是<strong>自然语言文本</strong>，格式类似：</p>
+                <pre><code>审查结果：feature/auth → main
+
+🔴 严重（1）：
+  - src/auth.ts:42 — token 过期时间硬编码
+
+🟡 建议（2）：
+  - src/api.ts:67 — 缺少 null 检查
+  - src/utils.ts:12 — 变量命名不清晰
+
+✅ 正面：
+  - 密码哈希使用 bcrypt</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>消费方式</h4>
+                        <ul>
+                            <li><strong>grep 关键词</strong>：检查 🔴 / critical / P0</li>
+                            <li><strong>写入 PR 评论</strong>：用 <code>gh pr comment</code> 发布</li>
+                            <li><strong>推送通知</strong>：发到 Slack / 飞书</li>
+                            <li><strong>归档日志</strong>：保存审查记录供追踪</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>把结果发到 PR 评论</h4>
+                        <pre><code class="language-bash"># 把审查结果作为 PR 评论发布
+gh pr comment $PR_NUMBER \
+  --body "$(cat review-output.txt)"</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 18: 多维度审查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>多维度审查</h2>
+                <h4>用自然语言让 Codex 从多个角度审查</h4>
+                <p>单一 Review 有盲区。你可以用<strong>自然语言提示</strong>让 Codex 的主 agent 从多个维度分别审查：</p>
+                <pre><code class="language-text">&gt; 请从以下三个维度分别审查当前改动：
+1. 安全性（注入、认证、数据泄露）
+2. 性能（N+1 查询、内存泄漏、算法复杂度）
+3. 可维护性（命名、测试覆盖、文档完整性）</code></pre>
+                <p>Codex 主 agent 会自行决定是否分派子代理（Subagents）并行处理，然后汇总输出：</p>
+                <pre><code>多维度审查结果：
+
+【安全性】发现 2 个严重问题
+  - src/auth.ts:112 — SQL 注入风险
+  - src/api.ts:78 — stack trace 泄露
+
+【性能】发现 1 个警告
+  - src/users.ts:45 — N+1 查询
+
+【可维护性】发现 3 个建议
+  - 命名改进 ×2，缺少测试 ×1</code></pre>
+                <div class="key-point">
+                    <strong>关键：</strong>不需要手动 spawn 子代理。主 agent 收到多维度审查请求后，会<strong>自动编排</strong>——决定是否并行、如何汇总。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 19: 审查委员会工作流 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>审查委员会工作流</h2>
+                <h4>主 Agent 编排，自动分派与汇总</h4>
+                <div class="ai-diagram">
+                    <h4>图：多维度审查架构</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术架构图：
+                    - 顶部是"主 Agent（Orchestrator）"
+                    - 向下分叉为 3 个子 Agent：安全 Reviewer、性能 Reviewer、可维护性 Reviewer
+                    - 每个子 Agent 接收相同的 diff，但不同的审查指令
+                    - 底部汇聚到"汇总器"，输出按优先级排序的最终报告
+                    - 配色：主 Agent 蓝色，子 Agent 绿色，汇总器橙色
+                    - 画面比例：16:9
+                    </p>
+                </div>
+                <div class="info-block">
+                    <strong>实现方式：</strong>用户只需用自然语言描述审查维度，主 agent 自动完成编排。无需手动调用 <code>codex spawn</code>（此命令不存在）或 SDK 的 spawnAgent（SDK 无此方法）。Subagents 的分派是主 agent 内部行为。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 20: app-server review/start RPC -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>app-server RPC（进阶）</h2>
+                <h4>review/start —— 程序化触发审查</h4>
+                <p>Codex app-server 暴露了 <code>review/start</code> JSON-RPC 方法，用于在宿主应用中程序化触发审查。</p>
+                <pre><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": "review-001",
+  "method": "review/start",
+  "params": {
+    "target": {
+      "type": "baseBranch"
+    }
+  }
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>target.type 可选值</h4>
+                        <ul>
+                            <li><code>uncommittedChanges</code> — 未提交改动</li>
+                            <li><code>baseBranch</code> — 分支对比</li>
+                            <li><code>commit</code> — 特定 commit</li>
+                            <li><code>custom</code> — 自定义审查指令</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>审查结果</h4>
+                        <p>review 模式的 raw output 通过 <strong>thread item</strong> 读取。审查不改写代码树，只产出发现。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>注意：</strong><code>review/start</code> 是 app-server 层 RPC，<strong>不是 CLI 命令</strong>。具体字段名和参数以 <a href="https://developers.openai.com/codex/app-server" target="_blank" rel="noopener">app-server schema</a> 为准。大多数用户无需直接调用此 RPC——用 <code>/review</code> 或 <code>codex review</code> 即可。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 21: Review 流程 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Review 流程</h2>
+                <h4>从触发到结果输出</h4>
+                <div class="ai-diagram">
+                    <h4>图：Review 流程——从触发到结果输出</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术流程图：
+                    - 从左到右：用户触发 /review → 选择审查范围 → diff 提取 → 审查 prompt 组装 → 模型推理 → 结果输出
+                    - 审查范围有三种分支：未提交 / 分支对比 / 特定 commit
+                    - 底部标注 CLI 命令：codex review --uncommitted / --base / --commit
+                    - 配色：浅蓝背景，范围选择菱形橙色，审查紫色
+                    - 画面比例：16:9
+                    </p>
+                </div>
+                <div class="key-point">
+                    <strong>关键节点：</strong>范围选择 → diff 提取 → 审查 prompt 组装 → 模型推理 → 结果格式化 → 输出（文本 / inline comments / PR 评论）。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 22: 常见错误 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误（一）</h2>
+                <h4>这些坑踩过一次就够了</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>错误 1：审查范围过大</h4>
+                        <p><strong>症状：</strong>一次 Review 扔进去 5000 行 diff，输出一堆泛泛而谈的"建议"。</p>
+                        <p><strong>修复：</strong>拆分成小 PR，每次 Review 控制在 300 行以内。用 <code>--commit</code> 逐次审查。</p>
+                    </div>
+                    <div class="card">
+                        <h4>错误 2：把 review 当自动修复</h4>
+                        <p><strong>症状：</strong>指望 <code>/review</code> 自动改代码，结果发现它只报告不改代码。</p>
+                        <p><strong>修复：</strong>Review 是<strong>只读</strong>审查。发现问题后，另行发指令让 Codex 修复（或在 GitHub 用 <code>@codex fix</code>）。</p>
+                    </div>
+                    <div class="card">
+                        <h4>错误 3：把 Review 当测试</h4>
+                        <p><strong>症状：</strong>指望 Review 发现所有逻辑 bug，跳过写测试。</p>
+                        <p><strong>修复：</strong>Review 是<strong>补充</strong>，不是<strong>替代</strong>。单测覆盖逻辑，Review 覆盖意图。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 23: 常见错误 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误（二）</h2>
+                <h4>CLI 使用中的常见陷阱</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>错误 4：选项与 prompt 混用</h4>
+                        <p><strong>症状：</strong>运行 <code>codex review --base main "检查安全问题"</code>，报错或被拒绝。</p>
+                        <p><strong>修复：</strong><code>--base</code> 和自定义指令<strong>互斥</strong>。需要自定义指令时用 <code>codex exec</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>错误 5：CI 中期待 JSON 输出</h4>
+                        <p><strong>症状：</strong>CI 脚本用 <code>jq</code> 解析 review 输出，全部失败。</p>
+                        <p><strong>修复：</strong>review 输出是<strong>自然语言文本</strong>。用 <code>grep</code> 匹配关键词（🔴 / 严重 / P0），不要用 <code>jq</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>错误 6：审查指令与改动不匹配</h4>
+                        <p><strong>症状：</strong>用"安全审查"指令审查纯 CSS 改动，AI 硬找问题。</p>
+                        <p><strong>修复：</strong>审查指令要与改动类型匹配。CSS 关注兼容性和响应式；API 关注参数校验和错误码。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>经验法则：</strong>Review 的输出是"信号"，不是"命令"。最终决策权始终在你手里。
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 24: 最佳实践 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>最佳实践</h2>
+                <h4>让 Review 真正有效的几个习惯</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>小步快跑</h4>
+                        <p>每次改动控制在 200-300 行以内，Review 效果最好。大 PR 拆成小 PR，每个小 PR 独立审查。</p>
+                    </div>
+                    <div class="card">
+                        <h4>指令先行</h4>
+                        <p>在写代码之前，先想好"这次改动需要审查什么"。把审查指令写进 AGENTS.md Review guidelines 段。</p>
+                    </div>
+                    <div class="card">
+                        <h4>人机协作</h4>
+                        <p>AI Review 先过一遍，解决明显问题；再交给人做深度审查，关注业务逻辑和设计决策。</p>
+                    </div>
+                    <div class="card">
+                        <h4>持续迭代</h4>
+                        <p>记录每次 Review 的误报和漏报，调整审查指令。好的指令是<strong>用出来的</strong>，不是想出来的。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SLIDE 25: 命令速查表 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>命令速查表</h2>
+                <h4>完整参考</h4>
+                <table>
+                    <thead><tr><th>场景</th><th>命令</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td>TUI 审查</td><td><code>/review</code></td><td>交互式选择范围，inline comments 输出</td></tr>
+                        <tr><td>CLI 未提交</td><td><code>codex review --uncommitted</code></td><td>审查 staged + unstaged + untracked</td></tr>
+                        <tr><td>CLI 分支对比</td><td><code>codex review --base main</code></td><td>等价 git diff main...HEAD</td></tr>
+                        <tr><td>CLI 特定 commit</td><td><code>codex review --commit &lt;sha&gt;</code></td><td>审查指定 commit 引入的改动</td></tr>
+                        <tr><td>自定义审查</td><td><code>codex exec "审查指令..."</code></td><td>用自然语言 + diff 做自定义审查</td></tr>
+                        <tr><td>GitHub PR 审查</td><td><code>@codex review</code></td><td>PR 评论触发，P0/P1 指摘</td></tr>
+                        <tr><td>GitHub PR 修复</td><td><code>@codex fix</code></td><td>自动修复审查指摘</td></tr>
+                        <tr><td>查看 diff</td><td><code>/diff</code></td><td>TUI 中查看 Git diff</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning"><strong>记住：</strong><code>codex review</code> 的范围选项与自定义 prompt <strong>互斥</strong>。需要自定义指令时用 <code>codex exec</code>。</div>
+            </div>
+        </section>
+
+        <!-- SLIDE 26: 总结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>总结</h2>
+                <h4>Review 不是终点，是协作的起点</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>本章要点</h4>
+                        <ul>
+                            <li>三种入口：<code>/review</code>（TUI）、<code>codex review</code>（CLI）、<code>@codex review</code>（GitHub）</li>
+                            <li>三种范围：<code>--uncommitted</code> / <code>--base</code> / <code>--commit</code></li>
+                            <li>自定义审查指令用 <code>codex exec</code>（与 review 选项互斥）</li>
+                            <li>Review 是<strong>只读</strong>审查，不改代码</li>
+                            <li>输出是<strong>自然语言文本</strong>，不是 JSON</li>
+                            <li>多维度审查用自然语言提示，主 agent 自动编排</li>
+                            <li>用 <code>review_model</code> + AGENTS.md 定制审查行为</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>下一步去哪</h4>
+                        <ul>
+                            <li>第 12 章：CLI 与脚本化——把 Review 嵌入 pre-commit hook</li>
+                            <li>第 7 章：深入 Subagents——理解主 agent 的编排机制</li>
+                            <li>实践：在你的下一个 PR 中试试 <code>@codex review</code></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>记住：</strong>AI Review 的价值不在于"发现问题"，而在于<strong>让你在合并之前多想三秒</strong>。这三秒，可能省去你三天的 debug。
+                </div>
+            </div>
+        </section>
+
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 →</button>
+    </div>
+    </main>
+<script src="./references/slide-nav.js"></script>
+<script src="./references/slide-toc.js"></script>
+</body>
+</html>

@@ -60,46 +60,45 @@
             <div class="slide-content">
                 <h2>认识 HarnessProfile</h2>
                 <h4>描述 create_deep_agent 在构造聊天模型之后应用的 prompt、工具、中间件调整</h4>
-                <p>说白了，<code>HarnessProfile</code> 就是一张<strong>"当选用某个模型时该怎么做"的清单</strong>。它不会改模型本身，而是调整 harness 的行为——追加 prompt、隐藏工具、增删中间件、配置通用子 Agent。</p>
+                <p>说白了，<code>HarnessProfile</code> 就是一张<strong>"当选用某个模型时该怎么做"的清单</strong>。它不会改模型本身，而是调整 harness 的行为——追加 prompt、隐藏工具、增删中间件、配置通用子 Agent。在 JS/TS 里，它就是一个用对象字面量描述这些调整的配置对象。</p>
                 <div class="key-point">
                     <strong>卸甲：</strong>"清单"这个比喻只是为了帮助你直观理解。实际上，HarnessProfile 是一个包含 prompt、工具、中间件等配置字段的数据结构。harness 在构造 Agent 时读取它，按合并语义叠加到执行流程中。它不是一张物理清单，而是多层配置对象的运行时合并结果。
                 </div>
-                <pre><code class="language-python">from deepagents import (
-    GeneralPurposeSubagentProfile,
-    HarnessProfile,
-    register_harness_profile,
-)
+                <pre><code class="language-javascript">import {
+  HarnessProfile,
+  registerHarnessProfile,
+} from "deepagents";
 
-# 为 openai:gpt-5.4 注册一个专属 profile
-register_harness_profile(
-    "openai:gpt-5.4",
-    HarnessProfile(
-        system_prompt_suffix="Respond in under 100 words.",  # 在 system prompt 末尾追加，限制回复长度
-        excluded_tools={"execute"},                        # 从工具集中移除 execute，防止该模型执行代码
-        excluded_middleware={"SummarizationMiddleware"},    # 按名称排除中间件，阻止自动摘要介入
-        general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),  # 禁用通用子 Agent
-    ),
-)</code></pre>
+// 为 openai:gpt-5.4 注册一个专属 profile
+registerHarnessProfile(
+  "openai:gpt-5.4",
+  new HarnessProfile({
+    systemPromptSuffix: "Respond in under 100 words.", // 在 system prompt 末尾追加，限制回复长度
+    excludedTools: ["execute"],                        // 从工具集中移除 execute，防止该模型执行代码
+    excludedMiddleware: ["SummarizationMiddleware"],   // 按名称排除中间件，阻止自动摘要介入
+    generalPurposeSubagent: { enabled: false },        // 禁用通用子 Agent
+  }),
+);</code></pre>
                 <div class="card-grid">
                     <div class="card">
                         <h4>HarnessProfile 能做什么</h4>
                         <ul>
-                            <li><strong>base_system_prompt</strong>：替换整个基础 system prompt</li>
-                            <li><strong>system_prompt_suffix</strong>：在 prompt 末尾追加文本</li>
-                            <li><strong>tool_description_overrides</strong>：覆盖工具的描述文字</li>
-                            <li><strong>excluded_tools</strong>：从工具集中移除指定工具</li>
-                            <li><strong>excluded_middleware</strong>：从堆栈中剥离指定中间件</li>
-                            <li><strong>extra_middleware</strong>：追加额外的中间件</li>
-                            <li><strong>general_purpose_subagent</strong>：配置通用子 Agent</li>
+                            <li><strong>baseSystemPrompt</strong>：替换整个基础 system prompt</li>
+                            <li><strong>systemPromptSuffix</strong>：在 prompt 末尾追加文本</li>
+                            <li><strong>toolDescriptionOverrides</strong>：覆盖工具的描述文字</li>
+                            <li><strong>excludedTools</strong>：从工具集中移除指定工具</li>
+                            <li><strong>excludedMiddleware</strong>：从堆栈中剥离指定中间件</li>
+                            <li><strong>extraMiddleware</strong>：追加额外的中间件</li>
+                            <li><strong>generalPurposeSubagent</strong>：配置通用子 Agent</li>
                         </ul>
                     </div>
                     <div class="card">
                         <h4>适用场景一览</h4>
                         <ul>
-                            <li>某模型回复过长 → 追加 <code>system_prompt_suffix</code></li>
-                            <li>某模型不支持某工具 → 用 <code>excluded_tools</code> 移除</li>
-                            <li>某模型不需要摘要中间件 → 用 <code>excluded_middleware</code></li>
-                            <li>不想用通用子 Agent → 设置 <code>enabled=False</code></li>
+                            <li>某模型回复过长 → 追加 <code>systemPromptSuffix</code></li>
+                            <li>某模型不支持某工具 → 用 <code>excludedTools</code> 移除</li>
+                            <li>某模型不需要摘要中间件 → 用 <code>excludedMiddleware</code></li>
+                            <li>不想用通用子 Agent → 设置 <code>generalPurposeSubagent.enabled = false</code></li>
                             <li>模型理解工具描述有偏差 → 覆盖描述</li>
                         </ul>
                     </div>
@@ -107,41 +106,44 @@ register_harness_profile(
             </div>
         </section>
 
-        <!-- ==================== Slide 4: excluded_middleware details ==================== -->
+        <!-- ==================== Slide 4: excludedMiddleware details ==================== -->
         <section class="slide">
             <div class="slide-content">
                 <h2>中间件排除规则</h2>
-                <h4>excluded_middleware 接受两种形式，但有些中间件不能动</h4>
+                <h4>excludedMiddleware 接受两种形式，但有些中间件不能动</h4>
                 <p>排除中间件时，你可以用<strong>中间件类</strong>精确匹配，也可以用<strong>字符串名称</strong>模糊匹配。</p>
                 <div class="card-grid cols-2">
                     <div class="card">
                         <h4>形式一：字符串名称</h4>
                         <p>按 <code>AgentMiddleware.name</code> 匹配，适合内置和公共中间件。</p>
-                        <pre><code class="language-python">HarnessProfile(
-    # 按中间件名称排除，适合内置和公共中间件
-    excluded_middleware={"SummarizationMiddleware"}
-)</code></pre>
+                        <pre><code class="language-javascript">new HarnessProfile({
+  // 按中间件名称排除，适合内置和公共中间件
+  excludedMiddleware: ["SummarizationMiddleware"],
+});</code></pre>
                     </div>
                     <div class="card">
-                        <h4>形式二：导入引用</h4>
-                        <p>用 <code>module:Class</code> 语法定位精确类，适合配置文件。</p>
-                        <pre><code class="language-python"># YAML 配置中的写法
-excluded_middleware:
-  - my_pkg.middleware:TelemetryMiddleware</code></pre>
+                        <h4>形式二：类引用</h4>
+                        <p>直接传入中间件类（构造器）进行精确匹配，适合运行时代码。</p>
+                        <pre><code class="language-javascript">import { TelemetryMiddleware } from "my-pkg/middleware.js";
+
+new HarnessProfile({
+  // 传入类本身（而非字符串），匹配精确类
+  excludedMiddleware: [TelemetryMiddleware],
+});</code></pre>
                     </div>
                 </div>
                 <div class="warning">
                     <strong>重要限制：</strong>
                     <ul>
-                        <li>在 <code>excluded_middleware</code> 中列出 <code>FilesystemMiddleware</code>、<code>SubAgentMiddleware</code> 或内部权限中间件会引发 <code>ValueError</code>——它们是必需的基础设施</li>
-                        <li>只想向模型隐藏工具而不移除中间件？用 <code>excluded_tools</code> 代替</li>
-                        <li><code>module:Class</code> 导入引用是延迟解析的，会导入 Python 代码——仅在可信的本地配置中使用</li>
+                        <li>在 <code>excludedMiddleware</code> 中列出 <code>FilesystemMiddleware</code>、<code>SubAgentMiddleware</code> 或内部权限中间件会抛出 <code>Error</code>——它们是必需的基础设施</li>
+                        <li>只想向模型隐藏工具而不移除中间件？用 <code>excludedTools</code> 代替</li>
+                        <li>类引用会在解析时真正 <code>import</code> 对应模块——仅在可信的本地代码或受信配置中使用</li>
                         <li><code>SubAgentMiddleware</code>（以及 <code>task</code> 工具）仅在存在至少一个同步子 Agent 时才会被附加，因此此配置可以干净地将其排除</li>
                         <li>异步子 Agent 不受影响</li>
                     </ul>
                 </div>
                 <div class="key-point">
-                    <strong>选择原则：</strong>能用字符串就用字符串（简单安全），需要精确匹配自定义中间件时才用导入引用。永远不要试图排除基础设施中间件。
+                    <strong>选择原则：</strong>能用字符串就用字符串（简单安全，且可写进 JSON 配置文件），需要精确匹配自定义中间件时才用类引用。永远不要试图排除基础设施中间件。
                 </div>
             </div>
         </section>
@@ -155,25 +157,25 @@ excluded_middleware:
                     <div class="card">
                         <h4>Provider 级别</h4>
                         <p>裸 provider 名称如 <code>"openai"</code>，应用于该 provider 的所有模型。</p>
-                        <pre><code class="language-python">register_harness_profile(
-    "openai",
-    HarnessProfile(
-        # 所有使用 OpenAI 模型的 Agent 都会追加这条指令
-        system_prompt_suffix="Be concise."
-    ),
-)</code></pre>
+                        <pre><code class="language-javascript">registerHarnessProfile(
+  "openai",
+  new HarnessProfile({
+    // 所有使用 OpenAI 模型的 Agent 都会追加这条指令
+    systemPromptSuffix: "Be concise.",
+  }),
+);</code></pre>
                         <p>所有 OpenAI 模型（gpt-5.4、gpt-4o 等）都会追加 "Be concise."</p>
                     </div>
                     <div class="card">
                         <h4>Model 级别</h4>
                         <p>完全限定的 <code>"provider:model"</code> 键，仅应用于特定模型。</p>
-                        <pre><code class="language-python">register_harness_profile(
-    "openai:gpt-5.4",
-    HarnessProfile(
-        # 只有 gpt-5.4 会排除 execute 工具
-        excluded_tools={"execute"}
-    ),
-)</code></pre>
+                        <pre><code class="language-javascript">registerHarnessProfile(
+  "openai:gpt-5.4",
+  new HarnessProfile({
+    // 只有 gpt-5.4 会排除 execute 工具
+    excludedTools: ["execute"],
+  }),
+);</code></pre>
                         <p>只有 openai:gpt-5.4 会排除 execute 工具。</p>
                     </div>
                 </div>
@@ -198,53 +200,53 @@ excluded_middleware:
                     </thead>
                     <tbody>
                         <tr>
-                            <td><code>base_system_prompt</code></td>
+                            <td><code>baseSystemPrompt</code></td>
                             <td>新值优先，否则继承</td>
                             <td>provider 设 "A"，model 设 "B" → 结果是 "B"</td>
                         </tr>
                         <tr>
-                            <td><code>system_prompt_suffix</code></td>
+                            <td><code>systemPromptSuffix</code></td>
                             <td>新值优先，否则继承</td>
                             <td>provider 设 "简短"，model 未设 → 继承 "简短"</td>
                         </tr>
                         <tr>
-                            <td><code>tool_description_overrides</code></td>
-                            <td>映射按键合并，新值优先</td>
+                            <td><code>toolDescriptionOverrides</code></td>
+                            <td>对象按键合并，新值优先</td>
                             <td>两者都覆盖 "grep" → model 的描述胜出</td>
                         </tr>
                         <tr>
-                            <td><code>excluded_tools</code></td>
-                            <td>集合并集</td>
-                            <td>provider 排 {A}，model 排 {B} → 排 {A, B}</td>
+                            <td><code>excludedTools</code></td>
+                            <td>数组合并去重（并集）</td>
+                            <td>provider 排 ["A"]，model 排 ["B"] → 排 ["A", "B"]</td>
                         </tr>
                         <tr>
-                            <td><code>excluded_middleware</code></td>
-                            <td>集合并集</td>
+                            <td><code>excludedMiddleware</code></td>
+                            <td>数组合并去重（并集）</td>
                             <td>同上，排除列表只会越来越多</td>
                         </tr>
                         <tr>
-                            <td><code>extra_middleware</code></td>
+                            <td><code>extraMiddleware</code></td>
                             <td>按类合并，新类追加</td>
                             <td>同类实例替换，新类追加到尾部</td>
                         </tr>
                         <tr>
-                            <td><code>general_purpose_subagent</code></td>
+                            <td><code>generalPurposeSubagent</code></td>
                             <td>按字段合并</td>
                             <td>未设置的字段继承上层</td>
                         </tr>
                         <tr>
-                            <td><code>init_kwargs</code>（provider）</td>
-                            <td>字典按键合并；共享键上新值优先</td>
+                            <td><code>initKwargs</code>（provider）</td>
+                            <td>对象按键合并；共享键上新值优先</td>
                             <td>provider 设 temperature=0，model 设 temperature=0.7 → model 胜出</td>
                         </tr>
                         <tr>
-                            <td><code>pre_init</code>（provider）</td>
-                            <td>可调用对象链式执行：现有先运行，然后新运行</td>
-                            <td>两个 pre_init 都会执行，按注册顺序依次调用</td>
+                            <td><code>preInit</code>（provider）</td>
+                            <td>函数链式执行：现有先运行，然后新运行</td>
+                            <td>两个 preInit 都会执行，按注册顺序依次调用</td>
                         </tr>
                         <tr>
-                            <td><code>init_kwargs_factory</code>（provider）</td>
-                            <td>工厂链式执行，每次 <code>resolve_model</code> 调用时合并其输出</td>
+                            <td><code>initKwargsFactory</code>（provider）</td>
+                            <td>工厂链式执行，每次 <code>resolveModel</code> 调用时合并其输出</td>
                             <td>多个工厂的输出按键合并，新值优先</td>
                         </tr>
                     </tbody>
@@ -262,21 +264,24 @@ excluded_middleware:
                 <h2>Provider 配置档案</h2>
                 <h4>更窄的配套 API，只管模型构造参数，不影响 harness</h4>
                 <p><code>ProviderProfile</code> 和 <code>HarnessProfile</code> 是<strong>互补关系</strong>：前者管"怎么构造模型"，后者管"构造之后怎么调整 harness"。大多数场景你只需要 <code>HarnessProfile</code>。</p>
-                <pre><code class="language-python">from deepagents import ProviderProfile, register_provider_profile
+                <pre><code class="language-javascript">import {
+  ProviderProfile,
+  registerProviderProfile,
+} from "deepagents";
 
-# 为 OpenAI 设置默认温度为 0
-register_provider_profile(
-    "openai",
-    # init_kwargs 会被转发给 init_chat_model，这里设置默认温度
-    ProviderProfile(init_kwargs={"temperature": 0}),
-)</code></pre>
+// 为 OpenAI 设置默认温度为 0
+registerProviderProfile(
+  "openai",
+  // initKwargs 会被转发给 initChatModel，这里设置默认温度
+  new ProviderProfile({ initKwargs: { temperature: 0 } }),
+);</code></pre>
                 <div class="card-grid">
                     <div class="card">
                         <h4>ProviderProfile 的三个字段</h4>
                         <ul>
-                            <li><strong>init_kwargs</strong>：静态初始化参数，转发给 <code>init_chat_model</code></li>
-                            <li><strong>pre_init</strong>：构造前运行的副作用（如凭据验证）</li>
-                            <li><strong>init_kwargs_factory</strong>：运行时动态生成 kwargs（如从环境变量读 headers）</li>
+                            <li><strong>initKwargs</strong>：静态初始化参数，转发给 <code>initChatModel</code></li>
+                            <li><strong>preInit</strong>：构造前运行的副作用（如凭据验证）</li>
+                            <li><strong>initKwargsFactory</strong>：运行时动态生成 kwargs（如从环境变量读 headers）</li>
                         </ul>
                     </div>
                     <div class="card">
@@ -299,46 +304,45 @@ register_provider_profile(
         <section class="slide">
             <div class="slide-content">
                 <h2>从配置文件加载</h2>
-                <h4>用 YAML/JSON 管理 profile，团队协作更方便</h4>
+                <h4>用 JSON（或 YAML）管理 profile，团队协作更方便</h4>
                 <p>运行时 API（<code>HarnessProfile</code>）支持中间件实例、工厂等复杂对象，但<strong>配置文件只能存声明式数据</strong>。<code>HarnessProfileConfig</code> 就是为此而生的——它镜像了 <code>HarnessProfile</code> 的可序列化子集。</p>
                 <div class="key-point" style="margin-bottom: 1rem;">
-                    <strong>便捷之处：</strong><code>register_harness_profile</code> 同时接受 <code>HarnessProfile</code> 和 <code>HarnessProfileConfig</code> 两种类型，因此配置文件支持的调用者不需要手动转换步骤——直接传入即可。
+                    <strong>便捷之处：</strong><code>registerHarnessProfile</code> 同时接受 <code>HarnessProfile</code> 和 <code>HarnessProfileConfig</code> 两种类型，因此配置文件支持的调用者不需要手动转换步骤——直接传入即可。
                 </div>
                 <div class="columns">
                     <div class="column">
-                        <h4>YAML 配置文件</h4>
-                        <pre><code class="language-yaml"># openai.yaml
-base_system_prompt: You are helpful.
-system_prompt_suffix: Respond briefly.
-excluded_tools:
-  - execute
-  - grep
-excluded_middleware:
-  - SummarizationMiddleware
-  - my_pkg.middleware:TelemetryMiddleware
-general_purpose_subagent:
-  enabled: false</code></pre>
+                        <h4>JSON 配置文件</h4>
+                        <pre><code class="language-json">// openai.json
+{
+  "baseSystemPrompt": "You are helpful.",
+  "systemPromptSuffix": "Respond briefly.",
+  "excludedTools": ["execute", "grep"],
+  "excludedMiddleware": ["SummarizationMiddleware"],
+  "generalPurposeSubagent": { "enabled": false }
+}</code></pre>
                     </div>
                     <div class="column">
-                        <h4>Python 加载代码</h4>
-                        <pre><code class="language-python">import yaml
-from deepagents import (
-    HarnessProfileConfig,
-    register_harness_profile,
-)
+                        <h4>JS 加载代码</h4>
+                        <pre><code class="language-javascript">import { readFileSync } from "node:fs";
+import {
+  HarnessProfileConfig,
+  registerHarnessProfile,
+} from "deepagents";
 
-with open("openai.yaml") as f:
-    # 从 YAML 加载配置并转换为 HarnessProfileConfig 后注册
-    register_harness_profile(
-        "openai",
-        HarnessProfileConfig.from_dict(
-            yaml.safe_load(f)  # 解析 YAML 为字典
-        ),
-    )</code></pre>
+// 读取 JSON 配置并注册
+const raw = readFileSync("openai.json", "utf8");
+registerHarnessProfile(
+  "openai",
+  // HarnessProfileConfig 直接接受普通对象（JSON.parse 的输出）
+  new HarnessProfileConfig(JSON.parse(raw)),
+);</code></pre>
                     </div>
                 </div>
                 <div class="key-point">
-                    <strong>双向转换：</strong><code>HarnessProfileConfig.from_harness_profile(...)</code> 可以把运行时 profile 导出回声明式形式。但注意：非空的 <code>extra_middleware</code> 和在 <code>__main__</code> 中定义的中间件类无法序列化，导出时会抛 <code>ValueError</code>。
+                    <strong>用 YAML 也行：</strong>JS 没有内置 YAML 解析器，但你可以 <code>npm install yaml</code>，把上面的 <code>JSON.parse(raw)</code> 换成 <code>parse(raw)</code>（来自 <code>yaml</code> 包）。配置文件里同样使用 camelCase 键名。
+                </div>
+                <div class="key-point">
+                    <strong>双向转换：</strong><code>HarnessProfileConfig.fromHarnessProfile(...)</code> 可以把运行时 profile 导出回声明式形式。但注意：非空的 <code>extraMiddleware</code> 和匿名（未命名）的中间件类无法序列化，导出时会抛 <code>Error</code>。
                 </div>
             </div>
         </section>
@@ -347,31 +351,31 @@ with open("openai.yaml") as f:
         <section class="slide">
             <div class="slide-content">
                 <h2>配置文件 vs 运行时</h2>
-                <h4>不是所有功能都能放进 YAML——搞清楚边界</h4>
+                <h4>不是所有功能都能放进 JSON——搞清楚边界</h4>
                 <div class="comparison">
                     <div class="before">
                         <h4>HarnessProfileConfig（可序列化）</h4>
                         <ul>
-                            <li>prompt 文本（<code>base_system_prompt</code>、<code>system_prompt_suffix</code>）</li>
-                            <li>工具描述覆盖（<code>tool_description_overrides</code>）</li>
+                            <li>prompt 文本（<code>baseSystemPrompt</code>、<code>systemPromptSuffix</code>）</li>
+                            <li>工具描述覆盖（<code>toolDescriptionOverrides</code>）</li>
                             <li>排除的工具和中间件（字符串形式）</li>
                             <li>通用子 Agent 配置（<code>enabled</code>、<code>name</code> 等）</li>
-                            <li>可以用 YAML / JSON 存储</li>
+                            <li>可以用 JSON / YAML 存储</li>
                         </ul>
                     </div>
                     <div class="after">
                         <h4>HarnessProfile（仅运行时）</h4>
                         <ul>
-                            <li>中间件实例（<code>extra_middleware</code>）</li>
-                            <li>工厂函数（<code>init_kwargs_factory</code>）</li>
-                            <li>类形式的 <code>excluded_middleware</code> 条目</li>
-                            <li>需要在 Python 代码中注册</li>
-                            <li>不能用 YAML 表示</li>
+                            <li>中间件实例（<code>extraMiddleware</code>）</li>
+                            <li>工厂函数（<code>initKwargsFactory</code>）</li>
+                            <li>类形式的 <code>excludedMiddleware</code> 条目</li>
+                            <li>需要在 JS/TS 代码中注册</li>
+                            <li>不能用纯 JSON 表示</li>
                         </ul>
                     </div>
                 </div>
                 <div class="warning">
-                    <strong>常见踩坑：</strong>当你尝试导出包含 <code>extra_middleware</code> 实例或 <code>__main__</code> 作用域内中间件类的 profile 时，<code>from_harness_profile</code> 会抛出 <code>ValueError</code>。设计 profile 时就要考虑：哪些内容放配置文件，哪些只能在代码中注册。
+                    <strong>常见踩坑：</strong>当你尝试导出包含 <code>extraMiddleware</code> 实例或未命名的中间件类的 profile 时，<code>fromHarnessProfile</code> 会抛出 <code>Error</code>。设计 profile 时就要考虑：哪些内容放配置文件，哪些只能在代码中注册。
                 </div>
             </div>
         </section>
@@ -380,48 +384,56 @@ with open("openai.yaml") as f:
         <section class="slide">
             <div class="slide-content">
                 <h2>作为插件分发</h2>
-                <h4>通过入口点自动注册，使用者无需手动调用 register</h4>
-                <p>如果你要把 profile 打包成库分发给其他人，可以通过 <code>importlib.metadata</code> 入口点实现<strong>自动注册</strong>。加载顺序是：内置 → 入口点插件 → 用户代码。</p>
+                <h4>导出 register 函数让使用者一行 import 自动注册</h4>
+                <p>JS/TS 没有 Python 那种 <code>importlib.metadata</code> 入口点机制，deepagents 采用更直接的方式：<strong>把注册函数作为模块的副作用导出</strong>。加载顺序是：内置 → npm 包（被 import 时执行）→ 用户代码。</p>
                 <div class="columns">
                     <div class="column">
-                        <h4>pyproject.toml 声明</h4>
-                        <pre><code class="language-toml">[project.entry-points."deepagents.harness_profiles"]
-my_provider = "my_pkg.profiles:register_harness"
-
-[project.entry-points."deepagents.provider_profiles"]
-my_provider = "my_pkg.profiles:register_provider"</code></pre>
+                        <h4>package.json 暴露入口</h4>
+                        <pre><code class="language-json">// my-deepagents-profiles/package.json
+{
+  "name": "my-deepagents-profiles",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./register": "./src/register.js"
+  }
+}</code></pre>
                     </div>
                     <div class="column">
-                        <h4>Python 注册函数</h4>
-                        <pre><code class="language-python">from deepagents import (
-    HarnessProfile,
-    ProviderProfile,
-    register_harness_profile,
-    register_provider_profile,
-)
+                        <h4>注册模块（src/register.js）</h4>
+                        <pre><code class="language-javascript">import {
+  HarnessProfile,
+  ProviderProfile,
+  registerHarnessProfile,
+  registerProviderProfile,
+} from "deepagents";
 
-def register_harness() -> None:
-    # 入口点自动调用此函数，无需用户手动注册
-    register_harness_profile(
-        "my_provider",
-        HarnessProfile(
-            # 指示该 provider 的模型批量并发执行独立工具调用
-            system_prompt_suffix=(
-                "Batch independent tool "
-                "calls in parallel."
-            ),
-        ),
-    )
+// 用户 import 本模块时自动执行
+registerHarnessProfile(
+  "my_provider",
+  new HarnessProfile({
+    // 指示该 provider 的模型批量并发执行独立工具调用
+    systemPromptSuffix:
+      "Batch independent tool calls in parallel.",
+  }),
+);
 
-def register_provider() -> None:
-    # 为该 provider 设置默认构造参数
-    register_provider_profile(
-        "my_provider",
-        ProviderProfile(
-            init_kwargs={"temperature": 0}  # 默认温度 0，输出更确定
-        ),
-    )</code></pre>
+registerProviderProfile(
+  "my_provider",
+  new ProviderProfile({
+    initKwargs: { temperature: 0 }, // 默认温度 0，输出更确定
+  }),
+);
+
+// 也可以命名导出，让用户按需手动调用
+export function registerMyProvider() {
+  /* 上面两段注册逻辑 */
+}</code></pre>
                     </div>
+                </div>
+                <div class="key-point">
+                    <strong>使用者一行接入：</strong><code>import "my-deepagents-profiles/register";</code>（副作用导入即触发注册），或显式调用 <code>import { registerMyProvider } from "my-deepagents-profiles"; registerMyProvider();</code>。无需修改 <code>createDeepAgent</code> 调用点。
                 </div>
                 <div class="key-point">
                     <strong>加载顺序的意义：</strong>同一键下的后续注册会叠加在之前的注册之上（合并而非替换）。所以内置 profile 先注册，插件可以在此基础上追加覆盖，用户代码最后执行可以进一步定制。这是一个<strong>分层叠加</strong>的设计。
@@ -439,16 +451,16 @@ def register_provider() -> None:
                     <div class="card">
                         <h4>主 Agent prompt 拼装顺序</h4>
                         <ol>
-                            <li><strong>调用者提供的 <code>system_prompt=</code></strong>：始终在最前面</li>
-                            <li>Deep Agents 基础 prompt（或 profile 的 <code>base_system_prompt</code> 替换）</li>
-                            <li><strong>Profile 的 <code>system_prompt_suffix</code></strong>：始终在最后面</li>
+                            <li><strong>调用者提供的 <code>systemPrompt</code></strong>：始终在最前面</li>
+                            <li>Deep Agents 基础 prompt（或 profile 的 <code>baseSystemPrompt</code> 替换）</li>
+                            <li><strong>Profile 的 <code>systemPromptSuffix</code></strong>：始终在最后面</li>
                         </ol>
                     </div>
                     <div class="card">
                         <h4>子 Agent prompt 规则</h4>
                         <ul>
                             <li>每个子 Agent 针对自身的模型<strong>重新运行 profile 解析</strong></li>
-                            <li>通用子 Agent 专用的 prompt 优先级高于 <code>base_system_prompt</code></li>
+                            <li>通用子 Agent 专用的 prompt 优先级高于 <code>baseSystemPrompt</code></li>
                             <li>相同的覆盖规则适用于声明式子 Agent 和自动子 Agent</li>
                         </ul>
                     </div>
@@ -469,7 +481,7 @@ def register_provider() -> None:
                 <pre><code class="language-plaintext">需求：
 1. 所有 OpenAI 模型：回复简洁（不超过 200 字）
 2. openai:gpt-5.4 额外排除 execute 工具
-3. 所有 Anthropic 模型：排除 grep 工具，追加 system_prompt_suffix "Think step by step."
+3. 所有 Anthropic 模型：排除 grep 工具，追加 systemPromptSuffix "Think step by step."
 4. anthropic:claude-sonnet-4-20250514 禁用通用子 Agent</code></pre>
                 <div class="practice-container">
                     <div class="practice-step">
@@ -483,8 +495,8 @@ def register_provider() -> None:
                     <div class="practice-step">
                         <h3>任务 2：选择加载方式</h3>
                         <ul>
-                            <li>哪些配置适合放 YAML 文件？</li>
-                            <li>哪些只能在 Python 代码中注册？</li>
+                            <li>哪些配置适合放 JSON 文件？</li>
+                            <li>哪些只能在 JS/TS 代码中注册？</li>
                             <li>如何把配置组织成可复用的模块？</li>
                         </ul>
                     </div>
@@ -500,46 +512,43 @@ def register_provider() -> None:
             <div class="slide-content">
                 <h2>参考答案</h2>
                 <h4>一种可行的 profile 配置方案——合并语义决定了最终效果</h4>
-                <pre><code class="language-python">from deepagents import (
-    GeneralPurposeSubagentProfile,
-    HarnessProfile,
-    register_harness_profile,
-)
+                <pre><code class="language-javascript">import {
+  HarnessProfile,
+  registerHarnessProfile,
+} from "deepagents";
 
-# Provider 级别：所有 OpenAI 模型
-register_harness_profile(
-    "openai",
-    HarnessProfile(
-        system_prompt_suffix="Respond in under 200 words."  # 所有 OpenAI 模型追加此指令
-    ),
-)
+// Provider 级别：所有 OpenAI 模型
+registerHarnessProfile(
+  "openai",
+  new HarnessProfile({
+    systemPromptSuffix: "Respond in under 200 words.", // 所有 OpenAI 模型追加此指令
+  }),
+);
 
-# Model 级别：gpt-5.4 在 provider 基础上追加排除
-register_harness_profile(
-    "openai:gpt-5.4",
-    HarnessProfile(
-        excluded_tools={"execute"},  # 与 provider 级别的 excluded_tools 取并集
-    ),
-)
+// Model 级别：gpt-5.4 在 provider 基础上追加排除
+registerHarnessProfile(
+  "openai:gpt-5.4",
+  new HarnessProfile({
+    excludedTools: ["execute"], // 与 provider 级别的 excludedTools 取并集
+  }),
+);
 
-# Provider 级别：所有 Anthropic 模型
-register_harness_profile(
-    "anthropic",
-    HarnessProfile(
-        excluded_tools={"grep"},                    # 排除 grep 工具
-        system_prompt_suffix="Think step by step.", # 引导模型逐步推理
-    ),
-)
+// Provider 级别：所有 Anthropic 模型
+registerHarnessProfile(
+  "anthropic",
+  new HarnessProfile({
+    excludedTools: ["grep"],                     // 排除 grep 工具
+    systemPromptSuffix: "Think step by step.",   // 引导模型逐步推理
+  }),
+);
 
-# Model 级别：claude-sonnet-4 禁用通用子 Agent
-register_harness_profile(
-    "anthropic:claude-sonnet-4-20250514",
-    HarnessProfile(
-        general_purpose_subagent=GeneralPurposeSubagentProfile(
-            enabled=False
-        ),
-    ),
-)</code></pre>
+// Model 级别：claude-sonnet-4 禁用通用子 Agent
+registerHarnessProfile(
+  "anthropic:claude-sonnet-4-20250514",
+  new HarnessProfile({
+    generalPurposeSubagent: { enabled: false },
+  }),
+);</code></pre>
                 <div class="key-point">
                     <strong>验证合并结果：</strong>openai:gpt-5.4 最终会追加 "Respond in under 200 words."（继承 provider）+ 排除 execute（自身设置）。anthropic:claude-sonnet-4 最终会排除 grep（继承）+ 追加 suffix（继承）+ 禁用子 Agent（自身设置）。这正是两级继承的威力。
                 </div>

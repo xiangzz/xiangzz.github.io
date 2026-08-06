@@ -252,8 +252,11 @@ def repeat_kv(x, n_rep):
         is_causal=self.is_causal,
     )</code></pre>
                 <p>这<strong>一个函数调用</strong>等价于教程里的三步，但底层可能走 FlashAttention / memory-efficient kernel，更快、更省显存。传一个 <code>is_causal=True</code>，掩码也一起做了。</p>
+                <div class="warning">
+                    <p><strong>易错点：别在源码里找「三步法」。</strong>教程教的 <code>QK^T/√d → 掩码 → softmax → ×V</code> 是原理，但真实默认走闪算分支，看不到这三步。如果你直接 <code>grep</code> 源码找 <code>softmax</code>，只会找到 else 分支（第 128-131 行的手写版，用于不支持闪算的边界情况）——那是兜底，不是主路径。<strong>两条路数学等价，但默认跑的是闪算那条。</strong></p>
+                </div>
                 <div class="intro-block">
-                    <p><strong>那 else 分支还在吗？</strong>在。第 128-131 行保留了手写版（<code>scores = xq @ xk.transpose(-2,-1) / sqrt(head_dim)</code> 再 <code>+= -inf</code> 的 triu 掩码，最后 <code>F.softmax(scores) @ xv</code>），用于不支持闪算的边界情况。教程的三步法 = 这个 else 分支，是「读懂原理」用的；真实默认 = 闪算分支。两条路数学等价。</p>
+                    <p>那 else 分支还在吗？在。第 128-131 行保留了手写版（<code>scores = xq @ xk.transpose(-2,-1) / sqrt(head_dim)</code> 再 <code>+= -inf</code> 的 triu 掩码，最后 <code>F.softmax(scores) @ xv</code>），用于不支持闪算的边界情况。教程的三步法 = 这个 else 分支，是「读懂原理」用的；真实默认 = 闪算分支。</p>
                 </div>
             </div>
         </section>

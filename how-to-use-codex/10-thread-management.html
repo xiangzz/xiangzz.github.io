@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>10 线程管理</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧵</text></svg>">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 10 章</div>
+            <h1>线程管理</h1>
+            <p>别让对话失控 —— fork、resume、compact 让每个任务各得其所</p>
+            <strong>6 个核心命令 · 会话生命周期 · SDK 集成</strong>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>一个线程走到底？</h2>
+                <h4>那些让你后悔"没早点分叉"的瞬间</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>它把上下文搞乱了</h4>
+                        <p>一个线程里既改了认证模块，又重构了数据库层。现在 Codex 满脑子都是数据库的上下文，认证修改的细节已经模糊了。<strong>上下文污染</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>你不敢试危险方案</h4>
+                        <p>你想让 Codex 尝试一个激进的方案，但怕搞砸现有的进度。只能小心翼翼，或者手动备份整个目录。<strong>没有安全网</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>对话越来越长，越来越笨</h4>
+                        <p>线程已经 50+ 轮对话了。每次请求都要重读全部历史，token 消耗爆炸，响应变慢，Codex 开始"忘记"早期的决策。<strong>上下文膨胀</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point"><strong>线程管理就是为这些场景设计的：</strong>用 fork 探索分支、用 resume 恢复中断的工作、用 compact 精简冗长的对话、用 archive 归档已完成的任务。让每个线程各司其职，而不是一个线程扛所有。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>线程是什么？</h2>
+                <h4>一次对话 = 一个线程</h4>
+                <p><strong>线程（Thread）</strong>是 Codex 中一次独立对话的完整上下文。它包含了所有的消息、工具调用结果、文件变更历史。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>物理存储</h4>
+                        <p>每个线程对应 <code>~/.codex/sessions/</code> 下的一个 JSONL 文件（按 <code>YYYY/MM/DD/</code> 分目录），记录了完整的消息序列。</p>
+                    </div>
+                    <div class="card">
+                        <h4>逻辑边界</h4>
+                        <p>每个线程有<strong>独立的上下文窗口</strong>。一个线程的对话不会影响另一个线程。fork 创建的新线程从当前状态分叉，之后各自独立演化。</p>
+                    </div>
+                </div>
+                <pre><code class="language-text"># 会话文件存储结构
+~/.codex/sessions/
+├── 2026/
+│   └── 07/
+│       └── 04/
+│           ├── session-abc123.jsonl    # 每个文件 = 一个线程
+│           ├── session-def456.jsonl
+│           └── session-ghi789.jsonl</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>关键术语</h2>
+                <h4>Thread · Turn · Rollout</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Thread（线程）</h4>
+                        <p>一次完整对话。有唯一 <code>thread_id</code>（全局唯一、创建后不可变），包含所有历史消息。每个线程对应一个 JSONL 文件。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Turn（轮次）</h4>
+                        <p>一次"用户提问 → Codex 回答"的交互。一个线程包含多个 turn。fork 操作发生在 turn 之间——从某个 turn 的结束点分叉。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Rollout（执行轨迹）</h4>
+                        <p>Codex 内部记录的完整执行轨迹，包含工具调用、中间状态。rollout 是 fork/resume 操作的数据基础——app-server 通过 rollout 记录来恢复或复制线程状态。</p>
+                    </div>
+                </div>
+                <div class="info-block"><strong>官方文档：</strong> <a href="https://developers.openai.com/codex/cli/slash-commands" target="_blank" rel="noopener">Slash Commands</a> · <a href="https://developers.openai.com/codex/codex-manual.md" target="_blank" rel="noopener">Codex Manual</a></div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>6 个命令掌控线程</h2>
+                <h4>TUI 内斜杠命令一览</h4>
+                <table>
+                    <thead><tr><th>命令</th><th>做什么</th><th>何时用</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>/new</code></td><td>开始新线程</td><td>切换到完全不同的任务</td></tr>
+                        <tr><td><code>/fork</code></td><td>从当前轮次分叉</td><td>想尝试新方案但保留现状</td></tr>
+                        <tr><td><code>/resume</code></td><td>恢复已保存的线程</td><td>继续之前中断的工作</td></tr>
+                        <tr><td><code>/compact</code></td><td>压缩当前对话</td><td>上下文太长、响应变慢</td></tr>
+                        <tr><td><code>/archive</code></td><td>归档并退出</td><td>任务完成，归档保存</td></tr>
+                        <tr><td><code>/delete</code></td><td>永久删除并退出</td><td>废弃的实验线程</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block"><strong>补充：</strong><code>/rename</code> 可重命名当前线程，便于在 <code>/resume</code> 选择器中识别。<code>/clear</code> 清空终端并新建对话（比 <code>/new</code> 更彻底，会重置终端视图）。</div>
+                <div class="info-block"><strong>注意：</strong><code>/archive</code> 和 <code>/delete</code> 执行后会<strong>退出 Codex</strong>。<code>/delete</code> 不可撤销。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>命令 vs SDK</h2>
+                <h4>两种使用方式</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>交互式（TUI 斜杠命令）</h4>
+                        <p>在 Codex TUI 中输入 <code>/fork</code>、<code>/resume</code> 等。适合<strong>人在回路</strong>的开发流程。</p>
+                        <pre><code class="language-text">&gt; /fork
+&gt; /resume
+&gt; /compact</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>CLI 子命令（终端）</h4>
+                        <p>在终端直接运行，不进入 TUI。适合脚本和自动化。</p>
+                        <pre><code class="language-bash">$ codex fork          # 打开会话选择器后 fork
+$ codex resume --last  # 恢复最近的会话
+$ codex archive &lt;id&gt;   # 按 ID 归档
+$ codex unarchive &lt;id&gt; # 恢复归档</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>SDK（Python）</h4>
+                        <p>通过 codex-sdk-py 的 <code>thread_start()</code> / <code>thread.run()</code> / <code>thread_resume()</code> 管理会话。fork / archive 等操作需通过 CLI 子进程调用。</p>
+                        <pre><code class="language-python">from codex_sdk import Codex
+codex = Codex()
+thread = codex.thread_start()</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>/fork：分叉实验</h2>
+                <h4>保留现状，探索可能</h4>
+                <p><code>/fork</code> 把当前线程<strong>完整复制</strong>到一个新线程。原线程不受影响，你在新线程里可以大胆尝试。</p>
+                <pre><code class="language-text"># 在 TUI 中
+&gt; /fork
+✅ 已创建分叉 thread-xyz789
+   原线程 thread-abc123 不受影响
+
+# 或在终端
+$ codex fork   # 打开会话选择器</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>何时 fork？</h4>
+                        <ul>
+                            <li><strong>方案选型</strong>：A 方案 vs B 方案，fork 后分别尝试</li>
+                            <li><strong>危险操作前</strong>：fork 一个安全副本再动手</li>
+                            <li><strong>并行任务</strong>：同一上下文分出多条线索</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>关键特性</h4>
+                        <ul>
+                            <li>fork 后的新线程有独立的 ID</li>
+                            <li>之后两线程各自独立，互不影响</li>
+                            <li>fork 发生在当前 turn 的结束点</li>
+                            <li>原线程的 rollout 记录是 fork 的基础</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>/resume：恢复线程</h2>
+                <h4>从中断处继续</h4>
+                <p><code>/resume</code> 打开会话选择器，从历史线程中选一个恢复。原历史完整保留。</p>
+                <pre><code class="language-text"># 在 TUI 中
+&gt; /resume
+# 弹出会话选择器：
+  ┌─────────────────────────────────────┐
+  │ fix-auth-bug     2026-07-04 14:30   │
+  │ refactor-db      2026-07-04 11:15   │
+  │ add-tests        2026-07-03 18:45   │
+  └─────────────────────────────────────┘
+
+# 或在终端直接恢复最近的会话
+$ codex resume --last</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>resume vs fork 的区别</h4>
+                        <ul>
+                            <li><strong>resume</strong>：继续<strong>已有</strong>线程，原历史不变</li>
+                            <li><strong>fork</strong>：基于当前线程创建<strong>新</strong>线程</li>
+                            <li>resume 后继续追加 turn 到同一个线程</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>SessionStart hook</h4>
+                        <p>当通过 resume 恢复线程时，<code>SessionStart</code> hook 会触发，<code>source</code> 值为 <code>"resume"</code>。你可以用它加载上下文笔记。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>/compact：压缩对话</h2>
+                <h4>释放上下文空间</h4>
+                <p><code>/compact</code> 将当前对话历史<strong>摘要化</strong>，用一份精炼总结替代冗长的早期消息，释放 token 预算。</p>
+                <pre><code class="language-text"># 对话变长后
+&gt; /compact
+# Codex 会确认后执行摘要</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>compact 做了什么</h4>
+                        <ul>
+                            <li>摘要替代早期消息（非删除，是压缩）</li>
+                            <li>保留关键决策和文件变更信息</li>
+                            <li>释放上下文窗口空间</li>
+                            <li>触发 PreCompact / PostCompact hooks</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>何时 compact？</h4>
+                        <ul>
+                            <li>对话超过 30+ 轮</li>
+                            <li>响应明显变慢</li>
+                            <li>token 用量告警</li>
+                            <li>早期细节已不重要</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning"><strong>注意：</strong>compact 是<strong>有损压缩</strong>——细节可能丢失。compact 前如果有关键信息，先用 <code>/copy</code> 或手动记录。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>/archive &amp; /delete：归档与删除</h2>
+                <h4>完成后清理</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>/archive — 归档</h4>
+                        <p>归档当前线程并<strong>退出 Codex</strong>。归档后的线程变为只读、受保护状态，不会被 <code>/resume</code> 误选。</p>
+                        <pre><code class="language-text">&gt; /archive
+# 归档后退出 Codex
+
+# 恢复归档的会话
+$ codex unarchive &lt;id&gt;</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>/delete — 永久删除</h4>
+                        <p>永久删除当前线程并<strong>退出 Codex</strong>。JSONL 文件被移除，<strong>不可恢复</strong>。</p>
+                        <pre><code class="language-text">&gt; /delete
+⚠️ 此操作不可撤销！
+# 确认后删除并退出</code></pre>
+                    </div>
+                </div>
+                <div class="info-block"><strong>建议：</strong>完成的项目用 <code>/archive</code>（可恢复），废弃的实验用 <code>/delete</code>（彻底清理）。两者都会退出 CLI。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：fork 的工作流</h2>
+                <h4>同一上下文，探索两种方案</h4>
+                <pre><code class="language-text"># 1. 当前线程：讨论认证模块重构
+&gt; 我想把 JWT 验证从中间件抽到独立服务
+
+# 2. Codex 给出方案 A（拦截器模式）
+&gt; 好的，先记下这个方案
+
+# 3. fork 一个分支探索方案 B
+&gt; /fork
+✅ 已创建分叉 thread-def456
+
+# 4. 在分叉中探索方案 B（代理模式）
+&gt; 如果用代理模式呢？
+
+# 5. 对比两个线程的结果
+#    thread-abc123: 方案 A 的完整讨论
+#    thread-def456: 方案 B 的完整讨论
+#    互不干扰，可随时 /resume 切换</code></pre>
+                <div class="key-point"><strong>fork 的价值：</strong>不是"重头来过"，而是"从共识点分叉探索"。原线程保留已建立的上下文，分叉线程承担风险探索。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：resume 的工作流</h2>
+                <h4>中断后无缝恢复</h4>
+                <pre><code class="language-bash"># 昨天的工作中断了
+$ codex resume --last
+
+# 或通过 TUI 选择器
+&gt; /resume
+  选择 "fix-auth-bug" 线程
+
+# Codex 加载完整历史
+# 你可以接着说：
+&gt; 继续昨天的，我们改到 password-validator.ts 的第 42 行</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>resume 恢复了什么</h4>
+                        <ul>
+                            <li>完整的消息历史</li>
+                            <li>所有文件变更的上下文</li>
+                            <li>Codex 对项目的理解</li>
+                            <li>之前的决策和理由</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>最佳实践</h4>
+                        <ul>
+                            <li><strong>有意义的线程名</strong>：用 <code>/rename</code> 起一个描述性名字</li>
+                            <li><strong>一个线程一个任务</strong>：便于快速定位</li>
+                            <li><strong>中断前 compact</strong>：如果对话很长</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：compact 的工作流</h2>
+                <h4>长对话瘦身</h4>
+                <pre><code class="language-text"># 线程已经很长了
+&gt; /status
+# 查看 token 使用情况
+
+# 执行压缩
+&gt; /compact
+# Codex 确认后摘要历史
+
+# 压缩后
+&gt; /status
+# token 使用量下降，响应恢复流畅</code></pre>
+                <div class="warning"><strong>compact 的代价：</strong>它是"有损压缩"。细节级信息（具体行号、中间试错过程）可能被摘要掉。如果需要精确历史，不要 compact——用 <code>/fork</code> 保留完整副本。</div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>compact vs new</h4>
+                        <ul>
+                            <li><code>/compact</code>：保留摘要，<strong>延续</strong>当前任务</li>
+                            <li><code>/new</code>：清空上下文，<strong>切换</strong>新任务</li>
+                            <li>同一任务对话太长 → compact</li>
+                            <li>换一个完全不同的任务 → new</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>用 SDK 管理线程</h2>
+                <h4>Python 自动化集成</h4>
+                <p>通过 codex-sdk-py（或 codex-app-server SDK），你可以在 Python 脚本中启动和管理 Codex 线程。</p>
+                <pre><code class="language-python">from codex_sdk import Codex
+
+codex = Codex()
+
+# 启动新线程
+thread = codex.thread_start()
+
+# 发送 prompt 并获得响应
+turn = thread.run("帮我检查 auth.ts 的安全问题")
+
+# 打印结果
+print(turn.messages)
+
+# 之后可以用 thread_id 恢复
+thread_id = thread.thread_id
+# ... 存储 thread_id 供后续使用</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>恢复已有线程</h4>
+                        <pre><code class="language-python"># 用之前保存的 thread_id 恢复
+thread = codex.thread_resume(thread_id)
+turn = thread.run("继续修复刚才的问题")</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>fork / archive（CLI 子进程）</h4>
+                        <p>SDK 不直接支持 fork/archive/compact。需要通过 subprocess 调用 CLI：</p>
+                        <pre><code class="language-python">import subprocess
+
+# fork 最近会话
+subprocess.run(["codex", "fork"])
+# 归档指定会话
+subprocess.run(["codex", "archive", thread_id])</code></pre>
+                    </div>
+                </div>
+                <div class="info-block"><strong>SDK 参考：</strong> <a href="https://pypi.org/project/codex-sdk-py/" target="_blank" rel="noopener">codex-sdk-py (PyPI)</a></div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>SDK 生命周期示例</h2>
+                <h4>完整的线程管理工作流</h4>
+                <pre><code class="language-python">from codex_sdk import Codex
+import subprocess, json
+
+codex = Codex()
+
+# === 1. 启动线程做代码审查 ===
+thread = codex.thread_start()
+turn = thread.run("审查 src/ 目录的安全性，只读不改")
+print(turn.messages)
+thread_id = thread.thread_id
+
+# === 2. fork 一个分支尝试修复（通过 CLI） ===
+result = subprocess.run(
+    ["codex", "fork"],
+    capture_output=True, text=True
+)
+# fork 创建新线程，原审查线程不变
+
+# === 3. 恢复原线程继续讨论 ===
+thread = codex.thread_resume(thread_id)
+turn = thread.run("详细解释第 3 个安全问题")
+
+# === 4. 任务完成后归档（通过 CLI） ===
+subprocess.run(["codex", "archive", thread_id])</code></pre>
+                <div class="warning"><strong>注意：</strong>SDK 的 <code>thread_start()</code> / <code>thread.run()</code> / <code>thread_resume()</code> 是核心 API。fork / archive / compact / delete 等操作需要通过 CLI 子进程调用——SDK 层暂未封装这些命令。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>会话文件结构</h2>
+                <h4>JSONL 中的线程数据</h4>
+                <p>每个线程以 JSONL 文件存储在 <code>~/.codex/sessions/YYYY/MM/DD/</code> 下。每行是一条 JSON 消息。</p>
+                <pre><code class="language-jsonl">{"type":"message","role":"user","content":"帮我重构 auth.ts"}
+{"type":"message","role":"assistant","content":"好的，我来分析..."}
+{"type":"tool_call","name":"read_file","input":{"path":"src/auth.ts"}}
+{"type":"tool_result","output":"export function validateToken..."}
+{"type":"message","role":"assistant","content":"我发现三个问题..."}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>直接读取会话文件</h4>
+                        <p>JSONL 是纯文本，可以用任何工具读取：</p>
+                        <pre><code class="language-python"># 读取会话历史
+import json
+with open(session_path) as f:
+    for line in f:
+        msg = json.loads(line)
+        print(msg["type"], msg.get("role",""))</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>会话浏览方式</h4>
+                        <ul>
+                            <li><code>codex resume</code>：TUI 选择器</li>
+                            <li>直接读取 JSONL 文件</li>
+                            <li>第三方工具解析 JSONL</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>与 Hooks 集成</h2>
+                <h4>在线程事件上触发自动化</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>SessionStart</h4>
+                        <p>当线程启动或通过 <code>/resume</code> 恢复时触发。<code>source</code> 字段区分 <code>"startup"</code>（新启动）和 <code>"resume"</code>（恢复）。</p>
+                        <pre><code class="language-toml">[[hooks.SessionStart]]
+matcher = "startup|resume"</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>PreCompact / PostCompact</h4>
+                        <p>当执行 <code>/compact</code> 时触发。PreCompact 在压缩前（可注入提醒），PostCompact 在压缩后（可记录日志）。</p>
+                    </div>
+                </div>
+                <div class="info-block"><strong>注意：</strong>目前 10 种 Hook 事件中<strong>没有 SessionEnd</strong>。<code>/archive</code> 和 <code>/delete</code> 操作不触发 Hook。如果需要在归档时执行操作，用 SDK + CLI subprocess 包装。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：自动会话归档</h2>
+                <h4>用 Python 脚本管理线程</h4>
+                <pre><code class="language-python">#!/usr/bin/env python3
+"""自动归档 7 天前的会话"""
+import subprocess, json, os
+from pathlib import Path
+from datetime import datetime, timedelta
+
+sessions_dir = Path.home() / ".codex" / "sessions"
+cutoff = datetime.now() - timedelta(days=7)
+
+# 遍历会话目录
+for session_file in sessions_dir.rglob("*.jsonl"):
+    mtime = datetime.fromtimestamp(session_file.stat().st_mtime)
+    if mtime &lt; cutoff:
+        session_id = session_file.stem.replace("session-", "")
+        print(f"归档: {session_file.name} (最后修改: {mtime})")
+        # 调用 CLI 归档
+        subprocess.run(["codex", "archive", session_id])</code></pre>
+                <div class="warning"><strong>注意：</strong>归档前请确认会话确实不再需要。<code>codex archive</code> 后可用 <code>codex unarchive</code> 恢复，但 <code>/delete</code> 不可撤销。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 1：fork 时机</h2>
+                <h4>不是所有时候都该 fork</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>该 fork 的时候</h4>
+                        <ul>
+                            <li>Codex 给出了方案，你想试另一种</li>
+                            <li>即将执行有风险的操作</li>
+                            <li>想并行探索多条路径</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>不该 fork 的时候</h4>
+                        <ul>
+                            <li>任务才刚开始（直接 <code>/new</code>）</li>
+                            <li>只是想撤回最后一步（用 rollback）</li>
+                            <li>对话太长（先 <code>/compact</code>）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point"><strong>判断标准：</strong>"我想保留当前进度，同时试试别的" → fork。"我不需要当前进度了" → new 或 resume。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 2：过度 compact</h2>
+                <h4>压缩不是免费的</h4>
+                <pre><code class="language-text"># ❌ 错误：每次对话都 compact
+&gt; 问一个问题
+&gt; /compact           # 没必要！
+&gt; 再问一个问题
+&gt; /compact           # 还是不必要！
+
+# ✅ 正确：只在需要时 compact
+&gt; /status            # 先看 token 用量
+# 如果还有充足空间，不需要 compact
+# 接近上限时才执行</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>过度 compact 的后果</h4>
+                        <ul>
+                            <li>关键细节被摘要掉</li>
+                            <li>Codex"忘记"早期决策的上下文</li>
+                            <li>每次 compact 自身也消耗 token</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>常见错误 3：线程爆炸</h2>
+                <h4>创建太多不清理</h4>
+                <pre><code class="language-bash"># 查看 sessions 目录
+$ ls ~/.codex/sessions/2026/07/*/
+session-aaa111.jsonl   # 不知道是啥
+session-bbb222.jsonl   # 好像是昨天的实验
+session-ccc333.jsonl   # 已经没用了
+session-ddd444.jsonl   # 又一个忘了的
+...</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>解决方案</h4>
+                        <ul>
+                            <li><strong>及时归档</strong>：完成的任务立刻 <code>/archive</code></li>
+                            <li><strong>起好名字</strong>：用 <code>/rename</code> 标记任务名</li>
+                            <li><strong>定期清理</strong>：废弃实验用 <code>/delete</code></li>
+                            <li><strong>脚本归档</strong>：用自动化脚本定期归档旧会话</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>命令速查表</h2>
+                <h4>完整参考</h4>
+                <table>
+                    <thead><tr><th>命令</th><th>TUI 斜杠</th><th>CLI 等价</th><th>SDK</th></tr></thead>
+                    <tbody>
+                        <tr><td>新建线程</td><td><code>/new</code></td><td><code>codex</code>（直接启动）</td><td><code>thread_start()</code></td></tr>
+                        <tr><td>分叉线程</td><td><code>/fork</code></td><td><code>codex fork</code></td><td>—（CLI subprocess）</td></tr>
+                        <tr><td>恢复线程</td><td><code>/resume</code></td><td><code>codex resume</code></td><td><code>thread_resume()</code></td></tr>
+                        <tr><td>压缩对话</td><td><code>/compact</code></td><td>—</td><td>—（CLI subprocess）</td></tr>
+                        <tr><td>归档线程</td><td><code>/archive</code></td><td><code>codex archive &lt;id&gt;</code></td><td>—（CLI subprocess）</td></tr>
+                        <tr><td>删除线程</td><td><code>/delete</code></td><td>—</td><td>—</td></tr>
+                        <tr><td>重命名线程</td><td><code>/rename</code></td><td>—</td><td>—</td></tr>
+                        <tr><td>查看状态</td><td><code>/status</code></td><td><code>codex status</code></td><td>—</td></tr>
+                    </tbody>
+                </table>
+                <div class="info-block"><strong>说明：</strong>SDK（codex-sdk-py）仅封装了核心的 <code>thread_start</code> / <code>thread.run</code> / <code>thread_resume</code>。fork / archive / compact / delete 等需通过 <code>subprocess</code> 调用 CLI。</div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>线程管理最佳实践</h2>
+                <h4>核心原则</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>1. 一个线程一个任务</h4>
+                        <p>不要在一个线程里混合多个无关任务。任务切换时用 <code>/new</code> 或 <code>/resume</code>，保持上下文干净。</p>
+                    </div>
+                    <div class="card">
+                        <h4>2. 关键决策前 fork</h4>
+                        <p>如果即将做出可能影响方向的决定，先 <code>/fork</code> 保留安全副本。</p>
+                    </div>
+                    <div class="card">
+                        <h4>3. 对话太长就 compact</h4>
+                        <p>监控 <code>/status</code> 的 token 用量，接近上限时执行 <code>/compact</code>。但记住它是有损压缩。</p>
+                    </div>
+                    <div class="card">
+                        <h4>4. 完成后归档</h4>
+                        <p>任务完成后及时 <code>/archive</code>，保持会话列表干净。废弃实验用 <code>/delete</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>5. 起有意义的名字</h4>
+                        <p>用 <code>/rename</code> 给线程起描述性名字（如 <code>fix-auth-bug</code>），方便 <code>/resume</code> 时快速识别。</p>
+                    </div>
+                    <div class="card">
+                        <h4>6. compact 前保存关键信息</h4>
+                        <p>如果有特别重要的上下文（具体行号、关键约束），compact 前先用 <code>/copy</code> 或手动记录。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h2>总结</h2>
+                <h4>掌控你的对话</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>今天学到了什么</h4>
+                        <ul>
+                            <li>6 个核心命令：<code>/new</code> · <code>/fork</code> · <code>/resume</code> · <code>/compact</code> · <code>/archive</code> · <code>/delete</code></li>
+                            <li>辅助命令：<code>/rename</code> · <code>/status</code></li>
+                            <li>线程以 JSONL 文件存储在 <code>~/.codex/sessions/</code></li>
+                            <li>SDK 支持 <code>thread_start</code> / <code>thread.run</code> / <code>thread_resume</code></li>
+                            <li>fork/archive 等通过 CLI subprocess 实现</li>
+                            <li>Hooks：SessionStart（resume 时触发）+ PreCompact/PostCompact</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>核心心智模型</h4>
+                        <ul>
+                            <li><strong>fork = 复制</strong>：保留现状，探索分支</li>
+                            <li><strong>resume = 恢复</strong>：继续中断的工作</li>
+                            <li><strong>compact = 压缩</strong>：有损释放空间</li>
+                            <li><strong>archive = 归档</strong>：可恢复地清理</li>
+                            <li><strong>delete = 删除</strong>：不可撤销地清理</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point"><strong>下一步：</strong>第 11 章 MCP &amp; Plugins —— 扩展 Codex 的工具生态。</div>
+            </div>
+        </section>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 →</button>
+    </div>
+    </main>
+<script src="./references/slide-nav.js"></script>
+<script src="./references/slide-toc.js"></script>
+</body>
+</html>

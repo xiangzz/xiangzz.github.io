@@ -217,6 +217,7 @@
                         <tr><td><code>/chrome</code></td><td>配置 Chrome 浏览器集成</td><td>—</td></tr>
                         <tr><td colspan="3"><strong>工作流与自动化</strong></td></tr>
                         <tr><td><code>/plan [desc]</code></td><td>进入规划模式</td><td>—</td></tr>
+                        <tr><td><code>/goal [condition]</code></td><td>设置完成条件，Claude 跨 turn 自走直到条件被评估器确认</td><td>—</td></tr>
                         <tr><td><code>/schedule [desc]</code></td><td>创建/管理定时任务</td><td>—</td></tr>
                         <tr><td><code>/voice</code></td><td>按住说话语音输入</td><td>—</td></tr>
                         <tr><td><code>/tasks</code></td><td>列出/管理后台任务</td><td>—</td></tr>
@@ -268,6 +269,7 @@
                     <div class="card" style="border-top: 3px solid #059669;">
                         <h4>新增命令</h4>
                         <ul>
+                            <li><code>/goal</code> — 设置完成条件，让 Claude 跨 turn 自走直到达成（自走模式）</li>
                             <li><code>/effort</code> — 设置推理强度，<code>max</code> 级别需 Opus 4.6</li>
                             <li><code>/voice</code> — 按住说话语音输入</li>
                             <li><code>/schedule</code> — 创建和管理定时任务</li>
@@ -280,6 +282,7 @@
                         <tr><th>变更</th><th>版本</th><th>影响</th></tr>
                     </thead>
                     <tbody>
+                        <tr><td>新增 <code>/goal</code> 自走模式</td><td>v2.1.139</td><td>设置完成条件后跨 turn 持续工作，支持交互式、<code>-p</code> 与 Remote Control</td></tr>
                         <tr><td><code>/model</code> 选择器显示可读标签</td><td>近期</td><td>现在显示 "Sonnet 4.6" 等人类可读名称</td></tr>
                         <tr><td><code>/resume</code> 支持 <code>/continue</code> 别名</td><td>近期</td><td>恢复对话时可用更直觉的别名</td></tr>
                         <tr><td>MCP prompts 可作为命令使用</td><td>近期</td><td>格式为 <code>/mcp__server__prompt</code></td></tr>
@@ -983,6 +986,77 @@ allowed-tools: Bash(git *), Read, Grep
 ├── <a href="#" class="md-link" data-md="push-all">push-all.md</a>
 ├── <a href="#" class="md-link" data-md="setup-ci-cd">setup-ci-cd.md</a>
 └── <a href="#" class="md-link" data-md="unit-test-expand">unit-test-expand.md</a></code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- /goal：让 Claude 自走（进阶延伸） -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自走模式</h2>
+                <h4><code>/goal</code>——内置命令里的高级工作流：给一个完成条件，Claude 跨 turn 自走直到达成</h4>
+                <p>前面讲的命令，无论内置还是自定义，都是"敲一下、做一步"——你每次都得回来催下一轮。<code>/goal</code> 是个例外：它是<strong>内置命令</strong>里的自走模式，给一个完成条件，Claude 就会自己一轮轮跑下去，不用你守着。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>它怎么知道做完了</h4>
+                        <p>每完成一个 turn，一个<strong>独立的轻量评估模型</strong>（默认 Claude Haiku）会判定你的条件是否成立：</p>
+                        <ul>
+                            <li>不成立 → 评估器给出简短原因，Claude 接着跑下一个 turn</li>
+                            <li>成立 → goal 自动清除，Claude 把控制权交还给你</li>
+                        </ul>
+                        <p>关键在于：<strong>判定的人不是干活的人</strong>。这就是它和"让 Claude 自己判断做没做完"的根本区别——完成与否由一个独立的模型重新裁决，而不是让正在工作的那个模型自己说了算。</p>
+                    </div>
+                    <div class="card">
+                        <h4>三种用法，都是 <code>/goal</code></h4>
+                        <pre><code># 设置目标（设置后立即开始一个 turn）
+/goal all tests in test/auth pass and the lint step is clean
+
+# 查看状态（条件、运行时长、已评估 turn 数、token 花费、最近原因）
+/goal
+
+# 提前清除（stop / off / reset / none / cancel 都是别名）
+/goal clear</code></pre>
+                        <p>同一会话只能有一个活动 goal。设置新的会替换旧的；状态栏会显示 <code>◎ /goal active</code> 表示正在自走。</p>
+                    </div>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>写好条件的三原则</h4>
+                        <p>评估器只读对话记录，不会自己跑命令或读文件。所以条件要写成"<strong>Claude 的输出能证明的东西</strong>"——"所有测试通过"之所以有效，是因为 Claude 会去跑测试，结果会落到对话里让评估器读到。</p>
+                        <table>
+                            <thead>
+                                <tr><th>原则</th><th>说明</th><th>示例</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>一个可测量终态</td><td>测试结果、构建退出码、文件数、空队列</td><td><code>npm test exits 0</code></td></tr>
+                                <tr><td>一个明确检查</td><td>写清怎么证明，别留给评估器猜</td><td><code>git status is clean</code></td></tr>
+                                <tr><td>关键约束</td><td>过程中不许动的东西</td><td><code>no other test file is modified</code></td></tr>
+                            </tbody>
+                        </table>
+                        <p>条件最多 4000 字符。想限制时长，加个 turn 或时间子句：<code>... or stop after 20 turns</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>和 <code>/loop</code>、Stop hook、Auto mode 的区别</h4>
+                        <p>这四个都能让会话在 prompt 之间继续跑，但<strong>触发下一个 turn 的时机</strong>和<strong>停止条件</strong>不同：</p>
+                        <table>
+                            <thead>
+                                <tr><th>方式</th><th>下个 turn 何时开始</th><th>何时停止</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><code>/goal</code></td><td>上一个 turn 结束后</td><td>评估模型确认条件满足</td></tr>
+                                <tr><td><code>/loop</code></td><td>时间间隔流逝后</td><td>你停止它，或 Claude 判断完成</td></tr>
+                                <tr><td>Stop hook</td><td>上一个 turn 结束后</td><td>你的脚本或 prompt 决定</td></tr>
+                                <tr><td>Auto mode</td><td>不开始新 turn（只在单 turn 内免确认工具）</td><td>Claude 判断本 turn 工作完成</td></tr>
+                            </tbody>
+                        </table>
+                        <p>它们也可以互补：<strong>Auto mode 免掉单 turn 内的工具确认，<code>/goal</code> 免掉每 turn 的提示</strong>。</p>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>适合 /goal 的场景：</strong>把模块迁移到新 API 直到所有调用点都能编译且测试通过、实现设计文档直到所有验收标准成立、把大文件拆成聚焦小模块直到每个低于尺寸预算、清空一个 issue backlog 队列。<strong>共同点是：有可验证的终态。</strong>
+                </div>
+                <div class="warning">
+                    <strong>别忘加边界：</strong>条件里务必加 turn 或时间上限（如 <code>stop after 20 turns</code>）。否则一旦评估器持续判"没完成"，会一直烧 token 直到周额度耗尽。
                 </div>
             </div>
         </section>

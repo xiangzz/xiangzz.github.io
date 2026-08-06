@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>14 Print 模式与 CI/CD 工程化</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <style>
+        .card-grid { display: flex; flex-direction: column; }
+    </style>
+</head>
+<body>
+    <main id="presentation">
+        <section class="slide title-slide active">
+<div class="chapter-badge">第 14 章</div>
+            <h1>Print 模式与 CI/CD 工程化</h1>
+            <p>让 CLI 走出终端，进入你的生产线</p>
+            <strong>当 CLI 能进流水线，AI 编程才真正成为团队基础设施</strong>
+        </section>
+
+        <section class="slide">
+<h2>「进不了流水线」的三个拦路虎</h2>
+                <h4>交互式 TUI 很好，但自动化场景它玩不转</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>CI 里无法弹窗确认</h4>
+                        <p>GitHub Actions 跑 AI 代码审查，但 TUI 要人确认权限 —— <strong>流水线卡住等不到人</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>输出没办法被程序解析</h4>
+                        <p>AI 给的文字评论是人类看的，你想解析成 JSON 存进数据库 —— <strong>没有结构化输出</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>多个任务无法定时跑</h4>
+                        <p>想每天凌晨让 AI 跑代码质量分析、自动汇总 —— <strong>做不到自助和定时</strong>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>本章解决「工程化」三件事：</strong>① 用 <strong>Print 模式</strong>让 CLI 非交互运行；② 用 <strong>结构化输出</strong>让结果可解析；③ 用 <strong>后台与定时</strong>让任务自动化。读完你就能把 CLI 接进 CI/CD。
+                </div>
+        </section>
+
+        <section class="slide">
+<div class="slide-content">
+                <h2>Print 模式</h2>
+                <h4>非交互运行——CLI 走进流水线的钥匙</h4>
+                <p><strong>Print 模式</strong>用 <code>-p</code>（或 <code>--print</code>）触发：CLI 接收一个提示词，执行后直接把结果打印到标准输出，<strong>不进入交互界面</strong>。</p>
+                <pre><code>qodercli -p "审查这个仓库的代码质量，给出关键问题"
+
+（CLI 执行后，结果直接打印到 stdout，然后退出）</code></pre>
+                <div class="comparison">
+                    <div class="before">
+                        <h4>交互式 TUI</h4>
+                        <ul>
+                            <li>需要人参与对话</li>
+                            <li>适合本地开发</li>
+                            <li>输出给人看</li>
+                            <li>无法在 CI 运行</li>
+                        </ul>
+                    </div>
+                    <div class="after">
+                        <h4>Print 模式</h4>
+                        <ul>
+                            <li>一次性执行，无需交互</li>
+                            <li>适合脚本和 CI</li>
+                            <li>输出给程序处理</li>
+                            <li>是流水线里的"命令"</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="info-block">
+                    <strong>Print 模式下权限的特殊行为：</strong>无法弹确认，任何 <code>ask</code> 都转为 <code>deny</code>。所以<strong>必须预先配好 allow 规则或选对模式</strong>（见第 11 章）。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+<div class="slide-content">
+                <h2>输出格式</h2>
+                <h4>三种格式，适配不同的下游处理需求</h4>
+                <p>用 <code>--output-format</code> 选择输出格式：</p>
+                <table>
+                    <thead>
+                        <tr><th>格式</th><th>说明</th><th>适用场景</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>text</code></td>
+                            <td>纯文本（默认）</td>
+                            <td>人读、简单脚本、日志</td>
+                        </tr>
+                        <tr>
+                            <td><code>json</code></td>
+                            <td>结构化 JSON</td>
+                            <td>程序解析、存数据库、后续处理</td>
+                        </tr>
+                        <tr>
+                            <td><code>stream-json</code></td>
+                            <td>流式 JSON（逐条输出）</td>
+                            <td>实时监控、长任务进度</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <pre><code># JSON 输出，方便程序解析
+qodercli -p "列出这个项目的安全风险" \
+  --output-format json \
+  --permission-mode auto &gt; risks.json
+
+# 流式输出，实时看 AI 思考过程
+qodercli -p "分析这个架构" \
+  --output-format stream-json</code></pre>
+                <div class="key-point">
+                    <strong>JSON 是 CI 的关键：</strong>结构化输出让你能把 AI 结果<strong>接进下游系统</strong>——存进数据库、发到 Slack、生成报表、触发其他流程。这是从"AI 工具"到"AI 基础设施"的跨越。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+<div class="slide-content">
+                <h2>CI/CD 集成</h2>
+                <h4>实战：在 GitHub Actions 里跑 AI 代码审查</h4>
+                <p>这是 Print 模式 + 权限 + JSON 输出的综合应用。一个典型的 PR 自动审查工作流：</p>
+                <pre><code># .github/workflows/ai-review.yml
+name: AI Code Review
+on: pull_request
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qoder CLI
+        run: curl -fsSL https://qoder.com/install | bash
+      - name: Run AI Review
+        env:
+          QODER_PERSONAL_ACCESS_TOKEN: ${{ secrets.QODER_TOKEN }}
+        run: |
+          qodercli -p "审查本次 PR 的改动，按 critical/major/minor 分级输出问题" \
+            --output-format json \
+            --permission-mode auto \
+            --disallowed-tools 'Write,Edit' \
+            &gt; review.json
+      - name: Post Review
+        run: # 解析 review.json，把问题作为 PR 评论发出</code></pre>
+                <div class="key-point">
+                    <strong>这个工作流的精髓：</strong>① Print 模式非交互；② <code>auto</code> 模式不弹窗；③ <code>--disallowed-tools 'Write,Edit'</code> <strong>物理禁止 AI 改代码</strong>，只读审查；④ JSON 输出可解析。这是"自主又安全"的 CI 范式。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+<div class="slide-content">
+                <h2>后台与定时</h2>
+                <h4>让 AI 任务在后台或按计划运行</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>后台任务</h4>
+                        <p>耗时任务（如完整测试套件、大规模重构）可以放到<strong>后台运行</strong>，你继续干别的，完成时通知。</p>
+                        <p>用 <code>/tasks</code> 查看后台任务状态。</p>
+                    </div>
+                    <div class="card">
+                        <h4>定时任务</h4>
+                        <p>调度能力启用时，可以创建<strong>定时任务</strong>：每天早上跑一次代码体检、每周生成一次项目报告。</p>
+                    </div>
+                    <div class="card">
+                        <h4>结合 Hook 通知</h4>
+                        <p>后台/定时任务完成时，用第 09 章的 Hook 触发通知：</p>
+                        <pre><code>osascript -e 'display notification \
+  "AI 任务完成" with title "Qoder"'</code></pre>
+                    </div>
+                    <div class="card">
+                        <h4>无人值守 Quest</h4>
+                        <p>把第 12 章的 Quest 放进 CI，让 AI 在夜间自主完成开发任务，早上你 review 成果。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+<h2>排错指南</h2>
+                <h4>工程化相关的高频问题</h4>
+                <div class="card-grid">
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>Print 模式啥都没做就退出</h4>
+                        <p><strong>原因：</strong>非交互下 ask 转 deny，AI 没权限。<strong>修复：</strong>配 allow 规则；用 accept_edits/auto 模式；检查 --disallowed-tools 是否过严。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #DC2626;">
+                        <h4>JSON 输出解析失败</h4>
+                        <p><strong>原因：</strong>AI 输出含额外文字，或流式中途中断。<strong>修复：</strong>确保用 --output-format json；流式用 stream-json 并按行解析；提示词里明确"只输出 JSON"。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>CI 中 Credits 烧太快</h4>
+                        <p><strong>原因：</strong>每次 PR 都跑全量分析。<strong>修复：</strong>只在特定路径变更时触发；用低 effort；限制 max-turns；非高峰时段跑。</p>
+                    </div>
+                    <div class="card" style="border-top: 3px solid #B45309;">
+                        <h4>后台任务状态看不清</h4>
+                        <p><strong>原因：</strong>后台任务不显示实时输出。<strong>修复：</strong>用 qodercli jobs 查看；用 stream-json 输出重定向到日志文件；设置通知 hook。</p>
+                    </div>
+                </div>
+        </section>
+
+        <section class="slide">
+<h2>动手练习</h2>
+                <h4>把 CLI 接进真实的自动化流程</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习 1：体验 Print 模式</h3>
+                        <ul>
+                            <li>运行 qodercli -p "总结这个项目的 README" 跑一次</li>
+                            <li>对比加上 --output-format json 的输出差异</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 2：搭建一个 CI 审查</h3>
+                        <ul>
+                            <li>参考本章的 GitHub Actions 示例</li>
+                            <li>在你的测试库配一个 PR 自动审查工作流</li>
+                            <li>推一次 PR 验证 AI 审查是否生效</li>
+                        </ul>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 3：定时任务</h3>
+                        <ul>
+                            <li>用 qodercli schedule 创建一个每日代码质量检查</li>
+                            <li>用 qodercli jobs 查看执行结果</li>
+                        </ul>
+                    </div>
+                </div>
+        </section>
+
+        <section class="slide">
+<h2>本章回顾</h2>
+                <h4>带走的三条核心认知</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Print 模式是桥梁</h4>
+                        <p>非交互 + 结构化输出，让 CLI 能进流水线。</p>
+                    </div>
+                    <div class="card">
+                        <h4>CI = Print + 权限 + JSON</h4>
+                        <p>这三者组合是「自主又安全」的工程化范式。</p>
+                    </div>
+                    <div class="card">
+                        <h4>自动化 = 后台 + 定时 + Hook</h4>
+                        <p>让 AI 任务按计划跑，结果自动汇总。</p>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <strong>核心结论：</strong>当 Qoder CLI 能进 CI/CD，AI 编程就从「个人工具」升级为「团队基础设施」。每次 PR 自动审查、每次提交自动测试 —— AI 真正成为开发流程的一环。
+                    <p style="margin-top: 16px;">最后一章，走到最深处 —— 用 Agent SDK 把 AI 能力嵌入你自己的程序。</p>
+                </div>
+        </section>
+
+        <section class="slide">
+<h2>延伸阅读</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>继续本课程</h4>
+                        <ul>
+                            <li><a href="./15-sdk-workflows.html">下一章：Agent SDK 与动态工作流 — 编程式调用 AI</a></li>
+                            <li><a href="./13-advanced.html">高级特性与并发控制 — Plan Mode 与 Worktree（上一章）</a></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>官方资源</h4>
+                        <ul>
+                            <li><a href="https://docs.qoder.com/zh/cli/using-cli">CLI 工程化官方文档</a></li>
+                            <li><a href="https://docs.qoder.com/zh/cli/advanced">高级特性官方文档</a></li>
+                        </ul>
+                    </div>
+                </div>
+        </section>
+    </main>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <div class="controls">
+        <button id="prev-btn">← 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="next-btn">下一页 →</button>
+    </div>
+
+    <script src="./js/slide.js"></script>
+    <script src="./js/nav.js"></script>
+</body>
+</html>
+
