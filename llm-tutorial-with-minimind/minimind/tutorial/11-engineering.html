@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 11：训练工程与基础设施</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ===== 封面 ===== -->
+        <section class="slide title-slide active">
+            <h1>训练工程与基础设施</h1>
+            <p>阶段 11 · 好的训练离不开好的工程基础——理解支撑所有训练器的底层工具代码</p>
+        </section>
+
+        <!-- ===== 问题驱动开场 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>先问一个问题</h3>
+                <p>训练一个 LLM 需要：<strong>多 GPU 并行</strong>、<strong>断点续训</strong>、<strong>学习率调度</strong>、<strong>混合精度</strong>……</p>
+                <p>6 个训练器（pretrain / sft / lora / dpo / grpo / ppo）各自实现一遍吗？</p>
+                <div class="intro-block">
+                    <p><strong>当然不是。</strong> 它们共享同一套工具函数——<code>trainer/trainer_utils.py</code>。</p>
+                    <p>本阶段的目标：搞懂这套基础设施，再读任何训练器时只需关注它的<strong>差异部分</strong>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 知识地图 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>本章路线图</h3>
+                <p>阶段 11 覆盖支撑训练的基础设施代码。先建立全局视野：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>工具函数</h4>
+                        <p>get_model_params、Logger、余弦学习率调度、随机种子设置</p>
+                    </div>
+                    <div class="card">
+                        <h4>检查点管理</h4>
+                        <p>保存与加载模式、GPU 数量适配、原子写入防损坏</p>
+                    </div>
+                    <div class="card">
+                        <h4>模型初始化</h4>
+                        <p>init_model 统一入口、权重加载与设备分配</p>
+                    </div>
+                    <div class="card">
+                        <h4>分布式训练</h4>
+                        <p>init_distributed_mode、DDP 包装、主进程判断</p>
+                    </div>
+                    <div class="card">
+                        <h4>数据工具</h4>
+                        <p>SkipBatchSampler 支持断点续训跳过已处理 batch</p>
+                    </div>
+                    <div class="card">
+                        <h4>奖励模型</h4>
+                        <p>LMForRewardModel 封装外部 RM 打分接口</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 一、基础设施总览 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>基础设施总览</h3>
+                <p><code>trainer/trainer_utils.py</code> 提供了训练流程中的公共基础设施：</p>
+                <div class="ai-diagram">
+                  <h4>图：trainer_utils.py 基础设施与6个训练器的关系</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：上半部分一个虚线大框"trainer_utils.py 提供的基础设施"，包含6个小模块："环境初始化(init_distributed_mode/setup_seed)"、"模型管理(init_model/get_model_params)"、"训练控制(get_lr/Logger)"、"检查点(lm_checkpoint)"、"数据工具(SkipBatchSampler)"、"奖励模型(LMForRewardModel)"
+                  - 下半部分6个方框："train_pretrain"、"train_full_sft"、"train_lora"、"train_dpo"、"train_grpo"、"train_ppo"
+                  - 各元素关系：下方6个训练器分别用箭头指向上方的基础设施模块（所有训练器都连接到前5个模块），其中train_grpo和train_ppo额外连接到"奖励模型"
+                  - 关键标注：上方模块蓝色，下方训练器绿色，额外连接用橙色虚线标注
+                  - 配色建议：浅蓝/浅灰背景，基础设施蓝色系，训练器绿色系
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 二、9 步训练模式 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>9 步训练模式</h3>
+                <p><strong>定义</strong>：所有训练器都遵循完全相同的 9 步初始化→训练→清理流程。</p>
+                <p><strong>白话</strong>：6 个训练器的"骨架"一模一样，就像同一个工厂流水线，只是装的"零件"不同。</p>
+                <p>以下是训练脚本的9个关键步骤，分为初始化（步骤1-5）和训练循环（步骤6-9）两个阶段。</p>
+                <div class="ai-diagram">
+                  <h4>图：所有训练器共享的9步初始化-训练-清理流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个自上而下的9步流程图，用编号标注每一步
+                  - 步骤1（蓝色）："初始化分布式和随机种子 init_distributed_mode() setup_seed(42)"
+                  - 步骤2："配置目录、模型参数、检查ckp MiniMindConfig() lm_checkpoint(load)"
+                  - 步骤3："设置混合精度 autocast_ctx GradScaler"
+                  - 步骤4："配置wandb/swanlab 实验追踪"
+                  - 步骤5："定义模型、数据、优化器 init_model() Dataset+DataLoader AdamW"
+                  - 步骤6："从检查点恢复状态 load_state_dict()"
+                  - 步骤7："编译和分布式包装 torch.compile() DistributedDataParallel"
+                  - 步骤8（橙色高亮）："训练循环 for epoch... for step... forward-back-update"
+                  - 步骤9（绿色）："清理分布式进程 destroy_process_group()"
+                  - 各元素关系：9个步骤从上到下用箭头依次连接
+                  - 关键标注：步骤1-5标注"初始化阶段"，步骤6-7标注"恢复阶段"，步骤8标注"核心循环"，步骤9标注"清理"
+                  - 配色建议：浅灰背景，步骤白色方框，步骤1蓝色，步骤8橙色，步骤9绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 各训练器差异 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>各训练器差异</h3>
+                <p>理解了 9 步框架，每个训练器你只需要关注它的<strong>差异部分</strong>：</p>
+                <div class="ai-diagram">
+                  <h4>图：6个训练器的相同框架与不同部分对比</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左右两栏对比图
+                  - 左栏"相同部分（9步框架）"：4个灰色方框纵向排列，分别是"分布式初始化"、"混合精度"、"检查点管理"、"编译和DDP"，标注"所有训练器共用"
+                  - 右栏"不同部分"：6个彩色方框纵向排列，"Pretrain: PretrainDataset+CE Loss"、"SFT: SFTDataset+Label Masked CE"、"LoRA: 冻结参数+只保存LoRA"、"DPO: ref_model+DPO Loss"、"GRPO: rollout+reward+advantage"、"PPO: actor+critic+GAE"
+                  - 各元素关系：左栏统一灰色，右栏每个训练器不同颜色
+                  - 关键标注：左栏标题旁标注"骨架一样"，右栏标题旁标注"零件不同"
+                  - 配色建议：浅灰背景，相同部分灰色，不同部分各自不同颜色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="warning">
+                    <p><strong>核心洞见</strong>：6 个训练器的骨架完全相同，差异仅在<strong>数据集、损失函数、特殊模型组件</strong>三处。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>混合精度训练</h3>
+                <p><strong>定义</strong>：混合精度用 FP16 做前向/反向计算（快），同时维护一份 FP32 的 master weights（准）。</p>
+                <p><strong>白话</strong>：像用草稿纸算数学题（FP16，快但不精确），但把最终答案工整抄到正式本上（FP32，精确）。</p>
+                <div class="ai-diagram">
+                  <h4>图：混合精度训练的数据流与精度转换</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个循环流程图
+                  - 顶部中央蓝色大框"FP32 Master Weights（主权重）"
+                  - 第1步：FP32 → "Cast to FP16" → 绿色框"FP16模型权重"
+                  - 第2步：FP16权重 → "前向传播（FP16）" → "FP16 Loss"
+                  - 第3步：FP16 Loss → "反向传播（FP16）" → "FP16 梯度"
+                  - 第4步：FP16梯度 → GradScaler（橙色，"缩放梯度防下溢"）→ Cast to FP32
+                  - 第5步：FP32梯度 → optimizer.step() → 更新FP32 Master Weights
+                  - 用颜色区分：FP32蓝色系，FP16绿色系，GradScaler橙色
+                  - 配色建议：浅灰背景，FP32蓝色，FP16绿色，GradScaler橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 三、get_model_params ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>参数统计</h3>
+                <p><strong>定义</strong>：<code>get_model_params()</code> 区分 MoE 模型的"总参数"和"活跃参数"。</p>
+                <p><strong>白话</strong>：MoE 模型像个大公司——员工很多（总参数），但每次只派一小撮人干活（活跃参数）。</p>
+                <p><strong>代码</strong>——来自 <code>trainer_utils.py</code>：</p>
+                <pre><code class="language-python">def get_model_params(model, config):
+    total = sum(p.numel() for p in model.parameters()) / 1e6
+    n_routed = config.n_routed_experts    # 总专家数
+    n_active = config.num_experts_per_tok  # 每次激活几个
+    expert = sum(p.numel() for n, p in model.named_parameters()
+                 if 'mlp.experts.0.' in n) / 1e6
+    shared_expert = sum(p.numel() for n, p in model.named_parameters()
+                        if 'mlp.shared_experts.0.' in n) / 1e6
+    base = total - (expert * n_routed) - (shared_expert * n_shared)
+    active = base + (expert * n_active) + (shared_expert * n_shared)
+    if active < total:
+        Logger(f'Model Params: {total:.2f}M-A{active:.2f}M')
+    else:
+        Logger(f'Model Params: {total:.2f}M')</code></pre>
+                <pre><code class="language-plaintext">Model Params: 198.42M-A63.91M
+# 总参数 198.42M，但每次推理只激活 63.91M</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>MoE 参数分布</h3>
+                <p>MoE 模型里，不是所有参数每次都被用到——理解"总参数"和"活跃参数"的差别：</p>
+                <div class="ai-diagram">
+                  <h4>图：MoE 模型中总参数与活跃参数的对比</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个Transformer层的横向剖面图
+                  - 左侧画"Attention层"（蓝色实心），标注"始终激活"
+                  - 右侧画"MLP层"区域，内部：4个Routed Expert（浅灰色，其中1个橙色高亮标注"本次激活"），无 Shared Expert
+                  - 下方两个汇总条："总参数 ~198M"完整长条（4个专家全蓝），"活跃参数 ~64M"较短长条（只有1个专家高亮，其余灰色虚线）
+                  - 配色建议：浅灰背景，始终激活蓝色，可选专家浅灰，被激活橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== get_lr 余弦调度 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>余弦学习率</h3>
+                <p><strong>定义</strong>：<code>get_lr()</code> 实现余弦退火调度，让学习率在训练过程中平滑变化。</p>
+                <p><strong>白话</strong>：起步时学习率较低（0.1倍），保证训练稳定；中段学习率最高（约0.55倍），是学习最积极的阶段；末段学习率再次降低，精细收敛不冲过头。</p>
+                <p><strong>代码</strong>：</p>
+                <pre><code class="language-python">def get_lr(current_step, total_steps, lr):
+    return lr * (0.1 + 0.45 * (1 + math.cos(
+        math.pi * current_step / total_steps)))</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：余弦学习率公式从cos到最终lr的逐步推导</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一条从左到右的5步推导链
+                  - 方框1："cos(pi * step / total)"，下方标注"范围 -1 到 1"
+                  - 方框2："1 + cos(...)"，下方标注"范围 0 到 2"
+                  - 方框3："0.45 * (1 + cos(...))"，下方标注"范围 0 到 0.9"
+                  - 方框4："0.1 + ..."，下方标注"范围 0.1 到 1.0"
+                  - 方框5："乘以 base_lr"，下方标注"最终学习率"
+                  - 各元素关系：方框1用箭头指向方框2指向方框3指向方框4指向方框5，箭头上标注每步的数学操作
+                  - 关键标注：每步下方用小字标注数值范围变化
+                  - 配色建议：浅蓝/浅灰背景，方框白色带蓝色边框，箭头橙色，范围标注灰色小字
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：余弦学习率随训练步数的变化曲线</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一张坐标系图，横轴"训练步数（step）"从0到total_steps，纵轴"学习率"从0到base_lr
+                  - 绘制一条余弦退火曲线：从0.1*base_lr开始（标注"起步：低学习率，稳定初始化"），平滑上升至中间达到最高点1.0*base_lr（标注"中间：高速学习"），再平滑下降回到0.1*base_lr（标注"结束：低学习率，精细收敛"）
+                  - 在曲线的三个关键点画虚线标注到横轴和纵轴
+                  - 用浅蓝色填充曲线下方区域
+                  - 右上角标注公式：lr * (0.1 + 0.45 * (1 + cos(pi * step / total)))
+                  - 配色建议：浅灰背景，曲线深蓝色，填充浅蓝色，关键点橙色圆点
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== lr 表格 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>lr 调度详解</h3>
+                <table>
+                    <thead><tr><th>训练阶段</th><th>cos 值</th><th>lr 倍率</th><th>效果</th></tr></thead>
+                    <tbody>
+                        <tr><td>开始 (step=0)</td><td>cos(0) = 1</td><td>0.1 x lr</td><td>较低学习率（warmup 效果）</td></tr>
+                        <tr><td>中间 (step=N/2)</td><td>cos(pi/2) = 0</td><td>0.55 x lr</td><td>中等学习率</td></tr>
+                        <tr><td>结束 (step=N)</td><td>cos(pi) = -1</td><td>0.1 x lr</td><td>回到低学习率（精细调整）</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>为什么开始和结束都是低学习率？</strong></p>
+                    <p>开始时参数是随机的，大步更新容易"震飞"；结束时参数接近最优，小步微调才能精细收敛。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== setup_seed ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>随机种子</h3>
+                <p><strong>定义</strong>：<code>setup_seed()</code> 统一设置所有随机源，保证每次运行结果可复现。</p>
+                <p><strong>白话</strong>：深度学习的每一步都有随机性（数据打乱、Dropout、采样）。固定种子就是"抽签前先洗好牌"，保证下次抽到一样的。</p>
+                <p><strong>代码</strong>：</p>
+                <pre><code class="language-python">def setup_seed(seed: int):
+    random.seed(seed)               # Python 内置随机
+    np.random.seed(seed)            # NumPy 随机
+    torch.manual_seed(seed)         # PyTorch CPU 随机
+    torch.cuda.manual_seed(seed)    # 当前 GPU 随机
+    torch.cuda.manual_seed_all(seed)  # 所有 GPU 随机
+    torch.backends.cudnn.deterministic = True   # cuDNN 确定性
+    torch.backends.cudnn.benchmark = False       # 关闭自动调优</code></pre>
+            </div>
+        </section>
+
+        <!-- ===== Logger ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>主进程日志</h3>
+                <p><strong>定义</strong>：<code>Logger()</code> 确保在多 GPU 训练时，日志只在主进程打印一次。</p>
+                <p><strong>白话</strong>：4 张 GPU 跑同样的代码，不加判断的话，一条日志打印 4 遍，终端就炸了。</p>
+                <p><strong>代码</strong>：</p>
+                <pre><code class="language-python">def is_main_process():
+    return not dist.is_initialized() or dist.get_rank() == 0
+
+def Logger(content):
+    if is_main_process():   # 只在 rank=0 的主 GPU 上打印
+        print(content)</code></pre>
+                <div class="warning">
+                    <p><strong>如果不加判断会怎样？</strong> 4 张 GPU 各打印一次，同一条日志出现 4 遍，终端一片混乱。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 四、检查点管理 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>检查点生命周期</h3>
+                <p><strong>定义</strong>：<code>lm_checkpoint()</code> 是训练工程中最复杂的组件，负责保存/恢复训练状态。</p>
+                <p><strong>白话</strong>：训练一个模型可能跑几天。如果中间停电崩溃了，没有检查点就只能从头来。检查点就是"游戏存档"。</p>
+                <div class="ai-diagram">
+                  <h4>图：训练检查点的保存与加载状态机</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个状态机图，包含保存流程和加载流程两条路径
+                  - 保存流程：黑色圆点（起始）到"保存"（标注"训练中到达save_interval"）到"写入tmp"（标注"先写入.tmp临时文件"）到"原子替换"（标注"os.replace()重命名"）到"训练继续"
+                  - 加载流程：黑色圆点（起始）到"加载"（标注"from_resume=1启动时"）到"检测文件"（标注"检查_resume.pth是否存在"）到"恢复状态"（标注"加载model+optimizer+epoch+step"）到"训练继续"
+                  - 两条路径在"训练继续"汇合，然后回到"保存"形成循环
+                  - 各元素关系：保存流程蓝色箭头，加载流程绿色箭头，循环灰色箭头
+                  - 关键标注：每个状态转换旁边标注触发条件
+                  - 配色建议：浅灰背景，保存蓝色，加载绿色，循环灰色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 保存的内容 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>检查点内容</h3>
+                <p>一个完整的检查点文件包含训练恢复所需的<strong>全部状态</strong>：</p>
+                <div class="ai-diagram">
+                  <h4>图：训练检查点文件包含的6项完整状态</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：顶部一个蓝色大框"lm_checkpoint() 保存"，下方扇出6个小方框
+                  - 方框B："模型权重 state_dict (fp16)"
+                  - 方框C："优化器状态 optimizer.state_dict()"
+                  - 方框D："GradScaler状态 scaler.state_dict()"
+                  - 方框E："训练进度 epoch, step"
+                  - 方框F："GPU数量 world_size"
+                  - 方框G："Wandb ID 用于恢复实验追踪"
+                  - 各元素关系：顶部大框用扇形箭头分别连接6个方框
+                  - 关键标注：每个方框用不同颜色区分类型（模型蓝色、优化器绿色、进度橙色、配置紫色）
+                  - 配色建议：浅灰背景，顶部蓝色，子项按类型着色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p><strong>代码</strong>——保存模式的核心逻辑：</p>
+                <pre><code class="language-python">resume_data = {
+    'model': state_dict,
+    'optimizer': optimizer.state_dict(),
+    'epoch': epoch,
+    'step': step,
+    'world_size': dist.get_world_size(),
+    'wandb_id': wandb_id
+}
+resume_tmp = resume_path + '.tmp'
+torch.save(resume_data, resume_tmp)
+os.replace(resume_tmp, resume_path)  # 原子操作！</code></pre>
+            </div>
+        </section>
+
+        <!-- ===== 原子写入 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>原子写入</h3>
+                <p><strong>定义</strong>：原子写入指文件操作"要么全部完成，要么完全不变"，不存在中间状态。</p>
+                <p><strong>白话</strong>：先写到临时文件，写完了才把名字改成正式的。写一半断了？临时文件坏了就坏了，正式文件好好的。</p>
+                <div class="ai-diagram">
+                  <h4>图：原子写入的两步操作时序（防止断电损坏）</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个两栏时序图，左栏"训练进程"，右栏"文件系统"
+                  - 步骤1：训练进程向文件系统发送"写入model_768.pth.tmp"
+                  - 文件系统侧注释框："如果此时断电，.tmp可能损坏，但原文件完好！"
+                  - 步骤2：训练进程向文件系统发送"os.replace(.tmp变.pth)"
+                  - 文件系统侧注释框："rename是原子操作，要么成功要么不变"
+                  - 各元素关系：两个步骤从上到下，实线箭头表示操作，注释框标注风险和保障
+                  - 关键标注：第一步旁标注红色警告"可能损坏临时文件"，第二步旁标注绿色保障"原子操作保安全"
+                  - 配色建议：浅蓝/浅灰背景，训练进程蓝色，文件系统绿色，警告红色，安全绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="warning">
+                    <p><strong>为什么必须原子写入？</strong> 假设你训练了 3 天，保存时写到一半 OOM 了。没有原子写入，权重文件直接损坏，3 天白练。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== GPU 数量适配 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GPU 数量适配</h3>
+                <p><strong>定义</strong>：断点续训时如果换了 GPU 数量，需要按比例换算 step。</p>
+                <p><strong>白话</strong>：8 张卡一起训练时，每一步吃 8 个 batch。换到 2 张卡，每步只吃 2 个。要看等量的数据，step 得翻倍。</p>
+                <p><strong>代码</strong>：</p>
+                <pre><code class="language-python">saved_ws = ckp_data.get('world_size', 1)
+current_ws = dist.get_world_size() if dist.is_initialized() else 1
+if saved_ws != current_ws:
+    ckp_data['step'] = ckp_data['step'] * saved_ws // current_ws
+    Logger(f'GPU数量变化({saved_ws}→{current_ws})，'
+           f'step已自动转换为{ckp_data["step"]}')</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：断点续训时 GPU 数量变化的 step 换算</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一条从左到右的转换箭头图
+                  - 左侧方框："8卡训练到 step 1000"，内部画8个小GPU图标
+                  - 中间大箭头，标注"换到2卡"
+                  - 右侧方框："step = 1000 x 8 / 2 = 4000"，内部画2个小GPU图标
+                  - 各元素关系：左侧通过转换公式得到右侧
+                  - 关键标注：箭头上方标注换算公式"step_new = step_old * old_gpus / new_gpus"
+                  - 配色建议：浅灰背景，方框白色带蓝色边框，箭头橙色，GPU图标灰色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 五、SkipBatchSampler ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>断点续训跳过</h3>
+                <p><strong>定义</strong>：<code>SkipBatchSampler</code> 在断点续训时跳过已经处理过的 batch，避免数据重复。</p>
+                <p><strong>白话</strong>：假设你在第 500 步崩了。重启后，前 500 个 batch 已经训练过了，再训一遍就是浪费。这个工具帮你跳过它们。</p>
+                <div class="ai-diagram">
+                  <h4>图：SkipBatchSampler 断点续训跳过已处理 batch 的流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个从上到下的5步流程图
+                  - 步骤1（红色）："训练到 step 500 时崩溃"，带闪电图标
+                  - 步骤2（蓝色）："从checkpoint恢复"
+                  - 步骤3（橙色）："SkipBatchSampler(skip=500)"
+                  - 步骤4（灰色）："遍历数据时跳过前500个batch"
+                  - 步骤5（绿色）："从step 501继续训练"
+                  - 各元素关系：5个步骤从上到下用箭头依次连接
+                  - 关键标注：步骤1旁标注"崩溃点"，步骤4旁标注"避免数据重复"，步骤5旁标注"无缝继续"
+                  - 配色建议：浅灰背景，崩溃红色，恢复蓝色，跳过橙色，继续绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p><strong>代码</strong>——完整实现：</p>
+                <pre><code class="language-python">class SkipBatchSampler(Sampler):
+    def __init__(self, sampler, batch_size, skip_batches=0):
+        self.sampler = sampler
+        self.batch_size = batch_size
+        self.skip_batches = skip_batches
+
+    def __iter__(self):
+        batch, skipped = [], 0
+        for idx in self.sampler:
+            batch.append(idx)
+            if len(batch) == self.batch_size:
+                if skipped < self.skip_batches:
+                    skipped += 1
+                    batch = []
+                    continue      # 跳过已处理的 batch！
+                yield batch
+                batch = []
+
+    def __len__(self):
+        total = (len(self.sampler) + self.batch_size - 1) // self.batch_size
+        return max(0, total - self.skip_batches)</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>断点续训：完整故事</h3>
+                <p>把检查点保存、恢复、GPU适配、数据跳过串起来：</p>
+                <div class="ai-diagram">
+                  <h4>图：从训练崩溃到恢复继续的完整流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个时间线图，从左到右
+                  - 第1段"正常训练"：进度条0%→60%，绿色，标注"step 0-500"
+                  - 第2段"保存检查点"：60%处存档图标，标注"lm_checkpoint() 原子写入"
+                  - 第3段"崩溃"：红色闪电图标，标注"OOM/断电/手动kill"
+                  - 第4段"恢复"：重启图标，标注"from_resume=1"，三个子步骤："加载_resume.pth → GPU数量适配step换算 → SkipBatchSampler(skip=500)"
+                  - 第5段"继续训练"：进度条60%→100%，蓝色，标注"step 501-1000，不重复数据"
+                  - 配色建议：浅灰背景，正常绿色，崩溃红色，恢复橙色，继续蓝色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 六、奖励模型 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>奖励模型封装</h3>
+                <p><strong>定义</strong>：<code>LMForRewardModel</code> 封装了外部奖励模型（如 internlm2-1_8b-reward），在 RL 训练中给模型回答打分。</p>
+                <p><strong>白话</strong>：RL 训练需要一个"裁判"来打分。这个类就是裁判的封装——给它对话和回答，它返回一个分数。</p>
+                <div class="ai-diagram">
+                  <h4>图：LMForRewardModel 给模型回答打分的流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一条从左到右的4步流水线
+                  - 方框1："对话历史 + 模型回答"
+                  - 方框2："LMForRewardModel"（封装层）
+                  - 方框3："外部RM模型 (internlm2-1_8b-reward)"
+                  - 方框4："评分: -3.0 到 +3.0"
+                  - 各元素关系：方框1用箭头指向方框2指向方框3指向方框4
+                  - 关键标注：方框2旁标注"封装接口"，方框3旁标注"第三方模型"，方框4旁标注"分数范围"
+                  - 配色建议：浅灰背景，输入蓝色，封装绿色，RM模型橙色，分数紫色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p><strong>代码</strong>——完整实现：</p>
+                <pre><code class="language-python">class LMForRewardModel:
+    def __init__(self, model_path, device="cuda", dtype=torch.float16):
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_path, trust_remote_code=True)
+        self.model = AutoModel.from_pretrained(
+            model_path, torch_dtype=dtype, trust_remote_code=True)
+        self.model = self.model.to(device).eval()
+
+    @torch.no_grad()
+    def get_score(self, messages, response):
+        # 把对话历史和新问题拼成评估输入
+        history_text = "\n".join(
+            [f"{m['role']}: {m['content']}" for m in messages[:-1]])
+        last_query = messages[-1]['content'] if messages else ""
+        eval_messages = [
+            {"role": "user", "content": f"{history_text}\n{last_query}"},
+            {"role": "assistant", "content": response}
+        ]
+        score = self.model.get_score(self.tokenizer, eval_messages)
+        return max(min(score, 3.0), -3.0)  # 裁剪到 [-3, 3]</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>奖励模型在 RL 中的角色</h3>
+                <p>打分只是第一步——分数如何反馈给模型？</p>
+                <div class="ai-diagram">
+                  <h4>图：奖励模型在 GRPO/PPO 训练循环中的位置</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个环形训练循环图
+                  - 顶部蓝色"策略模型（Actor）"，标注"MiniMind主模型"
+                  - 右侧绿色"生成回答（Sampling）"，标注"给同一个问题生成多个回答"
+                  - 底部橙色"奖励模型（RM）"，标注"LMForRewardModel.get_score() 给每个回答打分"
+                  - 左侧紫色"计算优势/回报"，标注"GRPO: 组内归一化 / PPO: GAE折扣"
+                  - 从"计算优势"向上回到Actor，标注"高分的回答被强化，低分的被抑制"
+                  - 右侧灰色虚线框"参考模型（ref_model）"，标注"DPO和PPO需要"
+                  - 配色建议：浅灰背景，Actor蓝色，生成绿色，奖励橙色，优势紫色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 七、init_model ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>模型初始化入口</h3>
+                <p><strong>定义</strong>：<code>init_model()</code> 是所有训练器创建模型的统一入口。</p>
+                <p><strong>白话</strong>：不管哪个训练器，"造模型"这一步都调它。参数决定了是随机初始化还是加载已有权重。</p>
+                <p><strong>代码</strong>——完整实现：</p>
+                <pre><code class="language-python">def init_model(lm_config, from_weight='pretrain',
+               tokenizer_path='../model', save_dir='../out', device='cuda'):
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+    model = MiniMindForCausalLM(lm_config)
+
+    if from_weight != 'none':
+        # 加载已有权重（微调 / 继续训练）
+        moe_suffix = '_moe' if lm_config.use_moe else ''
+        weight_path = f'{save_dir}/{from_weight}_{lm_config.hidden_size}{moe_suffix}.pth'
+        weights = torch.load(weight_path, map_location=device)
+        model.load_state_dict(weights, strict=False)
+    # from_weight == 'none' 时不加载，随机初始化（从头训练）
+
+    get_model_params(model, lm_config)
+    Logger(f'Trainable Params: '
+           f'{sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.3f}M')
+    return model.to(device), tokenizer</code></pre>
+            </div>
+        </section>
+
+        <!-- ===== 八、分布式训练 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>DDP 初始化流程</h3>
+                <p><strong>定义</strong>：分布式数据并行（DDP）让多个 GPU 同时训练，每个 GPU 处理不同数据，然后同步梯度。</p>
+                <p><strong>白话</strong>：一个人搬砖慢，找 4 个人同时搬。每个人搬自己的那份，搬完对一下账（同步梯度），保证每个人拿到的结果一样。</p>
+                <p><strong>代码</strong>：</p>
+                <pre><code class="language-python">def init_distributed_mode():
+    if int(os.environ.get("RANK", -1)) == -1:
+        return 0  # 单卡模式，不初始化 DDP
+
+    dist.init_process_group(backend="nccl")  # 用 NVIDIA 的 NCCL 通信
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)  # 绑定当前进程的 GPU
+    return local_rank</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：分布式数据并行（DDP）的初始化时序</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个四栏时序图，从左到右分别是"环境变量"、"分布式模块"、"GPU 0"、"GPU 1"
+                  - 步骤1：环境变量向分布式模块发送"RANK, LOCAL_RANK, WORLD_SIZE"
+                  - 步骤2：分布式模块自调用"dist.init_process_group(backend=nccl)"
+                  - 步骤3：分布式模块向GPU 0发送"torch.cuda.set_device(0)"
+                  - 步骤4：分布式模块向GPU 1发送"torch.cuda.set_device(1)"
+                  - GPU 0和GPU 1之间的共享注释："每个GPU运行相同代码，但处理不同数据"
+                  - 各元素关系：环境变量触发初始化，分布式模块分配GPU，两个GPU并行工作
+                  - 关键标注：init_process_group旁标注"NCCL通信后端"
+                  - 配色建议：浅灰背景，环境变量灰色，分布式模块蓝色，GPU绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== DDP 数据流 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>DDP 数据流</h3>
+                <div class="ai-diagram">
+                  <h4>图：DDP 分布式训练的完整数据流（4 GPU 示例）</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个自上而下的数据流图
+                  - 顶部："完整数据集"一个大框
+                  - 第二层："DistributedSampler 将数据均匀分给每个GPU"
+                  - 第三层4个方框并排："GPU 0: 数据子集 1/4"、"GPU 1: 数据子集 2/4"、"GPU 2: 数据子集 3/4"、"GPU 3: 数据子集 4/4"
+                  - 第四层（汇合）："各自前向+反向"，4个GPU的箭头都汇聚到这一点
+                  - 第五层："All-Reduce 同步所有GPU的梯度"
+                  - 第六层："每张GPU更新相同的参数"
+                  - 各元素关系：数据从上到下流动，数据集分割到4个GPU，各自计算后梯度同步，最终参数一致
+                  - 关键标注：DistributedSampler旁标注"数据不重复"，All-Reduce旁标注"梯度平均"
+                  - 配色建议：浅灰背景，数据集蓝色，GPU绿色，All-Reduce橙色，参数紫色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== DDP 关键概念 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>DDP 关键概念</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>NCCL</h4>
+                        <p>NVIDIA 的 GPU 间通信库，专门为 GPU 集合通信优化，速度非常快。</p>
+                    </div>
+                    <div class="card">
+                        <h4>All-Reduce</h4>
+                        <p>把所有 GPU 的梯度加起来再平均，确保每张卡拿到相同的梯度后独立更新参数。</p>
+                    </div>
+                    <div class="card">
+                        <h4>主进程 rank=0</h4>
+                        <p>负责保存模型、打印日志。只有 rank=0 的进程执行这些操作，避免重复。</p>
+                    </div>
+                    <div class="card">
+                        <h4>DistributedSampler</h4>
+                        <p>确保每个 GPU 看到<strong>不同的数据分片</strong>，不会重复处理同一条样本。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 常见错误诊断 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题诊断</h3>
+                <table>
+                    <thead><tr><th>症状</th><th>可能原因</th><th>解决方案</th></tr></thead>
+                    <tbody>
+                        <tr><td>NCCL timeout</td><td>GPU 之间通信失败</td><td>检查网络连接，确认所有 GPU 可互相访问</td></tr>
+                        <tr><td>checkpoint 加载报错</td><td>GPU 数量变化导致 state_dict 不匹配</td><td>lm_checkpoint 已自动处理，检查权重文件是否完整</td></tr>
+                        <tr><td>loss 突然飙升</td><td>学习率太大或梯度爆炸</td><td>调低 lr，检查 GradScaler 是否正常工作</td></tr>
+                        <tr><td>日志打印 N 遍</td><td>用了 print 而非 Logger</td><td>把所有 print 替换成 Logger()</td></tr>
+                        <tr><td>OOM 但模型很小</td><td>忘记 .half() 或 mixed precision 没开</td><td>确认 autocast 和 GradScaler 都在用</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ===== 练习 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>课后练习</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>练习 1</h4>
+                        <p>手动计算余弦学习率：假设 lr=5e-4, total_steps=1000，写一个循环打印每 100 步的学习率，画出曲线。</p>
+                    </div>
+                    <div class="card">
+                        <h4>练习 2</h4>
+                        <p>故意在训练中途 kill 进程，然后用 <code>from_resume=1</code> 重启，观察是否从正确的 step 继续。</p>
+                    </div>
+                    <div class="card">
+                        <h4>练习 3</h4>
+                        <p>写一个简单的脚本，用 <code>LMForRewardModel</code> 对 5 个不同的回答打分，看看分数差异。</p>
+                    </div>
+                    <div class="card">
+                        <h4>练习 4</h4>
+                        <p>用 2 张 GPU 和 4 张 GPU 分别训练同一个模型，对比日志中的 step 换算是否正确。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 自测 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>学完本阶段后</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>问题 1</h4>
+                        <p>所有训练器共享哪 9 步流程？每一步做什么？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 2</h4>
+                        <p>为什么要原子写入检查点？如果不直接写 .pth 会怎样？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 3</h4>
+                        <p>余弦学习率的公式是什么？为什么开始和结束都是低学习率？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 4</h4>
+                        <p>DDP 训练时，4 张 GPU 分别处理什么？梯度如何同步？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 5</h4>
+                        <p>SkipBatchSampler 解决了什么问题？</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 参考答案 ===== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>参考答案</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>问题 1</h4>
+                        <p>初始化 → 配置 → 精度 → wandb → 模型/数据 → 恢复 → 编译/DDP → 训练循环 → 清理</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 2</h4>
+                        <p>防止写到一半崩溃导致文件损坏。直接写 .pth 的话，写到一半断电，权重文件就废了，训练白跑。</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 3</h4>
+                        <p><code>lr * (0.1 + 0.45 * (1 + cos(pi * step / total)))</code>。开始低是为了稳定，结束低是为了精调。</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 4</h4>
+                        <p>各处理 1/4 的数据。通过 All-Reduce 把梯度汇总平均，保证每张卡参数一致。</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 5</h4>
+                        <p>断点续训时跳过已处理的 batch，避免数据重复训练。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== 收尾 ===== -->
+        <section class="slide title-slide">
+            <h1>阶段 11 完成</h1>
+            <p>你已经掌握了支撑所有训练器的工程基础设施——接下来可以深入任意训练器的差异部分了</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

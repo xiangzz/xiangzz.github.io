@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 8：强化学习 GRPO 与 PPO</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>强化学习：GRPO 与 PPO</h1>
+            <p>阶段 8 · MiniMind 训练路线图最后一站——从"听话"到"优秀"</p>
+        </section>
+
+        <!-- ==================== 问题驱动开场 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>DPO 的天花板</h3>
+                <p>你已经用 SFT + DPO 训练了一个能听懂指令的模型。但你发现了一个问题——</p>
+                <div class="warning">
+                    <strong>DPO 只能做"选择题"。</strong>
+                    <p>它给模型一个"好回答"和一个"差回答"，让模型学会区分。但现实世界中，好的回答不止一种。模型需要自己去探索、试错，找到更好的表达方式，而不只是在两个选项之间做判断。</p>
+                </div>
+                <p>强化学习（RL）引入了一个新角色：<strong>Reward Model（奖励模型）</strong>。它给每次回答打分，模型通过试错，真正"学会什么是好"。</p>
+                <p><em>这个比喻只是为了帮你建立直观感受。在代码层面，Reward Model 是一个经过训练的神经网络，输入一段对话文本，输出一个浮点数（通常在 -3 到 +3 之间），代表对回答质量的评估。</em></p>
+            </div>
+        </section>
+
+        <!-- ==================== 训练三阶段 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练三阶段</h3>
+                <div class="ai-diagram">
+                  <h4>图：大模型训练三阶段与偏好对齐的两条路径</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的流程。浅蓝色框"预训练 Pretrain"内含"读万卷书，学会语言规律"；浅橙色框"SFT 微调"内含"学会听指令，按格式回答"；浅粉色框"偏好对齐"内含两条路径：上路径"DPO: 二选一"和下路径"RL: 试错优化"，两条路径汇入绿色框"高质量 AI 助手"
+                  - 各元素关系：预训练 → SFT → 偏好对齐，用"能说话""能回答"标注过渡箭头，DPO和RL两条路径并行
+                  - 关键标注：RL路径标注"本章重点"，绿色终点框高亮
+                  - 配色建议：浅灰背景，预训练浅蓝，SFT浅橙，对齐浅粉，终点绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>DPO 是"告诉你哪个更好"，RL 是"让你自己试，做对了奖励，做错了惩罚"。后者的探索空间大得多。</p>
+            </div>
+        </section>
+
+        <!-- ==================== SFT vs DPO vs RL ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三种训练范式</h3>
+                <table>
+                    <thead><tr><th>阶段</th><th>学习方式</th><th>需要的数据</th><th>能学会什么</th></tr></thead>
+                    <tbody>
+                        <tr><td>SFT</td><td>模仿标准答案</td><td>问答对</td><td>怎么回答</td></tr>
+                        <tr><td>DPO</td><td>在好/差之间选</td><td>偏好对</td><td>哪个更好</td></tr>
+                        <tr><td>RL</td><td>试错 + 奖励</td><td>只需 Prompt</td><td>如何更好</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>注意 RL 的数据需求：只需要 Prompt（问题），不需要标准答案。模型自己生成回答，奖励模型打分，用分数引导更新。这意味着你可以用 RL 来优化那些"没有唯一正确答案"的任务。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: RL 基础概念 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 核心概念</h2>
+                <p>在写代码之前，先搞懂三个核心词：<strong>策略</strong>、<strong>奖励</strong>、<strong>优势</strong>。它们会在后面的代码里反复出现。</p>
+                <div class="intro-block">
+                    <p>这一节是整个 RL 训练的"字典"。后面每个代码片段都会用到这三个概念——策略决定"怎么回答"，奖励告诉你"回答好不好"，优势衡量"比平均水平好多少"。先把它们搞清楚，后面读代码就不会卡壳。</p>
+                    <ul>
+                        <li><strong>策略（Policy）</strong>：就是模型本身，不同的权重 = 不同的回答风格。我们会看到训练代码中如何区分"当前策略"和"冻结的参考策略"</li>
+                        <li><strong>奖励（Reward）</strong>：一个标量分数，衡量回答质量。MiniMind 用长度、思考、重复率、RM 评分四种信号叠加而成</li>
+                        <li><strong>优势（Advantage）</strong>："比平均好多少"的相对指标，是策略更新的核心信号。GRPO 用组内标准化、PPO 用 GAE 来计算</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 策略 Policy ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>策略 Policy</h3>
+                <h4>定义</h4>
+                <p>策略是一个条件概率分布。给定 Prompt x，它输出回答 y 的概率 P(y|x)。</p>
+                <h4>白话</h4>
+                <p>说白了，策略就是模型本身。它决定了"看到这个问题，我会怎么回答"。不同的模型权重 = 不同的策略 = 不同的回答风格。</p>
+                <h4>代码</h4>
+                <pre><code class="language-python"># train_grpo.py: 策略就是我们的 model
+model, tokenizer = init_model(lm_config, base_weight, device=args.device)
+
+# Reference Model 是训练前的原始策略，冻结不动
+ref_model, _ = init_model(lm_config, base_weight, device=args.device)
+ref_model = ref_model.eval().requires_grad_(False)</code></pre>
+                <div class="intro-block">
+                    <p><code>ref_model</code> 是"参考模型"，冻结不参与训练。它的作用是约束策略更新幅度——防止模型"学得太野，忘了自己是谁"。后面计算 KL 散度时会用到它。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 奖励 Reward ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>奖励 Reward</h3>
+                <h4>定义</h4>
+                <p>奖励是一个标量分数，衡量回答质量。越高表示越好。</p>
+                <h4>白话</h4>
+                <p>就像老师给作文打分。分数高的回答，模型以后多生成；分数低的，少生成。RL 训练的目标就是让模型生成的回答获得的奖励越来越高。</p>
+                <p><em>这个比喻只是为了帮你建立直观感受。在代码中，奖励信号是一个数值标量，用于在策略梯度更新中缩放每个 token 的对数概率梯度。</em></p>
+                <h4>代码</h4>
+                <pre><code class="language-python"># train_grpo.py: calculate_rewards() —— 四种信号叠加
+rewards = torch.zeros(len(responses), device=args.device)
+rewards[i] += 0.5 if 20 &lt;= len(response.strip()) &lt;= 800 else -0.5  # 长度
+rewards[i] -= rep_penalty(answer)                                 # 重复惩罚
+score = reward_model.get_score(messages, answer)                  # RM 评分
+rewards += reward_model_scores                                    # 汇总</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== 优势 Advantage ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>优势函数</h3>
+                <h4>定义</h4>
+                <p>优势衡量"这个回答比平均水平好多少"。它是策略更新的核心信号。</p>
+                <h4>白话</h4>
+                <p>班上平均分 70，你考了 90，优势就是 +20。优势为正，说明这个行为值得鼓励；为负，就该抑制。关键在于"比平均好多少"，而不是绝对分数。</p>
+                <h4>GRPO 的计算方式</h4>
+                <pre><code class="language-python"># train_grpo.py: 同一 Prompt 生成 6 个回答，组内标准化
+grouped_rewards = rewards.view(-1, args.num_generations)  # [B, 6]
+mean_r = grouped_rewards.mean(dim=1).repeat_interleave(args.num_generations)
+std_r = grouped_rewards.std(dim=1, unbiased=False).repeat_interleave(args.num_generations)
+advantages = (rewards - mean_r) / (std_r + 1e-4)  # 标准化</code></pre>
+                <p>GRPO 的优势是"组内相对排名"——不需要额外模型，直接用同一组的均值和标准差来归一化。PPO 的优势则用 Critic 模型 + GAE 来估计，我们后面会详细讲。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 训练循环 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 训练循环</h2>
+                <p>不管 GRPO 还是 PPO，训练循环都遵循同样的四步。理解这个循环，就理解了 RL 训练的骨架。</p>
+                <div class="intro-block">
+                    <p>这一节把 RL 训练拆解成一个通用的四步循环：生成、评分、算优势、更新策略。无论后面学 GRPO 还是 PPO，底层都是这个骨架在跑。搞清楚每一步的输入输出，后面学具体算法就是往骨架里填细节。</p>
+                    <ul>
+                        <li><strong>四步循环全景</strong>：生成 Rollout → 评分 Scoring → 优势计算 → 策略更新，第 3 步是 GRPO 和 PPO 的核心分歧点</li>
+                        <li><strong>Rollout 生成</strong>：从数据集取 Prompt，模型自己生成回答，同时记录每个 token 的对数概率 old_logp</li>
+                        <li><strong>数据准备</strong>：RL 只需要 Prompt，不需要标准答案。RLAIFDataset 会随机决定是否开启思考模式</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 四步循环全景 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>四步循环</h3>
+                <div class="ai-diagram">
+                  <h4>图：RL 训练的四步循环</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从上到下四个彩色区域组成循环。第一区蓝色"1. 生成 Rollout"内含"取出Prompt → 模型生成回答 → 记录old_logp"；第二区橙色"2. 评分 Scoring"内含"长度+思考+重复 → Reward Model评分 → 汇总为总Reward"；第三区紫色"3. 优势计算"内含两条路径"GRPO: 组内标准化"和"PPO: GAE估计"；第四区红色"4. 策略更新"内含"计算新logp → Clipped Loss + KL惩罚 → backward更新参数"
+                  - 各元素关系：四个区域从上到下依次用箭头连接，形成循环
+                  - 关键标注：第3步标注"GRPO和PPO的核心分歧点"
+                  - 配色建议：浅灰背景，步骤1蓝色，步骤2橙色，步骤3紫色，步骤4红色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>这四步循环在每个 training step 中重复执行。第 3 步是 GRPO 和 PPO 的核心分歧点。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Step 1: 生成 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Step 1: 生成</h3>
+                <p>从数据集取出 Prompt，让模型自己生成回答。同时记录下每个 token 的对数概率（old_logp）。</p>
+                <pre><code class="language-python"># train_grpo.py: rollout 阶段
+rollout_result = rollout_engine.rollout(
+    prompt_ids=prompt_inputs["input_ids"],
+    attention_mask=prompt_inputs["attention_mask"],
+    num_generations=args.num_generations,  # GRPO: 6, PPO: 1
+    max_new_tokens=args.max_gen_len,
+    temperature=0.8,  # 有一定随机性，让每次生成不同
+)
+outputs = rollout_result.output_ids         # [B*G, P+R] 完整序列
+completions = rollout_result.completions    # List[str] 解码后的文本
+old_per_token_logps = rollout_result.per_token_logps  # 旧策略的 log 概率</code></pre>
+                <div class="intro-block">
+                    <p><code>old_per_token_logps</code> 是在 rollout 时记录的"旧策略"下每个 token 的 log 概率。后面计算 loss 时，会用 ratio = exp(new_logp - old_logp) 来衡量策略变化幅度。这就是 PPO 名字中"Proximal"（近端）的来源。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 数据准备 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据准备</h3>
+                <p>RL 训练的数据只需要 Prompt，不需要标准答案。<code>RLAIFDataset</code> 会把对话渲染为模型输入格式，但 answer 字段留空——让模型自己生成。</p>
+                <pre><code class="language-python"># dataset/lm_dataset.py: RLAIFDataset
+class RLAIFDataset(Dataset):
+    def __init__(self, jsonl_path, tokenizer, max_length=1024, thinking_ratio=0.5):
+        self.thinking_ratio = thinking_ratio  # 按概率开启 thinking
+        self.samples = load_dataset('json', data_files=jsonl_path, split='train')
+
+    def create_chat_prompt(self, conversations):
+        conversations = pre_processing_chat(conversations)
+        use_thinking = random.random() &lt; self.thinking_ratio
+        return self.tokenizer.apply_chat_template(
+            conversations[:-1],         # 去掉最后一条（assistant 的回答）
+            tokenize=False,
+            open_thinking=use_thinking,  # 随机决定是否开启思考模式
+            add_generation_prompt=True   # 添加 assistant 开头标记
+        )</code></pre>
+                <p><code>thinking_ratio=0.9</code> 表示 90% 的 Prompt 会开启 <code>&lt;think&gt;...&lt;/think&gt;</code> 思考模式，让模型同时学会"先想再答"和"直接回答"两种模式。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 奖励信号 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 奖励信号</h2>
+                <p>MiniMind 的奖励函数是四个信号的组合。前三个是规则性的辅助信号，第四个（Reward Model）是最核心的语义评分。</p>
+                <div class="intro-block">
+                    <p>奖励函数决定了"模型往哪个方向学"。设计得不好，模型就会走歪路——比如学会凑字数而不是真正答好。这一节逐个拆解五个信号的设计动机和数值范围，帮你理解为什么需要每一项、它们各自鼓励或惩罚什么行为。</p>
+                    <ul>
+                        <li><strong>奖励组成全景</strong>：长度奖励（鼓励适度回答）、思考奖励（鼓励 CoT 推理）、格式奖励（鼓励规范标签）、重复惩罚（惩罚车轱辘话）、RM 评分（语义质量，权重最大）</li>
+                        <li><strong>长度与思考奖励</strong>：用简单阈值规则引导基本行为——不要太短敷衍，也不要太长啰嗦；思考过程要适度且格式规范</li>
+                        <li><strong>重复惩罚与 RM</strong>：3-gram 重复率检测车轱辘话，RM 是唯一"理解内容"的信号，来自外部训练好的奖励模型</li>
+                        <li><strong>奖励数值示例</strong>：通过一个具体例子看五个信号如何叠加成总 Reward，理解"绝对值不重要，相对排名才重要"</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 奖励全景图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>奖励组成全景</h3>
+                <div class="ai-diagram">
+                  <h4>图：RL 奖励信号的五个组成部分</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左侧一个"模型回答"节点，向右分出五条路径：长度奖励(+0.5/-0.5)、思考奖励(+1.0/-0.5)、格式奖励(+0.25/-0.25)、重复惩罚(-rep_penalty)、蓝色高亮"Reward Model(+rm_score)"，五条路径汇入右侧绿色框"总 Reward"
+                  - 各元素关系：五个信号并行从模型回答出发，全部汇入总Reward节点
+                  - 关键标注：Reward Model用蓝色高亮并标注"最核心的语义信号"，其余四个标注"辅助规则信号"
+                  - 配色建议：浅灰背景，RM蓝色高亮，总Reward绿色，其余白色/浅色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="intro-block">
+                    <p>五个信号叠加：长度（鼓励适度）、思考（鼓励 CoT）、格式（鼓励规范的 <code>&lt;/think&gt;</code> 标签）、重复（惩罚车轱辘话）、RM 评分（语义质量，权重最大）。RM 是唯一一个"理解内容"的信号。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 长度奖励 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>长度奖励</h3>
+                <p>鼓励适度回答，惩罚敷衍或冗余：</p>
+                <pre><code class="language-python"># calculate_rewards() 中的长度奖励
+rewards[i] += 0.5 if 20 &lt;= len(response.strip()) &lt;= 800 else -0.5</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>适度回答 +0.5</h4>
+                        <p>长度在 20~800 字符之间。不太短（敷衍），也不太长（啰嗦）。</p>
+                    </div>
+                    <div class="column">
+                        <h4>敷衍/冗余 -0.5</h4>
+                        <p>过短说明模型在偷懒，过长说明它在凑字数。两者都扣分。</p>
+                    </div>
+                </div>
+                <p>这是一个简单的阈值规则。它不是完美的——有些问题本来就该短回答——但作为辅助信号已经够用。真正的内容质量由 RM 评分来把关。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 思考奖励 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>思考奖励</h3>
+                <p>如果回答包含思考过程（<code>&lt;/think&gt;</code> 标签），额外奖励格式规范的思考：</p>
+                <pre><code class="language-python"># calculate_rewards() 中的思考奖励
+if '&lt;/think&gt;' in response:
+    thinking_content, answer_content = response.split('&lt;/think&gt;', 1)
+    # 思考内容长度 20~300 字符 → +1.0，否则 -0.5
+    rewards[i] += 1.0 if 20 &lt;= len(thinking_content.strip()) &lt;= 300 else -0.5
+    # &lt;/think&gt; 标签恰好 1 个 → +0.25，否则 -0.25
+    rewards[i] += 0.25 if response.count('&lt;/think&gt;') == 1 else -0.25
+    answer = answer_content.strip()  # 后续用 answer 去算 RM 分数</code></pre>
+                <p>两个信号叠加：鼓励"适度思考 + 格式规范"，惩罚"思考太短/太长 + 标签乱写"。思考过程太长可能是模型在"胡思乱想"，太短则没有真正推理。</p>
+                <div class="warning">
+                    <strong>注意</strong>：如果回答不包含 <code>&lt;/think&gt;</code> 标签，思考奖励和格式奖励都不触发。模型可以自由选择是否开启思考模式——这由 <code>thinking_ratio</code> 参数在数据准备阶段控制。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 重复惩罚 + RM ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>重复惩罚与 RM</h3>
+                <pre><code class="language-python"># 重复惩罚：用 3-gram 重复率衡量，上限 0.5
+def rep_penalty(text, n=3, cap=0.5):
+    toks = re.findall(r"\w+|[^\w\s]", text.lower())
+    grams = [tuple(toks[i:i + n]) for i in range(len(toks) - n + 1)]
+    return min(cap, (len(grams) - len(set(grams))) * cap * 2 / len(grams)) if grams else 0.0
+
+# Reward Model 评分：最核心的语义信号
+score = reward_model.get_score(messages, answer)
+reward_model_scores.append(score)
+rewards += reward_model_scores  # 直接加到总奖励上</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>重复惩罚</h4>
+                        <p>统计 3-gram（三个连续词组）的重复比例。重复越多，扣分越多。上限 0.5。</p>
+                    </div>
+                    <div class="column">
+                        <h4>Reward Model</h4>
+                        <p>外部训练好的奖励模型（InternLM2-1.8B-Reward）。输入对话 + 回答，输出语义质量分数。这是唯一"理解内容"的信号。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 奖励数值示例 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>奖励数值示例</h3>
+                <p>假设模型生成了一个包含思考过程的回答：</p>
+                <table>
+                    <thead><tr><th>信号</th><th>条件</th><th>得分</th></tr></thead>
+                    <tbody>
+                        <tr><td>长度奖励</td><td>回答长度 350 字符（20~800 内）</td><td>+0.5</td></tr>
+                        <tr><td>思考奖励</td><td>思考内容 120 字符（20~300 内）</td><td>+1.0</td></tr>
+                        <tr><td>格式奖励</td><td><code>&lt;/think&gt;</code> 恰好 1 个</td><td>+0.25</td></tr>
+                        <tr><td>重复惩罚</td><td>3-gram 重复率 8%</td><td>-0.08</td></tr>
+                        <tr><td>RM 评分</td><td>语义质量较高</td><td>+2.30</td></tr>
+                        <tr><td colspan="2"><strong>总 Reward</strong></td><td><strong>+3.97</strong></td></tr>
+                    </tbody>
+                </table>
+                <p>一个差的回答（太短 + 没有思考 + 重复 + RM 低分）可能得到 -1.5 左右的总 Reward。奖励的绝对值不重要，重要的是相对排名——这正是优势函数要做的。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: GRPO ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: GRPO 算法</h2>
+                <p>Group Relative Policy Optimization。MiniMind 的默认 RL 算法。它摒弃了 PPO 中复杂的 Critic 模型，用组内相对排名替代。</p>
+                <div class="intro-block">
+                    <p>GRPO 是目前最主流的开源 RL 对齐算法之一。它的核心直觉很简单：同一个问题让模型写 6 个答案，分高的相对平均有正优势，分低的有负优势。不需要额外的 Critic 模型，6 个回答的均值就是基准线。这一节从思想到代码，完整拆解 GRPO 的每一步。</p>
+                    <ul>
+                        <li><strong>核心思想与组内优势</strong>：同一 Prompt 生成 6 个回答，用组内均值和方差做标准化，无需额外价值模型</li>
+                        <li><strong>四步更新流程</strong>：重新计算 new_logp → 参考模型 ref_logp → 组内标准化优势 → 裁剪损失（CISPO/GRPO 两种变体）</li>
+                        <li><strong>KL 散度惩罚</strong>：用 exp(Δ) - Δ - 1 约束策略不要偏离参考模型太远，beta 参数控制惩罚力度</li>
+                        <li><strong>掩码机制 completion_mask</strong>：确保 loss 只计算有效 token，忽略 padding 和 EOS 之后的内容</li>
+                        <li><strong>完整流程图</strong>：数据集、Rollout 引擎、Reward Model、策略模型、参考模型之间的完整交互时序</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== GRPO 核心思想 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GRPO 核心思想</h3>
+                <h4>定义</h4>
+                <p>GRPO 通过在同一 Prompt 下生成多个回答，用组内相对排名计算优势，无需训练额外的价值模型（Critic）。</p>
+                <h4>白话</h4>
+                <p>同一个问题让模型写 6 个答案，老师分别打分。分高的相对于平均有正优势，分低的有负优势。不需要额外的"Critic 模型"来预测"预期分数"——6 个回答的均值就是基准线。</p>
+                <h4>代码</h4>
+                <pre><code class="language-python"># train_grpo.py: rollout 阶段 —— 每个 Prompt 生成 6 个回答
+rollout_result = rollout_engine.rollout(
+    prompt_ids=prompt_inputs["input_ids"],
+    attention_mask=prompt_inputs["attention_mask"],
+    num_generations=args.num_generations,  # 默认 6
+    max_new_tokens=args.max_gen_len,
+    temperature=0.8,
+)</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== 组内相对优势 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组内相对优势</h3>
+                <div class="ai-diagram">
+                  <h4>图：GRPO 的组内相对优势计算过程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：三个阶段从左到右。第一阶段"生成阶段"：Prompt分出6个回答(回答1~回答6)；第二阶段"打分"：6个回答分别得到奖励(r1=2.1, r2=0.8, r3=3.5绿色高亮, r4=-0.2红色高亮, r5=1.5, r6=0.3)；第三阶段"标准化 Adv=(r-mean)/std"：计算mean=1.33, std=1.31，绿色高亮"Adv3=+1.65"和红色高亮"Adv4=-1.17"
+                  - 各元素关系：三个阶段从左到右依次连接
+                  - 关键标注：最高分用绿色标注正优势，最低分用红色标注负优势
+                  - 配色建议：浅灰背景，正优势绿色系，负优势红色系
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>关键点：优势是<strong>组内相对</strong>的。同一个回答在不同的组里，优势值可能完全不同。这就像你的考试成绩好不好，取决于班级平均水平。</p>
+            </div>
+        </section>
+
+        <!-- ==================== GRPO 更新策略（原"GRPO 核心代码"，已重写） ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GRPO 更新策略</h3>
+                <p>GRPO 的一次前向传播分为四步。在写代码之前，先理解每一步在做什么、为什么需要它：</p>
+                <div class="ai-diagram">
+                  <h4>图：GRPO 策略更新的四步流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从上到下四个步骤框，每个步骤右侧有"为什么？"说明。步骤1蓝色"用当前模型重新计算每个token的log概率（new_logp）"旁注"策略权重已变，需最新概率"；步骤2紫色"用冻结的参考模型计算ref_logp，用于KL惩罚"旁注"防止偏离太远，遗忘知识"；步骤3橙色"把同一Prompt的6个回答做组内标准化，得到优势"旁注"绝对分数无意义，相对排名才是信号"；步骤4红色"用new_logp、old_logp和优势计算裁剪损失"旁注"限制更新幅度，避免一步走太远"
+                  - 各元素关系：四个步骤从上到下依次连接
+                  - 关键标注：每个步骤用不同颜色，右侧"为什么"用灰色斜体
+                  - 配色建议：浅灰背景，步骤1蓝，步骤2紫，步骤3橙，步骤4红
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== GRPO 更新代码（精简版） ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GRPO 代码片段</h3>
+                <p>对应上页流程图的四步，每步只保留核心代码：</p>
+                <pre><code class="language-python"># 步骤 1: 重新计算 new_logp（策略已经 rollout 后更新过）
+per_token_logps = F.log_softmax(res.logits[:, :-1, :], dim=-1).gather(
+    2, outputs[:, 1:].unsqueeze(-1)).squeeze(-1).gather(1, logp_pos)
+
+# 步骤 2: 参考模型的 logp（冻结，用于计算 KL 散度）
+with torch.no_grad():
+    ref_per_token_logps = F.log_softmax(
+        ref_model(outputs, ...).logits[:, :-1, :], dim=-1).gather(...)
+
+# 步骤 3: 组内标准化得到优势
+advantages = (rewards - mean_r) / (std_r + 1e-4)
+
+# 步骤 4: ratio = 新旧概率之比，裁剪后计算损失
+ratio = torch.exp(per_token_logps - old_per_token_logps)
+clamped_ratio = torch.clamp(ratio, max=args.epsilon_high).detach()</code></pre>
+                <p>步骤 1 和 2 都是在做"取 log 概率"，只是分别来自当前策略和参考模型。步骤 3 是 GRPO 区别于 PPO 的核心——不需要 Critic。步骤 4 的裁剪细节会在后面的损失函数一页展开。</p>
+            </div>
+        </section>
+
+        <!-- ==================== KL 散度惩罚 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>KL 散度惩罚</h3>
+                <h4>定义</h4>
+                <p>KL 散度衡量两个概率分布之间的"距离"。在 RL 训练中，它约束新策略不要偏离参考模型太远。</p>
+                <h4>白话</h4>
+                <p>想象你在学开车。教练（参考模型）说"方向盘应该这样握"，你可以调整握法，但不能完全另起炉灶——否则就是危险驾驶。KL 惩罚就是那个"教练在盯着你"的机制。</p>
+                <p><em>这个比喻只是为了帮你建立直观感受。在代码中，KL 散度是通过 token 级别的 log 概率差来计算的。</em></p>
+                <h4>代码</h4>
+                <pre><code class="language-python"># train_grpo.py: per-token KL 散度
+kl_div = ref_per_token_logps - per_token_logps
+per_token_kl = torch.exp(kl_div) - kl_div - 1  # [B*G, R]</code></pre>
+                <p>公式是 <code>exp(Δ) - Δ - 1</code>，其中 <code>Δ = ref_logp - new_logp</code>。这个公式保证 KL ≥ 0，且 Δ=0 时 KL=0（策略没变时惩罚为零）。<code>args.beta</code>（默认 0.1）控制惩罚力度。</p>
+            </div>
+        </section>
+
+        <!-- ==================== GRPO 损失函数 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GRPO 损失函数</h3>
+                <p>损失 = 策略损失 + KL 惩罚。策略损失通过 Clipped Objective 限制更新幅度。</p>
+                <pre><code class="language-python"># train_grpo.py: 两种变体
+ratio = torch.exp(per_token_logps - old_per_token_logps)  # 新旧策略的比率
+
+if args.loss_type == "cispo":  # 默认：CISPO 单裁剪（只裁上界）
+    clamped_ratio = torch.clamp(ratio, max=args.epsilon_high).detach()
+    per_token_loss = -(clamped_ratio * advantages.unsqueeze(1) * per_token_logps
+                       - args.beta * per_token_kl)
+else:  # 标准 GRPO：双裁剪（上下界都裁）
+    clipped_ratio = torch.clamp(ratio, 1 - args.epsilon, 1 + args.epsilon)
+    per_token_loss1 = ratio * advantages.unsqueeze(1)
+    per_token_loss2 = clipped_ratio * advantages.unsqueeze(1)
+    per_token_loss = -(torch.min(per_token_loss1, per_token_loss2)
+                       - args.beta * per_token_kl)</code></pre>
+                <p>最后对有效 token 求平均：</p>
+                <pre><code class="language-python">policy_loss = ((per_token_loss * completion_mask).sum(dim=1)
+               / completion_mask.sum(dim=1).clamp(min=1)).mean()
+loss = (policy_loss + aux_loss) / args.accumulation_steps</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== CISPO 变体详解 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CISPO 变体</h3>
+                <p>MiniMind 默认使用 CISPO（Clipped Importance Sampling Policy Optimization）。和标准 GRPO 的区别在于裁剪策略：</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>GRPO 双裁剪</h4>
+                        <pre><code class="language-python"># 上下界都裁剪
+clipped = torch.clamp(ratio,
+    1 - 0.2, 1 + 0.2)  # [0.8, 1.2]</code></pre>
+                        <p>ratio 被限制在 [0.8, 1.2]。策略变化超过 20% 的部分被截断。</p>
+                    </div>
+                    <div class="column">
+                        <h4>CISPO 单裁剪</h4>
+                        <pre><code class="language-python"># 只裁上界
+clamped = torch.clamp(ratio,
+    max=5.0).detach()</code></pre>
+                        <p>ratio 下界不限，上界裁到 5.0。允许策略更大胆地向好的方向更新。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>CISPO 更激进——不限制 ratio 下界，允许策略更大胆地向好的方向探索。用 <code>.detach()</code> 截断梯度流，让裁剪不影响反向传播的数值稳定性。实践中 CISPO 收敛更快，但也需要更小的学习率来配合。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== GRPO 完整流程图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GRPO 完整流程</h3>
+                <div class="ai-diagram">
+                  <h4>图：GRPO 训练的完整交互时序</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：水平时序图，五个参与者从左到右：RLAIFDataset、RolloutEngine、RewardModel（蓝色）、Policy Model（橙色）、Reference Model（紫色）。流程：Data提供Prompt → Rollout生成6个回答 → 返回output_ids和old_logp给Policy → Rollout把completions文本给RM → RM计算长度+思考+重复+RM评分 → 返回rewards给Policy → Policy计算new_logp → Ref计算ref_logp → Policy内部计算Adv=(rewards-mean)/std、ratio=exp(new-old)、KL=exp(ref-new)-(ref-new)-1、CISPO clipped loss → backward更新参数
+                  - 各元素关系：消息箭头从左到右表示调用，从右到左表示返回
+                  - 关键标注：Policy旁标注核心计算公式，RM旁标注"外部不训练"
+                  - 配色建议：浅灰背景，RM蓝色，Policy橙色，Reference紫色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== GRPO completion_mask ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>掩码机制</h3>
+                <p>GRPO 中有一个容易被忽略但非常重要的机制：<code>completion_mask</code>。它确保 loss 只计算有效 token，忽略 padding 和 EOS 之后的内容。</p>
+                <pre><code class="language-python"># 核心逻辑：找到 EOS 位置，只保留 EOS 之前且非 padding 的 token
+is_eos = (completion_ids == tokenizer.eos_token_id) & completion_pad_mask
+eos_idx = ...  # 每个 sample 中 EOS 的位置
+completion_mask = (torch.arange(...) &lt;= eos_idx.unsqueeze(1)) & completion_pad_mask</code></pre>
+                <div class="intro-block">
+                    <p><code>completion_mask</code> 在 loss 计算中用于加权——有效 token 参与 loss，padding 位置贡献为零。</p>
+                </div>
+                <div class="warning">
+                    <strong>如果去掉 completion_mask</strong>，padding 位置的零值会参与 loss 平均，导致梯度信号被稀释，训练效率大幅下降。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 5: PPO ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: PPO 算法</h2>
+                <p>Proximal Policy Optimization，经典的 RL 算法。比 GRPO 多了一个 Critic 模型，优势估计更精细，但也更复杂、更吃显存。</p>
+                <div class="intro-block">
+                    <p>PPO 是 DeepSeek、ChatGPT 等大模型背后的经典对齐算法。和 GRPO 的最大区别是多了一个"Critic 预言家"——它预测每个位置能拿多少分，让优势估计更精细。代价是多一个模型要训练，显存和调参难度都更高。这一节带你从 Critic 架构到 GAE 数学，把 PPO 彻底搞明白。</p>
+                    <ul>
+                        <li><strong>Critic 模型</strong>：与 Actor 共享 Transformer 基座，但用 value_head 输出标量价值 V(s)，而不是词表分布。初始化时 strict=False 是关键</li>
+                        <li><strong>GAE 优势估计</strong>：从后往前反向传递 TD 误差，lambda 控制远近信号的衰减。先用数值例子建立直觉，再看代码实现</li>
+                        <li><strong>两个损失函数</strong>：Actor 的裁剪策略损失（限制更新幅度）+ Critic 的裁剪价值损失（防止 V(s) 一步跳太远）</li>
+                        <li><strong>多轮更新与 KL 早停</strong>：PPO 对同一批数据更新多轮，但 KL 超过阈值就停下来（loss 乘 0 而不是 break，避免 DDP 死锁）</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Critic 模型 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Critic 模型</h3>
+                <h4>定义</h4>
+                <p>Critic 模型用于估计"在当前状态下，未来能获得的期望总回报"，输出每个位置的价值 V(s)。</p>
+                <h4>白话</h4>
+                <p>Critic 是一个"预言家"。它不生成文字，只输出一个分数——"从当前这个位置看，最终能拿多少分"。有了这个预言家，我们就知道某个回答是"比预期好"还是"比预期差"。</p>
+                <h4>代码</h4>
+                <pre><code class="language-python"># train_ppo.py: Critic 继承 MiniMind，换掉最后的 lm_head
+class CriticModel(MiniMindForCausalLM):
+    def __init__(self, params):
+        super().__init__(params)
+        # 把语言模型头替换为价值头：输出单一标量
+        self.value_head = nn.Linear(params.hidden_size, 1)
+
+    def forward(self, input_ids=None, attention_mask=None, **kwargs):
+        outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
+        hidden_states = self.model.norm(outputs[0])
+        values = self.value_head(hidden_states).squeeze(-1)  # [B, seq_len]
+        return values</code></pre>
+                <p>Critic 和 Actor 共享 Transformer 基座权重，只是最后的"头"不同。Actor 用 <code>lm_head</code> 输出词表分布，Critic 用 <code>value_head</code> 输出标量价值。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Critic 初始化 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Critic 初始化</h3>
+                <p>Critic 从 Actor 的 SFT 权重初始化，加载预训练权重时 <code>strict=False</code>（因为 Critic 没有 <code>lm_head</code>，多了 <code>value_head</code>）：</p>
+                <pre><code class="language-python"># train_ppo.py: Critic 初始化
+ckp = f'{args.save_dir}/{base_weight}_{lm_config.hidden_size}{moe_suffix}.pth'
+state_dict = torch.load(ckp, map_location=args.device)
+
+critic_model = CriticModel(lm_config)
+critic_model.load_state_dict(state_dict, strict=False)  # 允许键不完全匹配
+critic_model = critic_model.to(args.device)</code></pre>
+                <div class="intro-block">
+                    <p><code>strict=False</code> 是关键。因为 <code>state_dict</code> 里包含 <code>lm_head</code> 的权重（Critic 没有），而 <code>CriticModel</code> 有 <code>value_head</code> 的权重（不在 state_dict 里）。跳过不匹配的键，Critic 的 <code>value_head</code> 使用随机初始化。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Actor-Critic 架构图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Actor-Critic</h3>
+                <div class="ai-diagram">
+                    <h4>图：Actor-Critic 共享基座的模型架构</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：底部是一个大的灰色方框标注"共享 Transformer 基座"
+                    - 基座上方分出两个分支：左边分支标注"Actor 头（lm_head）"，输出箭头指向"logits → 生成 token"；右边分支标注"Critic 头（value_head）"，输出箭头指向"V(s) → 单一标量价值"
+                    - 输入从左侧进入："input_ids, attention_mask"箭头指向共享基座
+                    - 关键标注：Critic 头旁标注"nn.Linear(hidden_size, 1)"和"输出期望回报"
+                    - 右下角小字标注"初始化时 strict=False，value_head 随机初始化"
+                    - 配色建议：浅灰背景，共享基座浅灰大框，Actor 头蓝色，Critic 头橙色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== GAE 数值例子（重写：先用直觉再给代码） ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GAE 直觉理解</h3>
+                <p>GAE（Generalized Advantage Estimation）回答的问题是：生成序列中每个 token，究竟对最终奖励贡献了多少？</p>
+                <p>假设模型生成了 3 个 token，Critic 给出了每个位置的价值预测：</p>
+                <table>
+                    <thead><tr><th>位置</th><th>即时奖励 r</th><th>Critic 预测 V(s)</th></tr></thead>
+                    <tbody>
+                        <tr><td>t=0</td><td>0.0</td><td>1.0</td></tr>
+                        <tr><td>t=1</td><td>0.5</td><td>1.5</td></tr>
+                        <tr><td>t=2（末尾）</td><td>2.0</td><td>1.2</td></tr>
+                    </tbody>
+                </table>
+                <p>从后往前算 TD 误差 <code>delta = r + gamma*V(next) - V(current)</code>，其中末尾没有 V(next)，取 0：</p>
+                <table>
+                    <thead><tr><th>位置</th><th>delta</th><th>累积优势 A（lambda=0.95）</th></tr></thead>
+                    <tbody>
+                        <tr><td>t=2</td><td>2.0 + 0 - 1.2 = <strong>0.8</strong></td><td>A2 = <strong>0.8</strong></td></tr>
+                        <tr><td>t=1</td><td>0.5 + 1.2 - 1.5 = <strong>0.2</strong></td><td>A1 = 0.2 + 0.95*0.8 = <strong>0.96</strong></td></tr>
+                        <tr><td>t=0</td><td>0.0 + 1.0 - 1.0 = <strong>0.0</strong></td><td>A0 = 0.0 + 0.95*0.96 = <strong>0.912</strong></td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>直觉：t=2 位置实际拿到 2.0 分，但 Critic 只预测了 1.2，说明这个 token "超出预期"（delta=0.8）。这个好消息通过 lambda=0.95 衰减后传递给前面的 token。这就是 GAE 的精髓——让每个 token 不仅看自己的 TD 误差，还能吸收后面 token 的误差信号。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== GAE 代码实现 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GAE 代码实现</h3>
+                <p>理解了上面的数值例子后，代码只是在做同样的事——从后往前迭代：</p>
+                <pre><code class="language-python"># train_ppo.py: GAE 反向迭代
+lastgaelam = torch.zeros(B, device=args.device)
+advs_rev = []
+for t in reversed(range(gen_len)):
+    nv = old_resp_values[:, t + 1] if t &lt; gen_len - 1 else 0.0
+    delta = token_rewards[:, t] + args.gamma * nv - old_resp_values[:, t]
+    lastgaelam = delta + args.gamma * args.lam * lastgaelam
+    advs_rev.append(lastgaelam)
+advantages = torch.stack(advs_rev[::-1], dim=1)  # [B, R]
+returns = advantages + old_resp_values  # Return = Advantage + Value</code></pre>
+                <p>对照上页的数值例子：<code>delta</code> 就是 TD 误差，<code>lastgaelam</code> 就是累积优势。每一步把当前的 delta 加上衰减后的上一步优势，从末尾一路传递到开头。</p>
+                <div class="intro-block">
+                    <p><strong>深度边界</strong>：GAE 涉及 Bellman 方程和 TD-lambda 理论。初次学习只需理解"GAE 是比组内标准化更精细的优势估计方法，它利用了 Critic 的价值预测和时序信息"。GRPO 不需要 GAE，这也是它更简单的原因之一。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== GAE 反向过程图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GAE 反向过程</h3>
+                <div class="ai-diagram">
+                    <h4>图：GAE 广义优势估计的反向迭代过程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：一个横向时间轴，从左到右标注 token t=0, t=1, ..., t=T-1
+                    - 每个时间点上方有 Critic 输出的 V(s_t) 数值（蓝色小框），下方有即时奖励 r_t（绿色小框）
+                    - 时间轴下方展示"反向计算"过程：从右到左用橙色箭头串联
+                    - 关键公式标注：delta_t = r_t + gamma * V(s_{t+1}) - V(s_t)；A_t = delta_t + gamma * lambda * A_{t+1}
+                    - 最后一个时间点旁标注"终点：delta = r - V(s)"
+                    - lambda=0.95 旁标注"越远的未来贡献越小"
+                    - 配色建议：浅灰背景，V(s) 蓝色，r_t 绿色，delta/A 橙色，反向箭头深橙
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== PPO 如何裁剪 & Critic 学什么（合并页） ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>PPO 两个损失</h3>
+                <p>PPO 同时训练两个模型，各有一个损失函数。它们的目标完全不同：</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Actor：PPO 如何裁剪</h4>
+                        <p>策略损失训练 Actor（生成模型），让高优势的动作概率更大、低优势的更小，同时用裁剪限制更新幅度：</p>
+                        <pre><code class="language-python">ratio = torch.exp(new_logp - old_logp)
+clipped = torch.clamp(ratio,
+    1-0.2, 1+0.2)
+# 取 max 确保损失为正
+policy_loss = torch.max(
+    -advantages * ratio,
+    -advantages * clipped)
+# 加上 KL ref 惩罚
+policy_loss += kl_coef * kl_penalty</code></pre>
+                        <p><code>clip_epsilon=0.2</code>，策略变化超过 20% 时梯度被截断。这就是 PPO 名字中"Proximal"（近端）的含义。</p>
+                    </div>
+                    <div class="column">
+                        <h4>Critic：Critic 学什么</h4>
+                        <p>价值损失训练 Critic（价值模型），让它的预测 V(s) 更接近实际回报 Returns。同样有裁剪保护：</p>
+                        <pre><code class="language-python">value_loss = 0.5 * torch.max(
+    # 普通 MSE
+    (values - returns) ** 2,
+    # 裁剪 MSE：限制 V 变化幅度
+    (clamp(values,
+     old_values - 0.2,
+     old_values + 0.2)
+     - returns) ** 2
+)</code></pre>
+                        <p>取两者的 max，确保 Critic 不会一步更新太猛。</p>
+                    </div>
+                </div>
+                <p>总损失 = 策略损失 + <code>vf_coef</code> x 价值损失 + <code>aux_loss</code>。两个损失分别回传到 Actor 和 Critic 的参数。</p>
+            </div>
+        </section>
+
+        <!-- ==================== PPO 早停 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>PPO 早停机制</h3>
+                <p>PPO 会对同一批数据更新多轮（<code>ppo_update_iters=2</code>）。但如果策略偏离太远，就要停下来：</p>
+                <pre><code class="language-python"># train_ppo.py: 早停判断
+log_ratio = mb_resp_logp - old_resp_logp[inds]
+approx_kl = (0.5 * (log_ratio ** 2) * resp_policy_mask[inds]).sum() \
+         / resp_policy_mask[inds].sum().clamp(min=1)
+
+if approx_kl_val > args.early_stop_kl:  # 默认 0.25
+    stop_ppo = True</code></pre>
+                <div class="warning">
+                    <strong>早停时不能直接 break！</strong>
+                    <p>DDP 要求所有进程同步 forward-backward。某张卡 break 了，其他卡还在等它，就会死锁。所以早停时 loss 乘 0.0，让梯度为零但不中断通信：</p>
+                </div>
+                <pre><code class="language-python"># 早停时截断 loss 但不中断 DDP 通信
+if stop_ppo:
+    loss = (policy_loss + args.vf_coef * value_loss + aux_loss) * 0.0
+else:
+    loss = (policy_loss + args.vf_coef * value_loss + aux_loss) / args.accumulation_steps
+loss.backward()</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== PPO 多轮更新 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>PPO 多轮更新</h3>
+                <p>PPO 对同一批 rollout 数据进行多轮 mini-batch 更新。这是 PPO 和 GRPO 的重要区别：</p>
+                <pre><code class="language-python">mb_size = max(1, min(args.mini_batch_size, B))
+for ppo_epoch in range(args.ppo_update_iters):  # 默认 2 轮
+    if stop_ppo: break
+    b_inds = torch.randperm(B, device=args.device)  # 打乱顺序
+    for i in range(0, B, mb_size):
+        inds = b_inds[i:i + mb_size]
+        # 在 mini-batch 上计算 loss 并 backward
+        ...
+        if grad_accum_step % args.accumulation_steps == 0:
+            clip_grad_norm_(actor_model.parameters(), args.grad_clip)
+            clip_grad_norm_(critic_model.parameters(), args.grad_clip)
+            actor_optimizer.step()
+            critic_optimizer.step()</code></pre>
+                <div class="intro-block">
+                    <p>GRPO 每批数据只更新一次。PPO 更新多次（默认 2 次），充分利用采集的数据。但多轮更新的风险是策略偏离过大——这正是 KL 早停机制存在的意义。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== PPO 完整流程 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>PPO 完整流程</h3>
+                <div class="ai-diagram">
+                  <h4>图：PPO 训练的完整交互时序</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：水平时序图，六个参与者从左到右：RLAIFDataset、RolloutEngine、RewardModel（蓝色）、Actor Model（橙色）、Critic Model（绿色）、Reference Model（紫色）。流程：Data提供Prompt → Rollout生成1个回答 → 返回output_ids和old_logp给Actor，output_ids给Critic → Rollout把completions给RM → RM评分返回rewards → Critic前向得到V(s) → Actor计算GAE Advantage → Returns=Adv+V → 循环PPO更新2轮（每轮遍历mini-batch：Actor算new_logp、Critic算new_values、Ref算ref_logp → KL检查早停？ → 联合backward）
+                  - 各元素关系：消息箭头从左到右表示调用，从右到左表示返回。PPO循环用灰色背景框标注
+                  - 关键标注：Critic旁标注"独有组件"，PPO循环旁标注"多轮更新，KL早停保护"
+                  - 配色建议：浅灰背景，RM蓝色，Actor橙色，Critic绿色，Reference紫色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 6: GRPO vs PPO 对比（移到两种算法之后） ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>GRPO vs PPO</h2>
+                <p>两种算法解决同一个问题（RL 对齐），但路线不同。现在你已经分别学完了两者，让我们做个全面对比。</p>
+                <div class="intro-block">
+                    <p>这一节不是新知识，而是一个"对照表"。把前面学过的 GRPO 和 PPO 放在一起，从模型数量、显存开销、优势估计方式、更新策略等维度逐项对比，帮你理清什么场景该用哪个。</p>
+                    <ul>
+                        <li><strong>模型数量对比</strong>：GRPO 2 个模型（Policy + Ref），PPO 3 个（Actor + Critic + Ref），多一个 Critic 意味着多约 25% 显存</li>
+                        <li><strong>全维度对比表</strong>：训练模型数、每 Prompt 生成数、优势估计方法、更新次数、损失变体、早停机制、显存开销等 9 个维度的详细对比</li>
+                        <li><strong>如何选择</strong>：推荐从 GRPO（CISPO）开始，快速迭代验证奖励信号；资源充足且追求极致性能时再升级 PPO</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 模型数量对比 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>模型数量对比</h3>
+                <div class="columns">
+                    <div class="column">
+                        <h4>GRPO: 2 个模型</h4>
+                        <pre><code class="language-python"># train_grpo.py
+model, tokenizer = init_model(...)       # Policy
+ref_model, _ = init_model(...)           # Reference
+reward_model = LMForRewardModel(...)     # 外部 RM（不训练）</code></pre>
+                        <p>只有 Policy 和 Reference 两个模型参与训练。RM 是外部工具，不参与梯度计算。</p>
+                    </div>
+                    <div class="column">
+                        <h4>PPO: 3 个模型</h4>
+                        <pre><code class="language-python"># train_ppo.py
+actor_model, tokenizer = init_model(...) # Actor
+ref_model, _ = init_model(...)           # Reference
+critic_model = CriticModel(...)          # Critic（额外）
+reward_model = LMForRewardModel(...)     # 外部 RM（不训练）</code></pre>
+                        <p>多一个 Critic 模型。显存多占约 25%，还有额外的 Critic 优化器和学习率调度器。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 全面对比表 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>全维度对比</h3>
+                <table>
+                    <thead><tr><th>维度</th><th>GRPO</th><th>PPO</th></tr></thead>
+                    <tbody>
+                        <tr><td>训练模型数</td><td>2（Policy + Ref）</td><td>3（Actor + Critic + Ref）</td></tr>
+                        <tr><td>每 Prompt 生成数</td><td>6</td><td>1</td></tr>
+                        <tr><td>优势估计</td><td>组内均值/方差标准化</td><td>GAE（需 Critic）</td></tr>
+                        <tr><td>每批更新次数</td><td>1 次</td><td>2 次（可配置）</td></tr>
+                        <tr><td>损失变体</td><td>GRPO / CISPO</td><td>标准 PPO 裁剪</td></tr>
+                        <tr><td>早停机制</td><td>无</td><td>有（KL > 0.25 时触发）</td></tr>
+                        <tr><td>显存开销</td><td>较低</td><td>较高（+Critic + 2 个优化器）</td></tr>
+                        <tr><td>超参数数量</td><td>较少</td><td>较多（gamma, lam, vf_coef...）</td></tr>
+                        <tr><td>推荐场景</td><td>资源受限、快速迭代</td><td>追求极致性能</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 架构对比图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>架构对比图</h3>
+                <div class="ai-diagram">
+                    <h4>图：GRPO 与 PPO 的模型架构对比</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：左右两栏并排对比。左栏标题"GRPO（2个模型）"，右栏标题"PPO（3个模型）"
+                    - 左栏 GRPO：展示 Policy Model（蓝色大框）和 Reference Model（灰色虚线框），中间有 KL 散度箭头。下方展示"组内 6 个回答 → 组标准化 → Advantage"
+                    - 右栏 PPO：展示 Actor（蓝色大框）、Critic（橙色大框，标注"独有"）、Reference Model（灰色虚线框）。下方展示"GAE 递推 → Advantage"
+                    - 关键标注：PPO 栏的 Critic 用橙色高亮标注"+1 个模型，+25% 显存"
+                    - 配色建议：浅灰背景，Policy/Actor 蓝色，Critic 橙色，Reference 灰色虚线
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 如何选择 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>如何选择</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>推荐从 GRPO 开始</h4>
+                        <p>不需要 Critic，显存更低，超参数更少。CISPO 变体收敛快，适合大多数场景。MiniMind 默认使用 GRPO。</p>
+                    </div>
+                    <div class="card">
+                        <h4>PPO 适合追求极致</h4>
+                        <p>资源充足、追求最高性能时使用。GAE 的优势估计更精细，多轮更新充分利用数据。但调参空间更大，训练更不稳定。</p>
+                    </div>
+                    <div class="card">
+                        <h4>实践中可以都试</h4>
+                        <p>先用 GRPO 快速验证奖励信号和超参是否合理，确认没有问题后再尝试 PPO 微调。两者可以接力训练。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 7: Rollout 引擎（重写） ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 7: Rollout 引擎</h2>
+                <p>Rollout 引擎负责"生成回答"这一步。看似简单——不就是调 <code>model.generate()</code> 吗？但实际工程中，这层抽象解决了一个关键问题。</p>
+                <div class="intro-block">
+                    <p>这一节聚焦 RL 训练中容易被忽视的工程细节：生成和训练的资源竞争。小模型直接在训练代码里调 generate() 没问题，但大模型需要把"生成"抽离成独立引擎。这一节看完，你会理解为什么需要一个抽象层，以及 MiniMind 提供的两种引擎各自适合什么场景。</p>
+                    <ul>
+                        <li><strong>设计动机</strong>：训练和推理争抢 GPU 资源。解决思路是把"生成"做成可插拔引擎，一行参数切换本地推理和独立推理服务</li>
+                        <li><strong>两种引擎对比</strong>：Torch 引擎零配置开箱即用（适合小模型调试），SGLang 引擎独占 GPU 加速推理（适合大模型多卡训练）</li>
+                        <li><strong>核心实现细节</strong>：repeat_interleave 复制 Prompt 实现"一次 generate 多个不同回答"，logits_to_keep 优化只算生成部分的 logits</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 为什么需要引擎（设计动机） ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么需要引擎</h3>
+                <p>训练小模型时，直接在训练代码里调用 <code>model.generate()</code> 就够了。但当模型变大、需要多卡训练时，问题出现了：</p>
+                <div class="warning">
+                    <strong>训练和推理的资源竞争。</strong>
+                    <p>生成阶段（rollout）需要 GPU 做推理，更新阶段需要 GPU 做训练。如果都在同一块卡上，推理时训练停摆，训练时推理闲置。大模型的生成耗时更长，浪费更严重。</p>
+                </div>
+                <p>解决思路：把"生成"这件事抽离出来，做成<strong>可插拔的引擎</strong>。小模型用本地引擎（Torch），大模型用独立推理服务（SGLang），训练代码一行不改。</p>
+                <pre><code class="language-python"># 切换引擎只需改一个参数
+python train_grpo.py --rollout_engine torch   # 本地推理
+python train_grpo.py --rollout_engine sglang  # 独立推理服务</code></pre>
+                <p>这就是抽象层存在的意义——让算法工程师专注算法，不用关心底层用什么方式推理。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 引擎特性对比 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>引擎特性对比</h3>
+                <table>
+                    <thead><tr><th>特性</th><th>Torch 引擎</th><th>SGLang 引擎</th></tr></thead>
+                    <tbody>
+                        <tr><td>推理方式</td><td><code>model.generate()</code> 直接调用</td><td>HTTP 调用独立推理服务</td></tr>
+                        <tr><td>显存</td><td>与训练共享 GPU</td><td>独占一块 GPU</td></tr>
+                        <tr><td>推理速度</td><td>较慢（无加速）</td><td>快（RadixAttention 加速）</td></tr>
+                        <tr><td>权重同步</td><td>直接引用（零开销）</td><td>保存磁盘 + HTTP 通知热加载</td></tr>
+                        <tr><td>部署复杂度</td><td>零配置开箱即用</td><td>需额外启动 SGLang 服务</td></tr>
+                        <tr><td>适用场景</td><td>小模型、单卡调试</td><td>大模型、多卡分布式训练</td></tr>
+                    </tbody>
+                </table>
+                <p>对于 MiniMind 这样的小模型，Torch 引擎完全够用。SGLang 主要为未来扩展到更大模型预留。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Torch 引擎关键代码（精简版） ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Torch 引擎代码</h3>
+                <p>TorchRolloutEngine 是默认引擎，核心逻辑只有三步：</p>
+                <pre><code class="language-python"># rollout_engine.py: TorchRolloutEngine 核心逻辑
+class TorchRolloutEngine(RolloutEngine):
+    def rollout(self, prompt_ids, attention_mask,
+                num_generations, max_new_tokens, temperature=0.8):
+        with torch.no_grad():
+            # 关键：repeat_interleave 把每个 Prompt 复制 G 份
+            output_ids = model.generate(
+                input_ids=prompt_ids.repeat_interleave(num_generations, dim=0),
+                max_new_tokens=max_new_tokens,
+                do_sample=True, temperature=temperature,
+            )
+            per_token_logps = compute_per_token_logps(self.policy_model, output_ids, ...)
+        return RolloutResult(output_ids, completion_ids, per_token_logps, completions, ...)</code></pre>
+                <div class="intro-block">
+                    <p><code>repeat_interleave(num_generations)</code> 是关键操作。它把每个 Prompt 复制 G 份（GRPO G=6, PPO G=1），这样一次 <code>generate()</code> 调用就能产出同一 Prompt 的多个不同回答。由于 temperature=0.8 有随机性，每个副本会生成不同内容。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== LogProb 计算 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>LogProb 计算</h3>
+                <p>两个引擎都需要计算每个 token 的对数概率。这个函数是 Rollout 的核心工具：</p>
+                <pre><code class="language-python"># rollout_engine.py: 只计算最后 n_keep 个 token 的 logprob，节省计算
+def compute_per_token_logps(model, input_ids, n_keep, attention_mask=None):
+    unwrapped = model.module if isinstance(model, DistributedDataParallel) else model
+    logits = unwrapped(input_ids, attention_mask=attention_mask,
+                       logits_to_keep=n_keep + 1).logits[:, :-1, :]
+    per_token_logps = []
+    for logits_row, ids_row in zip(logits, input_ids[:, -n_keep:]):
+        per_token_logps.append(
+            torch.gather(logits_row.log_softmax(dim=-1), 1, ids_row.unsqueeze(1)).squeeze(1)
+        )
+    return torch.stack(per_token_logps)  # [B, n_keep]</code></pre>
+                <div class="intro-block">
+                    <p><code>logits_to_keep</code> 参数是优化点：不需要对所有位置计算 logits，只算生成部分即可。这能显著减少前向计算的显存和计算量。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 8: 实践 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 8: 动手实践</h2>
+                <p>理论讲完了，让我们把代码跑起来。先从 GRPO 训练命令开始。</p>
+                <div class="intro-block">
+                    <p>这一节把前面所有的理论知识落地到实际的训练命令、日志解读、调参技巧和排错方法上。学完之后，你应该能自己启动 GRPO/PPO 训练，看懂日志输出，遇到问题知道往哪个方向排查。</p>
+                    <ul>
+                        <li><strong>训练命令</strong>：GRPO 和 PPO 的完整启动命令、关键超参数含义、日志指标解读（关注 Reward 上升趋势和 KL_ref 范围）</li>
+                        <li><strong>SGLang 加速</strong>：独立推理服务的启动方式、权重同步的异步性、性能与一致性的权衡</li>
+                        <li><strong>超参数速查</strong>：GRPO 和 PPO 共 14 个超参数的默认值和含义，调参时随时翻阅</li>
+                        <li><strong>练习与排错</strong>：三个动手练习（读代码、改超参、PPO 排错）+ 常见错误诊断（Reward 负数、Loss NaN、死锁、显存溢出等）</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== GRPO 训练命令 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GRPO 训练</h3>
+                <pre><code class="language-bash"># 基础 GRPO 训练（CISPO 变体，默认推荐）
+python trainer/train_grpo.py \
+    --from_weight full_sft \
+    --data_path ../dataset/rlaif.jsonl \
+    --num_generations 6 \
+    --batch_size 2 \
+    --learning_rate 3e-7 \
+    --loss_type cispo \
+    --beta 0.1 \
+    --epochs 1 \
+    --thinking_ratio 0.9</code></pre>
+                <p>训练开始后，日志会输出每个 step 的 Reward、KL_ref、Advantage 统计等关键指标：</p>
+                <pre><code class="language-plaintext">Epoch:[1/1](1/50), Reward: 1.2341, KL_ref: 0.0087,
+Adv Std: 1.1234, Adv Mean: 0.0000, Actor Loss: 0.4156,
+Avg Response Len: 234.50, Learning Rate: 0.00000030</code></pre>
+                <div class="intro-block">
+                    <p>关注 <code>Reward</code> 是否在逐步上升，<code>KL_ref</code> 是否在合理范围（0.01~0.1）。如果 KL_ref 爆涨，说明策略偏离太远，需要增大 <code>--beta</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== PPO 训练命令 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>PPO 训练</h3>
+                <pre><code class="language-bash">python trainer/train_ppo.py \
+    --from_weight full_sft \
+    --data_path ../dataset/rlaif.jsonl \
+    --batch_size 2 \
+    --learning_rate 3e-7 \
+    --critic_learning_rate 5e-7 \
+    --ppo_update_iters 2 \
+    --clip_epsilon 0.2 \
+    --gamma 1.0 \
+    --lam 0.95 \
+    --early_stop_kl 0.25</code></pre>
+                <p>PPO 多了几个关键超参数：</p>
+                <table>
+                    <thead><tr><th>参数</th><th>默认值</th><th>含义</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--critic_learning_rate</code></td><td>5e-7</td><td>Critic 的独立学习率（通常比 Actor 稍大）</td></tr>
+                        <tr><td><code>--gamma</code></td><td>1.0</td><td>折扣因子（1.0 = 不折扣，重视长期回报）</td></tr>
+                        <tr><td><code>--lam</code></td><td>0.95</td><td>GAE 的 lambda（越大越重视远期）</td></tr>
+                        <tr><td><code>--ppo_update_iters</code></td><td>2</td><td>每批数据的更新轮数</td></tr>
+                        <tr><td><code>--early_stop_kl</code></td><td>0.25</td><td>KL 早停阈值</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== SGLang 加速 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>SGLang 加速</h3>
+                <p>当模型较大或需要多卡训练时，可以用 SGLang 加速 rollout：</p>
+                <pre><code class="language-bash"># 第一步：启动 SGLang 推理服务（独立终端）
+python -m sglang.launch_server \
+    --model-path ./minimind-model \
+    --attention-backend triton \
+    --host 0.0.0.0 --port 8998
+
+# 第二步：用 SGLang 引擎训练（另一个终端）
+python trainer/train_grpo.py \
+    --from_weight full_sft \
+    --rollout_engine sglang \
+    --sglang_base_url http://localhost:8998 \
+    --sglang_model_path ./minimind-model \
+    --sglang_shared_path ./sglang_ckpt_grpo</code></pre>
+                <div class="warning">
+                    <strong>SGLang 模式下</strong>，权重同步是异步的。每 <code>save_interval</code> 步才同步一次策略到 SGLang 服务。这意味着 rollout 用的可能不是最新的策略——这是性能和一致性的权衡。同步间隔越小，一致性越好，但训练速度越慢。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 超参数速查 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>超参数速查</h3>
+                <table>
+                    <thead><tr><th>参数</th><th>默认值</th><th>说明</th><th>算法</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--num_generations</code></td><td>6</td><td>GRPO 每 Prompt 生成数</td><td>GRPO</td></tr>
+                        <tr><td><code>--beta</code></td><td>0.1</td><td>KL 惩罚系数，越大越保守</td><td>GRPO</td></tr>
+                        <tr><td><code>--epsilon</code></td><td>0.2</td><td>GRPO 裁剪范围</td><td>GRPO</td></tr>
+                        <tr><td><code>--epsilon_high</code></td><td>5.0</td><td>CISPO 上界</td><td>GRPO</td></tr>
+                        <tr><td><code>--loss_type</code></td><td>cispo</td><td>GRPO / CISPO 选择</td><td>GRPO</td></tr>
+                        <tr><td><code>--clip_epsilon</code></td><td>0.2</td><td>PPO 裁剪参数</td><td>PPO</td></tr>
+                        <tr><td><code>--vf_coef</code></td><td>0.5</td><td>价值损失权重</td><td>PPO</td></tr>
+                        <tr><td><code>--kl_coef</code></td><td>0.02</td><td>PPO KL 惩罚系数</td><td>PPO</td></tr>
+                        <tr><td><code>--gamma</code></td><td>1.0</td><td>PPO 折扣因子</td><td>PPO</td></tr>
+                        <tr><td><code>--lam</code></td><td>0.95</td><td>PPO GAE lambda</td><td>PPO</td></tr>
+                        <tr><td><code>--early_stop_kl</code></td><td>0.25</td><td>PPO 早停 KL 阈值</td><td>PPO</td></tr>
+                        <tr><td><code>--thinking_ratio</code></td><td>0.9</td><td>开启思考模式概率</td><td>共通</td></tr>
+                        <tr><td><code>--learning_rate</code></td><td>3e-7</td><td>Actor 学习率</td><td>共通</td></tr>
+                        <tr><td><code>--grad_clip</code></td><td>1.0</td><td>梯度裁剪阈值</td><td>共通</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 调试模式 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>调试模式</h3>
+                <p>两个训练脚本都支持 <code>--debug_mode</code>，定期打印 Prompt 和生成内容，帮助排查问题：</p>
+                <pre><code class="language-bash">python trainer/train_grpo.py \
+    --from_weight full_sft \
+    --debug_mode \
+    --debug_interval 10  # 每 10 步打印一次</code></pre>
+                <p>输出格式示例：</p>
+                <pre><code class="language-plaintext">[DEBUG] step=10, sample[0]
+============================== [DEBUG] sample[0] CONTEXT_BEGIN ==============================
+&lt;|im_start|&gt;user\n请解释什么是机器学习。&lt;|im_end|&gt;
+=============================== [DEBUG] sample[0] CONTEXT_END ===============================
+============================ [DEBUG] gen[0] RESPONSE_BEGIN ============================
+机器学习是人工智能的一个分支，它让计算机能够...
+============================ [DEBUG] gen[0] RESPONSE_END ==============================
+[DEBUG] gen[0] reward=2.3456</code></pre>
+                <div class="intro-block">
+                    <p>调试模式会打印每个 Prompt 的所有生成回答（GRPO 6 个，PPO 1 个）及其对应奖励。如果所有回答都很短或重复，说明模型生成有问题；如果奖励分布不合理，说明奖励信号有问题。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 1 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习: 读代码</h3>
+                <p><strong>任务</strong>：打开 <code>train_grpo.py</code>，找到 <code>grpo_train_epoch()</code> 函数。回答以下问题：</p>
+                <ol>
+                    <li><code>old_per_token_logps</code> 是在哪一步产生的？为什么后面要 <code>.detach()</code>？</li>
+                    <li>如果把 <code>num_generations</code> 从 6 改成 2，训练会出什么问题？</li>
+                    <li><code>completion_mask</code> 的作用是什么？如果去掉它，loss 会怎么变？</li>
+                </ol>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>参考答案</h3>
+                        <div class="answer-section">
+                            <ol>
+                                <li><code>old_per_token_logps</code> 在 rollout 阶段由 <code>compute_per_token_logps()</code> 产生。<code>.detach()</code> 是因为它是"旧策略的参考值"，不参与梯度计算——梯度只通过 new_logp 这条路径回传。</li>
+                                <li>组内只有 2 个回答，均值和方差估计极不准确。优势可能只有 +1 和 -1 两种值，训练信号很弱。建议至少 4 个，6 个是效率和质量的最佳平衡。</li>
+                                <li><code>completion_mask</code> 屏蔽 padding token 和 EOS 之后的内容。去掉后，这些位置的零值会参与 loss 平均，导致梯度信号被稀释，训练效率大幅下降。</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 2 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习: 改超参</h3>
+                <p><strong>任务</strong>：基于以下训练命令，修改一个超参数并预测效果：</p>
+                <pre><code class="language-bash">python trainer/train_grpo.py \
+    --from_weight full_sft \
+    --num_generations 6 \
+    --beta 0.1 \
+    --learning_rate 3e-7 \
+    --loss_type cispo</code></pre>
+                <ol>
+                    <li>把 <code>--beta</code> 从 0.1 改成 0.0 会怎样？</li>
+                    <li>把 <code>--learning_rate</code> 从 3e-7 改成 3e-5 会怎样？</li>
+                    <li>把 <code>--loss_type</code> 从 cispo 改成 grpo 会怎样？</li>
+                </ol>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>参考答案</h3>
+                        <div class="answer-section">
+                            <ol>
+                                <li>beta=0 意味着没有 KL 惩罚，策略可能偏离 ref_model 太远。后果是 reward hacking——模型找到 RM 的漏洞，生成看似高分但无意义的内容。</li>
+                                <li>学习率增大 100 倍，训练几乎必然崩溃——loss 爆炸或 NaN。RL 的学习率通常比 SFT 小 1-2 个数量级（3e-7 vs 3e-5）。</li>
+                                <li>CISPO → GRPO 会把裁剪策略从"单裁上界"变为"上下界都裁"。训练会更保守，收敛更慢，但也更稳定。</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 3 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习: PPO 排错</h3>
+                <p><strong>任务</strong>：阅读以下 PPO 日志片段，诊断问题：</p>
+                <pre><code class="language-plaintext">Epoch:[1/1](5/50), Reward: -1.2341, KL_ref: 0.0001,
+Approx KL: 0.0001, ClipFrac: 0.0000,
+Critic Loss: 12.3456, Avg Response Len: 5.00</code></pre>
+                <ol>
+                    <li>Reward 为负说明什么？</li>
+                    <li>Avg Response Len 只有 5 说明什么？</li>
+                    <li>ClipFrac 为 0 说明策略有在更新吗？</li>
+                </ol>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>参考答案</h3>
+                        <div class="answer-section">
+                            <ol>
+                                <li>Reward 为负说明模型生成的回答质量很差。结合长度只有 5 个 token，大概率是模型在敷衍——生成极短的回答，触发了长度惩罚。</li>
+                                <li>Avg Response Len = 5 说明模型几乎不生成内容就停了。可能是 temperature 太低、模型太小还没学会生成、或者 SFT 阶段没有充分训练。</li>
+                                <li>ClipFrac = 0 意味着所有 token 的 ratio 都在 [0.8, 1.2] 内，没有触发裁剪。结合 KL 很低，说明策略几乎没变化——模型可能处于梯度消失或学习率太小的状态。</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 常见错误诊断 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见错误诊断</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Reward 全是负数</h4>
+                        <p><strong>症状</strong>：日志显示 Reward 一直在 -1.0 左右，不收敛。</p>
+                        <p><strong>原因</strong>：Reward Model 没有正确加载，或者 RM 评分范围与规则奖励不匹配。</p>
+                        <p><strong>修复</strong>：检查 <code>--reward_model_path</code> 路径是否正确。用 <code>--debug_mode</code> 打印单个样本的 RM 分数，确认 RM 能正常返回分数。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Loss 变成 NaN</h4>
+                        <p><strong>症状</strong>：训练几步后 loss 变成 NaN。</p>
+                        <p><strong>原因</strong>：学习率太大，或 <code>std_r</code> 接近 0 导致除零。</p>
+                        <p><strong>修复</strong>：降低 <code>--learning_rate</code>（试试 1e-7）。检查代码中 <code>std_r + 1e-4</code> 是否存在。如果用了 fp16，尝试切换到 bf16。</p>
+                    </div>
+                    <div class="card">
+                        <h4>PPO 多卡死锁</h4>
+                        <p><strong>症状</strong>：PPO 多卡训练卡住不动。</p>
+                        <p><strong>原因</strong>：某张卡在 KL 超过阈值后直接 break，导致 DDP 通信不同步。</p>
+                        <p><strong>修复</strong>：确保早停后 loss 乘 0.0 继续完成 forward-backward 闭环，不要直接 <code>break</code>。MiniMind 的实现已经正确处理了这个问题。</p>
+                    </div>
+                    <div class="card">
+                        <h4>生成内容重复</h4>
+                        <p><strong>症状</strong>：模型反复生成相同的内容。</p>
+                        <p><strong>原因</strong>：temperature 太低（接近 greedy），或模型太小还没学会多样性。</p>
+                        <p><strong>修复</strong>：检查 <code>temperature=0.8</code> 是否设置正确。确认 <code>rep_penalty</code> 函数被调用。如果模型是 512 维的小模型，可能需要先做更多 SFT。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 更多排错 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>进阶排错</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Critic Loss 不下降</h4>
+                        <p><strong>症状</strong>：PPO 训练中 Critic Loss 一直在高位震荡。</p>
+                        <p><strong>原因</strong>：Critic 学习率不合适，或 Critic 初始化不好。</p>
+                        <p><strong>修复</strong>：尝试调大 <code>--critic_learning_rate</code>（试试 1e-6）。确认 Critic 用了 SFT 权重初始化，而不是随机初始化。</p>
+                    </div>
+                    <div class="card">
+                        <h4>KL 散度爆涨</h4>
+                        <p><strong>症状</strong>：KL_ref 从 0.01 快速涨到 1.0 以上。</p>
+                        <p><strong>原因</strong>：策略偏离参考模型太远。可能是学习率太大或 KL 惩罚太小。</p>
+                        <p><strong>修复</strong>：增大 <code>--beta</code>（GRPO）或 <code>--kl_coef</code>（PPO）。降低学习率。如果持续爆涨，检查奖励信号是否合理——reward hacking 会导致策略走偏。</p>
+                    </div>
+                    <div class="card">
+                        <h4>显存不足 OOM</h4>
+                        <p><strong>症状</strong>：训练时 CUDA out of memory。</p>
+                        <p><strong>原因</strong>：num_generations 太大或 max_gen_len 太长。</p>
+                        <p><strong>修复</strong>：减少 <code>--num_generations</code>（试试 4）。缩短 <code>--max_gen_len</code>。开启梯度累积 <code>--accumulation_steps 4</code>。PPO 比 GRPO 多一个 Critic，显存压力更大。</p>
+                    </div>
+                    <div class="card">
+                        <h4>SGLang 连接失败</h4>
+                        <p><strong>症状</strong>：<code>ConnectionRefusedError</code> 或超时。</p>
+                        <p><strong>原因</strong>：SGLang 服务没有启动，或端口不对。</p>
+                        <p><strong>修复</strong>：先在浏览器访问 <code>http://localhost:8998/health</code> 确认服务运行。检查 <code>--sglang_base_url</code> 是否正确。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== FAQ ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题 FAQ</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>选 GRPO 还是 PPO？</h4>
+                        <p>推荐从 GRPO（CISPO）开始。无需 Critic，显存更低，超参数更少。PPO 在资源充足且追求极致性能时使用。</p>
+                    </div>
+                    <div class="card">
+                        <h4>为何每 Prompt 生成 6 个？</h4>
+                        <p>组内相对优势需要足够样本才能准确估计。6 个是质量和效率的平衡点。太少（2-3 个）估计不准，太多（16+）推理成本太高。</p>
+                    </div>
+                    <div class="card">
+                        <h4>KL 散度惩罚干什么的？</h4>
+                        <p>防止策略偏离 ref_model 太远。没有 KL 约束，模型可能找到 RM 漏洞（reward hacking），生成看似高分但无意义的回答。beta 越大，约束越强。</p>
+                    </div>
+                    <div class="card">
+                        <h4>PPO 为何要多轮更新？</h4>
+                        <p>一次 rollout 后多轮更新，充分利用采集的数据。但过多更新导致策略偏离过大，需要 KL 早停保护。默认 2 轮是经验值。</p>
+                    </div>
+                    <div class="card">
+                        <h4>为什么 RL 学习率这么小？</h4>
+                        <p>RL 的学习率（3e-7）比 SFT（5e-4）小 1000 倍以上。因为 RL 的梯度信号更"嘈杂"——每次更新都基于采样数据，不是精确梯度。大学习率会导致训练崩溃。</p>
+                    </div>
+                    <div class="card">
+                        <h4>RL 训练需要多长时间？</h4>
+                        <p>取决于数据量和硬件。MiniMind 512 模型在单卡 3090 上，1 epoch（50 步）约需 20-30 分钟。768 模型约需 1 小时。PPO 比 GRPO 慢约 30%（额外的 Critic 前向 + 多轮更新）。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 自测问题 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>学完自测</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>问题 1</h4>
+                        <p>DPO 的局限性是什么？RL 引入了什么新角色来解决？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 2</h4>
+                        <p>GRPO 的优势是怎么计算的？PPO 的优势呢？两者的根本区别是什么？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 3</h4>
+                        <p>CISPO 和标准 GRPO 的裁剪策略有什么不同？为什么 CISPO 更激进？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 4</h4>
+                        <p>PPO 的 Critic 模型输出什么？它和 Actor 共享了什么？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 5</h4>
+                        <p>PPO 的早停机制在什么条件下触发？为什么不能直接 break？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 6</h4>
+                        <p>Torch 和 SGLang 两种 Rollout 引擎各自适合什么场景？</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 收尾 ==================== -->
+        <section class="slide title-slide">
+            <h1>阶段 8 完成</h1>
+            <p>GRPO 和 PPO——两种 RL 算法，让模型通过试错不断进步。</p>
+            <p>GRPO 简单高效，PPO 精细强大。从 GRPO 开始，需要时再升级到 PPO。</p>
+            <p>下一章：<strong>阶段 9 · Agent RL</strong>——教会模型使用外部工具</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

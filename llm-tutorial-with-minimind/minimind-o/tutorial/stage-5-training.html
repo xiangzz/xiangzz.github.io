@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 5：从会写到会说</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔥</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>从会写到会说</h1>
+            <p>阶段 5 · 全模态模型的训练流水线</p>
+        </section>
+
+        <!-- ==================== 开篇 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练难在哪</h3>
+                <p>如果你训练过纯文本 LLM，套路很熟：搭好数据，写个训练循环，让它跑。但 MiniMind-O 多了两层麻烦：</p>
+                <ul>
+                    <li>它要同时学好「写字」和「说话」两件事，不能让其中一件把另一件压垮</li>
+                    <li>它站在 SenseVoice/SigLIP2/Mimi 这些<strong>冻结的外部编码器</strong>之上，要先让它们和 Thinker 对齐</li>
+                </ul>
+                <div class="intro-block">
+                    <p>所以 MiniMind-O 的训练不是「一把梭」，而是精心设计的<strong>三阶段流水线</strong>——先学会根据文字出声，再学会听懂声音，最后端到端打通。本章拆解这条流水线，以及让训练既快又稳的工程技巧。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: 三阶段 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：为何不能一把梭</h2>
+                <p>三阶段流水线，每阶段只解决一个子问题。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>如果直接全量训练会怎样</h3>
+                <p>设想最激进的做法：所有参数一起解冻，所有数据一起喂，一个损失加总，开训。结果几乎注定失败——因为模型同时面对太多陌生信号（要学文字、要学声音、要学对齐编码器），梯度方向打架，根本收敛不了。</p>
+                <p>MiniMind-O 的解法：<strong>拆成三个阶段，每个阶段只让一部分参数学习、只喂一类数据、只优化一个目标</strong>。像搭积木一样，每一步都站在上一步的成果上。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>阶段 1：T2A</h3>
+                <h4>先学会「看着字说话」</h4>
+                <p><strong>T2A = Text-to-Audio</strong>。这个阶段的目标单纯：给 Talker 一段文字，让它学会生成对应的声音。</p>
+                <ul>
+                    <li>数据：文本 SFT 数据 + 配对的音频</li>
+                    <li>策略：从已有的 LLM 权重初始化 Thinker，<strong>所有参数都可训练</strong></li>
+                    <li>学到什么：Talker 能根据文本意图，产出像样的语音</li>
+                </ul>
+                <p>这一步先把「嘴」练熟。Mini 版本约 60 分钟。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Talker 怎么站起来</h3>
+                <h4>从 Thinker 拷层初始化</h4>
+                <p><strong>📌 对应源码：</strong><code>trainer_utils.py</code> 的 <code>init_omni_model()</code> 第 81-89 行</p>
+                <p>Talker 是一个<strong>全新随机初始化</strong>的小 Transformer（只有几层），如果直接从随机权重开始学语音生成，几乎不可能收敛。MiniMind-O 的关键技巧：<strong>把 Thinker 最后几层的权重，直接复制给 Talker 的前几层</strong>，给 Talker 一个「已经懂语言」的起点。</p>
+                <p><strong>📜 真实源码：trainer_utils.py 第 81-89 行</strong></p>
+                <pre><code class="language-python">if from_resume == 0 and omni_config.talker_hidden_size == omni_config.hidden_size:
+    n_talker = omni_config.num_talker_hidden_layers   # Talker 层数
+    n_thinker = len(model.thinker.layers)             # Thinker 层数
+    has_talker = any(k.startswith('talker.layers.') for k in weights)
+    if not has_talker and n_talker &gt; 0:
+        for i in range(n_talker):
+            src = n_thinker - n_talker + i
+            # 把 Thinker 倒数第 n_talker 层，逐层拷给 Talker 第 i 层
+            model.talker.layers[i].load_state_dict(
+                model.thinker.layers[src].state_dict())
+        Logger(f'Talker层初始化: 复制thinker layers[{n_thinker-n_talker}:{n_thinker}] → talker layers[0:{n_talker}]')</code></pre>
+                <p>三个生效前提要注意：(1) <code>from_resume == 0</code>——首次训练才拷，续训不拷；(2) 权重里<strong>没有</strong> <code>talker.layers.*</code> 键（说明 Talker 是新的）；(3) <code>talker_hidden_size == hidden_size</code>——两者隐藏维度一致才能直接搬。这就是「阶段 1 能训出语音」的真正起点：Talker 不是从零开始，而是<strong>站在 Thinker 的肩膀上</strong>。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>阶段 2：A2A Proj</h3>
+                <h4>让耳朵和大脑对齐</h4>
+                <p><strong>A2A = Audio-to-Audio</strong>。这一步要解决「怎么听」的问题。但不是全量训练，而是<strong>冻结一切，只训练音频投影器</strong>。</p>
+                <p>为什么？因为 SenseVoice（音频编码器）是冻结的，它的输出维度（512）和 Thinker 的输入（768）还没对齐。这个阶段就是专门练那个小小的音频投影器，让 SenseVoice 的特征能被 Thinker 理解。</p>
+                <ul>
+                    <li>策略：<code>mode='audio_proj'</code>，冻结 Thinker/Talker，只解冻音频投影器</li>
+                    <li>学到什么：音频编码器的输出，能被 Thinker 正确理解</li>
+                </ul>
+                <p>Mini 版本约 15 分钟（投影器很小，训得快）。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>阶段 3：A2A Full</h3>
+                <h4>端到端打通</h4>
+                <p>前两步分别练好了「嘴」和「耳朵对齐」。最后一步<strong>解冻所有参数</strong>，用小学习率端到端微调，让「听 → 想 → 说」整条链路协同。</p>
+                <ul>
+                    <li>策略：<code>mode='all'</code>，全参数可训练，但学习率很小（2e-5）</li>
+                    <li>学到什么：听懂语音 → 理解 → 用语音回复的完整能力</li>
+                </ul>
+                <div class="ai-diagram">
+                  <h4>图：三阶段训练流水线</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的三个阶段方块，用粗箭头串联，表示先后顺序
+                  - 阶段 1（浅蓝色，T2A）：标注「Text-to-Audio」「数据：文本+配对音频」「策略：全参数训练」「学到：Talker 会根据文字出声」「约 60min」
+                  - 阶段 2（浅黄色，A2A Proj）：标注「Audio-to-Audio 投影对齐」「数据：语音 SFT」「策略：冻结一切，只训音频投影器」「学到：SenseVoice 输出能被 Thinker 理解」「约 15min」
+                  - 阶段 3（浅绿色，A2A Full）：标注「Audio-to-Audio 全量微调」「数据：语音 SFT」「策略：解冻全部，小学习率」「学到：听→想→说 端到端打通」「约 15min」
+                  - 在最左侧画一个「LLM 预训练权重」的小方块，用箭头指向阶段 1，标注「初始化起点」
+                  - 关键标注：在三阶段上方画一条弧线，标注「每一步都站在上一步成果上，像搭积木」
+                  - 配色建议：浅灰背景，三阶段分别浅蓝/浅黄/浅绿，箭头深灰色，起点块浅紫色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>两个独立的冻结旋钮</h3>
+                <p><strong>📌 对应源码：</strong><code>train_sft_omni.py</code> 第 211-216 行（<code>args.mode</code> 分支）+ <code>trainer_utils.py</code> 的 <code>init_omni_model()</code> 第 92-103 行（<code>freeze_backbone</code> 分支）</p>
+                <p><strong>关键纠正：</strong>之前的表把「Thinker 冻结」归到 <code>mode</code> 上，是<strong>错的</strong>。源码里其实是<strong>两个相互独立的旋钮</strong>，作用对象不同，可以叠加：</p>
+                <table>
+                    <thead><tr><th>旋钮（命令行参数）</th><th>作用对象</th><th>取值</th><th>谁会被冻结/解冻</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--mode</code></td><td>投影层</td><td><code>all</code></td><td>不动 <code>requires_grad</code>，全量训练（默认）</td></tr>
+                        <tr><td><code>--mode</code></td><td>投影层</td><td><code>audio_proj</code></td><td>先全冻结，再只解冻 <code>model.audio_proj</code></td></tr>
+                        <tr><td><code>--mode</code></td><td>投影层</td><td><code>vision_proj</code></td><td>先全冻结，再只解冻 <code>model.vision_proj</code></td></tr>
+                        <tr><td><code>--freeze_backbone</code></td><td>Thinker 主干</td><td><code>none</code></td><td>Thinker 主干全可训（默认）</td></tr>
+                        <tr><td><code>--freeze_backbone</code></td><td>Thinker 主干</td><td><code>all</code></td><td>冻结整个 Thinker 主干 <code>model.model</code></td></tr>
+                        <tr><td><code>--freeze_backbone</code></td><td>Thinker 主干</td><td><code>last1</code></td><td>冻主干但解冻 Thinker 最后一层</td></tr>
+                    </tbody>
+                </table>
+                <p><strong>两者会叠加，但有先后：</strong><code>--freeze_backbone</code> 在更早的 <code>init_omni_model()</code> 里先动 Thinker 主干；<code>--mode</code> 在 <code>train_sft_omni.py</code> 主流程里<strong>后动</strong>，且 <code>audio_proj</code>/<code>vision_proj</code> 会先来一句 <code>for p in model.parameters(): p.requires_grad = False</code>——这一刀<strong>把主干也连带冻结了</strong>，再单独解冻投影器。所以阶段 2（A2A Proj）只需要 <code>--mode audio_proj</code> 一个参数就够，主干自然被冻住，<code>--freeze_backbone</code> 在这里写不写都一样。</p>
+                <div class="intro-block">
+                    <p>那 <code>--freeze_backbone</code> 什么时候才真正有用？在 <code>--mode all</code>（阶段 3 全量训练）时——此时 <code>mode</code> 不碰 <code>requires_grad</code>，主干默认全可训；如果你想在阶段 3 也冻住 Thinker 主干只微调 Talker，就加 <code>--freeze_backbone all</code>。</p>
+                </div>
+                <p><strong>之前为便于理解讲成</strong>「mode 一档同时控制 Thinker」，<strong>真实实现是</strong>：<code>--mode</code> 走 <code>audio_proj</code>/<code>vision_proj</code> 时会全冻结（含主干）再解冻投影层；Thinker 主干的<strong>独立</strong>冻结则由 <code>--freeze_backbone</code> 在 <code>mode=all</code> 场景下负责。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 损失 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：端平三种损失</h2>
+                <p>全模态训练的损失不是一个数，是三个数的加权组合。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三个损失项</h3>
+                <p><strong>📌 对应源码：</strong><code>train_sft_omni.py</code> 的 <code>train_epoch()</code> 第 93、95 行</p>
+                <pre><code class="language-python"># 第 93 行：8 层音频损失求和后，先除以 8 得到「平均单层损失」
+audio_loss = audio_loss / 8
+
+# 第 95 行：三项相加，再整体除以梯度累积步数
+loss = (text_loss + audio_loss + res.aux_loss) / args.accumulation_steps</code></pre>
+                <div class="warning">
+                    <p><strong>别被公式里的 <code>audio_loss</code> 搞混。</strong>第 95 行用的 <code>audio_loss</code> 是<strong>上一行已经除过 8 的值</strong>，所以它和 <code>text_loss</code> 量级相当，不再需要额外缩放。除以 <code>accumulation_steps</code> 是因为梯度累积——累积 N 步才更新一次，每步只回传 1/N 的损失，保证累积总梯度等价于一个大 batch。</p>
+                </div>
+                <table>
+                    <thead><tr><th>损失</th><th>衡量什么</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>text_loss</code></td><td>文本预测得准不准（预测下一个词）</td></tr>
+                        <tr><td><code>audio_loss</code></td><td>8 层音频码的<strong>平均单层</strong>损失（已除以 8）</td></tr>
+                        <tr><td><code>aux_loss</code></td><td>MoE 专家负载是否均衡（可选）</td></tr>
+                    </tbody>
+                </table>
+                <p>这三项加起来反传梯度，模型同时学习写字和说话。下面两页讲决定它们能否和平共处的两个细节。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>文本损失的手动掩码</h3>
+                <h4>text_loss 怎么忽略 padding</h4>
+                <p><strong>📌 对应源码：</strong><code>train_sft_omni.py</code> 的 <code>train_epoch()</code> 第 74-79 行</p>
+                <p>一个 batch 里序列长度不一，短的会被 <code>-100</code> 填充（padding + 不计算损失的 prompt 段）。常规做法是 <code>CrossEntropyLoss(ignore_index=-100)</code>，但 MiniMind-O 没用这个参数，而是<strong>手动掩码</strong>，原因是要和后面 audio 的加权写法保持一致。</p>
+                <p><strong>📜 真实源码：train_sft_omni.py 第 74-79 行</strong></p>
+                <pre><code class="language-python">loss_fct = nn.CrossEntropyLoss(reduction='none')   # 不聚合，逐元素
+
+# Text loss —— 手动忽略 -100
+text_loss_raw = loss_fct(res.logits.view(-1, res.logits.size(-1)), labels.view(-1))
+text_mask = (labels.view(-1) != -100).float()       # 有效 token 位置为 1
+text_loss = (text_loss_raw * text_mask).sum() / (text_mask.sum() + 1e-9)</code></pre>
+                <p>关键三步：(1) <code>reduction='none'</code> 让损失<strong>不自动求平均</strong>，逐 token 返回；(2) 构造 <code>text_mask</code> 把 padding(<code>-100</code>) 位置乘成 0；(3) 分母只数有效 token 数 <code>text_mask.sum()</code>，加 <code>1e-9</code> 防全 0 除零。这样 padding 既不影响分子也不影响分母，干净忽略。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>音频损失为何除以 8</h3>
+                <p>音频损失是 8 层码本损失<strong>相加</strong>的。如果不除以 8，audio_loss 会天然比 text_loss 大好几倍——梯度被音频主导，模型的「脑力」全用在学说话上，文字能力反而退化。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>不除以 8</h4>
+                        <p>audio_loss ≈ 8 × 单层损失</p>
+                        <p>音频主导训练，文字被压制</p>
+                    </div>
+                    <div class="column">
+                        <h4>除以 8</h4>
+                        <p>audio_loss ≈ 单层损失的平均</p>
+                        <p>和 text_loss 量级相当，平衡训练</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>停止码为何权重 ×10</h3>
+                <p>一句话里可能有上千个普通音频码，但<strong>停止码只有 1 个</strong>。如果不加权重，模型很容易忽略这个唯一的停止码——结果就是音频无限生成，停不下来。</p>
+                <p><strong>📌 对应源码：</strong><code>train_sft_omni.py</code> 的 <code>train_epoch()</code>（音频损失计算段，第 83-93 行）</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程简化版</h4>
+                        <pre><code class="language-python"># 直觉理解：停止码(2050)权重放大到 10 倍
+weight = 10.0 if target == STOP else 1.0
+audio_loss = (ce(logits, target) * weight).mean()</code></pre>
+                        <p>把「加权」抽象成一个简单的条件权重，便于先建立直觉。</p>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 train_sft_omni.py:86-92</h4>
+                        <pre><code class="language-python">layer_loss = loss_fct(al_flat, target_flat)   # reduction='none'
+valid_mask = (target_flat != -100).float()     # 忽略 padding
+stop_mask  = (target_flat == 2050).float()     # 停止码位置
+weighted_loss = layer_loss * valid_mask * (1 + stop_mask * 9)
+msum = valid_mask.sum()
+if msum &gt; 0:
+    audio_loss += weighted_loss.sum() / (msum + 1e-9)</code></pre>
+                        <p>没有 <code>if</code>，全靠<strong>向量化掩码相乘</strong>：停止码权重 = <code>1 + 1×9 = 10</code>，普通码权重 = <code>1 + 0×9 = 1</code>，再乘 <code>valid_mask</code> 顺带忽略 padding。</p>
+                    </div>
+                </div>
+                <p><strong>之前为便于理解写成</strong> <code>weight = 10.0 if ... else 1.0</code>，<strong>真实实现是</strong>向量化掩码乘法 <code>loss * valid_mask * (1 + stop_mask * 9)</code>——避免逐元素 Python 循环，跑在 GPU 上快得多。另外还要注意：分母是 <code>valid_mask.sum()</code>（只对有效 token 求平均），padding 不参与归一化。</p>
+                <p>放大 10 倍后，模型「非常重视」学会停止。这是用<strong>加权</strong>解决「样本不均衡」的典型手法——稀有但重要的样本，给更高的权重。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 工程技巧 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：训练的工程技巧</h2>
+                <p>三个让训练在单卡上跑得动的关键技巧。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>混合精度：省一半显存</h3>
+                <h4>用一半显存，换几乎一样的效果</h4>
+                <p><strong>📌 对应源码：</strong><code>train_sft_omni.py</code> 第 187 行（autocast 上下文）+ 第 232 行（GradScaler）+ <code>train_epoch()</code> 第 97-103 行（五步法）</p>
+                <p>默认参数用 32 位浮点（FP32）存。混合精度训练把<strong>计算和存储切成 16 位</strong>（BF16/FP16），显存直接减半，速度还更快。MiniMind-O 默认用 <code>dtype=bfloat16</code>。</p>
+                <pre><code class="language-python"># 一行代码开启混合精度上下文
+with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+    output = model(input_ids)      # 用 BF16 算前向
+    loss = criterion(output, labels)  # 损失保持 FP32 精度</code></pre>
+                <div class="intro-block">
+                    <p><strong>为什么不全程 16 位？</strong> 因为 16 位的精度有限，算梯度时太小的数会「下溢」变成 0。所以关键步骤（损失计算、参数更新）仍用 FP32，只有前向的大规模矩阵乘法用 BF16。这种「该精则精、该快则快」的混合，就是「混合精度」名字的由来。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GradScaler 五步法</h3>
+                <h4>FP16 防下溢流水线</h4>
+                <p><strong>📌 对应源码：</strong><code>train_sft_omni.py</code> 的 <code>train_epoch()</code> 第 97-103 行</p>
+                <p>autocast 只管「前向用低精度」。一旦真正反传梯度，FP16 下小梯度可能下溢成 0。解决办法是用 <code>GradScaler</code>：先把 loss <strong>放大</strong>（让小梯度浮起来），反传完再缩回去。整个流程是固定的五步。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程简化版</h4>
+                        <pre><code class="language-python">loss.backward()
+optimizer.step()
+optimizer.zero_grad()</code></pre>
+                        <p>省略缩放，便于先理解「反传→更新→清零」的主干。</p>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 train_sft_omni.py:97-103</h4>
+                        <pre><code class="language-python">scaler.scale(loss).backward()           # ① 放大 loss 后反传
+if step % args.accumulation_steps == 0:
+    scaler.unscale_(optimizer)           # ② 反缩放，还原真实梯度
+    torch.nn.utils.clip_grad_norm_(
+        model.parameters(), args.grad_clip)  # ③ 梯度裁剪
+    scaler.step(optimizer)               # ④ 检查 inf/NaN 再 step
+    scaler.update()                      # ⑤ 更新缩放因子
+    optimizer.zero_grad(set_to_none=True)</code></pre>
+                        <p>裁剪必须放在 <code>unscale_</code> 之后、<code>step</code> 之前——否则裁剪的是放大后的假梯度。</p>
+                    </div>
+                </div>
+                <p><strong>📜 关键一行：train_sft_omni.py 第 232 行</strong></p>
+                <pre><code class="language-python">scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype == 'float16'))</code></pre>
+                <p><strong>注意 bfloat16 默认不启用 scaler：</strong>BF16 的指数位和 FP32 一样宽，几乎不会下溢，所以 <code>enabled=False</code> 时上面五步会自动退化成「直接 <code>.backward()</code> + <code>.step()</code>」。只有切到 <code>--dtype float16</code> 时 scaler 才真正起作用。这就是 BF16「既省显存又稳定」的原因——你拿到的是混合精度的速度，却不用操心缩放。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>梯度累积：显存不够，步数来凑</h3>
+                <p>大 batch 训练效果更好，但显存放不下。梯度累积的思路：<strong>把一个大 batch 拆成几次小 batch，每次只算梯度不更新，攒够了再一起更新</strong>。</p>
+                <div class="ai-diagram">
+                  <h4>图：梯度累积——用 4 次小 batch 模拟 1 次大 batch</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：两组对比，左边是「不累积」，右边是「梯度累积 accumulation_steps=4」
+                  - 左组（不累积）：batch=16 → 算梯度 → 立刻更新参数，标注「等效 batch=16」
+                  - 右组（累积）：4 个连续的小方块，每块是「batch=16 → 算梯度 → 累加到梯度缓冲（不更新）」，4 块之后才有一个「更新参数」的方块，标注「4 步累积后更新一次，等效 batch=64」
+                  - 关键标注：在右组底部标注「显存只够放 16，但训练效果接近 64」；用一个蓄水池图标比喻「梯度先攒着，攒满才放」
+                  - 配色建议：浅灰背景，小 batch 方块浅蓝色，累积缓冲橙色，「更新」方块浅绿色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>代价是：每更新一次参数要走 4 步前向反向，速度稍慢。但换来的是大 batch 的训练稳定性——在显存有限时非常划算。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>余弦退火：学习率退潮</h3>
+                <p><strong>📌 对应源码：</strong><code>trainer_utils.py</code> 的 <code>get_lr()</code> 第 25-27 行；调用点 <code>train_sft_omni.py</code> 第 68-70 行（每个 step 都重新算 lr 并写回 optimizer）</p>
+                <p>学习率不该一直不变。训练初期要大（大胆探索），后期要小（精细打磨）。MiniMind-O 用<strong>余弦退火</strong>：学习率从最大值，按余弦曲线平滑衰减到最大值的 10%。</p>
+                <pre><code class="language-python"># 余弦退火公式
+lr = base_lr * (0.1 + 0.45 * (1 + cos(π * step / total_steps)))
+# step=0 时 lr=base_lr×1.0（最大）
+# step=total 时 lr=base_lr×0.1（最小）</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：余弦退火学习率曲线</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一张二维折线图，横轴是训练步数 step（0 到 total），纵轴是学习率 lr（0 到 base_lr）
+                  - 曲线从左上角 (0, base_lr) 开始，沿余弦曲线平滑下降到右下角 (total, 0.1×base_lr)。曲线形状特征：起点和终点处平缓（接近水平），中段下降最快——这是余弦函数的特性，两端斜率趋零、中间斜率最大
+                  - 在曲线上标三个点：起点标「step=0，lr 最大，起点平缓」；中点标「step=50%，下降最快」；终点标「step=100%，lr 最小，终点平缓」
+                  - 关键标注：纵轴标注「学习率」；横轴标注「训练进度」；在曲线下方填充浅色阴影增强视觉；右上角小字标注「余弦曲线：两端平缓，中段下降最快（不是匀速下降）」
+                  - 配色建议：浅灰背景，曲线橙色，三个标注点用不同颜色小圆点，填充阴影浅橙色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: 检查点 + DDP ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：检查点与多卡</h2>
+                <p>训练动辄几小时，中途断了怎么办？多张卡怎么协同？</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>原子化保存：防中断损坏</h3>
+                <p><strong>📌 对应源码：</strong><code>trainer_utils.py</code> 的 <code>omni_checkpoint()</code> 第 120-122、150-152 行</p>
+                <p>保存检查点时，如果直接写文件，写到一半断电就废了。MiniMind-O 用<strong>原子保存</strong>：先写到临时文件，写完再重命名成正式文件——重命名是一瞬间的事，不会出现「半个文件」。</p>
+                <p><strong>📜 真实源码：trainer_utils.py 第 120-122 行</strong></p>
+                <pre><code class="language-python">ckp_tmp = ckp_path + '.tmp'
+torch.save(state_dict, ckp_tmp)   # 先写临时文件（慢、可中断）
+os.replace(ckp_tmp, ckp_path)     # 再原子替换（瞬间完成）</code></pre>
+                <p>另外，保存时会<strong>排除冻结的外部编码器</strong>（SenseVoice/SigLIP2/Mimi）。它们不参与训练，没必要重复保存（每次存几百 MB 太浪费），加载时单独从原文件读。源码第 118 行：<code>clean_state_dict = {k: v for k, v in ... if not k.startswith('audio_encoder.') and not k.startswith('vision_encoder.')}</code>。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>双检查点：一份推理、一份续训</h3>
+                <p><strong>📌 对应源码：</strong><code>train_sft_omni.py</code> 第 117-127 行（存两份）+ <code>trainer_utils.py</code> 的 <code>omni_checkpoint()</code> 第 107-162 行</p>
+                <p>每个 <code>save_interval</code>，MiniMind-O <strong>同时写两份文件</strong>，各司其职：</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>ckp（推理用）</h4>
+                        <p><code>{weight}_{hidden}.pth</code></p>
+                        <ul>
+                            <li>只存<strong>半精度权重</strong>（<code>.half().cpu()</code>），体积小</li>
+                            <li>排除 audio/vision encoder</li>
+                            <li>供下一阶段 <code>from_weight</code> 加载、或推理脚本直接用</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>_resume.pth（续训用）</h4>
+                        <p><code>{weight}_{hidden}_resume.pth</code></p>
+                        <ul>
+                            <li>存<strong>完整恢复态</strong>：model + optimizer + scaler + epoch + step + world_size + wandb_id</li>
+                            <li>中断后从这里无缝续训</li>
+                            <li>体积大（含优化器动量等）</li>
+                        </ul>
+                    </div>
+                </div>
+                <p><strong>📜 真实源码：trainer_utils.py 第 132-139 行（resume_data 字段）</strong></p>
+                <pre><code class="language-python">resume_data = {
+    'model': state_dict, 'optimizer': optimizer.state_dict(),
+    'epoch': epoch, 'step': step,
+    'world_size': dist.get_world_size() if dist.is_initialized() else 1,
+    'wandb_id': wandb_id
+}</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>续训的三道保险</h3>
+                <h4>world_size 换算 + SkipBatchSampler</h4>
+                <p><strong>📌 对应源码：</strong><code>trainer_utils.py</code> 的 <code>omni_checkpoint()</code> 第 153-162 行 + <code>SkipBatchSampler</code> 第 176-199 行；调用点 <code>train_sft_omni.py</code> 第 237-259 行</p>
+                <p>断点续训不是「加载权重就完事」——它要保证<strong>从断点那一刻起，喂给模型的数据完全一致</strong>，否则优化器状态和当前数据对不上，训练会抖动。MiniMind-O 用三道保险：</p>
+                <p><strong>📜 真实源码 1：trainer_utils.py 第 154-161 行（GPU 数量变化时换算 step）</strong></p>
+                <pre><code class="language-python">if os.path.exists(resume_path):
+    ckp_data = torch.load(resume_path, map_location='cpu')
+    saved_ws = ckp_data.get('world_size', 1)        # 存档时的 GPU 数
+    current_ws = dist.get_world_size() if dist.is_initialized() else 1
+    if saved_ws != current_ws:
+        # 比如从 4 卡续到 2 卡，每个 step 处理的数据减半，step 要翻倍
+        ckp_data['step'] = ckp_data['step'] * saved_ws // current_ws</code></pre>
+                <p><strong>📜 真实源码 2：trainer_utils.py 第 176-199 行（数据层跳过已训 batch）</strong></p>
+                <pre><code class="language-python">class SkipBatchSampler(Sampler):
+    def __init__(self, sampler, batch_size, skip_batches=0):
+        self.sampler = sampler
+        self.batch_size = batch_size
+        self.skip_batches = skip_batches   # 要跳过的 batch 数
+    def __iter__(self):
+        batch, skipped = [], 0
+        for idx in self.sampler:
+            batch.append(idx)
+            if len(batch) == self.batch_size:
+                if skipped &lt; self.skip_batches:   # 前 N 个 batch 直接丢弃
+                    skipped += 1; batch = []; continue
+                yield batch; batch = []           # 之后的才真正产出</code></pre>
+                <p>第三道保险在 <code>train_sft_omni.py</code> 第 237-242 行：<code>model.load_state_dict(ckp_data['model'])</code> + <code>optimizer.load_state_dict(...)</code> + <code>scaler.load_state_dict(...)</code>，把训练状态完整还原。三者合起来，断点前后「数据流」和「参数流」都对齐，才能做到真正的无缝续训。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>DDP：多张卡怎么协同训练</h3>
+                <p>单卡训练慢，多卡能加速。<strong>DDP（分布式数据并行）</strong>是最简单的多卡方案：每张卡放一份完整的模型副本，各自处理不同的数据，算完梯度后<strong>平均</strong>，再同步更新参数。</p>
+                <div class="ai-diagram">
+                  <h4>图：DDP——多卡各自算梯度，再平均同步</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：4 张 GPU 卡并排排列，每张卡内部画「模型副本 + 数据分片 + 梯度」三个小方块
+                  - 4 张卡的「梯度」方块用箭头汇向中间的一个「AllReduce 平均」节点
+                  - 「AllReduce」节点再用箭头把「平均后的梯度」发回给 4 张卡，每张卡用平均梯度更新自己的模型副本
+                  - 关键标注：在 4 张卡下方标注「每张卡处理不同的数据分片」；在 AllReduce 节点标注「梯度跨卡平均」；在回传箭头标注「同步更新，4 张卡参数始终一致」
+                  - 配色建议：浅灰背景，4 张卡用不同浅色区分，AllReduce 节点橙色，梯度箭头深灰色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>关键性质：4 张卡的模型副本始终参数一致（因为用同一份平均梯度更新）。所以 DDP 是「数据并行」——并行的是数据，不是模型。Full 版本就在 4 卡上训练。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 + 排错 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：理解训练设计</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>回答三个「为什么」</h3>
+                        <ol>
+                            <li>为什么训练要分 T2A → A2A Proj → A2A Full 三个阶段，而不是一次性全量训练？</li>
+                            <li>总损失 <code>text_loss + audio_loss/8 + aux_loss</code> 里，为什么 audio_loss 要除以 8？</li>
+                            <li>显存只够 batch=16，但想要 batch=64 的效果，用什么技巧？</li>
+                        </ol>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <p>1) 一次性全量训练，模型同时面对写字、说话、对齐编码器三重陌生信号，梯度方向打架无法收敛。分阶段让每步只解决一个子问题，像搭积木。2) audio_loss 是 8 层相加，不除以 8 会比 text_loss 大数倍，音频主导训练、压制文字。除以 8 取平均，两者量级平衡。3) 梯度累积。设 accumulation_steps=4，4 次 batch=16 的梯度累加后才更新一次，等效 batch=64。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练常见坑</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>loss 一直是 NaN</h4>
+                        <p><strong>原因</strong>：学习率太大、梯度爆炸，或混合精度下梯度下溢。</p>
+                        <p><strong>修复</strong>：调小学习率；确认用了 GradScaler；检查输入数据有没有异常值；<strong>确认梯度裁剪生效</strong>。</p>
+                        <p><strong>📌 对应源码：</strong><code>train_sft_omni.py</code> 第 100、133 行 <code>torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)</code>，<code>--grad_clip</code> 默认 <code>1.0</code>（见第 150 行）。它把所有参数梯度的范数<strong>整体缩放</strong>到不超过阈值，是防梯度爆炸的第一道闸——每次 <code>optimizer.step()</code> 前都会执行。如果还在爆 NaN，先把 <code>grad_clip</code> 调小（如 0.5）再排查。</p>
+                    </div>
+                    <div class="card">
+                        <h4>音频生成停不下来</h4>
+                        <p><strong>原因</strong>：stop token 没学好（权重不够）。</p>
+                        <p><strong>修复</strong>：确认 stop token 权重 ×10 生效；检查训练数据里 answer_audios 是否正确以 2050 结尾。</p>
+                    </div>
+                    <div class="card">
+                        <h4>训练速度比预期慢很多</h4>
+                        <p><strong>原因</strong>：数据加载成了瓶颈（GPU 等数据）。</p>
+                        <p><strong>修复</strong>：增加 DataLoader 的 num_workers；启用 pin_memory；检查音频增强是否在主进程做。</p>
+                    </div>
+                    <div class="card">
+                        <h4>中断后无法恢复</h4>
+                        <p><strong>原因</strong>：检查点没存 optimizer 状态，或文件损坏。</p>
+                        <p><strong>修复</strong>：确认 omni_checkpoint 存了完整状态；用原子保存防损坏；必要时从头训。</p>
+                    </div>
+                    <div class="card">
+                        <h4>CUDA out of memory（显存不足）</h4>
+                        <p><strong>症状</strong>：训练几步就报 <code>CUDA out of memory</code>。</p>
+                        <p><strong>原因</strong>：batch 太大、序列太长，或没开混合精度。</p>
+                        <p><strong>修复</strong>：按这个顺序逐个试——① 减小 <code>--batch_size</code>（如 16→8）；② 开梯度累积 <code>--accumulation_steps 4</code> 补回等效 batch；③ 减小 <code>--max_seq_len</code>（如 768→512）；④ 确认 <code>--dtype bfloat16</code>（默认）已生效，省一半显存；⑤ 关掉其他占显存的程序。CPU 上能跑但慢几十倍，只作兜底。</p>
+                    </div>
+                    <div class="card">
+                        <h4>loss 居高不下 / 高位震荡</h4>
+                        <p><strong>症状</strong>：loss 不变成 NaN，但一直在高位反复横跳，降不下来。</p>
+                        <p><strong>原因</strong>：学习率过大、label masking 反了、或冻结组合不对。</p>
+                        <p><strong>修复</strong>：① 学习率砍半试试（尤其阶段 3 应是 2e-5 量级）；② 检查 <code>-100</code> 是否标反——若误把要学的位置全 mask 成 -100，<code>text_mask.sum()</code> 趋零，模型根本没东西可学；③ 确认当前阶段该冻的冻了、该训的没被误冻（看日志 <code>Trainable: XM</code> 是否符合预期）。</p>
+                    </div>
+                    <div class="card">
+                        <h4>torch.cuda.amp 相关报错或警告</h4>
+                        <p><strong>症状</strong>：报 <code>torch.cuda.amp</code> 已弃用，或 <code>UserWarning</code> 满屏。</p>
+                        <p><strong>原因</strong>：PyTorch 2.x 起，旧的 <code>torch.cuda.amp</code> 命名空间建议迁到 <code>torch.amp</code>。</p>
+                        <p><strong>修复</strong>：不影响训练，可忽略警告；若硬报错，把 <code>from torch.cuda.amp import autocast</code> 换成 <code>from torch.amp import autocast</code> 并指定 <code>autocast('cuda', ...)</code>。同时确认显卡驱动和 CUDA 版本与 PyTorch 匹配（<code>torch.version.cuda</code> 与 <code>nvidia-smi</code> 对得上）。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关键要点回顾</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>三阶段流水线</h4>
+                        <p>T2A（学会出声）→ A2A Proj（耳朵对齐）→ A2A Full（端到端打通）。每步只解决一个子问题。</p>
+                    </div>
+                    <div class="card">
+                        <h4>训练模式控制</h4>
+                        <p>mode=all/audio_proj/vision_proj 精确控制哪些参数可训练，是分阶段训练的基础。</p>
+                    </div>
+                    <div class="card">
+                        <h4>损失平衡</h4>
+                        <p>audio_loss/8 防止音频压制文字；stop token ×10 解决样本不均衡。</p>
+                    </div>
+                    <div class="card">
+                        <h4>混合精度</h4>
+                        <p>BF16 算前向省一半显存，关键步骤保 FP32 精度。</p>
+                    </div>
+                    <div class="card">
+                        <h4>梯度累积</h4>
+                        <p>攒几次小 batch 的梯度再更新，用步数换 batch 大小。</p>
+                    </div>
+                    <div class="card">
+                        <h4>余弦退火 + 原子保存</h4>
+                        <p>学习率先大后小；检查点原子保存防中断损坏，支持断点续训。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide title-slide">
+            <h1>它已经学会听和说了</h1>
+            <p>训练流水线跑通，模型具备了全部能力</p>
+            <p>下一章：<strong>阶段 6 · 推理与评估</strong>——把这头猛兽牵出来遛遛</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

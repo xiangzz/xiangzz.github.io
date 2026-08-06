@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 1：先跑通，再读懂</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>先跑通，再读懂</h1>
+            <p>阶段 1 · 把 MiniMind-O 跑起来，建立全局观</p>
+        </section>
+
+        <!-- ==================== 开篇 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>别一上来啃主文件</h3>
+                <p>很多人学一个开源项目的第一反应是：找到最核心的那个文件，从第一行开始啃。MiniMind-O 里那个文件叫 <code>model_omni.py</code>，400 多行，全是类和张量运算。</p>
+                <p>这么干的人，90% 会在两小时内放弃。</p>
+                <div class="intro-block">
+                    <p>因为他们跳过了最重要的一步：<strong>先让它在手里跑起来</strong>。</p>
+                    <p>看见模型真的吐出文字、真的开口说话，你才会知道「这一坨代码到底在干什么」。有了这个「结果」垫底，回头读代码时每一段都有了落点——这是本章唯一的目标。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>本章你将完成的事</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>1. 装好环境</h4>
+                        <p>创建一个干净的虚拟环境，装上 PyTorch 和项目依赖，确认 GPU 可用。</p>
+                    </div>
+                    <div class="card">
+                        <h4>2. 跑出第一句话</h4>
+                        <p>用一条命令让模型回答问题，顺便生成一段语音——亲手验证模型是活的。</p>
+                    </div>
+                    <div class="card">
+                        <h4>3. 看懂全局</h4>
+                        <p>不逐文件细读，而是用「职责」的视角建立目录地图，知道该去哪找什么。</p>
+                    </div>
+                    <div class="card">
+                        <h4>4. 抓住数据流</h4>
+                        <p>用一张图记住「输入怎么变成输出」，作为后续所有章节的导航锚点。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: 跑通 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：跑出第一句</h2>
+                <p>别读代码了，先让它开口说话。</p>
+                <div class="intro-block">
+                    <p>这一节全是可操作的命令。照着敲，遇到报错翻到本章最后一节的排错指南。目标只有一个：在终端看到模型生成的回复，并得到一个 mp3 音频文件。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>第 1 步：建一个干净的环境</h3>
+                <p>用 conda 隔离环境，避免和你机器上其他项目的依赖打架。</p>
+                <pre><code class="language-bash"># 创建并激活专用环境（Python 3.10 是经过验证的稳定版本）
+conda create -n minimind-o python=3.10 -y
+conda activate minimind-o
+
+# 验证 Python 版本
+python --version    # 应输出 Python 3.10.x</code></pre>
+                <div class="intro-block">
+                    <p>为什么强调「干净」？MiniMind-O 依赖的 <code>funasr</code>（语音识别）、<code>transformers</code>（模型加载）对版本很敏感，混在别的环境里十有八九会冲突。一个独立环境能省掉你几天的排错时间。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>第 2 步：PyTorch</h3>
+                <p>PyTorch 的安装命令因 GPU 类型而异。<strong>先确认你有没有 NVIDIA 显卡</strong>：</p>
+                <pre><code class="language-bash">nvidia-smi    # 有输出表格 = 有 N 卡；命令找不到 = 没有</code></pre>
+                <p>有 N 卡（按 CUDA 版本选，121 是较通用的）：</p>
+                <pre><code class="language-bash">pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121</code></pre>
+                <p>没有 N 卡（CPU 版，能跑但慢得多）：</p>
+                <pre><code class="language-bash">pip install torch torchvision torchaudio</code></pre>
+                <pre><code class="language-python"># 装完立刻验证 GPU 是否可用
+>>> import torch
+>>> print(torch.cuda.is_available())   # True = GPU 可用，False = 只能用 CPU
+>>> print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU only")</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>第 3 步：装项目依赖</h3>
+                <pre><code class="language-bash"># 在项目根目录下执行
+pip install -r requirements.txt</code></pre>
+                <p>这一步会装上 <code>transformers</code>、<code>funasr</code>（SenseVoice 语音编码）、<code>soundfile</code>、<code>pydub</code>、<code>gradio</code> 等。装的时间较长，请耐心。</p>
+                <div class="warning">
+                    <p><strong>装到一半报红色错误，先停下来！</strong>不要在有报错时继续往下敲命令。常见的两个坑：</p>
+                    <ul>
+                        <li><code>funasr</code> 装失败：多半是 Python 版本不对（必须 3.10），或缺少编译工具。</li>
+                        <li>网络超时：换成国内镜像源 <code>pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple</code></li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>第 4 步：下载预训练权重</h3>
+                <p>模型权重不在这个仓库里——它太大。MiniMind-O 一共需要 <strong>5 份权重</strong>：1 份主模型（放 <code>out/</code>）+ 4 份外部编码器（放 <code>model/</code>）。每份都很大，全部来自 ModelScope。</p>
+                <p>在项目根目录下依次执行：</p>
+                <pre><code class="language-bash"># ① 主模型权重 → ./out/llm_768.pth（基座语言模型，训练用）
+modelscope download --model gongjy/minimind-3o-pytorch llm_768.pth --local_dir ./out
+
+# ② 语音编码器 → ./model/SenseVoiceSmall
+modelscope download --model gongjy/SenseVoiceSmall --local_dir ./model/SenseVoiceSmall
+
+# ③ 视觉编码器 → ./model/siglip2-base-p32-256-ve
+modelscope download --model gongjy/siglip2-base-p32-256-ve --local_dir ./model/siglip2-base-p32-256-ve
+
+# ④ 音频编解码器 → ./model/mimi
+modelscope download --model gongjy/mimi --local_dir ./model/mimi
+
+# ⑤ 说话人编码器 → ./model/campplus
+modelscope download --model gongjy/campplus --local_dir ./model/campplus</code></pre>
+                <div class="warning">
+                    <p><strong>只想跑推理、不想训练？</strong>把第 ① 条换成整包下载，会额外拿到已训练好的 <code>sft_omni_768.pth</code>：</p>
+                    <pre><code class="language-bash">modelscope download --model gongjy/minimind-3o-pytorch --local_dir ./out</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>下载完，目录长这样</h3>
+                <p>5 份权重各归其位——主权重在 <code>out/</code> 根目录，4 个编码器各占 <code>model/</code> 下一个子文件夹：</p>
+                <pre><code class="language-plaintext">minimind-o/
+├── out/
+│   └── llm_768.pth              # 主模型权重（基座）／推理则还会有 sft_omni_768.pth
+├── model/
+│   ├── SenseVoiceSmall/         # 语音编码器
+│   ├── siglip2-base-p32-256-ve/ # 视觉编码器
+│   ├── mimi/                    # 音频编解码器
+│   └── campplus/                # 说话人编码器（声音克隆用）
+└── ...</code></pre>
+                <div class="intro-block">
+                    <p>这 4 个编码器子目录的名字是<strong>写死在代码里</strong>的——比如 <code>eval_omni.py</code> 里硬编码了 <code>./model/SenseVoiceSmall</code>、<code>./model/siglip2-base-p32-256-ve</code>、<code>./model/mimi</code>。所以路径和名字一个字都不能改，否则加载时会报 <code>Can't load tokenizer / model</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>第 5 步：见证奇迹</h3>
+                <p>权重就位后，一行命令让模型开口：</p>
+                <pre><code class="language-bash">$ python eval_omni.py --load_from model --weight sft_omni</code></pre>
+                <p>这条命令的两个参数怎么对应到刚才下载的文件：</p>
+                <ul>
+                    <li><code>--load_from model</code>：告诉程序「用项目里的 <code>./model/</code> 加载 4 个编码器」（不是文件路径，是固定字面值 <code>model</code>）</li>
+                    <li><code>--weight sft_omni</code>：主权重名前缀。程序会自动拼成 <code>./out/sft_omni_768.pth</code>（<code>--save_dir</code> 默认 <code>out</code>，<code>--hidden_size</code> 默认 <code>768</code>）</li>
+                </ul>
+                <p>你会看到类似这样的输出（打字机式逐字出现）：</p>
+                <pre><code class="language-plaintext">📒 [Thinker]:
+你好！很高兴认识你，有什么我可以帮忙的吗？
+🎹 [Talker]: 28 frames | Audio decoded to: ./output/text-00.mp3</code></pre>
+                <div class="intro-block">
+                    <p>如果你看到了文字回复，并且 <code>output/</code> 下生成了一个能播放的 mp3——<strong>恭喜，你已经成功了</strong>。模型是活的，后面所有章节都在解释「它怎么做到的」。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 目录地图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：用职责读目录</h2>
+                <p>别记文件名，记每个文件夹「负责什么」。</p>
+                <div class="intro-block">
+                    <p>跑通之后，我们来建立全局观。MiniMind-O 的文件不少，但它们其实只分成四类职责：<strong>定义模型</strong>、<strong>处理数据</strong>、<strong>训练</strong>、<strong>使用</strong>。记住这四个职责，你就知道每个文件属于哪一摊事，读代码时就不会迷路。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>四类职责，一目了然</h3>
+                <table>
+                    <thead><tr><th>职责</th><th>目录/文件</th><th>它干什么</th></tr></thead>
+                    <tbody>
+                        <tr><td>定义模型</td><td><code>model/</code></td><td>模型的「图纸」：每一层怎么算</td></tr>
+                        <tr><td>处理数据</td><td><code>dataset/</code></td><td>把原始文本/音频/图像变成模型能吃的张量</td></tr>
+                        <tr><td>训练模型</td><td><code>trainer/</code></td><td>定义「怎么学」：优化器、损失、循环</td></tr>
+                        <tr><td>使用模型</td><td><code>eval_omni.py</code> / <code>scripts/</code> / <code>webui/</code></td><td>加载训练好的模型，做推理和演示</td></tr>
+                    </tbody>
+                </table>
+                <p>这个四分法贯穿整个项目，也贯穿本教程的后续章节——每一类职责对应一个阶段。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>model/：模型的图纸</h3>
+                <p>这个目录是全书的主角。两个最核心的文件：</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>model_minimind.py</h4>
+                        <p>基础语言模型的架构——一个标准 Transformer。约 290 行。</p>
+                        <p>它定义了 Thinker（思考者）的骨架：注意力、前馈网络、位置编码。</p>
+                        <p><strong>阶段 2 全章都在讲它。</strong></p>
+                    </div>
+                    <div class="column">
+                        <h4>model_omni.py</h4>
+                        <p>全模态模型，在基础 LLM 之上加了 Talker（说话者）和多模态融合。约 460 行。</p>
+                        <p>这是最核心、最复杂的文件。</p>
+                        <p><strong>阶段 3 全章都在讲它。</strong></p>
+                    </div>
+                </div>
+                <p>此外还有 <code>tokenizer.json</code>（分词器词表）。声音克隆用的预置音色、实时通话用的 VAD（语音活动检测）逻辑，则分散在 <code>scripts/</code> 和 <code>webui/</code> 里——这些在阶段 6、7 会专门讲。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>一眼看清谁依赖谁</h3>
+                <div class="ai-diagram">
+                  <h4>图：MiniMind-O 文件依赖关系</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一张依赖关系图，节点是文件，箭头表示「A 依赖 B」（A 指向 B）
+                  - 中心节点：model/model_omni.py（用最粗边框、橙色填充，标注「最核心，几乎所有都依赖它」）
+                  - model_omni.py 向下指向 model/model_minimind.py（标注「继承基础 LLM 架构」）
+                  - 三个「使用者」节点从上方指向 model_omni.py：eval_omni.py（推理）、trainer/train_sft_omni.py（训练）、scripts/web_demo_omni.py（演示）
+                  - trainer/train_sft_omni.py 额外指向 dataset/omni_dataset.py（标注「取数据」）和 trainer/trainer_utils.py（标注「工具函数」）
+                  - 关键标注：在 model_omni.py 节点旁标注「全模态模型 Thinker+Talker」；用虚线圈把「使用者」圈起来标注「上层应用」
+                  - 配色建议：浅灰背景，model_omni.py 橙色，model_minimind.py 浅蓝色，使用者节点浅绿色，数据/工具节点浅紫色，箭头深灰色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>记住一个判断技巧：<strong>被箭头指得最多的文件，就是最核心的</strong>。在这里是 <code>model_omni.py</code>——它被推理、训练、演示三方共同依赖。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 数据流 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：抓住数据流</h2>
+                <p>这是后续所有章节的导航锚点。</p>
+                <div class="intro-block">
+                    <p>MiniMind-O 的复杂之处在于输入有多种（文本/音频/图像）、输出也有多种（文本/音频）。但只要你记住「输入怎么变成输出」这一条主线，后面读到任何细节都能定位它在主线上的位置。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>从输入到输出：全程一张图</h3>
+                <div class="ai-diagram">
+                  <h4>图：MiniMind-O 完整数据流</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的水平流水线，分为「输入 → 预处理 → 模型 → 输出」四大阶段
+                  - 输入阶段（最左）：三个并排的小图标——文本、音频波形、图像
+                  - 预处理阶段：文本经 Tokenizer → token IDs；音频经 SenseVoice → 特征；图像经 SigLIP2 → 64 个 patch；三者各自经「投影器」对齐到 768 维
+                  - 模型阶段（中央，最大）：分两层。上层 Thinker（8 层 Transformer，浅蓝色）负责理解和生成文本；从 Thinker 第 3 层引出一条「bridge 桥接」虚线指向下层 Talker（4 层 Transformer，浅紫色）负责生成 8 层音频码
+                  - 输出阶段（最右）：上路径文本 token → 解码为文字；下路径 8 层音频码 → Mimi 解码 → 音频波形
+                  - 关键标注：在 Thinker 与 Talker 之间的桥接线上标注「第 3 层隐藏状态」；在 Talker 旁标注「同时预测 8 层码本」
+                  - 配色建议：浅灰背景，Thinker 浅蓝色，Talker 浅紫色，投影器橙色，文本路径绿色，音频路径紫色，图像路径蓝色
+                  - 画面比例：16:9，强调从左到右的流动感
+                  </p>
+                </div>
+                <p>把这张图印在脑子里。后续每个阶段都是对这条流水线某个环节的放大：</p>
+                <ul>
+                    <li>预处理环节 → <strong>阶段 4 数据处理</strong></li>
+                    <li>Thinker 环节 → <strong>阶段 2 基础语言模型</strong></li>
+                    <li>Thinker + Talker 融合 → <strong>阶段 3 全模态模型</strong></li>
+                    <li>输出解码环节 → <strong>阶段 6 推理与评估</strong></li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Thinker·Talker</h3>
+                <p>这张图里有两个核心角色，提前认识它们：</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Thinker 思考者</h4>
+                        <p>8 层 Transformer，是模型的「大脑」。</p>
+                        <p>它<strong>理解</strong>所有输入（文本、音频、图像），并<strong>生成文字回复</strong>。</p>
+                        <p>本质就是一个标准的小型 LLM。</p>
+                    </div>
+                    <div class="column">
+                        <h4>Talker 说话者</h4>
+                        <p>4 层 Transformer，是模型的「嘴巴」。</p>
+                        <p>它接收 Thinker 想好的内容，把它<strong>转成 8 层音频码</strong>，实现「开口说话」。</p>
+                        <p>这是 MiniMind-O 区别于普通 LLM 的关键。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>两者通过一个叫 <strong>Bridge</strong> 的桥接连起来：Talker 从 Thinker 的第 3 层「偷看」隐藏状态，从而知道 Thinker 想说什么。这个设计是阶段 3 的重头戏。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: 读法 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：阅读路线</h2>
+                <p>给你一条验证过的阅读路线。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>推荐的阅读顺序</h3>
+                <p>不要按文件名顺序读，而要按「由外到内、由简到繁」的顺序：</p>
+                <div class="ai-diagram">
+                  <h4>图：推荐的代码阅读路线</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一条从左到右的阶梯式上升路径，每个台阶是一个阅读步骤，台阶越高表示越深入
+                  - 五个台阶依次为：① README.md（最低，标注「了解项目目标」）② requirements.txt（标注「看依赖用了什么库」）③ eval_omni.py（标注「看模型怎么被调用」）④ model_minimind.py（标注「基础 LLM 架构」）⑤ model_omni.py（最高，标注「全模态模型，最复杂」）
+                  - 关键标注：台阶之间用绿色箭头连接，表示「读完上一个再读下一个」；在第 ③ 级和第 ⑤ 级之间画一个分界线，标注「这里是从『用』跨入『懂』」
+                  - 配色建议：浅灰背景，台阶用从浅蓝到深蓝的渐变，箭头绿色，标注文字深灰色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么是这个顺序</h3>
+                <ul>
+                    <li><strong>先读 README</strong>：知道这项目要解决什么问题，避免「为了读而读」。</li>
+                    <li><strong>再扫 requirements</strong>：看到 <code>funasr</code> 就知道有语音、看到 <code>gradio</code> 就知道有网页演示——依赖清单是项目能力的速览。</li>
+                    <li><strong>然后读 eval_omni.py</strong>：它是「使用者」，篇幅短、逻辑直。读完它你就知道「模型被怎么调用、输入输出长什么样」——这是理解模型内部的最佳入口。</li>
+                    <li><strong>再读 model_minimind.py</strong>：基础 LLM，是 model_omni 的地基。先懂地基，再看上层。</li>
+                    <li><strong>最后啃 model_omni.py</strong>：全模态融合，最复杂，放在你已有足够铺垫时再读。</li>
+                </ul>
+                <div class="intro-block">
+                    <p>这条路线对应本教程的阶段顺序：阶段 2 讲 model_minimind，阶段 3 讲 model_omni。你不用现在就自己啃源码——跟着教程走，每一步都会有铺垫。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>模型有多大？钱花在哪？</h3>
+                <p>建立规模感，有助于你判断「哪些部分值得深究」。</p>
+                <table>
+                    <thead><tr><th>组件</th><th>参数量</th><th>是否参与训练</th><th>角色</th></tr></thead>
+                    <tbody>
+                        <tr><td>Thinker（8 层 Transformer）</td><td>~64M</td><td>✅ 是</td><td>理解输入、生成文本</td></tr>
+                        <tr><td>Talker（4 层 Transformer）</td><td>~47M</td><td>✅ 是</td><td>生成音频码</td></tr>
+                        <tr><td>音频/视觉投影器</td><td>~2M</td><td>✅ 是</td><td>对齐模态到统一空间</td></tr>
+                        <tr><td>SenseVoice（音频编码）</td><td>~234M</td><td>❌ 冻结</td><td>把语音变成特征</td></tr>
+                        <tr><td>SigLIP2（视觉编码）</td><td>~95M</td><td>❌ 冻结</td><td>把图像变成特征</td></tr>
+                        <tr><td>Mimi（音频编解码）</td><td>~96M</td><td>❌ 冻结</td><td>音频↔码本互转</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>关键洞察</strong>：真正「自己训练」的只有 ~113M 参数（Thinker+Talker+投影器），其余 400 多万参数的外部编码器都是<strong>直接拿来用、冻结不动</strong>的。这就是 MiniMind-O 能在单张 3090 上训练的秘密——它站在 SenseVoice、SigLIP2、Mimi 这些巨人的肩膀上。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 排错 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错指南</h2>
+                <p>第一次跑通几乎一定会踩坑，这是正常的。</p>
+                <div class="intro-block">
+                    <p>下面是新手跑 MiniMind-O 最常遇到的几个报错。按「症状」对照查找，每条都给了原因和修复方向。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>环境与依赖类错误</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>torch.cuda.is_available() 返回 False</h4>
+                        <p><strong>症状</strong>：明明有 N 卡，但 PyTorch 说 GPU 不可用。</p>
+                        <p><strong>原因</strong>：装了 CPU 版的 PyTorch，或 CUDA 版本不匹配。</p>
+                        <p><strong>修复</strong>：卸载重装对应 CUDA 版本 <code>pip uninstall torch &amp;&amp; pip install torch --index-url .../cu121</code>；确认 N 卡驱动够新（<code>nvidia-smi</code> 看驱动版本）。</p>
+                    </div>
+                    <div class="card">
+                        <h4>funasr 或 fun_text_chinese 装不上</h4>
+                        <p><strong>症状</strong>：<code>pip install -r requirements.txt</code> 报一堆红字。</p>
+                        <p><strong>原因</strong>：Python 版本不对（必须 3.10），或缺少 C++ 编译工具。</p>
+                        <p><strong>修复</strong>：确认 <code>python --version</code> 是 3.10.x；Windows 装「Visual C++ Build Tools」；换清华镜像源重试。</p>
+                    </div>
+                    <div class="card">
+                        <h4>ImportError: No module named 'xxx'</h4>
+                        <p><strong>症状</strong>：运行时报找不到模块。</p>
+                        <p><strong>原因</strong>：依赖没装全，或装到了别的环境。</p>
+                        <p><strong>修复</strong>：确认你 <code>conda activate minimind-o</code> 了；重跑 <code>pip install -r requirements.txt</code> 看是否有静默失败的包。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>权重与运行类错误</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>OSError: Can't load tokenizer / model</h4>
+                        <p><strong>症状</strong>：加载模型时报路径错。</p>
+                        <p><strong>原因</strong>：编码器目录缺失或名字拼错，或主权重没下到 <code>out/</code>。</p>
+                        <p><strong>修复</strong>：核对 <code>./model/</code> 下四个子目录名字一字不差（<code>SenseVoiceSmall</code>、<code>siglip2-base-p32-256-ve</code>、<code>mimi</code>、<code>campplus</code>）；确认 <code>./out/sft_omni_768.pth</code> 存在；<code>--load_from</code> 用字面值 <code>model</code> 而非文件路径。</p>
+                    </div>
+                    <div class="card">
+                        <h4>CUDA out of memory</h4>
+                        <p><strong>症状</strong>：跑到一半报显存不足。</p>
+                        <p><strong>原因</strong>：显卡显存太小，或生成长度设太长。</p>
+                        <p><strong>修复</strong>：减小 <code>--max_new_tokens</code>（如 256）；关掉其他占显存的程序；实在不行用 CPU 跑（慢但能跑）。</p>
+                    </div>
+                    <div class="card">
+                        <h4>生成的 mp3 是空的 / 没声音</h4>
+                        <p><strong>症状</strong>：文字正常，但音频文件 0 秒。</p>
+                        <p><strong>原因</strong>：Mimi 解码器没加载成功，或音频被过滤光了。</p>
+                        <p><strong>修复</strong>：确认 Mimi 权重路径正确；检查 <code>--decode_audio</code> 是否为 1；看终端是否有「Talker: 0 frames」的提示。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手验证</h2>
+                <p>确认你真的跑通了，而不只是看完了。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习一：试遍每种输入</h3>
+                <p>除了文本对话（mode 0），MiniMind-O 还能处理语音和图像。把下面几个模式都跑一遍，观察输出的差异：</p>
+                <pre><code class="language-bash"># 语音对话：给它一段语音，它用语音回答
+$ python eval_omni.py --mode 2 --load_from model --weight sft_omni
+
+# 声音克隆：模仿某个人的音色说话
+$ python eval_omni.py --mode 3 --load_from model --weight sft_omni
+
+# 图像理解：给它一张图，让它描述
+$ python eval_omni.py --mode 4 --load_from model --weight sft_omni
+
+# 全部模式串跑一遍（用于全面测试）
+$ python eval_omni.py --mode -1 --load_from model --weight sft_omni</code></pre>
+                <p><strong>思考</strong>：不同模式生成的 mp3，音色一样吗？为什么 mode 3 的声音和 mode 0 不同？</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习二：画出你自己的数据流</h3>
+                <p>关掉教程，拿出一张纸，凭记忆画出「用户说一句话 → 模型用语音回答」的完整数据流。要求标出：</p>
+                <ol>
+                    <li>语音输入经过哪个编码器变成了什么？</li>
+                    <li>它在哪里和文本特征「汇合」？</li>
+                    <li>Thinker 和 Talker 各自负责什么？</li>
+                    <li>语音输出是怎么从数字变回声音的？</li>
+                </ol>
+                <div class="intro-block">
+                    <p>画不出来没关系——回去看 Part 3 的数据流图。能独立画出来，说明全局观已经建立，可以放心进入阶段 2 了。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 收尾 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关键要点回顾</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>先跑通再读懂</h4>
+                        <p>看见模型真的输出，回头读代码每一段才有了落点。别一上来就啃 model_omni.py。</p>
+                    </div>
+                    <div class="card">
+                        <h4>四类职责</h4>
+                        <p>定义模型(model/)、处理数据(dataset/)、训练(trainer/)、使用(eval+scripts+webui)。记住职责而非文件名。</p>
+                    </div>
+                    <div class="card">
+                        <h4>一条数据流主线</h4>
+                        <p>输入→预处理→Thinker理解→(Bridge)→Talker生成→解码输出。后续章节都在放大这条线的某个环节。</p>
+                    </div>
+                    <div class="card">
+                        <h4>两个主角</h4>
+                        <p>Thinker（大脑，懂语言）+ Talker（嘴巴，会说话），靠 Bridge 第 3 层连接。</p>
+                    </div>
+                    <div class="card">
+                        <h4>站在巨人肩上</h4>
+                        <p>真正训练的只有 ~113M，SenseVoice/SigLIP2/Mimi 共 400M+ 都是冻结借用的。</p>
+                    </div>
+                    <div class="card">
+                        <h4>由外到内阅读</h4>
+                        <p>README → requirements → eval_omni → model_minimind → model_omni，由简到繁不迷路。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide title-slide">
+            <h1>它已经在你手里跑起来了</h1>
+            <p>全局观建立，接下来拆解每一个零件</p>
+            <p>下一章：<strong>阶段 2 · 基础语言模型</strong>——Thinker 的骨架，现代 LLM 的全部精华</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

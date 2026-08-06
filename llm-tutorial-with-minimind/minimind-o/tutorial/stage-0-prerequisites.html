@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 0：出发前的装备检查</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎒</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>出发前的装备检查</h1>
+            <p>阶段 0 · 读懂 MiniMind-O 之前，你需要这把工具箱</p>
+        </section>
+
+        <!-- ==================== 开篇 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>这一章不是一本教科书</h3>
+                <p>MiniMind-O 是一个能同时听懂语音、看懂图片、开口说话的全模态模型。要理解它，你不光得会读 Python，还得对深度学习、张量、多模态都有一点手感。</p>
+                <p>网上有无数「从零学 Python」「PyTorch 入门」的资料，全部学完要几个月。你不需要那么多——你只需要<strong>刚好够读懂这份代码</strong>的那一层。</p>
+                <div class="intro-block">
+                    <p>所以本章的定位很明确：把你可能卡住的几个关键概念，用最短的篇幅讲到「能在脑子里跑起来」的程度。它不是知识清单，而是出发前的装备检查。</p>
+                    <p>每个概念都会配一个你能立刻认出来的 MiniMind-O 真实用法——学完这章，你回头看代码就不会觉得陌生。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>先做一个快速自测</h3>
+                <p>下面五个问题，如果每一个你都能在 10 秒内说出大意，可以直接跳到 <a href="./stage-1-project-structure.html">阶段 1</a>。只要有任何一个让你犹豫，就在对应的小节停下来。</p>
+                <table>
+                    <thead><tr><th>问题</th><th>对应小节</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>super().__init__()</code> 在做什么？</td><td>Part 1</td></tr>
+                        <tr><td><code>loss.backward()</code> 和 <code>optimizer.step()</code> 谁先谁后？</td><td>Part 2</td></tr>
+                        <tr><td>形状 <code>(B, T, 768)</code> 的三个维度分别是什么？</td><td>Part 3</td></tr>
+                        <tr><td><code>nn.Linear</code> 和 <code>nn.Embedding</code> 有什么区别？</td><td>Part 4</td></tr>
+                        <tr><td>一段语音是怎么变成一串数字的？</td><td>Part 5</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: Python ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：Python</h2>
+                <p>读懂模型代码，比语法更重要的是这三件事。</p>
+                <div class="intro-block">
+                    <p>MiniMind-O 的代码大量使用了 Python 的三个特性：<strong>类的继承</strong>、<strong>生成器 yield</strong>、<strong>上下文管理器 with</strong>。它们不是炫技，而是模型代码能写得这么简洁的关键。</p>
+                    <ul>
+                        <li><strong>类与继承</strong> —— 为什么模型类能「自动」拥有保存、加载、生成的能力</li>
+                        <li><strong>yield 生成器</strong> —— 流式输出（打字机效果、实时语音）的全部秘密</li>
+                        <li><strong>with 上下文管理器</strong> —— 一行代码切换「要不要算梯度」「要不要用半精度」</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类与继承</h3>
+                <p>在 PyTorch 里，所有模型都继承自 <code>nn.Module</code>。这意味着你只要写一个 <code>forward</code> 方法，就白捡了一整套能力：参数管理、移动到 GPU、保存加载、梯度追踪。</p>
+                <pre><code class="language-python">import torch.nn as nn
+
+class RMSNorm(nn.Module):           # 继承 nn.Module
+    def __init__(self, dim):
+        super().__init__()          # 调用父类初始化，激活那套白捡的能力
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):           # 只定义「前向怎么算」
+        return self.weight * x / torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + 1e-5)
+
+norm = RMSNorm(768)
+norm = norm.to("cuda")              # 这行能跑，全靠继承来的 .to() 方法</code></pre>
+                <div class="intro-block">
+                    <p><strong>super().__init__()</strong> 这一行的意义：它「唤醒」了父类 <code>nn.Module</code> 的初始化逻辑（建立参数容器、注册子模块）。漏写它，<code>.to()</code>、<code>.parameters()</code> 全都会失效。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>MiniMind-O 继承链</h3>
+                <p>全模态模型 <code>MiniMindOmni</code> 之所以能调用 <code>generate()</code> 生成文本，不是因为它自己写了这个方法，而是因为它继承自 <code>MiniMindForCausalLM</code>，后者又混入了 HuggingFace 的 <code>GenerationMixin</code>。</p>
+                <div class="ai-diagram">
+                  <h4>图：MiniMind-O 模型类的继承关系</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：自下而上的类继承层次图，展示 MiniMind-O 两个核心配置类和两个核心模型类如何层层继承
+                  - 左侧配置类继承链：底部 OmniConfig（全模态配置，标注新增字段 num_talker_hidden_layers、audio_vocab_size、bridge_layer）向上继承自 MiniMindConfig（标注 hidden_size、num_hidden_layers）再继承自 PretrainedConfig
+                  - 右侧模型类继承链：底部 MiniMindOmni（全模态模型，标注 thinker、talker、stream_generate）向上继承自 MiniMindForCausalLM（标注 forward、lm_head），后者用虚线箭头表示「混入」GenerationMixin（标注 generate 方法）
+                  - 关键标注：每条继承箭头旁标注「自动获得」的能力，如 OmniConfig→「自动有 hidden_size」、MiniMindOmni→「自动有 generate()」
+                  - 配色建议：浅灰背景，配置类用浅蓝色，模型类用浅紫色，顶层基类用浅灰色，继承箭头用深灰色实线，混入用橙色虚线
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>记住这条规律：<strong>看到一个陌生方法，先去父类里找</strong>——它多半是继承来的，而不是这段代码新写的。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>yield 生成器</h3>
+                <p>普通函数 <code>return</code> 一次就结束。把 <code>return</code> 换成 <code>yield</code>，函数就变成了一个生成器：每次吐出一个值，然后<strong>暂停</strong>，等下一次被调用时再从暂停处继续。</p>
+                <pre><code class="language-python">def simple_generate():
+    for token in ["你", "好", "，", "世", "界"]:
+        yield token            # 吐出一个，暂停在这里
+
+# 像拧水龙头一样，一次接一点
+for token in simple_generate():
+    print(token, end="")       # 逐字打印：你好，世界</code></pre>
+                <p>这正是流式输出的原理：模型每算出一个 token 就 <code>yield</code> 出去，调用方立刻能打印或播放，不必等整句话算完。MiniMind-O 的 <code>stream_generate()</code> 就是这样一个生成器——它同时 <code>yield</code> 文本 token 和音频帧。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>with 上下文管理器</h3>
+                <p><code>with</code> 块会在进入时做一件事，离开时自动做相反的事。在模型代码里，它最常用来切换运行模式。</p>
+                <pre><code class="language-python"># 推理时：进入 with 关掉梯度计算（省内存、加速），离开时自动恢复
+with torch.no_grad():
+    output = model(input_ids)   # 这里面不算梯度
+
+# 训练时：进入 with 切到半精度，离开时自动恢复全精度
+with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+    output = model(input_ids)
+    loss = criterion(output, labels)</code></pre>
+                <div class="intro-block">
+                    <p><strong>为什么推理要用 <code>no_grad</code>？</strong> 训练时 PyTorch 会默默记录每一步运算，用于反向传播算梯度——这套记录很占内存。推理不需要梯度，关掉它能让显存占用直接砍半。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：认出这三件武器</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>读代码，指认特性</h3>
+                        <p>下面这段是 MiniMind-O 风格的极简流式生成。请指出：哪一行用了<strong>继承</strong>？哪一行是<strong>生成器</strong>？哪一行用了<strong>上下文管理器</strong>？</p>
+                        <pre><code class="language-python">class TinyChat(MiniMindOmni):          # ？
+    def stream_chat(self, prompt):
+        with torch.no_grad():           # ？
+            for t, audio in self.stream_generate(prompt):  # ？
+                yield t, audio          # ？</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <p><code>class TinyChat(MiniMindOmni)</code> —— 继承（白捡 stream_generate 等能力）；<code>with torch.no_grad()</code> —— 上下文管理器（关梯度）；<code>for ... in self.stream_generate()</code> —— 消费生成器；<code>yield t, audio</code> —— 定义生成器（stream_chat 本身也变成生成器）。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 深度学习四个动作 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：训练四动作</h2>
+                <p>把所有花哨的术语剥掉，训练一个模型就是在反复做这四件事。</p>
+                <div class="intro-block">
+                    <p>不管模型多复杂——Transformer 也好、全模态也好——它的训练循环永远是同一个套路：<strong>把数据喂进去算预测（前向）→ 比一比差多少（损失）→ 倒推该往哪调（反向）→ 真的调一下（更新）</strong>。MiniMind-O 的训练脚本，本质就是这个循环跑了成千上万次。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练循环：四拍子</h3>
+                <div class="ai-diagram">
+                  <h4>图：深度学习训练循环的四个动作</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个顺时针循环的环形流程图，由四个圆角矩形节点组成，箭头首尾相连形成闭环
+                  - 四个节点依次为：① 前向传播 Forward（模型根据输入算出预测）② 计算损失 Loss（比较预测和真实答案的差距）③ 反向传播 Backward（从损失倒推每个参数的梯度）④ 更新参数 Step（沿梯度反方向微调参数）
+                  - 关键标注：环中央写「每个 batch 重复一次」；①号节点旁标 input_ids 输入；②号节点用红色强调「损失值 loss 越小越好」；③号节点旁画一个小箭头表示「梯度反向流动」；④号节点旁标 optimizer.step()
+                  - 配色建议：浅灰背景，四个节点分别用浅蓝、浅红、浅紫、浅绿，箭头深灰色，中央文字橙色
+                  - 画面比例：1:1（正方形）或 16:9
+                  </p>
+                </div>
+                <pre><code class="language-python">for step, batch in enumerate(loader):
+    output = model(batch.input_ids)          # ① 前向
+    loss = criterion(output, batch.labels)   # ② 损失
+    loss.backward()                          # ③ 反向（自动算梯度）
+    optimizer.step()                         # ④ 更新
+    optimizer.zero_grad()                    # 清空梯度，为下一轮做准备</code></pre>
+                <p>注意顺序：<code>backward</code> 一定要在 <code>step</code> 之前。先算出「该往哪走」（梯度），再「迈出这一步」（更新参数）。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>损失：把「差多少」变成一个数</h3>
+                <p>模型预测的是「6400 个词各自的可能性」（一组概率），真实答案是「正确的那个词」（一个 ID）。损失函数的工作，就是把这二者的差距压成一个标量数字——模型接下来所有努力，都是为了让这个数字变小。</p>
+                <p>MiniMind-O 用的是<strong>交叉熵损失 CrossEntropyLoss</strong>，专门处理「从一堆选项里挑正确那个」的分类问题。</p>
+                <pre><code class="language-python"># 模型在每个位置预测 6400 个词的概率
+predicted = torch.randn(2, 10, 6400)   # 2 个样本，每个 10 个位置，每个 6400 个候选词
+
+# 真实答案：每个位置的正确词 ID
+true_ids = torch.tensor([[5, 12, 8, ...], [3, 9, 1, ...]])  # 形状 (2, 10)
+
+# 交叉熵：自动比较「预测的概率分布」和「正确答案」
+loss = torch.nn.functional.cross_entropy(predicted.view(-1, 6400), true_ids.view(-1))
+# loss 是一个标量，比如 5.37，越小越准</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>梯度下降：蒙眼下山</h3>
+                <p>训练模型的本质，是在一个巨大的「损失地形」上找最低点。你看不见全貌（地形太复杂），只能用脚感受当前的坡度（梯度），然后朝最陡的下坡方向迈一小步——如此反复，直到走到谷底。</p>
+                <div class="ai-diagram">
+                  <h4>图：梯度下降「蒙眼下山」的直觉</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个二维的「损失地形」截面图，横轴为某个参数值，纵轴为损失值，地形呈波浪起伏的曲线，有一个明显的谷底
+                  - 在曲线左侧较高处画一个小人（蒙眼），表示当前参数位置；从该点画一系列小箭头，沿曲线逐步指向谷底，每个箭头标注「一步」
+                  - 关键标注：曲线纵轴标注「损失 Loss（越低越好）」；小人旁边标注「当前位置，用脚感受坡度=梯度」；箭头方向标注「朝梯度反方向走」；谷底标注「目标：损失最小」
+                  - 在右上角小框补充：步子大小 = 学习率 learning rate，太大跨过谷底，太小走得太慢
+                  - 配色建议：浅灰背景，损失曲线用深蓝色，小人用橙色，箭头用绿色，谷底用浅绿色高亮
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p><strong>学习率</strong>就是「每步迈多大」。MiniMind-O 训练时学习率从 <code>5e-4</code> 开始，太大模型会震荡发散，太小训练到天荒地老。</p>
+                <div class="intro-block">
+                    <p><strong>卸掉这个比喻</strong>：下山只是为了帮你建立直觉。真实的损失地形<strong>不是二维曲线，而是几千万维空间里的曲面</strong>（每个可训练参数是一维）；「坡度」就是损失对这些参数的偏导数组成的向量（梯度）；「迈一步」就是 <code>参数 = 参数 - 学习率 × 梯度</code>。而且真实曲面通常非凸、有多个局部谷底，梯度也只是当前点的局部近似——所以训练才需要学习率调度、动量这些技巧来避免卡在半山腰。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 张量形状 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：张量形状</h2>
+                <p>读模型代码时，比公式更重要的是盯住每个张量的形状。</p>
+                <div class="intro-block">
+                    <p>深度学习里所有数据都是<strong>张量（Tensor）</strong>——就是多维数组。读懂模型的关键技能不是懂微积分，而是能在脑子里追踪「数据流经每一层时，形状怎么变」。MiniMind-O 的代码里几乎每一步都隐含着形状约定，看懂形状，就懂了一半。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>从标量到张量：维度就是含义</h3>
+                <table>
+                    <thead><tr><th>名字</th><th>维度</th><th>例子</th><th>含义</th></tr></thead>
+                    <tbody>
+                        <tr><td>标量</td><td>0 维</td><td><code>5</code></td><td>一个数（如损失值）</td></tr>
+                        <tr><td>向量</td><td>1 维</td><td><code>[1, 2, 3]</code></td><td>一串数（如一个词的向量）</td></tr>
+                        <tr><td>矩阵</td><td>2 维</td><td><code>(10, 768)</code></td><td>10 个词，每个 768 维</td></tr>
+                        <tr><td>张量</td><td>3 维+</td><td><code>(2, 10, 768)</code></td><td>2 个句子，每句 10 词，每词 768 维</td></tr>
+                    </tbody>
+                </table>
+                <p>每一维都不是随便定的，它<strong>编码了某种含义</strong>。看到 <code>(B, T, 768)</code>，你不应该只看到三个数字，而要看到「B 个样本、每个 T 个位置、每个位置 768 维特征」。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见张量形状</h3>
+                <table>
+                    <thead><tr><th>张量</th><th>形状</th><th>每一维的含义</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>input_ids</code></td><td><code>(B, T)</code></td><td>B 个样本，每个 T 个 token</td></tr>
+                        <tr><td><code>hidden_states</code></td><td><code>(B, T, 768)</code></td><td>每个 token 被表示成 768 维向量</td></tr>
+                        <tr><td><code>text_logits</code></td><td><code>(B, T, 6400)</code></td><td>每个位置对 6400 个词的打分</td></tr>
+                        <tr><td><code>audio_logits</code></td><td><code>(B, T, 2112)</code></td><td>每个位置对 2112 个音频码的打分</td></tr>
+                        <tr><td><code>audio_codes</code></td><td><code>(8, T)</code></td><td>8 层码本，每层 T 个整数</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>B</strong> = batch size（一次处理几个样本），<strong>T</strong> = sequence length（序列有几个 token）。这两个字母会贯穿全书，记住它们。</p>
+                    <p>调试模型时，最高效的手段是在关键位置 <code>print(x.shape)</code>——形状对了，逻辑通常就对了一大半。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: PyTorch 三张面孔 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：PyTorch</h2>
+                <p>整个 MiniMind-O，就是这三类积木搭起来的。</p>
+                <div class="intro-block">
+                    <p>PyTorch 有几百个 API，但搭出一个现代模型，反复用到的核心积木就那么几个。<strong>nn.Module</strong>（积木的基类）、<strong>nn.Linear</strong>（做线性变换的全连接层）、<strong>nn.Embedding</strong>（把整数变成向量的查表）。认清这三张面孔，模型代码就从天书变成乐高说明书。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>nn.Linear 线性变换</h3>
+                <p><code>nn.Linear(in, out)</code> 做的事极其朴素：把一个 <code>in</code> 维向量，通过一个可学习的矩阵，变换成 <code>out</code> 维向量。整个 Transformer 里的 Q/K/V 投影、输出头，本质都是它。</p>
+                <pre><code class="language-python">proj = nn.Linear(768, 6400)     # 把 768 维 → 6400 维
+x = torch.randn(1, 10, 768)     # 1 个句子，10 个词，每词 768 维
+y = proj(x)                     # 形状变成 (1, 10, 6400)
+# 参数量 = 768 × 6400 + 6400 ≈ 4.9M</code></pre>
+                <p>「768 → 6400」这样的注释在模型代码里随处可见——它永远在告诉你「这一层把几维变成几维」。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>nn.Embedding查表</h3>
+                <p>模型不认识汉字，只认数字。但光有数字 ID（比如「你」=47）还不够——47 这个数本身没有意义。 <code>nn.Embedding</code> 就是一张大表：用 ID 当行号，取出对应的那一行向量。</p>
+                <pre><code class="language-python">embed = nn.Embedding(6400, 768)  # 6400 行（词表大小），每行 768 维
+ids = torch.tensor([47, 892, 15])  # 三个 token 的 ID
+vectors = embed(ids)             # 取出 3 个 768 维向量，形状 (3, 768)</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：Embedding 查表——用 ID 当行号取向量</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左侧是一列纵向排列的 Token ID [47, 892, 15]，中间是一个 6400 行 × 768 列的网格（Embedding 矩阵），右侧是查表后得到的三个 768 维向量
+                  - Embedding 矩阵画成网格，行号从 0 到 6399，用橙色高亮第 47、892、15 三行
+                  - 查表过程：从左侧每个 ID 画箭头指向矩阵对应行，再从该行画箭头指向右侧对应向量块
+                  - 关键标注：矩阵旁标注「6400 × 768，每个词一行」；右侧向量块标注「这些向量才是模型真正理解的『词』」
+                  - 配色建议：浅灰背景，矩阵整体浅蓝色，高亮三行橙色，ID 深灰色，向量块浅绿色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>输入侧与输出侧</h3>
+                <h4>Linear 与 Embedding</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>nn.Embedding(6400, 768)</h4>
+                        <p>输入是<strong>整数 ID</strong>，输出是向量。</p>
+                        <p>实现就是「按行号取一行」，本质是查表。</p>
+                        <p>用在「输入侧」：把 token 变成向量。</p>
+                    </div>
+                    <div class="column">
+                        <h4>nn.Linear(768, 6400)</h4>
+                        <p>输入是<strong>向量</strong>，输出是向量（这里 6400 维打分）。</p>
+                        <p>实现是矩阵乘法 <code>x @ W + b</code>。</p>
+                        <p>用在「输出侧」：把向量变成对每个词的打分。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>一个有趣的细节：MiniMind-O 让输入侧的 Embedding 和输出侧的 Linear <strong>共享同一份权重</strong>（这叫 tied weights）。既然都是「768 维 ↔ 6400 个词」的映射，用一张表就够了，省下一半参数。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>nn.Module 基类</h3>
+                <p>无论是 Linear、Embedding，还是整个 Transformer，都继承自 <code>nn.Module</code>。一个 Module 可以<strong>包含</strong>别的 Module，层层嵌套——这就是模型代码的组织方式。</p>
+                <pre><code class="language-python">class MiniMindBlock(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.attention = Attention()      # 子模块
+        self.feed_forward = FeedForward() # 子模块
+        self.norm = RMSNorm(768)          # 子模块
+
+    def forward(self, x):
+        x = x + self.attention(self.norm(x))   # 残差连接
+        x = x + self.feed_forward(self.norm(x))
+        return x</code></pre>
+                <p>调用 <code>model.parameters()</code> 时，PyTorch 会自动递归收集所有嵌套子模块的参数——你不需要手动维护参数列表。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 5: 三个模态 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5：三种模态</h2>
+                <p>全模态模型的第一道难关：文本、音频、图像怎么都变成模型能消化的数字？</p>
+                <div class="intro-block">
+                    <p>MiniMind-O 叫「全模态」，因为它同时处理三种截然不同的输入。但模型底层只认向量——所以三种模态都得先经过一道「翻译」，变成同一空间的向量，才能拼到一起。这一节建立这个核心直觉，它是阶段 3 全模态模型的前置知识。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>文本切 token</h3>
+                <p>文本的翻译你已经熟悉了（<a href="../minimind/tutorial/1-tokenizer.html">详见 Tokenizer 章节</a>）：先用分词器把句子切成 token，每个 token 是一个整数 ID，再用 Embedding 查表变成向量。</p>
+                <pre><code class="language-plaintext">"你好，世界"  ──分词──▶  [47, 892, 15, 1024, 2]  ──查表──▶  (5, 768) 向量</code></pre>
+                <p>文本是离散的、有清晰边界的——一个词就是一个 token，干净利落。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>音频：先采样，再切成码本</h3>
+                <p>声音本质是连续的空气振动。计算机没法存「连续」，只能每隔极短的时间测一次振幅——这就是<strong>采样</strong>。每秒测 16000 次，就是 16kHz 采样率，一秒音频变成 16000 个数字。</p>
+                <pre><code class="language-python">import soundfile as sf
+waveform, sr = sf.read("hello.wav")   # waveform: 一串振幅值，sr: 采样率(如 16000)
+# 1 秒音频 ≈ 16000 个浮点数，形状约 (16000,)</code></pre>
+                <p>但 16000 个数太长了。MiniMind-O 用一个叫 <strong>Mimi</strong> 的音频编解码器，把长长的一串振幅<strong>压缩</strong>成少数几个离散码——而且是 <strong>8 层</strong>叠加的码本。</p>
+                <div class="ai-diagram">
+                  <h4>图：音频从波形到 8 层码本的压缩过程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的三段式流程，展示音频如何被逐步数字化和压缩
+                  - 第一段（左）：连续的声波波形（平滑的正弦曲线），标注「空气振动，连续信号」
+                  - 第二段（中）：一列离散的竖线（采样点），标注「采样 16kHz，每秒 16000 个振幅数」
+                  - 第三段（右）：一个 8 行的网格，每行一串小方块（码本），标注「Mimi 编码：8 层码本，每层一个整数 ID」；在第一帧位置用大括号标注「一帧 = 8 个整数，约 80ms 音频」
+                  - 关键标注：从波形到采样点画箭头标「采样」；从采样点到码本画箭头标「Mimi 压缩」；底部补充「8 层从粗到细：低层=音调，高层=语义细节」
+                  - 配色建议：浅灰背景，波形深蓝色，采样点深灰色，8 层码本用浅紫到深紫的渐变区分层级
+                  - 画面比例：16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么音频要 8 层码本？</h3>
+                <p>这是 MiniMind-O 最容易让新手困惑的点。答案是<strong>分层表达</strong>：</p>
+                <table>
+                    <thead><tr><th>码本层</th><th>承载的信息</th><th>类比</th></tr></thead>
+                    <tbody>
+                        <tr><td>第 0 层（最底层）</td><td>基本音高、能量</td><td>句子的「骨架」</td></tr>
+                        <tr><td>中间层</td><td>音色、共振</td><td>句子的「血肉」</td></tr>
+                        <tr><td>第 7 层（最高层）</td><td>细微的语义细节</td><td>句子的「表情」</td></tr>
+                    </tbody>
+                </table>
+                <p>8 层叠在一起，才能高保真地还原一段语音。少了高层，声音还能听但细节糊；少了底层，连基本音高都对不上。这正是 Talker 要同时预测 8 层码本的原因。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>图像切 patch</h3>
+                <p>图像是像素的二维网格。MiniMind-O 用 <strong>SigLIP2</strong> 这个视觉编码器：先把一张 256×256 的图切成 8×8 = 64 个小方块（patch），每个 patch 被编码成一个向量。</p>
+                <pre><code class="language-plaintext">256×256 图像  ──切 64 个 patch──▶  64 个向量  ──SigLIP2 编码──▶  (64, 768) 向量</code></pre>
+                <p>于是，一张图也变成了一串向量——和文本、音频统一了形式。<strong>64 个 patch token</strong>，就像 64 个「视觉词汇」。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三模态统一</h3>
+                <div class="ai-diagram">
+                  <h4>图：三种模态如何统一到同一向量空间</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：三股数据流从左侧汇入右侧一个统一容器的汇聚图
+                  - 左侧三股输入（自上而下）：① 文本「你好世界」经分词+Embedding 得到向量；② 音频波形经 Mimi 得到 8 层码本、再经投影；③ 图像经 SigLIP2 得到 64 个 patch 向量、再经投影
+                  - 三股流各自先经过一个标注「投影器 Projector」的小方块，把维度统一对齐到 768
+                  - 右侧汇聚成一个大方块，标注「统一的 768 维向量序列」，下方注释「文本/音频/图像现在讲同一种语言了」
+                  - 关键标注：文本流旁标 (T, 768)；音频流旁标先 (8, T) 码本→投影→(T, 768)；图像流旁标 (64, 768)；强调三种模态最终都是 768 维
+                  - 配色建议：浅灰背景，文本流绿色，音频流紫色，图像流蓝色，投影器橙色，汇聚容器浅绿色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>这就是全模态模型的核心戏法：不管输入是字、是声音、还是画面，<strong>最终都被翻译成同一种向量</strong>，然后送进同一个 Transformer。阶段 3 会详细拆解这个融合过程。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 自检练习 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手自检</h2>
+                <p>回答这几个问题，确认装备齐全。</p>
+                <div class="intro-block">
+                    <p>这一章没有新代码要写，重点是确认你的脑子里装好了正确的「形状」和「动作」。下面三个小练习，能做出来就说明你准备好读 MiniMind-O 了。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习一：追踪一个形状</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>形状推理</h3>
+                        <p>一段文本经过 Embedding 后形状是 <code>(1, 12, 768)</code>，再经过一个 <code>nn.Linear(768, 6400)</code>，输出形状是什么？每个维度代表什么？</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <p>输出形状是 <code>(1, 12, 6400)</code>。<strong>1</strong> = 一个样本（batch size=1）；<strong>12</strong> = 12 个 token（序列长度）；<strong>6400</strong> = 每个位置对词表 6400 个词的打分（logits）。Linear 只改变最后一维，把 768 维特征「翻译」成 6400 个打分。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习二：补全训练四拍子</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>填空</h3>
+                        <p>下面这段训练循环缺了关键步骤，请按正确顺序补上 <code>loss.backward()</code> 和 <code>optimizer.step()</code>。</p>
+                        <pre><code class="language-python">output = model(batch.input_ids)
+loss = criterion(output, batch.labels)
+# ???
+# ???</code></pre>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <p>先 <code>loss.backward()</code>（反向传播算梯度），再 <code>optimizer.step()</code>（用梯度更新参数）。顺序反了就错——必须先知道「往哪调」，才能「真的调」。最后通常还跟一句 <code>optimizer.zero_grad()</code> 清空梯度。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习三：模态匹配</h3>
+                <p>把左边的模态和右边「把它变成向量的方式」连起来。</p>
+                <table>
+                    <thead><tr><th>模态</th><th>翻译方式</th></tr></thead>
+                    <tbody>
+                        <tr><td>文本「你好」</td><td>? </td></tr>
+                        <tr><td>一段语音</td><td>? </td></tr>
+                        <tr><td>一张图片</td><td>? </td></tr>
+                    </tbody>
+                </table>
+                <p>候选：① SigLIP2 编码成 64 个 patch 向量　② Tokenizer 分词 + Embedding 查表　③ Mimi 压缩成 8 层码本再投影</p>
+                <div class="intro-block">
+                    <p><strong>答案</strong>：文本→②，语音→③，图像→①。三者最终都变成 768 维向量，才能进入同一个 Transformer。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 收尾 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关键要点回顾</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>三个 Python 武器</h4>
+                        <p>继承（白捡能力）、yield（流式输出）、with（自动切换模式）。读懂模型代码的钥匙。</p>
+                    </div>
+                    <div class="card">
+                        <h4>训练四拍子</h4>
+                        <p>前向 → 损失 → 反向 → 更新。所有深度学习训练都是这个循环的重复。</p>
+                    </div>
+                    <div class="card">
+                        <h4>盯住形状</h4>
+                        <p>(B, T, 768) 不是三个数，是「B 个样本、T 个位置、768 维特征」。形状对，逻辑就对一半。</p>
+                    </div>
+                    <div class="card">
+                        <h4>三张积木面孔</h4>
+                        <p>nn.Module（基类）、nn.Linear（线性变换）、nn.Embedding（ID 查表）。整个模型就是它们的嵌套。</p>
+                    </div>
+                    <div class="card">
+                        <h4>模态统一的戏法</h4>
+                        <p>文本、音频、图像最终都被翻译成 768 维向量，送进同一个 Transformer。</p>
+                    </div>
+                    <div class="card">
+                        <h4>音频的特殊性</h4>
+                        <p>语音被 Mimi 压缩成 8 层码本——从音调到细节分层表达，这是 Talker 同时预测 8 层的根源。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>如果还想补课</h3>
+                <div class="intro-block">
+                    <p><strong>1. 3Blue1Brown《神经网络》系列视频</strong></p>
+                    <p>用动画建立「前向、梯度、反向」的视觉直觉，不讲公式只讲道理。看完训练四拍子就不再抽象。</p>
+                    <p><strong>2. 《动手学深度学习》（d2l.ai）第 1-4 章</strong></p>
+                    <p>李沐的在线书，每个概念都配可运行的 PyTorch 代码。想动手验证 Linear/Embedding 的形状，照着敲一遍最快。</p>
+                    <p><strong>3. PyTorch 官方 60 分钟入门</strong></p>
+                    <p>pytorch.org/tutorials/ —— 只看「Tensors」和「The Training Loop」两节，足以应付 MiniMind-O 用到的 90% API。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide title-slide">
+            <h1>装备检查完毕</h1>
+            <p>带着这套工具箱，我们可以打开项目了</p>
+            <p>下一章：<strong>阶段 1 · 项目结构</strong>——先跑通它，再读懂它</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

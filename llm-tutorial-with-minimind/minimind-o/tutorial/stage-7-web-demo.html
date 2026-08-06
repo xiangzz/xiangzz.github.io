@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 7：给它一个能聊天的脸</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>给它一个能聊天的脸</h1>
+            <p>阶段 7 · Web 演示——从命令行到实时语音通话</p>
+        </section>
+
+        <!-- ==================== 开篇 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>命令行好用，但不够「人话」</h3>
+                <p>上一章你在命令行里让 MiniMind-O 干活。但要让普通人也能体验——发个消息、录段语音、甚至实时通话——就得给它套一层 Web 界面。</p>
+                <p>这听起来只是「加个前端」，但全模态的 Web 演示藏着两个硬骨头：怎么让<strong>文字一个字一个字地蹦出来</strong>（流式），怎么实现<strong>打断我说话、随时插话</strong>的实时通话。</p>
+                <div class="intro-block">
+                    <p>本章不讲模型，专讲「模型外面这层壳」。你会看到两套方案：快速搭 demo 的 Gradio，和能撑住实时通话的 Flask+WebSocket。重点理解流式传输和实时交互的实现原理。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: 两套方案 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：两套方案</h2>
+                <p>MiniMind-O 提供两个 Web 演示，复杂度差很多。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Gradio：十分钟搭个演示</h3>
+                <p><strong>Gradio</strong> 是专为 ML 模型演示设计的框架。你只需写一个 Python 函数处理输入输出，它自动生成一个网页。</p>
+                <pre><code class="language-python">import gradio as gr
+
+def chat(message, history):
+    # model.generate(stream=True) 返回一个生成器，每次 yield (token_id, audio_frame)
+    for token_id, audio_frame in model.generate(x, eos_id, stream=True,
+                                                return_audio_codes=True, ...):
+        ...                # 流式吐文字 / 攒音频帧
+    yield final_text, final_audio   # 最后给完整音频
+
+gr.ChatInterface(chat, multimodal=True).launch()
+# 一行命令，浏览器里就有了一个能聊天的界面</code></pre>
+                <div class="intro-block">
+                    <p>注意方法名是 <code>generate(..., stream=True, return_audio_codes=True)</code>，不是 <code>stream_generate</code>——这是阶段 3、6 一致的接口。它返回一个生成器，每次产出 <code>(token_id, audio_frame)</code>，调用方自己决定怎么拼文字、攒音频。真实工程代码（<code>webui/web_demo.py</code> 的 <code>run_generate</code>）就是用 <code>yield from model.generate(...)</code> 包了一层。</p>
+                </div>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Gradio 的优点</h4>
+                        <p>代码极少，自动处理前端、流式、音频播放。适合做 demo、给别人看效果。</p>
+                    </div>
+                    <div class="column">
+                        <h4>Gradio 的局限</h4>
+                        <p>定制能力弱，做不了实时通话、打断这种复杂交互。界面风格也固定。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Flask 方案</h3>
+                <h4>WebSocket 撑住生产级交互</h4>
+                <p>想要完整能力（实时通话、声音克隆、打断），就得自己写前后端：<strong>Flask</strong> 做后端服务，自己写 HTML/JS 前端，用 <strong>WebSocket</strong> 做实时双向通信。</p>
+                <table>
+                    <thead><tr><th></th><th>Gradio 版</th><th>Flask 版</th></tr></thead>
+                    <tbody>
+                        <tr><td>定位</td><td>快速演示</td><td>完整功能</td></tr>
+                        <tr><td>实时语音通话</td><td>❌</td><td>✅</td></tr>
+                        <tr><td>打断（barge-in）</td><td>❌</td><td>✅</td></tr>
+                        <tr><td>声音克隆界面</td><td>部分</td><td>✅</td></tr>
+                        <tr><td>开发成本</td><td>极低</td><td>较高</td></tr>
+                    </tbody>
+                </table>
+                <p>本章后面重点讲 Flask 版的两个核心交互：Chat 模式的流式输出，和 Call 模式的实时通话。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 流式输出 SSE ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：文字逐字蹦出</h2>
+                <p>Chat 模式的核心：流式传输。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么要流式</h3>
+                <p>如果等模型把整段话（文字+语音）全算完再返回，用户要干等好几秒——体验很差。流式的好处是<strong>算出一个字就显示一个字</strong>，用户立刻有反馈，感觉模型在「实时思考」。</p>
+                <p>回顾阶段 3：模型的 <code>generate(stream=True)</code> 本来就是逐字 yield 的。所以后端要做的，就是把每次 yield 的内容<strong>立刻推给浏览器</strong>，而不是攒着。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>SSE：服务器主动推送</h3>
+                <p>普通的 HTTP 请求是「一问一答」——浏览器发请求，服务器返一次响应就结束。这做不了流式。<strong>SSE（Server-Sent Events）</strong>是专门为流式设计的：服务器建立一个长连接，然后<strong>持续地、一条一条地</strong>往浏览器推数据。</p>
+                <div class="ai-diagram">
+                  <h4>图：SSE 流式传输——服务器逐条推送</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个时序图，左侧是浏览器，右侧是 Flask 服务器，中间是垂直时间轴向下
+                  - 时序：浏览器发 POST /chat 请求 → 服务器响应并保持连接 → 服务器逐条推送「data: {type:text, content:你}」「data: {type:text, content:好}」「data: {type:pcm, c:base64..., d:false}（音频分片，d=true 表示最后一段）」→ 最后推送「data: {type:done}」关闭连接
+                  - 关键标注：在每条推送旁标注浏览器对应的行为（「显示『你』」「显示『好』」「播放音频」）；用虚线框框住中间的多次推送，标注「服务器主动持续推送，浏览器逐条接收」
+                  - 配色建议：浅灰背景，浏览器浅蓝色，服务器浅绿色，推送箭头橙色，文字消息浅黄色，音频消息浅紫色
+                  - 画面比例：9:16 竖版
+                  </p>
+                </div>
+                <pre><code class="language-plaintext">data: {"type": "text", "content": "你"}
+data: {"type": "text", "content": "好"}
+data: {"type": "text", "content": "！"}
+data: {"type": "pcm", "c": "base64编码的一段PCM...", "d": false}
+data: {"type": "pcm", "c": "base64编码的下一段...", "d": true}
+data: {"type": "done"}</code></pre>
+                <p>每条消息带一个 <code>type</code>，浏览器据此决定怎么处理。重点：<strong>音频不是一条发完，而是切成多段 <code>pcm</code> 分片推送</strong>——<code>c</code> 是这一段的 base64 PCM 数据，<code>d</code>（done）标记这是不是最后一段。浏览器要边收边拼接播放，而不是等齐。这正是上一页说的「分块解码」在传输层的体现。完整的真实类型还有 <code>user_prompt</code>（回显用户输入）、<code>ttft</code>（首字/首音延迟统计）等。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>音频分块解码</h3>
+                <h4>不是「攒齐再发」</h4>
+                <p>前面简化说法是「每生成 ~80ms 直接发」。真实实现是按<strong>固定帧数分块解码</strong>：<code>stream_pcm()</code> 把累积的 Mimi audio frame 攒到 <code>audio_chunk_frames</code>（默认 4 帧 ≈ 320ms）的倍数，才解码一块 PCM 推出去，最后 <code>flush=True</code> 解掉尾巴余数。</p>
+                <p>为什么要攒块？因为 Mimi 解码是「帧→波形」的，<strong>块太短边界会断裂、出杂音</strong>。所以每块还带上 <code>audio_overlap</code>（默认 2 帧）的重叠帧，解码后用 <code>pcm_bytes</code> 里的 <code>ov</code> 参数把重叠部分切掉，拼起来才平滑。</p>
+                <p><strong>📌 对应源码：</strong><code>webui/web_demo.py</code> 的 <code>stream_pcm()</code>（85-98 行）与 <code>pcm_bytes()</code>（78-83 行）。Chat 模式（<code>gen()</code> 334/338 行）和 Call 模式（426/429 行）都调它。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程简化版</h4>
+                        <pre><code class="language-python"># 每生成一点音频就发
+for token_id, frame in model.generate(..., stream=True,
+                                      return_audio_codes=True):
+    pcm = mimi.decode(frame)
+    send(pcm)</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 webui/web_demo.py:78-98</h4>
+                        <pre><code class="language-python">def pcm_bytes(frames, ov):      # ov: 要切掉的重叠帧数
+    r = _mimi_decode(frames)
+    if r is None: return None
+    au, T = r
+    if ov > 0: au = au[int(ov * len(au) / T):]  # 切掉开头重叠
+    return (au * 32767).astype('int16').tobytes()
+
+def stream_pcm(frames, flush=False):
+    """yield (pcm_bytes,) on chunk boundaries or on final flush."""
+    if not M['mimi']: return
+    cf, ov_max, n = M['cfg'].audio_chunk_frames, M['cfg'].audio_overlap, len(frames)
+    if not flush and n >= cf and n % cf == 0:   # 攒到 4 帧的倍数
+        ov = min(ov_max, n - cf)
+        p = pcm_bytes(frames[-(cf + ov):], ov)  # 多取 ov 帧重叠
+        if p: yield p
+    elif flush:                                 # 收尾：解余数
+        rem = n % cf
+        if rem:
+            ov = min(ov_max, n - rem)
+            p = pcm_bytes(frames[-(rem + ov):], ov)
+            if p: yield p</code></pre>
+                    </div>
+                </div>
+                <p>所以真实延迟是「<strong>每凑够 4 帧（≈320ms）解一块、发一块</strong>」——块大小是延迟和边界质量的折中。<code>--audio_chunk_frames</code> 调大播放更卡、调小延迟更低但杂音更多。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>推理与转写并行</h3>
+                <h4>prepare_turn 的 asr_thread</h4>
+                <p>用户发来一段语音，后端要做两件事：<strong>①</strong> 把语音喂给模型的音频编码器开始推理；<strong>②</strong> 用 SenseVoice 把语音转成文字，给前端显示「你说了啥」。<strong>真实实现里这两件事是并行的</strong>——推理立刻开跑，转写在后台线程做，文字算好了再 <code>yield</code> 给前端。</p>
+                <p><strong>📌 对应源码：</strong><code>webui/web_demo.py</code> 的 <code>prepare_turn()</code>（220-240 行）。Chat 模式 <code>gen()</code>（307 行）和 Call 模式（410 行）都用它。</p>
+                <p><strong>📜 真实源码：webui/web_demo.py 第 220-240 行</strong></p>
+                <pre><code class="language-python">def prepare_turn(text, samples, image_b64, do_asr_for_image):
+    """返回 (audio_inputs, audio_lens, pixel_values, prompt, user_text, asr_thread, asr_result)"""
+    audio_inputs = audio_lens = pixel_values = None
+    prompt = text or ''
+    user_text = text or ''
+    asr_thread, asr_result = None, [None]
+    if samples is not None:
+        if image_b64 and do_asr_for_image:          # 图片+语音：同步转写当 prompt
+            user_text = asr_run(samples)
+            prompt = user_text
+        else:                                       # 纯语音：立刻 prep_audio 开始推理
+            audio_inputs, audio_lens, prompt = prep_audio(samples)
+            if M['cfg'].max_history_turns > 0:
+                sa = samples.copy()
+                def _a(): asr_result[0] = asr_run(sa)   # 后台线程跑 SenseVoice 转写
+                asr_thread = threading.Thread(target=_a); asr_thread.start()
+    if image_b64:                                   # 图片走视觉编码，拼特殊 token
+        pixel_values = prep_image(image_b64)
+        # ... 拼接 image_special_token ...
+    return audio_inputs, audio_lens, pixel_values, prompt, user_text, asr_thread, asr_result</code></pre>
+                <p>生成循环里每生成一个 token 都瞄一眼 <code>asr_thread</code>：一旦转写线程结束（<code>not asr_th.is_alive()</code>）就把文字 <code>yield</code> 给前端（见 <code>gen()</code> 318-321 行）。这样<strong>首字延迟不被转写拖累</strong>——文字稍晚到没关系，语音回复尽快开始。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 实时通话 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：实时语音通话</h2>
+                <p>Call 模式要做的事，远比 Chat 复杂。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实时通话的三道难关</h3>
+                <ul>
+                    <li><strong>怎么知道用户说完了</strong>——总不能让用户每次按按钮。得自动检测「说话结束」</li>
+                    <li><strong>低延迟传输音频</strong>——SSE+base64 太慢，实时通话要毫秒级</li>
+                    <li><strong>怎么支持打断</strong>——用户说到一半想插话，得能立刻中止 AI 的输出</li>
+                </ul>
+                <p>MiniMind-O 用三个技术分别解决：VAD 检测、WebSocket 二进制流、状态机管理打断。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>VAD：自动检测「说完了」</h3>
+                <p><strong>VAD（语音活动检测）</strong>是个小模型，输入一小段音频，输出「这段里有没有人在说话」的概率。MiniMind-O 用 Silero VAD。</p>
+                <p>逻辑很简单：<strong>持续检测，如果检测到语音的概率从高变低并维持一段时间，就判定「用户说完了」</strong>，触发模型开始回复。</p>
+                <p><strong>📌 对应源码：</strong>整个实时通话由 <code>webui/web_demo.py</code> 的 <code>realtime()</code> 路由（<code>@sock.route('/ws/realtime')</code>，353-440 行）编排；VAD 概率由 <code>model/model_omni.py</code> 的 <code>SileroVAD</code> 算出，端点判定由 <code>RealtimeSession.push_chunk()</code> 完成（下一页详讲）。</p>
+                <div class="ai-diagram">
+                  <h4>图：VAD 如何判断说话结束</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：上方是一条音频波形随时间的曲线，下方是对应的「语音概率」折线（0 到 1）
+                  - 概率曲线的形状：前段从 0 升到 0.9 左右（用户在说话，标注「检测到语音」），中间持续高位，后段跌回 0.05 左右并持续一段时间（标注「静音持续超过阈值」）
+                  - 在概率曲线跌落并持续的位置画一个红色标记点，标注「判定 speech_end，触发模型回复」
+                  - 关键标注：在静音区域标注「min_silence 持续时长阈值」；在说话区域标注「min_speech 最短语音阈值」；底部总结「概率从高变低并保持 → 说话结束」
+                  - 配色建议：浅灰背景，波形深蓝色，概率曲线橙色，说话区浅绿色背景，静音区浅红色背景，触发点红色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>两个阈值很关键：<code>min_speech</code>（最短算一句话的时长，防噼啪声误触发）、<code>min_silence</code>（静多久才算说完，防正常停顿被误判成结束）。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>WebSocket：双向音频</h3>
+                <h4>毫秒级低延迟</h4>
+                <p>SSE 是单向的（服务器→浏览器）且只能传文本，做不了实时通话。<strong>WebSocket</strong> 是全双工的——浏览器和服务器可以随时互发消息，且支持二进制（直接传音频字节，不用 base64 编码，省时间）。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Chat 模式（SSE）</h4>
+                        <p>单向，文本（音频要 base64）。</p>
+                        <p>延迟较高，适合「发消息等回复」。</p>
+                    </div>
+                    <div class="column">
+                        <h4>Call 模式（WebSocket）</h4>
+                        <p>双向，二进制（音频直传）。</p>
+                        <p>延迟极低，适合实时通话。</p>
+                    </div>
+                </div>
+                <pre><code class="language-plaintext"># Call 模式的音频流
+服务端: 每生成一块 PCM 音频片段（默认 4 帧 ≈ 320ms）
+  → WebSocket 二进制帧直接发给浏览器
+浏览器: 写入 AudioBuffer 播放队列
+  → 连续播放，实现无缝语音</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== 真实状态机：RealtimeSession ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>状态机藏在哪</h3>
+                <h4>RealtimeSession 与 SileroVAD</h4>
+                <p>前面说「VAD 不在模型内部」——更准确的说法是：VAD <strong>与模型推理零耦合</strong>（它只看音频概率，不参与 Transformer 计算），但<strong>这两个类物理上就在 <code>model/model_omni.py</code> 的末尾</strong>，是纯工程层的封装。之前为便于理解讲成「VAD 不在模型内部」，真实实现是「VAD 类 <code>SileroVAD</code> + 状态机类 <code>RealtimeSession</code> 都写在 <code>model_omni.py</code> 里，但逻辑上和模型本体解耦」。</p>
+                <p><strong>📌 对应源码：</strong><code>model/model_omni.py</code> 的 <code>SileroVAD</code>（399-412 行）与 <code>RealtimeSession</code>（415-462 行），webui 通过 <code>from model.model_omni import RealtimeSession</code> 导入。</p>
+                <p><code>SileroVAD</code> 本身很薄：把 1024 采样喂进 ONNX，维护一个隐状态 <code>h,c</code>，返回「这段音频有人说话的概率」。</p>
+                <p><strong>📜 真实源码：model/model_omni.py 第 399-412 行</strong></p>
+                <pre><code class="language-python">class SileroVAD:
+    def __init__(self, path):
+        opts = ort.SessionOptions()
+        opts.inter_op_num_threads = opts.intra_op_num_threads = 1
+        self.session = ort.InferenceSession(path, providers=["CPUExecutionProvider"], sess_options=opts)
+        self.h, self.c = np.zeros((2, 1, 64), dtype=np.float32), np.zeros((2, 1, 64), dtype=np.float32)
+
+    def reset(self):
+        self.h[:], self.c[:] = 0, 0
+
+    def __call__(self, chunk, sr=16000):
+        out, self.h, self.c = self.session.run(None, {"input": chunk.reshape(1, -1).astype(np.float32), "h": self.h, "c": self.c, "sr": np.array(sr, dtype="int64")})
+        return float(out[0][0])   # 返回这段音频是语音的概率（0~1）</code></pre>
+                <p>真正复杂的是 <code>RealtimeSession.push_chunk()</code>——它把 Silero VAD 的概率包成了一个<strong>状态机</strong>，维护五个状态：<code>buffer</code>（攒下来的音频）、<code>ring</code>（说话前的前置缓冲，防截断）、<code>speaking</code>（正在说话）、<code>generating</code>（AI 正在生成）、<code>interrupt</code>（被用户打断）。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>push_chunk 状态机</h3>
+                <h4>真实逻辑</h4>
+                <p><strong>📌 对应源码：</strong><code>model/model_omni.py</code> 的 <code>RealtimeSession.push_chunk()</code>（426-457 行）。webui 的 <code>realtime()</code> 路由每收到一块音频就调它一次。</p>
+                <p>核心参数（构造时设定，见 416 行）：<code>threshold=0.8</code>（概率高于此算语音）、<code>min_speech_ms=128</code>（要凑够这么长才算「真的在说话」，防噼啪声）、<code>min_silence_ms=800</code>（静音超过这么久才算「说完了」）。它们会按采样率换算成采样数 <code>min_speech / min_silence</code>。</p>
+                <p><strong>📜 真实源码：model/model_omni.py 第 426-457 行</strong></p>
+                <pre><code class="language-python">def push_chunk(self, chunk, W=1024):           # W=1024：每次喂 1024 采样给 VAD
+    for i in range(0, max(len(chunk), 1), W):
+        w = chunk[i:i + W]
+        if len(w) < W:
+            w = np.pad(w, (0, W - len(w)))      # 末尾不足 1024 的补零
+        prob = self.vad(w, self.sr)             # 拿到这段是语音的概率
+        if prob > self.threshold:               # --- 认为是语音 ---
+            self.silence_samples = self.tail_silence = 0
+            self.speech_samples += len(w)
+            self.buffer.append(w)
+            if self.speech_samples >= self.min_speech and not self.speaking:
+                self.speaking = True            # 攒够了 min_speech，正式进入「说话中」
+                self.buffer = self.ring + self.buffer  # 把 ring 缓存拼到前面（防开头被截断）
+                self.ring = []
+            if self.generating and self.speaking:      # AI 正在生成，用户又开口了 → 打断！
+                self.interrupt = True
+                return 'interrupt'
+        elif self.speaking:                     # --- 说话中遇到静音段 ---
+            self.silence_samples += len(w)
+            self.tail_silence += 1
+            self.buffer.append(w)
+            if self.silence_samples >= self.min_silence:  # 静够了 min_silence
+                if self.tail_silence > 1:
+                    del self.buffer[-(self.tail_silence - 1):]  # 删掉尾巴上多余静音
+                self.speaking, self.speech_samples, self.silence_samples, self.tail_silence = False, 0, 0, 0
+                return 'speech_end'             # 判定说完，触发模型回复
+        else:                                   # --- 还没开始说话 ---
+            if self.speech_samples > 0:
+                self.buffer.clear()
+            self.speech_samples = 0
+            self.ring = [w]                     # 留一段 ring，等会儿判定说话时拼到前面
+    return 'listening'</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>五个状态怎么协作</h4>
+                        <ul>
+                            <li><code>buffer</code>：攒实际语音，<code>speech_end</code> 后交给 <code>get_audio()</code> 取走</li>
+                            <li><code>ring</code>：说话前的预备缓冲，避免「第一个字开头被切掉」</li>
+                            <li><code>speaking</code>：凑够 <code>min_speech</code> 才置真，过滤短噪声</li>
+                            <li><code>generating</code>：由 webui 路由在开始生成时置真，决定是否触发打断</li>
+                            <li><code>interrupt</code>：生成中又检测到说话时拉起，路由据此中止输出</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>两个关键返回值</h4>
+                        <ul>
+                            <li><code>'speech_end'</code>：静音超 <code>min_silence</code>(800ms) 且 <code>tail_silence&gt;1</code>，删掉尾巴静音，把攒的音频交给推理</li>
+                            <li><code>'interrupt'</code>：<code>generating</code> 且 <code>speaking</code> 时又听到人声 → barge-in</li>
+                            <li><code>'listening'</code>：默认值，表示这一轮还没有结论，继续等数据</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>打断（barge-in）</h3>
+                <h4>随时插话</h4>
+                <p>这是实时通话最人性化的能力。AI 正在说话时，用户开口了，AI 应该<strong>立刻闭嘴</strong>听用户说。实现靠一个状态机：</p>
+                <div class="ai-diagram">
+                  <h4>图：实时通话的状态机与打断</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个状态机图，四个圆角矩形节点用箭头连接
+                  - 节点：① Listening 听（绿色）② Processing 处理中（黄色）③ Speaking AI说话（蓝色）④ 被打断 Interrupted（红色）
+                  - 状态转移：Listening →（VAD 检测到 speech_end）→ Processing →（模型开始输出）→ Speaking →（输出完成）→ Listening（回到①，循环）
+                  - 打断路径：Speaking →（VAD 检测到新的用户语音）→ Interrupted →（停止当前生成，用新输入重新推理）→ Processing
+                  - 关键标注：在 Speaking→Interrupted 的箭头上标注「用户插话，VAD 检测到，立即中止 AI 输出」；在 Interrupted→Processing 标注「用新输入重新开始」
+                  - 配色建议：浅灰背景，四个状态节点分别绿/黄/蓝/红，正常转移箭头深灰色，打断箭头红色加粗
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>关键在「AI 说话」状态下，VAD 仍然在工作。一旦检测到用户开口（概率升高），立刻中断正在生成的回复，转入处理新输入。这就是为什么打电话时能自然地打断对方——AI 也学会了。</p>
+            </div>
+        </section>
+
+        <!-- ==================== recv_loop + queue 双线程 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么要两条线程</h3>
+                <h4>recv_loop + queue</h4>
+                <p><strong>📌 对应源码：</strong><code>webui/web_demo.py</code> 的 <code>realtime()</code> 路由（353-440 行）及其内部的 <code>recv_loop()</code>（382-388 行）。</p>
+                <p>问题在于：模型生成一回合要花好几秒，这段时间里<strong>用户的音频还在源源不断地从 WebSocket 进来</strong>。如果主线程边生成边收音频，<code>ws.receive()</code> 会阻塞生成；如果不收，浏览器发的音频堆在网络缓冲里、甚至被丢弃——用户想打断时，VAD 根本看不到新音频。</p>
+                <p>解法是经典的「<strong>生产者-消费者</strong>」：开一条 daemon 线程 <code>recv_loop</code> 专门收数据塞进 <code>queue.Queue</code>，主线程专心推理、需要时再从队列里偷瞄一眼。</p>
+                <p><strong>📜 真实源码：webui/web_demo.py 第 382-393 行（接收线程 + 主循环分发）</strong></p>
+                <pre><code class="language-python">def recv_loop():                       # 子线程：只管把数据塞进队列
+    while alive[0]:
+        try:
+            data = ws.receive(timeout=1)   # 每次最多阻塞 1 秒
+            if data is None: alive[0] = False; break
+            q.put(data)                    # str（控制消息）或 bytes（音频）都往里塞
+        except: alive[0] = False; break
+
+threading.Thread(target=recv_loop, daemon=True).start()   # daemon：主线程退出时自动结束
+# --- 下面是主线程（在同一 realtime() 函数里）---
+while alive[0]:
+    try: data = q.get(timeout=0.05)        # 从队列取，等不到 50ms 就跳过
+    except queue.Empty: continue
+    if isinstance(data, str):              # 控制消息：context/stop/end
+        m = json.loads(data)
+        if m.get('type') == 'context': set_ctx(m)
+        elif m.get('type') == 'stop': session.interrupt = True
+        elif m.get('type') == 'end': break
+        continue
+    if session.generating:                 # AI 正在说话：音频只喂 VAD 看是否打断
+        push_audio(data); ws.send(json.dumps({'type': 'vad', 'speaking': session.speaking})); continue
+    status = push_audio(data)              # 没在生成：正常做端点检测
+    ws.send(json.dumps({'type': 'vad', 'speaking': session.speaking}))
+    if status != 'speech_end': continue    # 还没说完，继续等
+    session.generating = True              # 说完了，进入生成
+    audio = session.get_audio()            # 取走 buffer 里攒的语音
+    # ... 开始 run_generate ...</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>为什么是两条线程</h4>
+                        <p>生成耗时期间，<code>recv_loop</code> 持续 <code>ws.receive</code> 把音频搬进队列，<strong>保证用户开口的瞬间音频不丢</strong>。生成循环再用 <code>poll_interrupt()</code> 去队列里捞——这就实现了「边说边听」。</p>
+                    </div>
+                    <div class="column">
+                        <h4>生成中的音频怎么处理</h4>
+                        <p>当 <code>session.generating</code> 为真，新来的音频不再做端点检测的「攒语音」，而是直接 <code>push_audio</code> 喂给 VAD——此时 <code>push_chunk</code> 命中 <code>generating and speaking</code> 分支，返回 <code>'interrupt'</code> 触发 barge-in。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== poll_interrupt 轮询打断 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>生成中如何知被打断</h3>
+                <h4>poll_interrupt</h4>
+                <p><strong>📌 对应源码：</strong><code>webui/web_demo.py</code> 的 <code>poll_interrupt()</code>（368-380 行），在生成循环里（417-419 行）每次迭代调用。</p>
+                <p><code>recv_loop</code> 保证音频进了队列，但<strong>生成循环还得主动去捞</strong>。每生成一个 token，<code>poll_interrupt()</code> 就把队列里所有新消息排空：新音频就 push 进 VAD 看有没有 <code>'interrupt'</code>；遇到 <code>stop</code>/<code>end</code> 就直接置 <code>session.interrupt</code>。这就是 barge-in 的真实实现——「<strong>生成中不断偷瞄队列</strong>」。</p>
+                <p><strong>📜 真实源码：webui/web_demo.py 第 368-380 行 + 生成循环 417-419 行</strong></p>
+                <pre><code class="language-python">def poll_interrupt():
+    while True:
+        try: data = q.get_nowait()              # 非阻塞地拿一条
+        except queue.Empty: return False
+        if isinstance(data, bytes):             # 新音频：喂 VAD 看是否触发打断
+            if push_audio(data) == 'interrupt': return True
+            ws.send(json.dumps({'type': 'vad', 'speaking': session.speaking}))
+        else:                                   # 控制消息
+            m = json.loads(data)
+            if m.get('type') == 'context': set_ctx(m)
+            elif m.get('type') in ('stop', 'end'):
+                if m['type'] == 'end': alive[0] = False
+                session.interrupt = True; return True
+
+# 生成循环里每次迭代都偷瞄一眼：
+for y, af in run_generate(x, audio_inputs, audio_lens, pixel_values,
+                           max_new_tokens=512, temperature=0.7, **va_rt):
+    if poll_interrupt() or session.interrupt:   # 一旦被打断
+        interrupted = True; break               # 立刻跳出，停止生成
+    # ... 正常处理 text / audio frame ...</code></pre>
+                <p>注意 <code>poll_interrupt</code> 用的是 <code>q.get_nowait()</code>（非阻塞），所以「没消息」时立刻返回 <code>False</code>，几乎不浪费推理时间——这正是打断延迟能做到「几百毫秒」的原因。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: 声音克隆界面 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：克隆界面流程</h2>
+                <p>把阶段 6 的声音克隆能力，包装成「录一段、存音色」的交互。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>录、验、存、用</h3>
+                <p>声音克隆界面的四步流程：</p>
+                <ol>
+                    <li><strong>录</strong>：用户录 3-6 秒自己的声音</li>
+                    <li><strong>验</strong>：检查时长、音量、噪声是否合格（不合格要求重录）</li>
+                    <li><strong>存</strong>：Mimi 编码成 ref_codes + CAM++ 提取 spk_emb，保存成音色文件</li>
+                    <li><strong>用</strong>：之后对话时，选这个音色，AI 就用你的声音回复</li>
+                </ol>
+                <div class="warning">
+                    <p><strong>为什么要质量验证？</strong> 声音克隆的效果高度依赖参考音频质量。太短（信息不够）、太安静（提取不出特征）、噪声大（特征被污染）都会导致克隆失败或很难听。前端先卡一道质量关，能避免用户录完不能用。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>克隆录音处理</h3>
+                <h4>先加速 1.5 倍</h4>
+                <p>「存」这一步藏着一个反直觉的技巧：<strong>把用户的录音先 <code>speedup(playback_speed=1.5)</code> 加速 1.5 倍再编码</strong>。听上去像是要把声音变快，其实是为了<strong>缩短参考音频长度</strong>，让它更贴近训练时 ref_codes 的长度分布，克隆更稳。</p>
+                <p>加速后分两路：一路转 24kHz 喂 <strong>Mimi</strong> 编码成离散 codes（取前 8 层 × 前 300 帧作为 <code>ref_codes</code>）；另一路转 16kHz 喂 <strong>CAM++</strong> 提取说话人向量 <code>spk_emb</code>。</p>
+                <p><strong>📌 对应源码：</strong><code>webui/web_demo.py</code> 的 <code>build_clone_voice()</code>（164-191 行）。由 <code>/clone_voice</code> 路由调用。</p>
+                <p><strong>📜 真实源码：webui/web_demo.py 第 164-191 行</strong></p>
+                <pre><code class="language-python">def build_clone_voice(audio_b64):
+    if M.get('mimi') is None or M.get('campplus') is None or M.get('mel_fn') is None:
+        raise RuntimeError('Mimi 或 CAM++ 未加载')
+    seg = AudioSegment.from_file(io.BytesIO(base64.b64decode(audio_b64))).set_channels(1).set_sample_width(2)
+    if len(seg) < 1000:
+        raise RuntimeError('录音太短，至少读 1 秒')
+    try:
+        seg = seg.speedup(playback_speed=1.5, chunk_size=150, crossfade=25)  # 反直觉：先加速 1.5 倍
+    except Exception:
+        seg = seg.speedup(playback_speed=1.5)
+    seg24 = seg.set_frame_rate(24000)   # 给 Mimi（24kHz）
+    seg16 = seg.set_frame_rate(16000)   # 给 CAM++（16kHz）
+    w24 = torch.tensor(np.frombuffer(seg24.raw_data, dtype=np.int16).astype(np.float32) / 32768.0)
+    w16 = torch.tensor(np.frombuffer(seg16.raw_data, dtype=np.int16).astype(np.float32) / 32768.0)
+    validate_clone_audio(w16)           # 质量校验：时长/音量/噪声/爆音
+    mimi_dev = next(M['mimi'].parameters()).device
+    mimi_dtype = torch.float16 if mimi_dev.type != 'cpu' else torch.float32
+    with torch.inference_mode():
+        t = w24.unsqueeze(0).unsqueeze(0).to(device=mimi_dev, dtype=mimi_dtype)
+        codes = M['mimi'].encode(t).audio_codes
+        nf = math.ceil(w24.shape[-1] / SAMPLES_PER_FRAME)
+        ref_codes = codes[0, :8, :nf].cpu()[:, :min(nf, REF_FRAMES)]  # 前8层 × 前300帧
+    with torch.no_grad():
+        mel = M['mel_fn'](w16.unsqueeze(0).to(M['device']))
+        feat = mel.clamp(min=1e-10).log().transpose(1, 2)
+        feat = feat - feat.mean(dim=1, keepdim=True)   # CMVN 归一化
+        spk_emb = M['campplus'](feat).squeeze(0).cpu()
+    return {'ref_codes': ref_codes, 'spk_emb': spk_emb}</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>两条采样率各司其职</h4>
+                        <ul>
+                            <li><strong>Mimi @ 24kHz</strong>：编解码器原生采样率，encode 出 8 层量化码本，截前 300 帧作 ref</li>
+                            <li><strong>CAM++ @ 16kHz</strong>：说话人模型训练采样率，先过 MelSpectrogram 再提 192 维 spk_emb</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>几个常量</h4>
+                        <ul>
+                            <li><code>SAMPLES_PER_FRAME=1920</code>（24kHz ÷ 12.5fps）</li>
+                            <li><code>REF_FRAMES=300</code>（≈最长参考 24 秒，但加速后通常更短）</li>
+                            <li>codes 里 <code>≥2049</code> 的会被当 padding 清零（见 <code>_mimi_decode</code>）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>被忽略的问题：并发</h3>
+                <p>Web 服务可能同时来多个请求，但<strong>一张 GPU 同时只能跑一次模型推理</strong>。怎么办？用<strong>互斥锁（Lock）</strong>——同一时间只允许一个请求进入推理，其他排队等。</p>
+                <pre><code class="language-python">from threading import Lock
+infer_lock = Lock()
+
+def handle_request(prompt):
+    with infer_lock:              # 获取锁，同一时刻只有一个请求能进
+        result = model.generate(prompt)
+    return result                 # 离开 with 块自动释放锁，下一个请求进入</code></pre>
+                <p>这是单卡部署 Web 服务的常见妥协。要支持真并发，得多卡部署或上推理框架（如 vLLM）。</p>
+                <p><strong>📌 对应源码：</strong><code>webui/web_demo.py</code> 的 <code>run_generate()</code>（193-197 行）——<code>MODEL_LOCK</code>（24 行）就套在这里。所有推理路径（Chat 的 <code>gen()</code>、Call 的 <code>realtime()</code>）都通过 <code>yield from M['model'].generate(stream=True)</code> 走它：</p>
+                <pre><code class="language-python">MODEL_LOCK = threading.Lock()        # 模块级全局锁
+
+def run_generate(x, audio_inputs, audio_lens, pixel_values, **kw):
+    with MODEL_LOCK, torch.no_grad():  # 拿到锁才开始推理
+        yield from M['model'].generate(
+            x, M['tokenizer'].eos_token_id, stream=True, return_audio_codes=True,
+            audio_inputs=audio_inputs, audio_lens=audio_lens, pixel_values=pixel_values, **kw)</code></pre>
+                <p>注意 <code>yield from</code> + <code>with MODEL_LOCK</code> 的组合：<strong>整个流式生成期间锁都不释放</strong>，所以单卡下两个请求的推理严格串行——这也是并发模式下排队卡顿的直接来源。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 + 排错 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：跑起两个 Demo</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>亲身体验两种交互</h3>
+                        <p>分别启动 Gradio 版和 Flask 版，对比体验：</p>
+                        <pre><code class="language-bash"># Gradio 版（简单）
+python scripts/web_demo_omni.py
+# 浏览器打开显示的地址，试文本/音频/图片输入
+
+# Flask 版（完整）
+python webui/web_demo.py
+# 打开浏览器，重点体验 Chat 和 Call 两种模式</code></pre>
+                        <p><strong>观察思考</strong>：Call 模式里，你在 AI 说话时立刻开口，AI 会停下来吗？这个「打断」的延迟大概是多少？文本是逐字出现的还是整段出现的？</p>
+                        <div class="answer-section">
+                            <h4>预期现象</h4>
+                            <p>Call 模式支持打断——你开口后，VAD 会很快（几百毫秒内）检测到，AI 输出中断，转入处理你的新输入。文本是逐字流式出现的（SSE/WebSocket 持续推送的效果）。这两个现象正是本章讲的流式传输和状态机打断的体现。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Web 演示常见坑</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>音频在浏览器放不出来</h4>
+                        <p><strong>原因</strong>：采样率不匹配，或 base64 编码有误。</p>
+                        <p><strong>修复</strong>：确认 PCM 是 24kHz；检查 base64 编解码对称；浏览器控制台看报错。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Call 模式总是误触发/不触发</h4>
+                        <p><strong>原因</strong>：VAD 的 min_silence/min_speech 阈值不合适。</p>
+                        <p><strong>修复</strong>：环境嘈杂就调高阈值；说话慢就调大 min_silence。</p>
+                    </div>
+                    <div class="card">
+                        <h4>多人访问时响应卡顿</h4>
+                        <p><strong>原因</strong>：互斥锁导致请求排队。</p>
+                        <p><strong>修复</strong>：单卡只能串行，接受排队；或部署多实例 + 负载均衡。</p>
+                    </div>
+                    <div class="card">
+                        <h4>麦克风权限被拒</h4>
+                        <p><strong>原因</strong>：浏览器安全策略，非 HTTPS 不给麦克风权限。</p>
+                        <p><strong>修复</strong>：用 localhost 访问（被视为安全源）；或配置 HTTPS。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关键要点回顾</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>两套方案</h4>
+                        <p>Gradio 快速演示（代码少），Flask+WebSocket 完整功能（实时通话、打断）。</p>
+                    </div>
+                    <div class="card">
+                        <h4>SSE 流式</h4>
+                        <p>服务器长连接持续推送，让文字逐字出现。文本消息+base64 音频混合传输。</p>
+                    </div>
+                    <div class="card">
+                        <h4>VAD 检测说话结束</h4>
+                        <p>语音概率从高变低并持续超过阈值，判定用户说完，触发回复。</p>
+                    </div>
+                    <div class="card">
+                        <h4>WebSocket 实时通话</h4>
+                        <p>双向二进制流，毫秒级延迟，PCM 直传无需 base64。</p>
+                    </div>
+                    <div class="card">
+                        <h4>打断靠状态机</h4>
+                        <p>AI 说话时 VAD 仍在工作，检测到新语音就中断输出，转处理新输入。</p>
+                    </div>
+                    <div class="card">
+                        <h4>互斥锁保并发安全</h4>
+                        <p>单卡只能串行推理，用 Lock 让请求排队，避免显存冲突。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide title-slide">
+            <h1>它现在有了能聊天的脸</h1>
+            <p>从命令行到实时通话，全部打通</p>
+            <p>下一章：<strong>阶段 8 · 动手实践</strong>——把这些知识变成肌肉记忆</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

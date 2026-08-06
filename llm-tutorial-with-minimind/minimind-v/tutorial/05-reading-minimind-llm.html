@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第五阶段：阅读 MiniMind LLM 源码</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="../../minimind/tutorial/references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面幻灯片 -->
+        <section class="slide title-slide active">
+            <h1>第五阶段：阅读 MiniMind LLM 源码</h1>
+            <p>逐行精读语言模型源码，将理论知识与代码对应</p>
+        </section>
+
+        <!-- 学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>学习目标与方法</h2>
+                <p>理论你都过了：Softmax、RoPE、Attention、FFN。但当你真正打开 <code>model_minimind.py</code>，会发现 Attention 的 <code>forward()</code> 其实是一段紧凑的链式调用，和你画的流程图对不上——哪里是投影、哪里是 RoPE、哪里多出来两行 <code>q_norm</code>？这一章就是把理论一条条钉到真实代码上。</p>
+                <div class="intro-block">
+                    <p>好消息是整个 LLM 只有 288 行。我们将逐类精读：<strong>Config → RMSNorm → Attention → FeedForward → Block → 完整模型</strong>，每一类都能在第 4 章找到对应的理论组件。</p>
+                    <ul>
+                        <li><strong>文件依赖关系</strong> —— 理解项目中各模块的依赖与调用链路</li>
+                        <li><strong>逐类精读</strong> —— 从 Config 到 RMSNorm 到 Attention 到 FeedForward 到完整模型</li>
+                        <li><strong>阅读方法</strong> —— 四遍阅读法，从整体到细节层层递进</li>
+                        <li><strong>维度速查</strong> —— 模型各阶段张量形状的完整追踪</li>
+                    </ul>
+                </div>
+                <div class="intro-block">
+                    <ul>
+                        <li><strong>文件依赖关系</strong> —— 理解项目中各模块的依赖与调用链路</li>
+                        <li><strong>逐类精读</strong> —— 从 Config 到 RMSNorm 到 Attention 到 FeedForward 到完整模型</li>
+                        <li><strong>阅读方法</strong> —— 四遍阅读法，从整体到细节层层递进</li>
+                        <li><strong>维度速查</strong> —— 模型各阶段张量形状的完整追踪</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5.1 分部标题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>5.1 文件依赖关系</h2>
+                <p>理解项目中各模块之间的依赖与调用关系，在阅读源码前先建立全局视野。</p>
+                <div class="intro-block">
+                    <ul>
+                        <li><b>项目文件结构</b> —— 各模块文件及其职责</li>
+                        <li><b>依赖关系图</b> —— 模块间的引用与调用链路</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5.1 文件依赖关系图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>项目文件依赖关系</h3>
+                <div class="ai-diagram">
+                    <h4>图：文件依赖关系图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：展示 MiniMind 项目各文件之间的依赖关系，使用节点和箭头连接
+                    - 节点包括：model_minimind.py（LLM 基础模型，288行）、model_vlm.py（VLM 扩展，172行）、transformers 库（HuggingFace）、lm_dataset.py（数据集）、trainer_utils.py（训练工具）、train_sft_vlm.py（训练脚本）、eval_vlm.py（推理脚本）
+                    - 各元素关系：model_minimind.py 被 model_vlm.py 依赖；transformers 同时被 model_minimind.py 和 model_vlm.py 依赖；lm_dataset.py 和 trainer_utils.py 被 train_sft_vlm.py 依赖；eval_vlm.py 依赖 model_vlm.py
+                    - 关键标注：两条主要链路——依赖链路 transformers → model_minimind.py → model_vlm.py → eval_vlm.py；训练链路 lm_dataset.py + trainer_utils.py → train_sft_vlm.py
+                    - 配色建议：浅蓝/浅灰背景，核心模型文件蓝色，训练相关文件绿色，依赖库橙色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>两条核心链路：</p>
+                <table>
+                    <thead><tr><th>链路</th><th>文件</th><th>职责</th></tr></thead>
+                    <tbody>
+                        <tr><td>模型依赖链</td><td><code>transformers</code> → <code>model_minimind.py</code> → <code>model_vlm.py</code> → <code>eval_vlm.py</code></td><td>从 HuggingFace 基类继承，构建 LLM，扩展为 VLM，推理调用</td></tr>
+                        <tr><td>训练链路</td><td><code>lm_dataset.py</code> + <code>trainer_utils.py</code> → <code>train_sft_vlm.py</code></td><td>加载数据集 + 训练工具 → 训练脚本</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>本章重点精读 <code>model_minimind.py</code>（288 行）。它是整个项目的核心——定义了 LLM 的所有组件。VLM 扩展（<code>model_vlm.py</code>）在 LLM 基础上增加了视觉编码器。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5.2 分部标题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>5.2 逐类精读</h2>
+                <p>从配置类到完整模型，逐类拆解源码。这个文件只有 288 行，但浓缩了 Transformer 的所有精华。</p>
+                <div class="intro-block">
+                    <ul>
+                        <li><b>MiniMindConfig</b> —— 模型所有超参数的定义与分类</li>
+                        <li><b>RMSNorm</b> —— 高效归一化层的实现细节</li>
+                        <li><b>precompute_freqs_cis</b> —— RoPE 位置编码的预计算</li>
+                        <li><b>Attention</b> —— QKV 投影、RoPE、KV Cache、注意力计算</li>
+                        <li><b>FeedForward</b> —— SwiGLU 前馈网络</li>
+                        <li><b>MiniMindBlock</b> —— 完整的 Transformer 层</li>
+                        <li><b>MiniMindForCausalLM</b> —— 顶层模型组装</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- MiniMindConfig -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>MiniMindConfig</h3>
+                <p>继承自 HuggingFace 的 <code>PretrainedConfig</code>，定义了模型的所有超参数。每个参数都有合理的默认值，开箱即用。</p>
+                <pre><code class="language-python">class MiniMindConfig(PretrainedConfig):
+    model_type = "minimind"
+    def __init__(self, hidden_size=768, num_hidden_layers=8, use_moe=False, **kwargs):</code></pre>
+                <div class="ai-diagram">
+                    <h4>图：MiniMindConfig 参数分类思维导图</h4>
+                    <p>【AI 生图提示词】请生成一张中文思维导图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：以 MiniMindConfig 为中心的参数分类思维导图，包含以下分支：
+                    - 模型结构分支：hidden_size=768, num_hidden_layers=8, use_moe=False
+                    - 注意力分支：num_attention_heads=8, num_key_value_heads=4, head_dim=96 (768/8), flash_attn=True
+                    - FFN分支：intermediate_size=2432, hidden_act=silu
+                    - 词表分支：vocab_size=6400, bos_token_id=1, eos_token_id=2
+                    - RoPE分支：rope_theta=1000000, max_position_embeddings=32768
+                    - MoE分支：num_experts=4, num_experts_per_tok=1, router_aux_loss_coef=0.0005
+                    - 训练分支：rms_norm_eps=1e-6, dropout=0.0, tie_word_embeddings=True
+                    - 配色建议：浅蓝/浅灰背景，各分支用不同柔和颜色区分
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <div class="intro-block">
+                    <p><strong>关键参数解读</strong>：</p>
+                    <ul>
+                        <li><code>hidden_size=768</code> —— 模型的"宽度"，所有层的特征维度都是 768</li>
+                        <li><code>num_attention_heads=8, num_key_value_heads=4</code> —— Q 有 8 个头，K/V 只有 4 个头（GQA）</li>
+                        <li><code>head_dim = 768/8 = 96</code> —— 每个头的维度</li>
+                        <li><code>intermediate_size=2432</code> —— FFN 升维目标，约 768 的 3.17 倍（π 缩放：<code>ceil(768×π/64)×64</code>）</li>
+                        <li><code>tie_word_embeddings=True</code> —— 输入嵌入和输出层共享权重</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- RMSNorm -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>RMSNorm 类</h3>
+                <p>RMS 归一化：比 LayerNorm 更高效，省去均值计算步骤。只有一个可学习参数 <code>weight</code>（γ），不像 LayerNorm 有 γ 和 β 两组。</p>
+                <pre><code class="language-python">class RMSNorm(torch.nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))  # [768] 可学习参数
+
+    def norm(self, x):
+        # x: [batch, seq, 768]
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x):
+        return (self.weight * self.norm(x.float())).type_as(x)</code></pre>
+                <div class="intro-block">
+                    <p><strong>逐行解析</strong>：</p>
+                    <ul>
+                        <li><code>x.pow(2)</code> —— 每个元素平方，形状不变 [batch, seq, 768]</li>
+                        <li><code>.mean(-1, keepdim=True)</code> —— 求最后一维（768）的平均值，得到 [batch, seq, 1]</li>
+                        <li><code>torch.rsqrt(...)</code> —— 取倒数平方根 = 1/√(均值+ε)</li>
+                        <li><code>x * ...</code> —— 广播乘法，每个元素除以均方根</li>
+                        <li><code>x.float()</code> —— 先转 float32 计算保证精度，<code>.type_as(x)</code> 转回原类型（如 bfloat16）</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- precompute_freqs_cis -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>RoPE 预计算</h3>
+                <p>预计算 RoPE 位置编码所需的 cos/sin 查找表。这张表在模型初始化时算一次，之后每次前向传播直接查表，不需要重复计算。</p>
+                <pre><code class="language-python">def precompute_freqs_cis(dim: int, end: int = 32768, rope_base: float = 1e6):
+    # dim = 96 (head_dim), end = 32768 (max_position_embeddings)
+
+    # Step 1: 频率表 [dim/2] = [48]
+    freqs = 1.0 / (rope_base ** (torch.arange(0, dim, 2)[:dim//2].float() / dim))
+    # freqs[i] = 1 / (1000000 ^ (2i/96))
+    # i=0: freq = 1.0        (高频，捕捉相邻位置)
+    # i=47: freq ≈ 0.00001   (低频，捕捉远距离位置)
+
+    # YaRN 扩展（如果启用）
+    if rope_scaling is not None:
+        ramp = ...
+        freqs = freqs * (1 - ramp + ramp / factor)
+
+    # Step 2: 位置 × 频率 = 角度矩阵 [32768, 48]
+    t = torch.arange(end)
+    freqs = torch.outer(t, freqs)
+
+    # Step 3: cos/sin 表 [32768, 96]
+    freqs_cos = torch.cat([torch.cos(freqs), torch.cos(freqs)], dim=-1)
+    freqs_sin = torch.cat([torch.sin(freqs), torch.sin(freqs)], dim=-1)
+    return freqs_cos, freqs_sin</code></pre>
+                <div class="intro-block">
+                    <p><strong>三步流程</strong>：(1) 构建 48 个频率值，从高频到低频；(2) 位置 [0, 1, ..., 32767] 与频率做外积，得到 32768×48 的角度矩阵；(3) 分别计算 cos 和 sin，拼接为 32768×96 的查找表。如果启用了 YaRN 扩展，会对频率做线性插值以支持超过 32768 的超长上下文。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Attention 类 — QKV + RoPE + KV Cache -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Attention 类</h3>
+                <p>这是整个模型最重要的类。它的 <code>forward()</code> 方法实现了完整的注意力计算流程。先看前三步：QKV 投影、多头重塑、RoPE 旋转、KV Cache 拼接。</p>
+                <pre><code class="language-python">def forward(self, x, position_embeddings, past_key_value=None, use_cache=False):
+    bsz, seq_len, _ = x.shape    # [batch, seq, 768]
+
+    # 1. 线性投影生成 Q, K, V
+    xq = self.q_proj(x)          # [batch, seq, 768] → [batch, seq, 768]
+    xk = self.k_proj(x)          # [batch, seq, 384] (GQA: 4个KV头 × 96维)
+    xv = self.v_proj(x)          # [batch, seq, 384]
+
+    # 2. 重塑为多头格式
+    xq = xq.view(bsz, seq_len, 8, 96)   # [batch, seq, 8_Q_heads, 96]
+    xk = xk.view(bsz, seq_len, 4, 96)   # [batch, seq, 4_KV_heads, 96]
+    xv = xv.view(bsz, seq_len, 4, 96)
+
+    # 3. QK 归一化（提升训练稳定性）
+    xq, xk = self.q_norm(xq), self.k_norm(xk)
+
+    # 4. 应用 RoPE 位置编码
+    cos, sin = position_embeddings
+    xq, xk = apply_rotary_pos_emb(xq, xk, cos, sin)
+
+    # 5. KV Cache: 拼接过去的 K, V
+    if past_key_value is not None:
+        xk = torch.cat([past_key_value[0], xk], dim=1)   # 沿序列维度拼接
+        xv = torch.cat([past_key_value[1], xv], dim=1)
+    past_kv = (xk, xv) if use_cache else None</code></pre>
+                <div class="intro-block">
+                    <p><strong>关键步骤说明</strong>：</p>
+                    <ul>
+                        <li><strong>Step 3 QK 归一化</strong>：<code>q_norm</code> 和 <code>k_norm</code> 对 Q 和 K 做额外的归一化，这是一个训练稳定性技巧，防止注意力分数过大</li>
+                        <li><strong>Step 5 KV Cache</strong>：推理时 <code>past_key_value</code> 不为 None，它存储了之前所有 Token 的 K 和 V。新 Token 的 K/V 直接拼接到缓存后面，避免重复计算</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Attention — 注意力计算与输出 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Attention 计算细节</h3>
+                <p>QKV 准备好之后，接下来是注意力计算的核心步骤：GQA 扩展（repeat_kv）、两条计算路径（Flash / 手动）、输出投影。</p>
+                <pre><code class="language-python">    # 6. 转置 + repeat_kv 为注意力计算做准备
+    xq = xq.transpose(1, 2)                          # [batch, 8, seq, 96]
+    xk = repeat_kv(xk.transpose(1, 2), self.n_rep)   # [batch, 8, total_seq, 96]
+    xv = repeat_kv(xv.transpose(1, 2), self.n_rep)   # [batch, 8, total_seq, 96]
+    # n_rep = 8/4 = 2，每个 KV 头复制 2 次给 2 个 Q 头使用
+
+    # 7. 计算注意力（两条路径）
+    if self.flash:
+        # Flash Attention 路径（更快，自动处理因果掩码）
+        output = F.scaled_dot_product_attention(xq, xk, xv, is_causal=True)
+    else:
+        # 手动计算路径（更易理解）
+        scores = (xq @ xk.transpose(-2, -1)) / math.sqrt(96)  # [batch, 8, seq, total_seq]
+        scores[:, :, :, -seq_len:] += causal_mask                 # 因果掩码
+        output = F.softmax(scores, dim=-1) @ xv                  # Softmax + 乘V
+
+    # 8. 输出投影
+    output = output.transpose(1, 2).reshape(bsz, seq_len, -1)  # [batch, seq, 768]
+    output = self.o_proj(output)                                 # [batch, seq, 768]
+    return output, past_kv</code></pre>
+                <div class="intro-block">
+                    <p><strong>repeat_kv 做了什么？</strong>4 个 KV 头要服务 8 个 Q 头。方法很简单：每个 KV 头复制 <code>n_rep=2</code> 份。虽然看起来"浪费"，但矩阵运算的并行性让这比真正减少 Q 头数更高效。</p>
+                    <p><strong>两条路径</strong>：Flash Attention 是 PyTorch 2.0+ 的优化实现，自动处理因果掩码和内存优化。手动路径更易理解，适合调试。两者结果完全一致。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Attention 维度变化图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>维度变化完整追踪</h3>
+                <p>以 batch=1, seq_len=10 为例，追踪 Attention forward() 中每一步的张量形状变化：</p>
+                <div class="ai-diagram">
+                    <h4>图：Attention 维度变化流程图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从上到下的维度变化流程图，展示 Attention 计算中张量维度的完整变化过程
+                    - 流程节点：输入 x [1, 10, 768] → 线性投影 → Q [1, 10, 8, 96]、K [1, 10, 4, 96]、V [1, 10, 4, 96] → repeat_kv(GQA扩展) → K [1, 10, 8, 96]、V [1, 10, 8, 96] → transpose → Q [1, 8, 10, 96]、K [1, 8, 10, 96] → Q @ K^T → 注意力分数 [1, 8, 10, 10] → Softmax @ V → 注意力输出 [1, 8, 10, 96] → reshape → [1, 10, 768] → o_proj → 最终输出 [1, 10, 768]
+                    - 关键标注：GQA 扩展步骤标注"4个KV头→8个"，reshape 步骤标注"拼接所有头"
+                    - 配色建议：浅蓝/浅灰背景，Q 蓝色、K 绿色、V 橙色，维度数字用加粗显示
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <table>
+                    <thead><tr><th>步骤</th><th>操作</th><th>Q 形状</th><th>K/V 形状</th></tr></thead>
+                    <tbody>
+                        <tr><td>投影后</td><td>q_proj / k_proj / v_proj</td><td>[1, 10, 8, 96]</td><td>[1, 10, 4, 96]</td></tr>
+                        <tr><td>repeat_kv</td><td>复制 KV 头</td><td>[1, 10, 8, 96]</td><td>[1, 10, 8, 96]</td></tr>
+                        <tr><td>transpose</td><td>交换 head 和 seq 维度</td><td>[1, 8, 10, 96]</td><td>[1, 8, 10, 96]</td></tr>
+                        <tr><td>Q @ K^T</td><td>注意力分数</td><td colspan="2">[1, 8, 10, 10]</td></tr>
+                        <tr><td>Softmax @ V</td><td>加权求和</td><td colspan="2">[1, 8, 10, 96]</td></tr>
+                        <tr><td>reshape + o_proj</td><td>恢复维度</td><td colspan="2">[1, 10, 768]</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- FeedForward -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>FeedForward 类</h3>
+                <p>SwiGLU 前馈网络：gate_proj 与 up_proj 配合实现门控机制。代码只有一行，但包含三个线性变换和一个门控激活。</p>
+                <pre><code class="language-python">class FeedForward(nn.Module):
+    def __init__(self, config):
+        # gate_proj: 768 → 2432  (升维)
+        # up_proj:   768 → 2432  (升维，与 gate 配合)
+        # down_proj: 2432 → 768  (降维)
+        # act_fn: SiLU (sigmoid(x) * x)
+        self.gate_proj = nn.Linear(config.hidden_size, intermediate_size, bias=False)
+        self.down_proj = nn.Linear(intermediate_size, config.hidden_size, bias=False)
+        self.up_proj = nn.Linear(config.hidden_size, intermediate_size, bias=False)
+        self.act_fn = ACT2FN[config.hidden_act]  # SiLU
+
+    def forward(self, x):
+        return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))</code></pre>
+                <div class="intro-block">
+                    <p><strong>SwiGLU 公式拆解</strong>：<code>down_proj( SiLU(gate_proj(x)) * up_proj(x) )</code>。三个路径各有分工：</p>
+                    <ul>
+                        <li><code>gate_proj(x)</code> —— 升维到 2432，经 SiLU 激活后变成 0~1 之间的门控信号</li>
+                        <li><code>up_proj(x)</code> —— 升维到 2432，是实际要传递的信息</li>
+                        <li>两者逐元素相乘——门控信号控制信息的通过量</li>
+                        <li><code>down_proj(...)</code> —— 降维回 768，恢复原始维度</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- MiniMindBlock -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>MiniMindBlock</h3>
+                <p>一个完整的 Transformer 层：Pre-Norm + Self-Attention + FFN + 残差连接。这是模型堆叠的基本单元，MiniMind-V 堆叠了 8 个这样的 Block。</p>
+                <pre><code class="language-python">class MiniMindBlock(nn.Module):
+    def __init__(self, layer_id, config):
+        self.self_attn = Attention(config)                           # 注意力
+        self.input_layernorm = RMSNorm(config.hidden_size)          # 注意力前的归一化
+        self.post_attention_layernorm = RMSNorm(config.hidden_size) # FFN前的归一化
+        self.mlp = FeedForward(config) if not config.use_moe \
+              else MOEFeedForward(config)                           # FFN 或 MoE
+
+    def forward(self, hidden_states, position_embeddings, ...):
+        residual = hidden_states                                    # 保存输入
+        hidden_states, present = self.self_attn(                    # 注意力
+            self.input_layernorm(hidden_states),                    # ← 先归一化
+            position_embeddings, past_key_value, use_cache)
+        hidden_states += residual                                   # ← 残差连接
+
+        residual = hidden_states                                    # 保存
+        hidden_states = self.mlp(                                   # FFN
+            self.post_attention_layernorm(hidden_states))           # ← 先归一化
+        hidden_states += residual                                   # ← 残差连接
+
+        return hidden_states, present</code></pre>
+                <div class="intro-block">
+                    <p><strong>代码结构完全对应 Pre-Norm 残差设计</strong>：每个子模块前都有一个 RMSNorm，子模块的输出与原始输入相加（残差连接）。输入和输出形状完全一致 <code>[batch, seq, 768]</code>，因此可以无限堆叠。如果 <code>config.use_moe=True</code>，则使用 MoE 版的 FFN 替代标准 FFN。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- MiniMindForCausalLM -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>完整模型</h3>
+                <p>顶层模型类，把所有组件组装到一起。继承 HuggingFace 的 <code>PreTrainedModel</code> 和 <code>GenerationMixin</code>，兼容 HuggingFace 生态。</p>
+                <pre><code class="language-python">class MiniMindForCausalLM(PreTrainedModel, GenerationMixin):
+    def __init__(self, config):
+        self.model = MiniMindModel(config)                # Transformer 主体
+        self.lm_head = nn.Linear(768, 6400, bias=False)   # 输出映射到词表
+        if config.tie_word_embeddings:
+            self.model.embed_tokens.weight = self.lm_head.weight  # 共享权重
+
+    def forward(self, input_ids, labels=None, ...):
+        hidden_states, past_kv, aux_loss = self.model(input_ids, ...)  # Transformer
+        logits = self.lm_head(hidden_states)                             # [batch, seq, 6400]
+        if labels is not None:
+            # Shift + 交叉熵损失
+            loss = F.cross_entropy(logits[..., :-1, :], labels[..., 1:], ignore_index=-100)
+        return MoeCausalLMOutputWithPast(loss=loss, logits=logits, ...)</code></pre>
+                <div class="intro-block">
+                    <p><strong>关键设计解读</strong>：</p>
+                    <ul>
+                        <li><code>self.model</code> —— MiniMindModel 内部包含 Embedding 层 + 8 个 MiniMindBlock + 最终 RMSNorm</li>
+                        <li><code>self.lm_head</code> —— 将 768 维的隐藏状态映射到 6400 维的词表空间，得到每个词的 logits</li>
+                        <li><strong>权重共享</strong>：<code>embed_tokens.weight = lm_head.weight</code>，减少约 500 万参数</li>
+                        <li><strong>Shift 技巧</strong>：<code>logits[..., :-1, :]</code> 去掉最后一个位置的预测，<code>labels[..., 1:]</code> 去掉第一个位置的标签，错位对齐实现"用前面的词预测下一个词"</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5.3 分部标题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>5.3 阅读方法建议</h2>
+                <p>如何高效阅读和理解模型源码。不要一上来就逐行死磕——先建立全局观，再逐步深入。</p>
+                <div class="intro-block">
+                    <ul>
+                        <li><b>四遍阅读法</b> —— 从整体架构到数据流再到细节，层层递进</li>
+                        <li><b>实用技巧</b> —— 添加 print 观察张量形状变化</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 四遍阅读法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>四遍阅读法</h3>
+                <div class="ai-diagram">
+                    <h4>图：四遍阅读法流程图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从上到下的递进式流程图，展示源码阅读的四个阶段
+                    - 各元素关系：第一遍"只看 __init__"标注"了解模型由哪些组件组成" → 第二遍"跟着 forward() 走"标注"理解数据流" → 第三遍"添加 print() 观察"标注"查看张量形状变化" → 第四遍"单步调试"标注"深入每一个细节"
+                    - 关键标注：每层比上一层更深入，用渐变箭头表示递进关系
+                    - 配色建议：浅蓝/浅灰背景，四层分别用浅绿、浅蓝、浅橙、浅紫，箭头用深灰色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <div class="intro-block">
+                    <p><strong>四遍的具体目标</strong>：</p>
+                    <ul>
+                        <li><strong>第一遍（只看 __init__）</strong>：了解模型由哪些组件组成，每个组件的参数是什么。不需要理解内部实现。</li>
+                        <li><strong>第二遍（跟着 forward() 走）</strong>：从输入到输出，跟踪数据流经的每一步。关注形状变化。</li>
+                        <li><strong>第三遍（添加 print()）</strong>：在关键位置插入 print 语句，实际运行代码观察张量形状。</li>
+                        <li><strong>第四遍（单步调试）</strong>：使用 IDE 的调试器逐行执行，深入每个函数的内部。</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 实用技巧 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>print 调试技巧</h3>
+                <p>在关键位置添加 print 查看张量形状变化，这是理解模型最直接的方法：</p>
+                <pre><code class="language-python">def forward(self, input_ids, ...):
+    print(f"1. input_ids: {input_ids.shape}")
+    hidden_states = self.model.embed_tokens(input_ids)
+    print(f"2. after embedding: {hidden_states.shape}")
+    hidden_states = self.model.norm(hidden_states)
+    print(f"3. after transformer: {hidden_states.shape}")
+    logits = self.lm_head(hidden_states)
+    print(f"4. logits: {logits.shape}")</code></pre>
+                <div class="intro-block">
+                    <p><strong>预期输出</strong>（以 batch=1, seq_len=10 为例）：</p>
+                    <p><code>1. input_ids: torch.Size([1, 10])</code> —— 整数 Token ID</p>
+                    <p><code>2. after embedding: torch.Size([1, 10, 768])</code> —— 每个 Token 变成 768 维向量</p>
+                    <p><code>3. after transformer: torch.Size([1, 10, 768])</code> —— 经过 8 层 Block 后形状不变</p>
+                    <p><code>4. logits: torch.Size([1, 10, 6400])</code> —— 映射到词表空间的概率分布</p>
+                </div>
+                <div class="warning">
+                    <strong>排错：我 print 出来的形状和速查表对不上？</strong>
+                    <p>多半是输入设置不同，不是代码错了。最常见的两个原因：</p>
+                    <ul>
+                        <li><strong>batch_size 不同</strong>：表里用 <code>[1, 10, 768]</code>，你如果用 batch=4 会看到 <code>[4, 10, 768]</code>，第一维是你的 batch。</li>
+                        <li><strong>注意力中间形状带 <code>num_key_value_heads</code></strong>：看 K/V 时如果出现 4 而不是 8，别慌——那是 GQA，K/V 只有 4 个头，后面 <code>repeat_kv</code> 会复制成 8 个。</li>
+                    </ul>
+                    <p>遇到形状疑问，先确认 <code>batch</code> 和 <code>num_key_value_heads</code> 这两个变量。</p>
+                </div>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <p><strong>动手：追踪一次前向传播</strong>。在 <code>MiniMindBlock.forward()</code> 的残差连接前后各加一个 <code>print(hidden_states.shape)</code>，跑一次推理，验证残差连接不改变张量形状。</p>
+                        <div class="answer-section">
+                            <h4>预期结果</h4>
+                            <pre><code class="language-plaintext">进入 Block:  torch.Size([1, 10, 768])
+Attention 后: torch.Size([1, 10, 768])   # 残差相加，形状不变
+FFN 后:       torch.Size([1, 10, 768])   # 残差相加，形状不变
+离开 Block:  torch.Size([1, 10, 768])   # 8 层都是 768 维</code></pre>
+                            <p>如果任何一步形状变了，说明残差连接写错了——这是定位 bug 的好方法。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5.4 分部标题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>5.4 关键维度速查表</h2>
+                <p>模型各阶段张量形状一览。阅读源码时随时查阅，帮助你快速定位"这一步的形状对不对"。</p>
+                <div class="intro-block">
+                    <ul>
+                        <li><b>完整维度追踪</b> —— 从输入到输出每一步的张量形状</li>
+                        <li><b>速查参考</b> —— 阅读源码时随时查阅维度变化</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 维度速查表 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关键维度速查表</h3>
+                <p>以 batch=1, seq_len=10 为例，追踪从输入到输出的每一步形状变化：</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>阶段</th>
+                            <th>变量</th>
+                            <th>形状</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>输入</td><td><code>input_ids</code></td><td><code>[1, 10]</code></td><td>Token ID 序列</td></tr>
+                        <tr><td>嵌入后</td><td><code>hidden_states</code></td><td><code>[1, 10, 768]</code></td><td>每个 Token 查表得到 768 维向量</td></tr>
+                        <tr><td>Q 投影后</td><td><code>xq</code></td><td><code>[1, 10, 8, 96]</code></td><td>8 个 Q 头，每头 96 维</td></tr>
+                        <tr><td>K 投影后</td><td><code>xk</code></td><td><code>[1, 10, 4, 96]</code></td><td>4 个 K 头（GQA）</td></tr>
+                        <tr><td>repeat_kv 后</td><td><code>xk</code></td><td><code>[1, 10, 8, 96]</code></td><td>每个 KV 头复制 2 份</td></tr>
+                        <tr><td>转置后</td><td><code>xq</code></td><td><code>[1, 8, 10, 96]</code></td><td>head 维度提前，便于矩阵运算</td></tr>
+                        <tr><td>注意力分数</td><td><code>scores</code></td><td><code>[1, 8, 10, 10]</code></td><td>每对词之间的关注度</td></tr>
+                        <tr><td>注意力输出</td><td><code>output</code></td><td><code>[1, 10, 768]</code></td><td>恢复原始维度</td></tr>
+                        <tr><td>FFN 中间</td><td><code>gate/up</code></td><td><code>[1, 10, 2432]</code></td><td>升维到 2432</td></tr>
+                        <tr><td>FFN 输出</td><td><code>down</code></td><td><code>[1, 10, 768]</code></td><td>降维回 768</td></tr>
+                        <tr><td>lm_head 后</td><td><code>logits</code></td><td><code>[1, 10, 6400]</code></td><td>映射到词表空间的 logits</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>关键规律：Transformer Block 内部所有操作的输入输出都是 <code>[batch, seq, 768]</code>——形状完全不变。唯一改变形状的操作发生在模型的两端：输入端的 Embedding（ID → 向量）和输出端的 lm_head（向量 → 词表 logits）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 结尾幻灯片 -->
+        <section class="slide title-slide">
+            <h1>第五阶段完成</h1>
+            <p>恭喜完成 MiniMind LLM 源码精读。你已经把 Transformer 的每个理论组件和 <code>model_minimind.py</code> 的每一行代码一一对应。</p>
+            <p>下一阶段：进入模型训练实战，亲手训练一个 MiniMind 模型。</p>
+        </section>
+
+    </main>
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / 20</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="../../minimind/tutorial/references/slide-nav.js"></script>
+    <script src="../../minimind/tutorial/references/slide-toc.js"></script>
+</body>
+</html>

@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 6：把猛兽牵出来遛遛</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎪</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>把猛兽牵出来遛遛</h1>
+            <p>阶段 6 · 推理与评估——六种方式玩转 MiniMind-O</p>
+        </section>
+
+        <!-- ==================== 开篇 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练完了，然后呢</h3>
+                <p>前面五章，我们拆解了架构、数据、训练。但模型训练好之后，躺在磁盘上只是个 <code>.pth</code> 文件——它不会自己开口。你得写代码把它<strong>加载起来、喂输入、收输出</strong>。</p>
+                <p>这个过程叫<strong>推理（inference）</strong>。MiniMind-O 的推理脚本 <code>eval_omni.py</code> 提供了六种「玩法」，覆盖它能做的所有事：文字聊天、多轮对话、语音对话、声音克隆、图像理解、混合输入。</p>
+                <div class="intro-block">
+                    <p>本章就讲两件事：模型怎么从磁盘「活」过来，以及这六种玩法分别怎么玩。学完你能熟练地让 MiniMind-O 干活。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: 模型加载 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：唤醒模型</h2>
+                <p>推理的第一步，是让冷冰冰的权重变成内存里能跑的对象。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📜 源码地图</h3>
+                <p>整个推理脚本就三个函数 + 一个 <code>main()</code>，读源码时按这张地图找位置：</p>
+                <table>
+                    <thead><tr><th>函数</th><th>行号</th><th>职责</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>init_model(args)</code></td><td>17-40</td><td>根据 <code>load_from</code> 选择加载方式，把主模型 + SenseVoice + SigLIP2 + Mimi 全部请回内存</td></tr>
+                        <tr><td><code>eval_sample(...)</code></td><td>43-87</td><td>推理核心：构造 prompt → 流式生成 → 实时打印文本 + 攒音频帧 → Mimi 解码落盘</td></tr>
+                        <tr><td><code>main()</code></td><td>90-239</td><td>解析参数，按 <code>mode</code> 调用 <code>eval_sample</code>；六种 mode 的<strong>输入构造</strong>都在这里</td></tr>
+                    </tbody>
+                </table>
+                <p>另外两个被 <code>main()</code> 调用的工具：音频预处理 <code>OmniDataset.process_audio(path, processor)</code>（定义在 <code>dataset/omni_dataset.py</code>，负责重采样 + SenseVoice fbank 提取）；以及模型自身的 <code>MiniMindOmni.load_sensevoice / load_vision</code> 静态方法。本章不展开它们的内部，只看 <code>eval_omni.py</code> 怎么用。</p>
+                <p><strong>📌 一句话总结：</strong>理解了 <code>init_model</code>（加载）和 <code>eval_sample</code>（推理）这两个函数，<code>main()</code> 里六种 mode 只是「换不同输入喂给 <code>eval_sample</code>」的排列组合。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>要加载的不止是主模型</h3>
+                <p>MiniMind-O 推理时需要加载<strong>四样东西</strong>，缺一不可：</p>
+                <table>
+                    <thead><tr><th>组件</th><th>作用</th><th>来源</th></tr></thead>
+                    <tbody>
+                        <tr><td>主模型（Thinker+Talker）</td><td>核心理解与生成</td><td>你训练的 <code>.pth</code></td></tr>
+                        <tr><td>SenseVoice</td><td>把输入语音转成特征</td><td>预训练外部模型</td></tr>
+                        <tr><td>SigLIP2</td><td>把输入图像转成特征</td><td>预训练外部模型</td></tr>
+                        <tr><td>Mimi 解码器</td><td>把生成的音频码变回声音</td><td>预训练外部模型</td></tr>
+                    </tbody>
+                </table>
+                <p>回想阶段 1：真正训练的只有 ~113M 主模型，其余 400M+ 外部编码器都是「借用」的。推理时必须把它们都请回来，否则模型听不见、看不见、也说不出声。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>两种权重格式</h3>
+                <p>主模型支持两种加载方式，根据 <code>--load_from</code> 路径自动判断：</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>原生 PyTorch 格式</h4>
+                        <p>路径含 <code>model</code>，加载 <code>.pth</code> 文件。</p>
+                        <p>先创建模型实例，再 <code>load_state_dict</code>。</p>
+                        <p>适合你自己训练出来的模型。</p>
+                    </div>
+                    <div class="column">
+                        <h4>HuggingFace 格式</h4>
+                        <p>用 <code>AutoModelForCausalLM.from_pretrained</code>。</p>
+                        <p>标准化格式，方便分享和跨框架。</p>
+                        <p>适合下载社区的模型。</p>
+                    </div>
+                </div>
+                <pre><code class="language-python"># 加载完所有组件后的标准收尾
+model = model.half()        # 转半精度，省显存、加速
+model.eval()                # 切到推理模式（关闭 dropout 等）
+model.to(device)            # 移到 GPU</code></pre>
+                <p><strong>📌 对应源码：</strong><code>eval_omni.py</code> 的 <code>init_model()</code>（第 17-40 行）。下面是「教程讲解」对照「真实源码」。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程简化版</h4>
+                        <pre><code class="language-python">if 'model' in load_from:
+    # 原生格式：先建空壳，再灌权重
+    model = MiniMindOmni(config)
+    model.load_state_dict(.pth)
+else:
+    # HF 格式：直接 from_pretrained
+    model = from_pretrained(load_from)
+
+# 两种分支都要再挂上外部编码器
+model.audio_encoder = SenseVoice
+model.vision_encoder = SigLIP2
+model.mimi_model = Mimi
+
+# 标准收尾
+return model.half().eval().to(device)</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 eval_omni.py:17-40</h4>
+                        <p><strong>📜 真实源码：eval_omni.py 第 17-40 行</strong></p>
+                        <pre><code class="language-python">def init_model(args):
+    tokenizer = AutoTokenizer.from_pretrained(args.load_from)
+    if 'model' in args.load_from:
+        moe_suffix = '_moe' if args.use_moe else ''
+        ckp = f'./{args.save_dir}/{args.weight}_{args.hidden_size}{moe_suffix}.pth'
+        model = MiniMindOmni(
+            OmniConfig(hidden_size=args.hidden_size,
+                       num_hidden_layers=args.num_hidden_layers,
+                       use_moe=bool(args.use_moe)),
+            audio_encoder_path="./model/SenseVoiceSmall",
+            vision_model_path="./model/siglip2-base-p32-256-ve")
+        model.load_state_dict(torch.load(ckp, map_location=args.device), strict=False)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(args.load_from, trust_remote_code=True)
+        model.audio_encoder, model.audio_processor = MiniMindOmni.load_sensevoice("./model/SenseVoiceSmall")
+        model.vision_encoder, model.vision_processor = MiniMindOmni.load_vision("./model/siglip2-base-p32-256-ve")
+    log_model_params(model)
+    if model.audio_encoder is not None: model.audio_encoder.to(args.device)
+    if model.vision_encoder is not None: model.vision_encoder.to(args.device)
+    model.mimi_model = MimiModel.from_pretrained("./model/mimi").eval()
+    return model.half().eval().to(args.device), tokenizer</code></pre>
+                    </div>
+                </div>
+                <p>注意几个源码细节：<strong>(1)</strong> 判断分支用的是字符串包含 <code>'model'</code>，而不是看文件扩展名——原生训练权重的 <code>--load_from</code> 默认就是 <code>'model'</code>。<strong>(2)</strong> 原生分支在构造 <code>MiniMindOmni</code> 时直接传了 <code>audio_encoder_path/vision_model_path</code>，构造函数内部就完成了 SenseVoice/SigLIP2 的加载；HF 分支则在 <code>from_pretrained</code> 之后，用 <code>MiniMindOmni.load_sensevoice/load_vision</code> 这两个静态方法手动挂上。<strong>(3)</strong> Mimi 是两种分支<strong>共用的最后一步</strong>（第 39 行），单独用 <code>MimiModel.from_pretrained</code> 加载。<strong>(4)</strong> <code>load_state_dict(strict=False)</code> 容错，允许权重和模型结构有少量键不匹配（外部编码器没存进 .pth）。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 六种模式 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：六种玩法</h2>
+                <p>同一个模型，六种不同的输入组合，对应六种能力展示。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>一张表看懂六种模式</h3>
+                <table>
+                    <thead><tr><th>mode</th><th>输入</th><th>输出</th><th>展示的能力</th></tr></thead>
+                    <tbody>
+                        <tr><td>0</td><td>文本</td><td>文字 + 语音</td><td>基本文本对话</td></tr>
+                        <tr><td>1</td><td>文本（多轮）</td><td>文字 + 语音</td><td>上下文保持</td></tr>
+                        <tr><td>2</td><td>语音</td><td>文字 + 语音</td><td>语音对话（A2A）</td></tr>
+                        <tr><td>3</td><td>文本 + 参考音色</td><td>模仿音色的语音</td><td>声音克隆</td></tr>
+                        <tr><td>4</td><td>图像</td><td>描述文字 + 语音</td><td>图像理解（I2T）</td></tr>
+                        <tr><td>5</td><td>语音 + 图像</td><td>文字 + 语音</td><td>多模态理解</td></tr>
+                    </tbody>
+                </table>
+                <p>它们底层都走同一条推理流程（下一节），区别只在「输入怎么准备」。我们重点看几个有代表性的。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Mode 0：文本对话</h3>
+                <p>这是入门玩法。输入一段文字，模型回复文字并附带语音。你在阶段 1 跑通的就是它。</p>
+                <pre><code class="language-bash">python eval_omni.py --mode 0 --load_from ./out/model/xxx.pth</code></pre>
+                <p>没有音频/图像输入，所以 Thinker 只处理文本，但 Talker 照常生成语音——只是这段语音是「标准音色」，没有特定的说话人特征。</p>
+                <p><strong>📌 对应源码：</strong><code>eval_omni.py</code> 第 116-129 行（mode '0' 分支）。它的调用特别干净：<code>eval_sample(model, tokenizer, args, idx, prompt, None, f"text-{idx:02d}.mp3")</code>——<code>audio_inputs</code> 传 <code>None</code>，<code>pixel_values</code> 默认 <code>None</code>，没有 <code>ref_codes/spk_emb</code>，纯文本走最短路径。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Mode 1：多轮对话</h3>
+                <h4>记住上下文</h4>
+                <p>多轮对话的秘密不在 <code>eval_sample</code>，而在调用它时传的 <code>history</code> 参数。</p>
+                <p><strong>📌 对应源码：</strong><code>eval_omni.py</code> 第 131-174 行（mode '1' 分支）。每个测试用例是一个 <code>{"history": [...], "prompt": "..."}</code> 字典，<code>history</code> 是若干轮 <code>{role, content}</code>。</p>
+                <p>关键在 <code>eval_sample</code> 第 44 行：<code>messages = (history or []) + [{"role": "user", "content": prompt}]</code>——把历史对话拼到当前 prompt 前面，再交给 <code>apply_chat_template</code> 一次性展开成完整的 ChatML 多轮序列。模型一次看到全部历史，自然就「记住」了上下文。注意这不是增量式的 KV cache 复用，而是<strong>每次都重新拼整段历史</strong>重算——简单直接，适合评估场景。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Mode 2：语音对话</h3>
+                <h4>它听你说话</h4>
+                <p>给它一段语音文件，它用语音回答。这是「耳朵」的展示。</p>
+                <p>关键在于输入准备：语音文件要经过和训练时<strong>一样的预处理</strong>——重采样到 16kHz、SenseVoice 提取 fbank 特征。然后 prompt 里用一串 <code>&lt;|audio_pad|&gt;</code> 占位符，这些占位符的位置会被真实音频特征注入（回顾阶段 3 的注入机制）。</p>
+                <pre><code class="language-plaintext">audio-zh-01.mp3
+  → 重采样 16kHz
+  → SenseVoice 提取 fbank → mel (T, 560)
+  → prompt 里放 audio_pad × valid_len 个占位符
+  → 模型前向时，占位符被真实音频特征替换
+  → Thinker 理解了语音内容 → 生成回复</code></pre>
+                <p><strong>📌 对应源码：</strong><code>eval_omni.py</code> 第 181-188 行（mode '2' 分支）。下面是真实输入构造代码。</p>
+                <p><strong>📜 真实源码：eval_omni.py 第 183-188 行</strong></p>
+                <pre><code class="language-python">mel, valid_len = OmniDataset.process_audio(os.path.join(args.audio_dir, audio_file), model.audio_processor)
+audio_inputs = mel.unsqueeze(0).to(args.device)            # (1, T, 560) fbank 特征
+audio_lens = torch.tensor([valid_len], device=args.device) # 有效帧数（去掉 padding 后的真实长度）
+audio_token_len = valid_len or 1                           # valid_len 为 0 时至少给 1 个占位符，避免空 prompt
+prompt = model.config.audio_special_token * audio_token_len  # prompt 就是一串 &lt;|audio_pad|&gt; 占位符
+eval_sample(model, tokenizer, args, idx, prompt, audio_inputs, f"audio-{idx:02d}-{...}.mp3", audio_lens=audio_lens)</code></pre>
+                <p>读懂这段要抓住三个角色：<code>audio_inputs</code> 是真正的音频特征张量（喂给 <code>eval_sample</code> 的 <code>audio_inputs</code> 形参）；<code>audio_lens</code> 告诉模型这段特征实际有多少帧是有效的（后面用于注入）；<code>prompt</code> 是一串占位符，占位符<strong>个数 = valid_len</strong>，让模型在序列里预留出对应数量的位置，前向时这些位置被真实音频特征替换。<code>audio_special_token</code> 就是 <code>&lt;|audio_pad|&gt;</code>。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Mode 3：声音克隆</h3>
+                <h4>学谁像谁</h4>
+                <p>声音克隆是 MiniMind-O 最「炫」的能力。它的关键在两个东西（阶段 3 提过）：</p>
+                <ul>
+                    <li><strong>ref_codes</strong>：参考音频的 Mimi 码（声音的「样本」）</li>
+                    <li><strong>spk_emb</strong>：说话人嵌入，192 维向量（说话人的「身份」）</li>
+                </ul>
+                <p>预置音色文件 <code>voices.pt</code> 里存了一批名人的 ref_codes + spk_emb。推理时把它们注入 Talker 的对应位置，Talker 就会用那个人的音色生成回复。</p>
+                <p><strong>📌 对应源码：</strong><code>eval_omni.py</code> 第 190-209 行（mode '3' 分支）。真实加载与注入代码如下。</p>
+                <p><strong>📜 真实源码：eval_omni.py 第 195-209 行</strong></p>
+                <pre><code class="language-python">voices_pt = os.path.join(..., 'model', 'speaker', 'voices_unseen.pt')
+voices = [('default', None, None)]   # 第一个总是「默认音色」（不注入任何参考）
+if os.path.exists(voices_pt):
+    voice_data = torch.load(voices_pt, map_location=args.device)
+    for speaker, v in sorted(voice_data.items()):
+        rc = v['ref_codes'].unsqueeze(0).to(args.device)                              # ref_codes: (1, 8, T_ref)
+        se = v['spk_emb'].half().unsqueeze(0).to(args.device) if 'spk_emb' in v else None  # spk_emb: (1, 192)
+        voices.append((speaker, rc, se))
+for speaker, rc, se in voices:
+    for idx, prompt in enumerate(clone_prompts):
+        history = [{"role": "system", "content": "你是一个专业的语音助手，请用给定的音色风格来回答..."}]
+        eval_sample(model, tokenizer, args, idx, prompt, None, f"clone-{speaker}-{idx:02d}.mp3",
+                    ref_codes=rc, history=history, spk_emb=se)</code></pre>
+                <p>注意 <code>ref_codes</code> 的形状是 <strong>(1, 8, T_ref)</strong>——8 层码本、T_ref 帧（参考音频长度决定），对应一段真实声音样本；<code>spk_emb</code> 是 <strong>(1, 192)</strong> 的说话人身份向量。它们被传给 <code>eval_sample</code> 的 <code>ref_codes / spk_emb</code> 形参，再一路传进 <code>model.generate(...)</code>，在 Talker 序列里：ref_codes 放在<strong>目标音频生成区之前</strong>（作为声音样本，告诉 Talker「按这个风格开口」），spk_emb 注入到 <code>&lt;|audio_spk|&gt;</code> 位置（提供身份）。两者结合就实现了克隆。源码里有个 <code>('default', None, None)</code>——这是不注入任何参考的对照项，输出就是模型自己的标准音色。</p>
+                <div class="ai-diagram">
+                  <h4>图：声音克隆的两个注入点</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一条 Talker 输入序列的时间轴（横向方块），标出两个特殊位置
+                  - 序列大致为：[pad... | ref_codes 区域 | spk_token 位置 | 目标音频生成区域]
+                  - ref_codes 区域用浅紫色高亮，标注「参考音频码：声音的样本，放在目标区之前」
+                  - spk_token 位置用一个橙色方块，从下方画一个箭头注入「spk_emb（192维）：说话人身份」，标注「注入到 &lt;|audio_spk|&gt; 位置」
+                  - 目标音频生成区域用浅绿色，标注「Talker 在这里模仿该音色生成回复」
+                  - 关键标注：在序列下方总结「ref_codes 提供声音样本，spk_emb 提供身份，两者结合实现克隆」
+                  - 配色建议：浅灰背景，序列方块浅蓝色，ref_codes 浅紫色，spk 注入橙色，生成区浅绿色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Mode 4/5：看图说话</h3>
+                <h4>图像与混合理解</h4>
+                <p>Mode 4 给一张图片，让模型描述。图像经 SigLIP2 编码成 <code>image_token_len</code> 个 patch token（由 <code>model.config.image_token_len</code> 决定），注入到 <code>&lt;|image_pad|&gt;</code> 位置（同样数量的占位符）。</p>
+                <p><strong>📌 对应源码：</strong><code>eval_omni.py</code> 第 211-221 行（mode '4' 分支）。</p>
+                <p><strong>📜 真实源码：eval_omni.py 第 216-221 行</strong></p>
+                <pre><code class="language-python">image = Image.open(os.path.join(args.image_dir, image_file)).convert('RGB')
+pixel_values = {k: v.to(args.device) for k, v in model.vision_processor(images=image, return_tensors="pt").items()}
+# SigLIP2 的输入由 vision_processor 预处理，前向时得到 patch token
+prompt = prompt_text + "\n\n" + model.config.image_special_token * model.config.image_token_len
+eval_sample(model, tokenizer, args, idx, prompt, None, f"image-...", pixel_values=pixel_values)</code></pre>
+                <p>结构上和 mode 2 完全对称：真实图像特征走 <code>pixel_values</code> 形参，prompt 里用 <code>image_special_token</code>（即 <code>&lt;|image_pad|&gt;</code>）× <code>image_token_len</code> 个占位符预留位置，前向时这些位置被 SigLIP2 的 patch token 替换。</p>
+                <p>Mode 5 是终极玩法：同时输入语音和图像，文本提示把它们组织起来。模型要同时调动耳朵和眼睛，给出综合回复。</p>
+                <p><strong>📌 对应源码：</strong><code>eval_omni.py</code> 第 223-239 行（mode '5' 分支）。</p>
+                <p><strong>📜 真实源码：eval_omni.py 第 234-239 行</strong></p>
+                <pre><code class="language-python">mel, valid_len = OmniDataset.process_audio(os.path.join(args.audio_dir, audio_file), model.audio_processor)
+audio_inputs = mel.unsqueeze(0).to(args.device)
+audio_lens = torch.tensor([valid_len], device=args.device)
+audio_token_len = valid_len or 1
+prompt = text_hint + model.config.audio_special_token * audio_token_len + "\n\n" + model.config.image_special_token * model.config.image_token_len
+eval_sample(model, tokenizer, args, idx, prompt, audio_inputs, f"mix-...", pixel_values=pixel_values, audio_lens=audio_lens)</code></pre>
+                <p>看最后一行 <code>eval_sample</code> 的调用：同时传了 <code>audio_inputs</code>、<code>pixel_values</code>、<code>audio_lens</code> 三样——音频特征 + 图像特征 + 音频有效长度，prompt 里则是 <code>文本 + audio_pad×N + 换行 + image_pad×N</code>。一次前向同时替换两批占位符，Thinker 就同时「听」到了声音、「看」到了画面。能处理混合输入，才是「全模态」的真正含义。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 推理流程 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：推理完整流程</h2>
+                <p>不管哪种模式，底层都走同一条路。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>推理核心函数</h3>
+                <h4>eval_sample</h4>
+                <p>所有模式最终都调用 <code>eval_sample()</code>，它做四件事：</p>
+                <ol>
+                    <li><strong>组装 prompt</strong>：用 <code>apply_chat_template</code> 把对话格式化成模型认识的 ChatML 字符串</li>
+                    <li><strong>调用生成</strong>：<code>model.generate(stream=True)</code>，内部走阶段 3 讲的 <code>stream_generate</code></li>
+                    <li><strong>实时收文本</strong>：每 <code>yield</code> 一个文本 token，立刻解码打印（打字机效果）</li>
+                    <li><strong>攒音频解码</strong>：把 yield 的音频帧收集起来，结束后一次性送 Mimi 解码、保存</li>
+                </ol>
+                <p>注意第 3、4 步的区别：文本是<strong>实时</strong>显示的，音频是<strong>攒完再解码</strong>的（因为音频要凑够 8 层一帧才能解码）。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>真实代码：两条节奏</h3>
+                <h4>eval_sample 的文本与音频分流</h4>
+                <p>对照上面的四步，看真实源码怎么实现「文本实时 + 音频攒帧」。</p>
+                <p><strong>📌 对应源码：</strong><code>eval_omni.py</code> 的 <code>eval_sample()</code>（第 43-87 行）。</p>
+                <p><strong>📜 真实源码：eval_omni.py 第 43-65 行</strong></p>
+                <pre><code class="language-python">def eval_sample(model, tokenizer, args, idx, prompt, audio_inputs, output_name,
+                pixel_values=None, history=None, audio_lens=None, ref_codes=None, spk_emb=None):
+    messages = (history or []) + [{"role": "user", "content": prompt}]
+    inputs_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True,
+                                                open_thinking=bool(args.open_thinking))   # ① 组装 ChatML prompt
+    x = torch.tensor(tokenizer(inputs_text).data['input_ids'], dtype=torch.long, device=args.device)[None, ...]  # ② 编码成 input_ids
+
+    audio_frames = []
+    with torch.no_grad():
+        res_y = model.generate(x, tokenizer.eos_token_id, max_new_tokens=args.max_new_tokens,
+                               temperature=args.temperature, top_p=args.top_p, stream=True,   # ③ stream=True 拿到生成器
+                               return_audio_codes=True, open_thinking=bool(args.open_thinking),
+                               audio_inputs=audio_inputs, audio_lens=audio_lens, pixel_values=pixel_values,
+                               ref_codes=ref_codes, spk_emb=spk_emb)
+        print('📒 [Thinker]: ', end='', flush=True)
+        history_idx = 0
+        for y, audio_frame in res_y:            # ④ 逐项迭代生成器
+            if y is not None:                   # ⑤ 文本 token：实时 decode 打印（增量输出）
+                answer = tokenizer.decode(y[0].tolist(), skip_special_tokens=True)
+                if answer and answer[-1] != '�':
+                    print(answer[history_idx:], end='', flush=True)
+                    history_idx = len(answer)
+            if audio_frame:                     # ⑥ 音频帧：先攒进列表，不立刻解码
+                audio_frames.append(audio_frame)
+        print()
+        # ⑦ 攒完之后，audio_frames 一次性送 Mimi 解码（见下一 Part）</code></pre>
+                <p>几个读懂关键：<strong>(1)</strong> <code>apply_chat_template(..., add_generation_prompt=True)</code> 会拼出形如 <code>&lt;|im_start|&gt;assistant\n</code> 的前缀，让模型从「助手开始说话」的位置续写——这是 ChatML 推理的标准姿势。<strong>(2)</strong> <code>res_y</code> 是个<strong>生成器</strong>，每次 <code>yield (y, audio_frame)</code> 一个元组：<code>y</code> 是文本 token id（可能是 None，表示这一步只产音频），<code>audio_frame</code> 是一帧 8 层音频码（可能是空，表示这一步只产文本）。<strong>(3)</strong> 文本用 <code>answer[history_idx:]</code> 做<strong>增量打印</strong>（只打印新增部分），靠 <code>flush=True</code> 立刻显示——这就是打字机效果。<strong>(4)</strong> 音频帧 <code>audio_frame</code> 只要非空就 append 到 <code>audio_frames</code>，循环结束后才统一处理。两条节奏由此分流。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你会看到的终端体验</h3>
+                <pre><code class="language-plaintext">📒 [Thinker]:
+你（停顿）好（停顿）呀（停顿）！（停顿）有（停顿）什（停顿）么...
+🎹 [Talker]: 45 frames | Audio decoded to: ./output/text-00.mp3</code></pre>
+                <p>文本逐字出现（每个 token 之间有模型计算的微小停顿），全部生成完后，音频一次性解码保存成 mp3。这种「文字先流式、声音后落盘」的体验，正是 <code>stream_generate</code> 的 yield 机制带来的。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: 音频解码 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：码本变回声音</h2>
+                <p>模型吐出的是 8 层音频码，怎么变成能播放的波形？</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>解码三步走</h3>
+                <div class="ai-diagram">
+                  <h4>图：音频从码本还原为波形的流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的四段式流程，每段是一个圆角矩形，用箭头串联
+                  - 第 1 段（模型输出）：8 层码本序列，每层一串整数 [120, 450, 890, ..., 2050]，标注「Talker 生成的 8 层码」
+                  - 第 2 段（过滤）：移除 ≥2049 的特殊 token（标红叉），标注「去掉 pad/stop 等控制码」
+                  - 第 3 段（Mimi 解码）：一个 Mimi Decoder 方块，输入 (1, 8, T) 码本，输出 24kHz 波形，标注「神经解码器还原连续波形」
+                  - 第 4 段（保存）：先 sf.write 存 WAV，再 pydub 转 MP3（标注 64kbps），输出一个音频文件图标
+                  - 关键标注：在第 3 段旁标注「一帧 8 码 ≈ 80ms 音频」；底部补充「24kHz 即每秒 24000 个采样点，CD 音质级别」
+                  - 配色建议：浅灰背景，码本浅紫色，过滤浅红色，Mimi 解码橙色，波形浅绿色，文件浅蓝色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>解码前过滤特殊码</h3>
+                <p>模型生成的码本序列里，混着控制码：pad（2049）、stop（2050）、spk（2051）等。这些不是真实的声音数据，如果直接送进 Mimi 解码，会产生刺耳的噪声。</p>
+                <p><strong>📌 对应源码：</strong><code>eval_omni.py</code> 第 67-83 行（<code>eval_sample</code> 里 <code>audio_frames</code> 攒完后的处理块）。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程简化版</h4>
+                        <pre><code class="language-python"># 过滤 ≥2049 的控制码
+codes = torch.where(codes >= 2049, 0, codes)
+waveform = mimi.decode(codes)   # 24kHz 波形
+sf.write('out.wav', waveform, 24000)
+# WAV → MP3</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 eval_omni.py:67-83</h4>
+                        <p><strong>📜 真实源码：eval_omni.py 第 67-83 行</strong></p>
+                        <pre><code class="language-python">if audio_frames:
+    if args.decode_audio:
+        try:
+            codes = [f for f in audio_frames if f and len(f) == 8]   # 只留长度恰为 8 的有效帧
+            if not codes:
+                print('⚠️ 生成的Mimi codes为空，跳过保存。'); return
+            mimi_codes = torch.tensor(codes, dtype=torch.long).T.unsqueeze(0).to(args.device)  # (1, 8, T)
+            filtered = torch.where(mimi_codes >= 2049, torch.zeros_like(mimi_codes), mimi_codes)  # 清零控制码
+            audio = model.mimi_model.decode(filtered).audio_values                          # → 波形
+            wav_path = output_path.rsplit('.', 1)[0] + '.wav'
+            sf.write(wav_path, audio.squeeze().float().cpu().numpy(), 24000)                # 存 WAV，24kHz
+            AudioSegment.from_wav(wav_path).export(output_path, format='mp3', bitrate='64k') # WAV → MP3
+            os.remove(wav_path)                                                              # 删中间 WAV
+        except Exception as e:
+            print(f'⚠️ 保存音频失败: {str(e)}')</code></pre>
+                    </div>
+                </div>
+                <p>读真实代码要抓住四点：<strong>(1)</strong> <code>[f for f in audio_frames if f and len(f) == 8]</code> 这一步<strong>过滤掉长度不等于 8 的残帧</strong>——只有完整的 8 层码本才是一帧有效音频。<strong>(2)</strong> <code>torch.tensor(codes).T.unsqueeze(0)</code> 把列表转成 Mimi 要的 <code>(1, 8, T)</code> 形状（转置 + 加 batch 维）。<strong>(3)</strong> 核心 <code>torch.where(mimi_codes &gt;= 2049, 0, mimi_codes)</code>——把所有 id ≥ 2049 的特殊控制码（pad=2049 / stop=2050 / spk=2051 等）替换成 <strong>0（Mimi 码本里的静音码）</strong>，不是删除。换成静音而不是删除，是为了<strong>保持帧数</strong>，否则时间轴会错位。<strong>(4)</strong> 解码出来后先 <code>sf.write</code> 存 WAV（采样率 24000），再用 <code>pydub</code> 转 MP3（64kbps），最后 <code>os.remove</code> 删掉中间 WAV 文件——磁盘上只留 MP3。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 参数速查 + 排错 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>命令行参数速查</h3>
+                <table>
+                    <thead><tr><th>参数</th><th>作用</th><th>常用值</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--mode</code></td><td>评估模式（可组合，如 "0,2,4"）</td><td>0~5 或 -1（全部）</td></tr>
+                        <tr><td><code>--load_from</code></td><td>模型权重路径</td><td>./out/model/xxx.pth</td></tr>
+                        <tr><td><code>--temperature</code></td><td>采样随机性</td><td>0.7</td></tr>
+                        <tr><td><code>--top_p</code></td><td>核采样阈值</td><td>0.85</td></tr>
+                        <tr><td><code>--max_new_tokens</code></td><td>最大生成长度</td><td>512</td></tr>
+                        <tr><td><code>--decode_audio</code></td><td>是否解码音频</td><td>1</td></tr>
+                        <tr><td><code>--open_thinking</code></td><td>是否开启思维链</td><td>0</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：动手试一遍</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>六种模式各跑一次</h3>
+                        <p>用 <code>--mode -1</code> 一次串跑所有模式，或者逐个跑。重点观察并回答：</p>
+                        <ol>
+                            <li>Mode 0 和 Mode 2 生成的 mp3，<strong>音色一样吗</strong>？为什么？</li>
+                            <li>Mode 3 用不同预置音色，输出的语音有什么区别？</li>
+                            <li>把 <code>--temperature</code> 从 0.7 调到 0.1 和 1.5，观察生成内容的差异。</li>
+                        </ol>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <p>1) 不完全一样。Mode 0 没有特定说话人输入，用默认音色；Mode 2 的音色取决于输入语音的处理，可能有差异。2) 不同预置音色的 ref_codes 和 spk_emb 不同，Talker 模仿不同人的音色，听起来像不同人在说话。3) temperature=0.1 输出保守、重复性高、确定性；1.5 输出奔放、多样、可能跑题。这正是阶段 2 讲的采样策略效果。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>推理常见坑</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>生成的内容是乱码</h4>
+                        <p><strong>原因</strong>：tokenizer 和模型不匹配，或权重加载错位。</p>
+                        <p><strong>修复</strong>：确认 tokenizer.json 和模型权重是同一版本；检查 load_from 路径。</p>
+                    </div>
+                    <div class="card">
+                        <h4>音频文件没声音/极短</h4>
+                        <p><strong>原因</strong>：Mimi 没加载，或音频码全被过滤了。</p>
+                        <p><strong>修复</strong>：确认 Mimi 路径；看终端的 frames 数，若为 0 说明 Talker 没正常生成。</p>
+                    </div>
+                    <div class="card">
+                        <h4>推理特别慢</h4>
+                        <p><strong>原因</strong>：没用到 GPU，或 KV Cache 没生效。</p>
+                        <p><strong>修复</strong>：确认 model.to('cuda')；确认 use_cache=True；减小 max_new_tokens。</p>
+                    </div>
+                    <div class="card">
+                        <h4>声音克隆不像</h4>
+                        <p><strong>原因</strong>：spk_emb 或 ref_codes 注入位置不对，或音色文件版本不匹配。</p>
+                        <p><strong>修复</strong>：确认 voices.pt 与模型配套；参考音频长度建议 3-6 秒。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关键要点回顾</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>四件套加载</h4>
+                        <p>主模型 + SenseVoice + SigLIP2 + Mimi，缺一不可。外部编码器是「借」来的，推理时要请回。</p>
+                    </div>
+                    <div class="card">
+                        <h4>六种模式</h4>
+                        <p>同一模型、不同输入组合：文本/多轮/语音/克隆/图像/混合。底层流程一致。</p>
+                    </div>
+                    <div class="card">
+                        <h4>注入是关键</h4>
+                        <p>音频/图像输入的本质，是用真实特征替换 prompt 里的占位符。</p>
+                    </div>
+                    <div class="card">
+                        <h4>声音克隆</h4>
+                        <p>ref_codes（声音样本）+ spk_emb（身份），注入 Talker 实现模仿。</p>
+                    </div>
+                    <div class="card">
+                        <h4>流式文本+落盘音频</h4>
+                        <p>文本实时 yield 显示，音频攒帧后 Mimi 解码保存。两条节奏。</p>
+                    </div>
+                    <div class="card">
+                        <h4>解码要过滤</h4>
+                        <p>特殊控制码（≥2049）必须过滤掉，否则 Mimi 解码出噪声。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide title-slide">
+            <h1>它已经能在命令行里干活了</h1>
+            <p>六种能力，随你调用</p>
+            <p>下一章：<strong>阶段 7 · Web 演示</strong>——给它一个漂亮的界面</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

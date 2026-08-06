@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 5：LoRA 参数高效微调</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>LoRA 参数高效微调</h1>
+            <p>阶段 5 · 只训练不到 1% 的参数，就能获得接近全量微调的效果</p>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>微调太贵了</h3>
+                <p>你花了两周在 8 张 GPU 上完成了 SFT 微调。现在想针对医疗领域再微调一次。</p>
+                <p>但全量微调意味着 <strong>64M 个参数全部要重新训练</strong>。每个新领域都重来一遍？</p>
+                <div class="intro-block">
+                    <p><strong>LoRA</strong>（Low-Rank Adaptation）就是为此而生的：在原始权重旁加一条"小路"，训练参数不到原始的 1%，效果几乎不输全量微调。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 全景对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>全量 vs LoRA</h3>
+                <div class="columns">
+                    <div class="column">
+                        <h4>全量微调</h4>
+                        <p>所有参数都可训练</p>
+                        <pre><code class="language-python"># 64M 参数全部更新
+optimizer = AdamW(model.parameters())
+# 10 个领域 = 10 × 64M</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>LoRA 微调</h4>
+                        <p>只训练旁路参数</p>
+                        <pre><code class="language-python"># 仅 ~0.4M 参数可训练
+optimizer = AdamW(lora_params)
+# 10 个领域 = 10 × 0.4M</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：核心思想</h2>
+                <p>低秩分解——用两个小矩阵近似一个大矩阵的变化量。</p>
+                <div class="intro-block">
+                    <p>全量微调需要更新模型的所有参数，代价高昂。LoRA 的洞察是：大模型在微调时，参数的变化量其实是"低秩"的——不需要那么多自由度。用两个小矩阵在旁边搭一条"旁路"，就能以极少的参数量达到接近全量微调的效果。</p>
+                    <ul>
+                        <li><strong>低秩分解旁路原理</strong>——不改动原始权重 W，在旁边加 B·A，等效变化为 W' = W + B·A</li>
+                        <li><strong>参数量对比</strong>——rank=16 时，LoRA 只需要全量微调约 4.2% 的参数量</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- LoRA 原理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>低秩分解旁路</h3>
+                <h4>不修改原始权重，而是在旁边加一条"小路"</h4>
+                <p><strong>定义</strong>：LoRA 在原始权重矩阵 W 旁添加低秩分解矩阵 B·A，等效权重变为 W' = W + B·A。</p>
+                <p>说白了，原始权重像一条主路，LoRA 像一条绕行的辅路。两条路的输出加在一起就是最终结果。训练时只修辅路，主路不动。</p>
+                <p><em>这个比喻只是为了帮你建立直观感受。在计算机内部，LoRA 实际上是两个线性变换的串联——先把维度从 d 压缩到 r（A 矩阵），再从 r 还原到 d（B 矩阵），没有真正的"路"。</em></p>
+                                <div class="ai-diagram">
+                  <h4>图：LoRA 低秩分解旁路结构</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：上方"输入 x"节点，向下分成两条路。左路："原始权重 W 冻结"（灰色大矩形，标注"不训练"）。右路："A 矩阵 d→r"（蓝色小矩形，标注"降维"）→ "B 矩阵 r→d"（蓝色小矩形，标注"升维"）。两条路汇入"+"相加节点，输出"输出 y"
+                  - 各元素关系：输入 x 同时进入 W 和 A 两条路径，W 路直接输出，A→B 路输出后与 W 路在"+"节点相加，得到最终输出 y
+                  - 关键标注：W 旁标注"冻结（不训练）"，A 和 B 旁标注"训练"，"+"节点标注"相加融合"
+                  - 配色建议：白色背景，W 灰色半透明，A/B 亮蓝色，相加节点橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 参数量对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>参数量对比</h3>
+                <h4>rank=16 时，单个被注入权重的 LoRA 仅为 4.2%</h4>
+                <table>
+                    <thead><tr><th>矩阵</th><th>形状</th><th>参数量</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td>原始 W</td><td>(768, 768)</td><td>589,824</td><td>冻结，不训练</td></tr>
+                        <tr><td>LoRA A</td><td>(768, 16)</td><td>12,288</td><td>降维矩阵</td></tr>
+                        <tr><td>LoRA B</td><td>(16, 768)</td><td>12,288</td><td>升维矩阵</td></tr>
+                        <tr><td><strong>LoRA 合计</strong></td><td>—</td><td><strong>24,576</strong></td><td><strong>单个 W 的 4.2%</strong></td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>关键在于 <code>rank</code>（秩）。MiniMind 默认 rank=16，远小于隐藏维度 768。rank 越大表达能力越强但参数越多。常见取值：8、16、32、64。</p>
+                    <p><strong>注意两个口径</strong>：表里的 4.2% 是<strong>单个方形权重矩阵</strong>的 LoRA 占比（LoRA 原论文的标准说法）。而 MiniMind 的 <code>apply_lora</code> 只注入方形 Linear（每层的 <code>q_proj</code> 和 <code>o_proj</code>，共 8×2=16 个），所以<strong>全模型</strong>视角下可训练参数约 0.4M，占 64M 总参数的不到 1%——比 4% 还要省。</p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：全量微调 vs LoRA 的参数对比</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左侧大矩阵 W（768×768，灰色，标注"冻结"），右侧上小矩阵 A（768×16，蓝色）和下小矩阵 B（16×768，蓝色）
+                  - 数据流：输入 x → W → 中间结果1，同时 x → A → B → 中间结果2，两结果相加得最终输出
+                  - 标注：W 旁标注"589,824 参数（冻结）"，A+B 旁标注"24,576 参数（训练）= 4.2%"
+                  - 配色建议：白色背景，W 灰色半透明，A/B 亮蓝色，箭头深灰色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：65 行代码的秘密</h2>
+                <p>整个 LoRA 实现只有 65 行代码——一个类加四个函数。我们逐一理解它们各自解决什么问题。</p>
+                <div class="intro-block">
+                    <p>LoRA 的原理很简单，但工程实现里有不少巧妙的细节——比如为什么要故意把 B 初始化为零、怎么用 monkey-patch 把 LoRA 注入到已有模型里、训练完怎么把旁路合并回原始权重。理解这些细节，你才能真正"用"好 LoRA。</p>
+                    <ul>
+                        <li><strong>LoRA 类定义</strong>——两个无偏置的线性层串联，结构极简</li>
+                        <li><strong>初始化策略</strong>——B 矩阵初始化为零，保证训练起点和原始模型完全一致</li>
+                        <li><strong>apply_lora 注入</strong>——用 monkey-patch 把 LoRA 层替换到模型中</li>
+                        <li><strong>保存与加载</strong>——save_lora / load_lora 只处理 LoRA 部分，体积极小</li>
+                        <li><strong>merge_lora 合并</strong>——训练结束后把 B·A 加回原始权重，推理零开销</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- LoRA 类 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>LoRA 类定义</h3>
+                <h4>两个无偏置的线性层串联，仅此而已</h4>
+                <pre><code class="language-python">class LoRA(nn.Module):
+    def __init__(self, in_features, out_features, rank):
+        super().__init__()
+        self.rank = rank  # 秩，控制低秩矩阵大小
+        self.A = nn.Linear(in_features, rank, bias=False)  # (d, r) 降维
+        self.B = nn.Linear(rank, out_features, bias=False)  # (r, d) 升维
+        # A 高斯初始化
+        self.A.weight.data.normal_(mean=0.0, std=0.02)
+        # B 全零初始化
+        self.B.weight.data.zero_()
+
+    def forward(self, x):
+        return self.B(self.A(x))  # x → A(x) → B(A(x))</code></pre>
+                <div class="intro-block">
+                    <p><strong>为什么 A 用高斯初始化、B 用零初始化？</strong>B=0 所以训练开始时 LoRA(x) = B(A(x)) = 0。模型从"不加任何修改"的状态起步，训练初期行为与原始模型完全一致。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 初始化策略 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>初始化策略</h3>
+                <h4>B=0 保证了训练起点的一致性</h4>
+                                <div class="ai-diagram">
+                  <h4>图：LoRA 初始化策略——B=0 的设计意图</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从顶部"训练第0步"开始，向下到菱形判断"LoRA 输出 = B·A·x = ?"。两条分支：左支"B全零"（绿色）→ "LoRA(x) = 0"→ "模型行为 = 原始模型"（绿色对勾）。右支"B不为零"（红色）→ "LoRA(x) ≠ 0"→ "起点被随机扰动，可能破坏已有知识"（红色警告）
+                  - 各元素关系：决策树结构，B=0 是正确路径（绿色），B≠0 是错误路径（红色）
+                  - 关键标注：左支标注"推荐"，右支标注"不推荐"，底部总结"B零初始化确保训练从原始模型状态起步"
+                  - 配色建议：浅灰背景，正确路径绿色，错误路径红色，判断菱形橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+                <p>这是精心设计的细节：让 LoRA 从"什么都不做"开始，逐渐学会"需要做什么"。</p>
+            </div>
+        </section>
+
+        <!-- apply_lora -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>注入 LoRA</h3>
+                <h4>遍历所有方形 Linear 层，逐个注入旁路</h4>
+                <pre><code class="language-python">def apply_lora(model, rank=16):
+    for name, module in model.named_modules():
+        # 只对方形线性层注入（Q/K/V/O 投影、FFN 层）
+        if isinstance(module, nn.Linear) and \
+           module.weight.shape[0] == module.weight.shape[1]:
+            lora = LoRA(module.weight.shape[0],
+                        module.weight.shape[1],
+                        rank=rank).to(model.device)
+            setattr(module, "lora", lora)
+            original_forward = module.forward
+
+            def forward_with_lora(x, layer1=original_forward, layer2=lora):
+                return layer1(x) + layer2(x)
+
+            module.forward = forward_with_lora  # monkey-patch</code></pre>
+                <p>为什么只选方形层？因为 Q/K/V/O 投影和 FFN 层是 (d, d) 的方形矩阵。Embedding 和 lm_head 不是方形，不注入。</p>
+            </div>
+        </section>
+
+        <!-- monkey-patch 图解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Monkey-Patch 机制</h3>
+                <h4>不修改原始类定义，运行时替换 forward</h4>
+                                <div class="ai-diagram">
+                  <h4>图：Monkey-Patch 运行时替换 forward 的机制</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：时序图风格，三个纵向生命线从左到右："输入 x"、"nn.Linear (768,768)"、"LoRA (768,16,768)"。流程：输入 x 调用 Linear 的 forward(x)（已被替换为 forward_with_lora），Linear 内部执行 original_forward(x) = W·x，同时调用 lora(x) = B·A·x，LoRA 返回输出，Linear 将 W·x + B·A·x 返回给输入 x
+                  - 各元素关系：时序图，Linear 是中心角色，它同时执行原始 forward 和 LoRA forward，最后合并结果
+                  - 关键标注：forward 旁标注"被 monkey-patch 替换"，合并处标注"W·x + B·A·x"
+                  - 配色建议：浅灰背景，Linear 蓝色，LoRA 绿色，输入/输出橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+                <div class="warning">
+                    <strong>Monkey-patch 与 torch.compile 不兼容！</strong>LoRA 脚本第 163-165 行会自动关闭 <code>torch.compile</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 被注入的层 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>被注入的层一览</h3>
+                <h4>8 层 Transformer 中哪些层会获得 LoRA？</h4>
+                <table>
+                    <thead><tr><th>层</th><th>形状</th><th>LoRA？</th><th>原因</th></tr></thead>
+                    <tbody>
+                        <tr><td>q_proj</td><td>(768, 768)</td><td>✅</td><td>方形，Query 投影</td></tr>
+                        <tr><td>k_proj</td><td>(768, 384)</td><td>❌</td><td>非方形（GQA）</td></tr>
+                        <tr><td>v_proj</td><td>(768, 384)</td><td>❌</td><td>非方形（GQA）</td></tr>
+                        <tr><td>o_proj</td><td>(768, 768)</td><td>✅</td><td>方形，Output 投影</td></tr>
+                        <tr><td>gate_proj</td><td>(768, 2112)</td><td>❌</td><td>非方形</td></tr>
+                        <tr><td>up_proj</td><td>(768, 2112)</td><td>❌</td><td>非方形</td></tr>
+                        <tr><td>down_proj</td><td>(2112, 768)</td><td>❌</td><td>非方形</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>默认配置中只有 <code>q_proj</code> 和 <code>o_proj</code> 被注入。8 层 × 2 = 16 个 LoRA 模块。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- save / load / merge -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>保存与加载</h3>
+                <h4>只保存 LoRA 参数，文件极小（~50KB）</h4>
+                <pre><code class="language-python"># 保存——只提取 lora 参数
+def save_lora(model, path):
+    raw_model = getattr(model, '_orig_mod', model)
+    state_dict = {}
+    for name, module in raw_model.named_modules():
+        if hasattr(module, 'lora'):
+            lora_state = {
+                f'{name}.lora.{k}': v.cpu().half()
+                for k, v in module.lora.state_dict().items()
+            }
+            state_dict.update(lora_state)
+    torch.save(state_dict, path)
+
+# 加载——找到对应 LoRA 恢复权重
+def load_lora(model, path):
+    state_dict = torch.load(path, map_location=model.device)
+    for name, module in model.named_modules():
+        if hasattr(module, 'lora'):
+            lora_state = {
+                k.replace(f'{name}.lora.', ''): v
+                for k, v in state_dict.items()
+                if f'{name}.lora.' in k
+            }
+            module.lora.load_state_dict(lora_state)</code></pre>
+            </div>
+        </section>
+
+        <!-- merge_lora -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>合并权重</h3>
+                <h4>推理时把 LoRA 溶入原始权重，零额外开销</h4>
+                <pre><code class="language-python">def merge_lora(model, lora_path, save_path):
+    load_lora(model, lora_path)
+    raw_model = getattr(model, '_orig_mod', model)
+    state_dict = {}
+    for name, module in raw_model.named_modules():
+        if isinstance(module, nn.Linear) and '.lora.' not in name:
+            state_dict[f'{name}.weight'] = module.weight.data.clone().cpu().half()
+            if hasattr(module, 'lora'):
+                # W' = W + B @ A
+                state_dict[f'{name}.weight'] += \
+                    (module.lora.B.weight.data @ module.lora.A.weight.data).cpu().half()
+    torch.save(state_dict, save_path)</code></pre>
+                                <div class="ai-diagram">
+                  <h4>图：LoRA 合并权重实现零额外开销推理</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右流程。左侧两个输入："原始权重 W 768×768"（灰色大矩形）和"LoRA B·A 16×768 × 768×16"（蓝色小矩形），两者汇入"+"相加节点，输出"合并后 W' 768×768"（紫色矩形），再输出到"推理零额外开销"（绿色圆角矩形）
+                  - 各元素关系：W 和 B·A 矩阵相加合并为 W'，合并后推理时不再需要 LoRA 模块
+                  - 关键标注：W 标注"冻结参数"，B·A 标注"训练参数"，W' 标注"W' = W + B@A"，推理标注"无额外计算"
+                  - 配色建议：白色背景，W 灰色，B·A 蓝色，合并后紫色，推理绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：训练流程</h2>
+                <p>LoRA 训练与全量 SFT 共享数据格式和循环结构，但有三处关键差异。</p>
+                <div class="intro-block">
+                    <p>既然数据格式和训练循环都跟全量 SFT 差不多，那 LoRA 训练到底特殊在哪？答案集中在三处：冻结原始参数、优化器只管 LoRA 参数、保存时只存 LoRA 权重。搞清楚这三点，LoRA 训练就没什么神秘的了。</p>
+                    <ul>
+                        <li><strong>三处关键差异</strong>——冻结原始参数、优化器范围、保存策略</li>
+                        <li><strong>冻结与收集参数</strong>——代码层面如何冻结 requires_grad 并只收集 LoRA 参数</li>
+                        <li><strong>训练循环精讲</strong>——和 SFT 对比着看，差异一目了然</li>
+                        <li><strong>超参数对比表</strong>——LoRA vs 全量 SFT 的关键参数差异</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 三处差异 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>与全量 SFT 的差异</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>① 冻结原始参数</h4>
+                        <p>非 LoRA 参数的 <code>requires_grad</code> 设为 <code>False</code>，反向传播时不计算梯度。</p>
+                    </div>
+                    <div class="card">
+                        <h4>② 优化器只含 LoRA</h4>
+                        <p><code>optimizer = AdamW(lora_params, lr=1e-4)</code>，学习率比全量 SFT 高 10 倍。</p>
+                    </div>
+                    <div class="card">
+                        <h4>③ 保存仅 LoRA 权重</h4>
+                        <p>文件极小（~50KB vs 全量 ~100MB+），方便分发和切换。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 冻结代码 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>冻结与收集参数</h3>
+                <h4>train_lora.py 第 128-145 行</h4>
+                <pre><code class="language-python"># 加载 SFT 模型，注入 LoRA
+model, tokenizer = init_model(lm_config, args.from_weight, device=args.device)
+apply_lora(model)
+
+# 统计参数量
+total_params = sum(p.numel() for p in model.parameters())
+lora_count = sum(p.numel() for n, p in model.named_parameters() if 'lora' in n)
+print(f"总参数: {total_params/1e6:.3f}M | LoRA: {lora_count/1e6:.3f}M | "
+      f"占比: {lora_count/total_params*100:.2f}%")
+
+# 冻结非 LoRA 参数
+lora_params = []
+for name, param in model.named_parameters():
+    if 'lora' in name:
+        param.requires_grad = True
+        lora_params.append(param)
+    else:
+        param.requires_grad = False
+
+optimizer = optim.AdamW(lora_params, lr=args.learning_rate)</code></pre>
+            </div>
+        </section>
+
+        <!-- 训练循环 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练循环精讲</h3>
+                <h4>与全量 SFT 几乎相同，只改了两处</h4>
+                <pre><code class="language-python">def train_epoch(epoch, loader, iters, lora_params, start_step=0):
+    for step, (input_ids, labels) in enumerate(loader, start=start_step + 1):
+        # 学习率调度、前向、loss 计算与全量 SFT 一致
+        with autocast_ctx:
+            res = model(input_ids, labels=labels)
+            loss = (res.loss + res.aux_loss) / args.accumulation_steps
+
+        scaler.scale(loss).backward()
+
+        if step % args.accumulation_steps == 0:
+            scaler.unscale_(optimizer)
+            # ⬇️ 区别 1：梯度裁剪只作用于 LoRA 参数
+            torch.nn.utils.clip_grad_norm_(lora_params, args.grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
+
+        if step % args.save_interval == 0 and is_main_process():
+            # ⬇️ 区别 2：只保存 LoRA 权重
+            save_lora(model, lora_save_path)</code></pre>
+            </div>
+        </section>
+
+        <!-- 超参数对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>超参数对比</h3>
+                <h4>LoRA vs 全量 SFT 的默认配置</h4>
+                <table>
+                    <thead><tr><th>参数</th><th>全量 SFT</th><th>LoRA</th><th>为什么不同</th></tr></thead>
+                    <tbody>
+                        <tr><td>学习率</td><td>1e-5</td><td>1e-4</td><td>参数少，需更大学习率</td></tr>
+                        <tr><td>训练轮数</td><td>2</td><td>10</td><td>每轮更新量小</td></tr>
+                        <tr><td>序列长度</td><td>768</td><td>340</td><td>领域数据通常较短</td></tr>
+                        <tr><td>优化器参数</td><td>全部</td><td>仅 LoRA</td><td>冻结原始权重</td></tr>
+                        <tr><td>torch.compile</td><td>可选</td><td>关闭</td><td>monkey-patch 不兼容</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：使用场景</h2>
+                <p>什么时候用 LoRA，什么时候全量微调？</p>
+                <div class="intro-block">
+                    <p>LoRA 不是万能药，全量微调也不是银弹。选择哪种方式取决于你的场景——数据量多大、显存多少、是否需要同时服务多个领域。这一节帮你做决策，并给出可以直接跑的训练命令。</p>
+                    <ul>
+                        <li><strong>LoRA 适用场景</strong>——多领域适配、资源受限、快速实验迭代</li>
+                        <li><strong>数据格式</strong>——和全量 SFT 完全相同的 JSONL 格式，零迁移成本</li>
+                        <li><strong>完整训练命令</strong>——一行命令跑通 LoRA 微调</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 场景选择 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>LoRA 适用场景</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>多领域适配</h4>
+                        <p>一个基础模型 + 多个 LoRA 权重（医疗、法律、客服），按需切换。</p>
+                    </div>
+                    <div class="card">
+                        <h4>资源受限</h4>
+                        <p>只有消费级 GPU（如 RTX 3090），全量微调放不下。</p>
+                    </div>
+                    <div class="card">
+                        <h4>快速实验</h4>
+                        <p>验证数据集或超参数是否有效，LoRA 训练更快。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>何时不用 LoRA？</strong>基础模型能力不足时（预训练不充分），LoRA 改进空间有限，应先全量 SFT。
+                </div>
+            </div>
+        </section>
+
+        <!-- 数据准备 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>LoRA 数据格式</h3>
+                <h4>与 SFT 相同的 JSONL 格式</h4>
+                <pre><code class="language-json">{"conversations": [
+    {"role": "user", "content": "头痛应该吃什么药？"},
+    {"role": "assistant", "content": "头痛的原因很多，建议先就医确诊。如果是普通感冒引起的..."}
+]}</code></pre>
+                <div class="intro-block">
+                    <p>LoRA 用 <code>SFTDataset</code> 加载数据。数据量不需要太大——几百到几千条即可完成领域适配。质量远比数量重要。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 完整命令 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>完整训练命令</h3>
+                <pre><code class="language-bash"># LoRA 微调（医疗领域）
+$ python trainer/train_lora.py \
+    --from_weight full_sft \
+    --data_path ../dataset/lora_medical.jsonl \
+    --lora_name lora_medical \
+    --epochs 10 --learning_rate 1e-4
+
+# 合并 LoRA 到基础模型（推理用）
+$ python -c "
+from model.model_lora import merge_lora
+from model.model_minimind import MiniMindConfig, MiniMindForCausalLM
+config = MiniMindConfig()
+model = MiniMindForCausalLM(config)
+merge_lora(model, '../out/lora_medical_768.pth', '../out/merged_768.pth')
+"</code></pre>
+            </div>
+        </section>
+
+        <!-- Part 5 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5：排错与练习</h2>
+                <p>LoRA 训练中你可能遇到的坑。</p>
+                <div class="intro-block">
+                    <p>LoRA 看起来简单，但实际跑起来可能遇到各种奇怪的问题——LoRA 好像没生效？Loss 死活不下降？合并后效果反而变差了？别慌，这些问题都有套路可解。最后再通过练习巩固理解，把知识变成自己的。</p>
+                    <ul>
+                        <li><strong>常见错误诊断</strong>——LoRA 没生效、Loss 不下降、合并后效果差、compile 报错的排查思路</li>
+                        <li><strong>动手练习</strong>——手工计算 LoRA 参数量、理解初始化为什么这样设计</li>
+                        <li><strong>知识全景图</strong>——LoRA 的核心知识点一张图总结</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 常见错误 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见错误诊断</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>LoRA 没生效</h4>
+                        <p><strong>症状</strong>：loss 曲线与全量 SFT 一致</p>
+                        <p><strong>原因</strong>：<code>apply_lora()</code> 没调用，或优化器用了 <code>model.parameters()</code></p>
+                        <p><strong>修复</strong>：检查第 129 行和第 151 行</p>
+                    </div>
+                    <div class="card">
+                        <h4>Loss 不下降</h4>
+                        <p><strong>症状</strong>：10 轮 loss 没变化</p>
+                        <p><strong>排查</strong>：① 确认 requires_grad 正确；② 学习率 1e-4 是否合适；③ 数据格式是否正确</p>
+                    </div>
+                    <div class="card">
+                        <h4>合并后效果差</h4>
+                        <p><strong>症状</strong>：<code>merge_lora</code> 后推理结果不对</p>
+                        <p><strong>原因</strong>：设备不一致（GPU 权重 vs CPU 保存）</p>
+                        <p><strong>修复</strong>：确保 merge 时张量在同一设备</p>
+                    </div>
+                    <div class="card">
+                        <h4>compile 报错</h4>
+                        <p><strong>症状</strong>：<code>RuntimeError: mutated variable</code></p>
+                        <p><strong>修复</strong>：代码已自动关闭 compile（163-165 行），手动改过则确保为 0</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>动手练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h4>练习 1：计算参数量</h4>
+                        <p>隐藏维度 768，rank=16。每层 2 个方形层（q_proj, o_proj），共 8 层。请计算：</p>
+                        <ol>
+                            <li>每个 LoRA 模块的参数量？</li>
+                            <li>全部 LoRA 参数量？</li>
+                            <li>rank=32 时变为多少？</li>
+                        </ol>
+                        <div class="answer-section">
+                            <h4>参考</h4>
+                            <p>① 768×16 + 16×768 = 24,576</p>
+                            <p>② 24,576 × 2 × 8 = 393,216 ≈ 0.39M</p>
+                            <p>③ rank=32：49,152 × 16 = 786,432 ≈ 0.79M</p>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h4>练习 2：理解初始化</h4>
+                        <p>如果把 B 也用高斯初始化（而非零），训练第一步时模型输出会怎样？</p>
+                        <div class="answer-section">
+                            <h4>参考</h4>
+                            <p>模型输出 = W·x + B·A·x。B 随机初始化则 B·A·x 是随机值，等于在原始输出加随机噪声，会破坏 SFT 已学到的能力。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 知识全景 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>知识全景图</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>核心思想</h4>
+                        <ul>
+                            <li>低秩分解 W + BA</li>
+                            <li>冻结原始权重</li>
+                            <li>B 零初始化</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>代码实现</h4>
+                        <ul>
+                            <li>LoRA 类 65 行</li>
+                            <li>apply_lora monkey-patch</li>
+                            <li>save / load / merge</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>训练差异</h4>
+                        <ul>
+                            <li>冻结非 LoRA 参数</li>
+                            <li>优化器仅 LoRA</li>
+                            <li>保存仅 LoRA 权重</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>使用场景</h4>
+                        <ul>
+                            <li>多领域适配</li>
+                            <li>资源受限</li>
+                            <li>快速实验</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>阶段 5 完成</h1>
+            <p>LoRA 让微调变得轻量：全模型不到 1% 的可训练参数，接近全量的效果。</p>
+            <p>下一章：<strong>阶段 6 · 知识蒸馏</strong>——让大模型"教"小模型。</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

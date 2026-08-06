@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 6：知识蒸馏</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>知识蒸馏</h1>
+            <p>阶段 6 · 让大模型把毕生功力传授给小模型</p>
+            <p style="color:#888; font-size:0.95em; margin-top:18px;">模型太大跑不动？蒸馏一下，小模型也能拥有大智慧</p>
+        </section>
+
+        <!-- ==================== 开场：问题驱动 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>一个现实困境</h3>
+                <p>你花了几周训练出一个效果不错的 MoE 模型。正准备上线，老板说：</p>
+                <div class="dialogue-example">
+                    <div class="dialogue-item">
+                        <strong>老板</strong>：模型效果很好，但推理太慢了，能不能快 3 倍？
+                    </div>
+                    <div class="dialogue-item">
+                        <strong>你</strong>：MoE 每次推理要走门控选 expert，确实慢……要不我把 MoE 换成 Dense？
+                    </div>
+                    <div class="dialogue-item">
+                        <strong>老板</strong>：可以，但效果不能掉太多。
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>直接用小模型从头训练，效果差得远。但如果让一个大模型（教师）来"指导"小模型（学生）学习，学生就能在保持轻量的同时，获得接近教师的能力。</p>
+                    <p>这就是<strong>知识蒸馏（Knowledge Distillation）</strong>要解决的问题。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 本章地图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>本章地图</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>核心概念</h4>
+                        <ul>
+                            <li>教师教学生</li>
+                            <li>软标签与暗知识</li>
+                            <li>KL 散度</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>关键技术</h4>
+                        <ul>
+                            <li>温度缩放</li>
+                            <li>组合损失</li>
+                            <li>T 的平方补偿</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>代码精读</h4>
+                        <ul>
+                            <li>distillation_loss</li>
+                            <li>train_epoch</li>
+                            <li>参数配置</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>实战场景</h4>
+                        <ul>
+                            <li>MoE 到 Dense</li>
+                            <li>Large 到 Small</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>练习与排错</h4>
+                        <p>动手实践，巩固知识蒸馏的关键技能</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 引用：Hinton 2015 ==================== -->
+        <section class="slide">
+            <div class="slide-content" style="text-align: center;">
+                <blockquote style="font-size: 1.3em; font-style: italic; border-left: 4px solid var(--accent-color); padding-left: 20px;">
+                    <p>"Many insects成功优化了它们的幼虫形态，</p>
+                    <p>以便从环境中汲取最大量的营养和能量。</p>
+                    <p>类似地，我们可以训练一个庞大的模型，</p>
+                    <p>然后将它的知识蒸馏到一个更适合部署的小模型中。"</p>
+                    <cite style="display: block; text-align: right; margin-top: 20px;">—— Hinton et al., "Distilling the Knowledge in a Neural Network", 2015</cite>
+                </blockquote>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: 核心概念 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 核心概念</h2>
+                <p>理解知识蒸馏为什么存在、解决什么问题、核心角色是谁。本节不涉及数学公式，只建立直觉。</p>
+                <div class="intro-block">
+                    <p>在动手写代码之前，我们需要先把几个根本性的问题搞清楚：蒸馏到底在干什么？教师和学生各自扮演什么角色？为什么软标签比硬标签更有价值？只有把这些概念吃透了，后面遇到公式和代码才知道它们在解决什么问题。</p>
+                    <ul>
+                        <li><strong>什么是蒸馏</strong> —— 用大模型（教师）的输出概率来指导小模型（学生）训练，实现模型压缩</li>
+                        <li><strong>教师与学生</strong> —— 教师冻结参数只做推理，学生才是真正被训练的那一方</li>
+                        <li><strong>蒸馏流程</strong> —— 同一份数据同时喂给两个模型，组合两个损失来优化学生</li>
+                        <li><strong>硬标签 vs 软标签</strong> —— 硬标签只有标准答案，软标签还包含"哪些选项相近"的暗知识</li>
+                        <li><strong>暗知识</strong> —— 教师概率分布中隐藏的、硬标签无法表达的额外信息</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 什么是蒸馏 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>什么是蒸馏</h3>
+                <h4>用大模型的知识来训练小模型，实现模型压缩</h4>
+                <p><strong>定义</strong>：知识蒸馏是一种模型压缩技术。用一个已训练好的大模型（教师）的输出概率分布来指导小模型（学生）训练，使学生获得接近教师的能力。</p>
+                <p><strong>白话</strong>：好比你是个小学生，旁边坐着一位大学教授。你做题时，教授不只告诉你"答案是 C"，还告诉你"A 和 B 也有点道理但不太对，D 完全不靠谱"。这些额外信息就是教授的"思维方式"，你学到的远不止标准答案。</p>
+                <p><em>这个比喻只是为了帮你建立直观感受。在计算机内部，它实际上是教师模型输出 logits 作为额外监督信号，结合 KL 散度损失函数来训练小模型——没有真正的"教授"和"学生"在对话。</em></p>
+                <div class="ai-diagram">
+                  <h4>图：知识蒸馏的教师-学生架构</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左侧蓝色大圆标注"教师模型（参数量大、推理慢、知识丰富）"，右侧橙色小圆标注"学生模型（参数量小、推理快、需要学习）"
+                  - 各元素关系：从教师到学生有一条橙色箭头，箭头上方标注"传授思维方式（软标签）"
+                  - 关键标注：教师圆内列出"参数量大、推理慢、知识丰富"，学生圆内列出"参数量小、推理快、需要学习"
+                  - 配色建议：浅蓝/浅灰背景，教师深蓝色，学生橙色，箭头橙色加粗
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 教师与学生 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>教师与学生</h3>
+                <p>蒸馏中的两个角色分工明确，不能搞混。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教师模型（Teacher）</h4>
+                        <ul>
+                            <li>已经训练好的大模型</li>
+                            <li>参数冻结，不参与梯度更新</li>
+                            <li>只做前向推理，输出 logits</li>
+                            <li>作用：提供"软标签"作为额外监督</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>学生模型（Student）</h4>
+                        <ul>
+                            <li>待训练的小模型</li>
+                            <li>参数可训练，正常反向传播</li>
+                            <li>同时学习硬标签和软标签</li>
+                            <li>作用：吸收教师知识，保持轻量</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>易混淆点</strong>：教师不是"教"学生参数，而是通过输出概率分布提供额外训练信号。学生的参数从零开始（或从预训练权重开始），通过损失函数反向传播来更新。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 蒸馏整体流程 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>蒸馏流程</h3>
+                <h4>同一份数据同时喂给教师和学生，只训练学生</h4>
+                <p>蒸馏的核心流程：一个输入，两条路径，两个损失，一个优化目标。</p>
+                <div class="ai-diagram">
+                  <h4>图：知识蒸馏的完整训练流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：顶部一个输入节点"输入数据 X"分为两条路径，左侧蓝色路径经过"教师模型（冻结参数）"输出"教师 Logits"，右侧橙色路径经过"学生模型（训练参数）"输出"学生 Logits"
+                  - 各元素关系：两组 Logits 分别汇入两个损失计算——红色框"软标签损失 KL Divergence"和绿色框"硬标签损失 Cross Entropy"，两个损失再汇入紫色框"总损失 L"，最后指向"反向传播（仅更新学生）"
+                  - 关键标注：教师模型旁标注"冻结"，反向传播箭头标注"仅更新学生"
+                  - 配色建议：浅蓝/浅灰背景，教师蓝色，学生橙色，KL损失红色，CE损失绿色，总损失紫色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="warning">
+                    <strong>记住</strong>：教师模型全程<strong>冻结</strong>，不参与反向传播。只有学生的参数会被更新。蒸馏的"代价"是多了一次教师前向传播的推理时间。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 硬标签与软标签 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>硬标签与软标签</h3>
+                <p>这是理解蒸馏的关键一步。两种标签决定了学生能从训练中获取多少信息。</p>
+                <pre><code class="language-text">输入: "猫坐在___"
+
+硬标签: [0, 0, 0, 1, 0, 0]   ← 只有"垫子上"是1，其余全是0
+         墙上 地上 桌上 垫子上 椅子 天上
+
+软标签: [0.01, 0.05, 0.10, 0.70, 0.12, 0.02]
+         墙上  地上  桌上  垫子上  椅子  天上</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>硬标签 = 标准答案</h4>
+                        <p>只知道"垫子上"是对的。信息量极少，只有一个 bit。</p>
+                        <p>来源：训练数据中的真实标注。</p>
+                    </div>
+                    <div class="card">
+                        <h4>软标签 = 教师思考过程</h4>
+                        <p>"垫子上"最可能(70%)，"椅子"也合理(12%)，"桌上"还行(10%)，"墙上"和"天上"不靠谱。</p>
+                        <p>来源：教师模型的输出概率分布。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>软标签的信息量远超硬标签。它不仅告诉学生"答案是什么"，还告诉学生"哪些选项相近、哪些完全不合理"。这些额外信息就是蒸馏的价值来源。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 暗知识 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>暗知识</h3>
+                <h4>Hinton 说的"Dark Knowledge"到底是什么</h4>
+                <div class="teaching-callout teaching-callout--key">
+                    <div class="teaching-callout__title">核心概念：暗知识（Dark Knowledge）</div>
+                    <p>Hinton 2015 年提出：教师模型的概率分布里隐藏着硬标签无法表达的额外信息。比如"椅子和桌上也不错，但墙上和天上完全不合理"。这些信息就是<strong>暗知识</strong>，是蒸馏的核心价值。</p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：硬标签与软标签的暗知识对比</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左侧绿色框"硬标签"内显示一行概率分布"垫子上=100%，其他=0%"，标注"信息量极少"；右侧橙色框"软标签"内显示完整概率分布"垫子上=70%、椅子=12%、桌上=10%、地上=5%"，标注"暗知识：知道各选项的合理程度"
+                  - 各元素关系：从硬标签框到软标签框有一条虚线箭头，标注"蒸馏就是要挖掘这些差异"
+                  - 关键标注：软标签中"椅子12%"和"桌上10%"用深橙色高亮，表示这些微小概率差异就是暗知识
+                  - 配色建议：浅灰背景，硬标签绿色系，软标签橙色系，暗知识部分深橙高亮
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="intro-block">
+                    <p>暗知识的本质：教师对不同错误答案赋予的概率差异。比如教师认为"椅子"比"墙上"更合理（12% vs 1%），这种细微的排序信息是硬标签无法提供的。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 数学工具 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 数学工具</h2>
+                <p>蒸馏用到了两个关键的数学工具：KL 散度和温度缩放。理解它们，才能看懂蒸馏损失函数的设计。</p>
+                <div class="intro-block">
+                    <p>上一节我们用直觉理解了蒸馏的流程，但要让代码跑起来，需要两个数学工具：KL 散度负责"衡量学生和教师的差距"，温度缩放负责"让教师的暗知识暴露出来"。这两个工具的组合就是蒸馏损失的核心。</p>
+                    <ul>
+                        <li><strong>KL 散度</strong> —— 衡量两个概率分布之间"距离"的数学工具，学生用它在训练中逼近教师</li>
+                        <li><strong>温度缩放</strong> —— 在 softmax 中引入温度 T，让分布变平滑、暗知识浮出水面</li>
+                        <li><strong>T² 补偿</strong> —— 温度升高后梯度会缩小 T² 倍，必须乘回来才能保持梯度量级一致</li>
+                        <li><strong>组合损失</strong> —— 把硬标签损失（CE）和软标签损失（KL）加权组合，各取所长</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== KL 散度 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>KL 散度</h3>
+                <h4>衡量两个概率分布"距离"的工具</h4>
+                <p><strong>定义</strong>：KL 散度（Kullback-Leibler Divergence）衡量两个概率分布 P 和 Q 之间的"距离"。公式：</p>
+                <p style="text-align:center; font-size:1.1em; font-weight:600; margin:10px 0;">D_KL(P || Q) = Σ P(i) × log(P(i) / Q(i))</p>
+                <p><strong>白话</strong>：教师输出概率分布 P，学生输出概率分布 Q。你想知道 Q 离 P 有多"远"——这就是 KL 散度。Q 越接近 P，KL 散度越小，说明学生学得越好。</p>
+                <p><strong>代码</strong>：PyTorch 里用 <code>F.kl_div</code> 一行搞定。</p>
+                <pre><code class="language-python"># P = 教师概率分布, Q = 学生概率分布
+# PyTorch 要求第一个参数传入 Q 的 log 形式
+kl = F.kl_div(Q_log, P, reduction='batchmean')</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>KL 散度四个特点</h4>
+                        <ul>
+                            <li><strong>非对称</strong>：D_KL(P||Q) ≠ D_KL(Q||P)</li>
+                            <li><strong>非负</strong>：始终 ≥ 0</li>
+                            <li><strong>零点</strong>：当且仅当 P = Q 时为 0</li>
+                            <li><strong>锚定</strong>：以教师 P 为锚点，让学生 Q 去逼近</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>预判式解惑</h4>
+                        <p><strong>问：KL 散度不是真正的"距离"，为什么用它？</strong></p>
+                        <p>因为它虽然是"散度"而非"距离"（不满足三角不等式和对称性），但它有一个好的性质：当 P 固定时，最小化 D_KL(P||Q) 等价于让 Q 尽可能接近 P。这正是蒸馏需要的。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 温度缩放 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>温度缩放</h3>
+                <h4>让 softmax 变平滑，暴露暗知识</h4>
+                <p><strong>定义</strong>：在 softmax 中引入温度 T，公式变为 <code>q_i = exp(z_i/T) / Σ exp(z_j/T)</code>。</p>
+                <p><strong>白话</strong>：标准 softmax 太"尖"了——最高概率接近 1，其余接近 0，软标签退化成硬标签。升温（T > 1）让分布变平滑，暗知识才能暴露出来。就好比教授讲课：T=1 时只说"答案是 C"；T=2 时会解释"每个选项的优劣"。</p>
+                <p><em>这个比喻只是为了帮你建立直观感受。在计算机内部，它实际上是温度参数通过 logits / T 运算来改变 softmax 输出的平滑程度——没有真正的"教授"在讲课。</em></p>
+                <p><strong>代码</strong>：</p>
+                <pre><code class="language-python"># 标准 softmax（T=1）
+probs = F.softmax(logits, dim=-1)
+
+# 温度缩放 softmax（T=1.5，MiniMind 默认）
+probs = F.softmax(logits / temperature, dim=-1)</code></pre>
+                <div class="intro-block">
+                    <p>T 越大，分布越平滑，暗知识暴露越多。但 T 太大（比如 5 以上）会"过度稀释"，有用信息和噪声混在一起。MiniMind 默认 <code>T = 1.5</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 温度数值示例 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>温度数值对比</h3>
+                <p>假设教师模型对某位置的 logits：<code>[2.0, 1.0, 0.1, 4.0, 0.5]</code>，对应词汇：猫、跑了、睡了、坐下、跳了。</p>
+                <table>
+                    <thead>
+                        <tr><th>温度</th><th>坐下</th><th>猫</th><th>跑了</th><th>跳了</th><th>睡了</th><th>特点</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>T = 1.0</code></td><td>0.725</td><td>0.098</td><td>0.036</td><td>0.022</td><td>0.009</td><td>太尖，暗知识少</td></tr>
+                        <tr class="highlight"><td><strong>T = 1.5</strong></td><td><strong>0.536</strong></td><td><strong>0.142</strong></td><td><strong>0.073</strong></td><td><strong>0.051</strong></td><td><strong>0.032</strong></td><td><strong>推荐默认值</strong></td></tr>
+                        <tr><td><code>T = 2.0</code></td><td>0.427</td><td>0.178</td><td>0.108</td><td>0.089</td><td>0.073</td><td>平滑，暗知识丰富</td></tr>
+                        <tr><td><code>T = 5.0</code></td><td>0.267</td><td>0.219</td><td>0.179</td><td>0.164</td><td>0.150</td><td>过度平滑，噪声多</td></tr>
+                    </tbody>
+                </table>
+                <div class="teaching-callout teaching-callout--compact">
+                    <p>温度就像教授讲课的"细致程度"。T 太小，教授惜字如金；T 太大，教授开始扯远。T = 1.5 是甜蜜点。</p>
+                    <p><em>这个比喻只是为了帮你建立直观感受。在计算机内部，温度是一个数值参数，通过除法和 softmax 运算控制概率分布的熵。</em></p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：温度参数对 softmax 概率分布的影响</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：四组并排的柱状图，每组对应一个温度值（T=1.0、T=1.5、T=2.0、T=5.0），每组有5根柱子分别代表不同词的概率
+                  - 各元素关系：从左到右，最高柱逐渐变矮，其他柱逐渐变高，整体分布趋于平坦
+                  - 关键标注：T=1.5处用绿色边框标注"推荐默认值"；T=5.0处用红色虚线框标注"过度稀释"
+                  - 配色建议：浅灰背景，柱子蓝色渐变，T=1.5组背景淡绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== T² 补偿 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么乘 T²</h3>
+                <h4>蒸馏中最容易被忽略的细节</h4>
+                <p>看 <code>distillation_loss</code> 函数的返回语句：</p>
+                <pre><code class="language-python">return (temperature ** 2) * kl</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>直觉理解</h4>
+                        <p>logits 除以 T 后再做 softmax，梯度会缩小 <strong>T² 倍</strong>。如果不补偿，高温下蒸馏损失对学生的影响力会变得微乎其微。</p>
+                        <p>T² 补偿确保了<strong>不管 T 选多大，蒸馏损失的梯度量级保持一致</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>数学推导（简版）</h4>
+                        <p>softmax(z/T) 对 z 的雅可比矩阵，每个元素约为 1/T² 量级。所以梯度缩小了 T² 倍。乘以 T² 就补回来了。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>一个具体例子：T=2 时，如果不乘 T²，蒸馏损失的梯度只有 T=1 时的 1/4。这意味着温度越高，蒸馏损失对学生的影响越小——这显然不是我们想要的。乘以 T² 后，不同温度下的梯度量级一致。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 组合损失 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组合损失</h3>
+                <h4>硬标签和软标签各取所长</h4>
+                <p><strong>定义</strong>：蒸馏总损失由两部分加权组合：</p>
+                <div class="teaching-callout teaching-callout--key">
+                    <div class="teaching-callout__title">蒸馏总损失公式</div>
+                    <p style="text-align:center; font-size:1.3em; font-weight:700; margin:16px 0;">
+                        L = α × L_CE + (1 - α) × T² × D_KL
+                    </p>
+                    <p style="text-align:center; font-size:0.9em; color:#666;">
+                        其中 L_CE 是交叉熵硬标签损失，D_KL 是 KL 散度软标签损失
+                    </p>
+                </div>
+                <p><strong>白话</strong>：学生不能只跟教师学（会偏离真实数据），也不能只看标准答案（浪费了教师的知识）。α 就是"听老师讲"和"看标准答案"的平衡。</p>
+                <p><strong>代码</strong>（来自 <code>train_distillation.py</code>）：</p>
+                <pre><code class="language-python"># 总损失 = alpha * CE + (1-alpha) * Distill
+loss = (alpha * ce_loss + (1 - alpha) * distill_loss) / args.accumulation_steps</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>α 值</th><th>含义</th><th>场景</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>α = 1.0</code></td><td>退化为纯 SFT</td><td>完全不用教师</td></tr>
+                        <tr class="highlight"><td><strong>α = 0.5</strong></td><td><strong>各取一半</strong></td><td><strong>MiniMind 默认值</strong></td></tr>
+                        <tr><td><code>α = 0.0</code></td><td>纯蒸馏</td><td>只跟教师学</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 预判式解惑：为什么需要两个损失 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么双损失</h3>
+                <h4>只用一个损失行不行？</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>只用 CE（α=1.0）</h4>
+                        <ul>
+                            <li>退化为普通 SFT 训练</li>
+                            <li>教师的知识完全浪费</li>
+                            <li>学生只看硬标签</li>
+                            <li>效果上限 = 学生独立训练的水平</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>只用 KL（α=0.0）</h4>
+                        <ul>
+                            <li>学生只跟教师学</li>
+                            <li>教师若有偏差，学生会放大</li>
+                            <li>没有真实标签锚定</li>
+                            <li>可能偏离真实数据分布</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>组合损失的精髓：CE 损失锚定真实标签，保证基本能力；KL 损失引入教师知识，提供额外监督。两者互补，缺一不可。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 从数学到实现 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：从数学到实现</h2>
+                <p>前面的 KL 散度和温度缩放都是数学公式。现在把这些公式变成能跑的代码——看看蒸馏训练究竟是怎么运转的。</p>
+                <div class="intro-block">
+                    <p>公式看懂了，但跑起来是什么样的？本节带你把数学翻译成 PyTorch 代码，逐行拆解蒸馏训练的完整实现。你会看到教师怎么冻结、两个模型怎么前向传播、损失怎么组合、梯度怎么更新——所有细节都在这里。</p>
+                    <ul>
+                        <li><strong>训练脚本结构</strong> —— 整个文件只有两个核心函数，约 245 行搞定蒸馏训练</li>
+                        <li><strong>distillation_loss 函数</strong> —— 12 行代码实现教师端 no_grad + 学生端 log_softmax + KL 散度 + T² 补偿</li>
+                        <li><strong>双模型前向传播</strong> —— 同一输入走两条路径，教师冻结、学生训练</li>
+                        <li><strong>词表对齐与三重损失</strong> —— 处理词表大小不匹配，组合 CE + KL + 辅助损失</li>
+                        <li><strong>loss_mask 与梯度更新</strong> —— 用掩码过滤 padding，混合精度下的梯度累积与裁剪</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 代码概览 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练脚本三件事</h3>
+                <h4>蒸馏训练只需做三件事：定义损失 → 同时跑两个模型 → 更新学生</h4>
+                <pre><code class="language-python"># train_distillation.py 全局结构
+
+# 1. 核心损失函数
+def distillation_loss(student_logits, teacher_logits, temperature, reduction):
+    ...
+
+# 2. 训练主循环
+def train_epoch(epoch, loader, iters, teacher_model, ...):
+    ...
+
+# 3. 主程序入口
+if __name__ == "__main__":
+    # 3.1 解析参数（alpha, temperature, 学生/教师配置）
+    # 3.2 初始化模型（学生可训练，教师冻结）
+    # 3.3 训练循环
+    # 3.4 清理</code></pre>
+                <div class="intro-block">
+                    <p>整个文件约 245 行。核心只有两个函数：<code>distillation_loss</code>（12 行）和 <code>train_epoch</code>（~100 行）。其余是参数解析和训练循环的常规逻辑。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== distillation_loss 函数 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>蒸馏损失函数</h3>
+                <h4>整个文件最核心的 12 行代码</h4>
+                <pre><code class="language-python">def distillation_loss(student_logits, teacher_logits,
+                      temperature=1.0, reduction='batchmean'):
+    # 教师端：关闭梯度 + 温度缩放 + softmax
+    with torch.no_grad():
+        teacher_probs = F.softmax(
+            teacher_logits / temperature, dim=-1
+        ).detach()
+
+    # 学生端：温度缩放 + log_softmax
+    student_log_probs = F.log_softmax(
+        student_logits / temperature, dim=-1
+    )
+
+    # KL 散度 + T² 补偿
+    kl = F.kl_div(
+        student_log_probs, teacher_probs,
+        reduction=reduction
+    )
+    return (temperature ** 2) * kl</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== 蒸馏损失的计算过程 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据怎么流</h3>
+                <div class="ai-diagram">
+                  <h4>图：蒸馏损失函数的数据流</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的流程图。左侧蓝色区域"教师端（no_grad）"内：teacher_logits → 除以T → softmax → teacher_probs detached；右侧橙色区域"学生端"内：student_logits → 除以T → log_softmax → student_log_probs
+                  - 各元素关系：teacher_probs 和 student_log_probs 同时汇入中间的"F.kl_div"节点，再经过"乘以T²"，最终输出红色框"distillation_loss"
+                  - 关键标注：教师端旁标注"no_grad + detach"，学生端旁标注"log_softmax（非softmax）"
+                  - 配色建议：浅灰背景，教师端蓝色系，学生端橙色系，输出红色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>教师端：为什么用 no_grad + detach？</h4>
+                        <p>教师不参与训练，计算它的梯度纯粹浪费显存。<code>torch.no_grad()</code> 关闭自动求导，<code>.detach()</code> 把张量从计算图摘出来。双保险，一个都不该省。</p>
+                    </div>
+                    <div class="card">
+                        <h4>学生端：为什么用 log_softmax？</h4>
+                        <p>因为 <code>F.kl_div</code> 的第一个参数要求输入<strong>log 概率</strong>，不是原始概率。这是 PyTorch 的接口约定。如果传 softmax 的结果，计算结果会是错的。</p>
+                    </div>
+                    <div class="card">
+                        <h4>reduction='batchmean' 的含义</h4>
+                        <p>对 batch 维度取平均。这样 loss 值不会因为 batch size 变化而剧烈波动。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 冻结教师模型 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>冻结教师模型</h3>
+                <h4>train_epoch 的第一步操作</h4>
+                <p><code>train_epoch</code> 函数开头，先冻结教师：</p>
+                <pre><code class="language-python">if teacher_model is not None:
+    teacher_model.eval()              # 切到评估模式
+    teacher_model.requires_grad_(False)  # 禁用所有参数梯度</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>eval() 做了什么？</h4>
+                        <ul>
+                            <li>关闭 Dropout（推理时不应随机丢弃）</li>
+                            <li>BatchNorm 使用全局统计量（不更新均值/方差）</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>requires_grad_(False) 做了什么？</h4>
+                        <ul>
+                            <li>禁止为教师参数计算梯度</li>
+                            <li>节省大量显存（不存梯度、不存优化器状态）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>为什么必须冻结？</strong> 两个原因：1) 教师已经训练好了，蒸馏阶段不能动它的参数；2) 冻结能节省大量显存。一个 768 维的教师，冻结后大约能省 50% 显存。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 双模型前向传播 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>双模型前向</h3>
+                <h4>同一个输入，两条路径</h4>
+                <pre><code class="language-python"># 学生前向传播（在混合精度上下文中）
+with autocast_ctx:
+    res = model(input_ids)
+    student_logits = res.logits[..., :-1, :].contiguous()
+
+# 教师前向传播（纯推理，不计算梯度）
+if teacher_model is not None:
+    with torch.no_grad():
+        teacher_logits = teacher_model(input_ids)
+        teacher_logits = teacher_logits.logits[..., :-1, :].contiguous()</code></pre>
+                <div class="intro-block">
+                    <p>两个要点：<br>1) <code>[..., :-1, :]</code> 切掉最后一个位置的 logits（自回归语言模型的标准做法，预测第 t 个 token 只用前 t-1 个位置）。<br>2) 教师前向传播包裹在 <code>torch.no_grad()</code> 中，确保不产生梯度。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 词表对齐 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>词表对齐</h3>
+                <h4>教师和学生词表大小不同时的处理</h4>
+                <p>如果教师模型的词表比学生大，logits 的最后一维不匹配。MiniMind 用一行代码解决：</p>
+                <pre><code class="language-python"># 对齐词表：如果教师词表更大，截断到学生词表大小
+vocab_size_student = student_logits.size(-1)
+teacher_logits = teacher_logits[..., :vocab_size_student]</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么直接截断是安全的？</h4>
+                        <p>在 MiniMind 中，教师和学生的 tokenizer 完全相同（同一个词表）。词表大小差异可能来自配置不同。截断只是去掉教师多出的无效 token 位置，不影响语义对齐。</p>
+                    </div>
+                    <div class="card">
+                        <h4>如果教师词表比学生小怎么办？</h4>
+                        <p>这种情况不会触发截断。<code>teacher_logits[..., :vocab_size_student]</code> 当教师词表更小时，切片会自动取全部元素，等价于不做操作。但后续 KL 散度计算会因为维度不匹配报错。所以设计时要确保教师词表 ≥ 学生词表。</p>
+                    </div>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：教师 logits 到学生 logits 的词表维度截断对齐</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：两个水平长条形。上方"教师 logits（32005）"，下方"学生 logits（32000）"
+                  - 各元素关系：上方前32000格浅蓝，后5格红色"超出部分被截断"。裁剪箭头指向上方前32000格到下方
+                  - 关键标注：截断代码放在箭头旁
+                  - 配色建议：浅灰背景，有效区域浅蓝色，截断区域浅红色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 三重损失计算 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三重损失计算</h3>
+                <h4>CE + KL + 辅助损失，组合出击</h4>
+                <pre><code class="language-python"># 1) 硬标签 CE Loss
+shift_labels = labels[..., 1:].contiguous()
+loss_mask_flat = loss_mask.view(-1)
+ce_loss = F.cross_entropy(
+    student_logits.view(-1, student_logits.size(-1)),
+    shift_labels.view(-1),
+    ignore_index=-100,       # 忽略 padding 位置
+    reduction='none'
+)
+ce_loss_raw = torch.sum(ce_loss * loss_mask_flat) / (loss_mask_flat.sum() + 1e-8)
+if lm_config_student.use_moe: ce_loss = ce_loss_raw + res.aux_loss
+
+# 2) 软标签蒸馏 Loss（仅在有效 token 位置计算）
+if teacher_model is not None:
+    distill_loss = distillation_loss(
+        student_logits.view(-1, student_logits.size(-1))[loss_mask_flat == 1],
+        teacher_logits.view(-1, teacher_logits.size(-1))[loss_mask_flat == 1],
+        temperature=temperature
+    )
+
+# 3) 总损失 = alpha * CE + (1-alpha) * Distill
+loss = (alpha * ce_loss + (1 - alpha) * distill_loss) / args.accumulation_steps</code></pre>
+                <div class="warning">
+                    <strong>注意</strong>：蒸馏损失只在 <code>loss_mask_flat == 1</code> 的位置计算，排除了 padding token。否则 padding 位置的噪声会干扰蒸馏效果。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 损失计算流程图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>损失计算流程</h3>
+                <div class="ai-diagram">
+                  <h4>图：蒸馏训练的损失计算完整流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：顶部"input_ids, labels"分为两路——左侧经"学生模型前向"得到 student_logits，右侧经"教师模型前向（no_grad）"得到 teacher_logits，teacher_logits 再经过"词表对齐截断"
+                  - 各元素关系：student_logits 分两路，一路与 labels 计算"CE Loss"（绿色），另一路与已对齐的 teacher_logits 计算"KL Loss"（红色）。CE Loss 经过"+aux_loss if MoE"后，与 KL Loss 一起汇入紫色框"loss = α×ce + (1-α)×distill"，最终指向"backward → clip → step"
+                  - 关键标注：教师前向旁标注"no_grad"，词表对齐旁标注"截断到学生词表大小"
+                  - 配色建议：浅灰背景，学生模型橙色，教师模型蓝色，CE绿色，KL红色，总损失紫色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== loss_mask 的作用 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>loss_mask 解析</h3>
+                <h4>为什么需要遮罩？遮住了什么？</h4>
+                <pre><code class="language-python"># loss_mask 来自 labels 中非 -100 的位置
+loss_mask = (labels[..., 1:] != -100).float()
+loss_mask_flat = loss_mask.view(-1)
+
+# CE Loss：用 ignore_index=-100 忽略 padding
+ce_loss = F.cross_entropy(..., ignore_index=-100, reduction='none')
+ce_loss_raw = torch.sum(ce_loss * loss_mask_flat) / (loss_mask_flat.sum() + 1e-8)
+
+# Distill Loss：用布尔索引只选有效位置
+distill_loss = distillation_loss(
+    student_logits.view(-1, ...)[loss_mask_flat == 1],
+    teacher_logits.view(-1, ...)[loss_mask_flat == 1],
+    temperature=temperature
+)</code></pre>
+                <div class="intro-block">
+                    <p>两种处理方式的区别：<br>1) CE 用 <code>ignore_index</code> 参数，这是 <code>F.cross_entropy</code> 内置的忽略机制。<br>2) KL 用布尔索引 <code>[loss_mask_flat == 1]</code>，在调用蒸馏函数之前就筛掉了无效位置。</p>
+                    <p>为什么 KL 不用 ignore_index？因为 <code>F.kl_div</code> 没有这个参数。所以必须手动过滤。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 梯度累积与更新 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>梯度与更新</h3>
+                <h4>梯度累积、裁剪、更新的完整流程</h4>
+                <pre><code class="language-python"># 反向传播（混合精度）
+scaler.scale(loss).backward()
+
+# 每 accumulation_steps 步执行一次更新
+if step % args.accumulation_steps == 0:
+    scaler.unscale_(optimizer)     # 缩放回来
+    torch.nn.utils.clip_grad_norm_(
+        model.parameters(), args.grad_clip  # 梯度裁剪，防止爆炸
+    )
+    scaler.step(optimizer)         # 更新参数
+    scaler.update()                # 更新缩放因子
+    optimizer.zero_grad(set_to_none=True)  # 清空梯度</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么除以 accumulation_steps？</h4>
+                        <p>损失计算时 <code>loss / accumulation_steps</code>，确保梯度累积后的总梯度等于单步梯度的倍数。这样可以用小 batch size 模拟大 batch size 的效果。</p>
+                    </div>
+                    <div class="card">
+                        <h4>set_to_none=True 的好处</h4>
+                        <p>比 <code>zero_grad()</code> 更高效。它直接把梯度设为 None 而不是填零，节省内存和计算。PyTorch 官方推荐用法。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: 实战与调优 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 实战与调优</h2>
+                <p>知道原理后，怎么实际运行蒸馏？参数怎么选？不同场景的策略有何不同？</p>
+                <div class="intro-block">
+                    <p>原理和代码都搞定了，接下来是真正跑起来。本节聚焦两个实战问题：怎么根据你的场景选择参数，以及训练过程中怎么判断"蒸对了还是蒸歪了"。MiniMind 提供了两种典型蒸馏场景（MoE 到 Dense、大模型到小模型），我们会逐一拆解。</p>
+                    <ul>
+                        <li><strong>参数配置</strong> —— alpha、temperature、学习率等所有可调参数的默认值和含义</li>
+                        <li><strong>MoE 到 Dense</strong> —— MiniMind 的默认场景，把 MoE 的知识迁移到更快的 Dense 模型</li>
+                        <li><strong>大模型到小模型</strong> —— 部署到资源受限环境时，用大模型蒸馏出小模型</li>
+                        <li><strong>参数选择决策树</strong> —— "教师越强多听教师的，学生越弱多看标准答案"的调参口诀</li>
+                        <li><strong>日志解读</strong> —— 看懂训练输出中的 ce、distill、loss，判断训练是否正常</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 参数配置 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>参数配置</h3>
+                <h4>蒸馏相关的所有可配置参数</h4>
+                <pre><code class="language-python"># 学生模型配置（小模型 / Dense）
+lm_config_student = MiniMindConfig(
+    hidden_size=args.student_hidden_size,      # 默认 768
+    num_hidden_layers=args.student_num_layers, # 默认 8
+    use_moe=bool(args.student_use_moe)         # 默认 False（Dense）
+)
+
+# 教师模型配置（大模型 / MoE）
+lm_config_teacher = MiniMindConfig(
+    hidden_size=args.teacher_hidden_size,      # 默认 768
+    num_hidden_layers=args.teacher_num_layers, # 默认 8
+    use_moe=bool(args.teacher_use_moe)         # 默认 True（MoE）
+)</code></pre>
+                <table>
+                    <thead>
+                        <tr><th>参数</th><th>默认值</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>--alpha</code></td><td>0.5</td><td>CE 损失权重</td></tr>
+                        <tr><td><code>--temperature</code></td><td>1.5</td><td>蒸馏温度</td></tr>
+                        <tr><td><code>--student_hidden_size</code></td><td>768</td><td>学生隐藏层维度</td></tr>
+                        <tr><td><code>--teacher_hidden_size</code></td><td>768</td><td>教师隐藏层维度</td></tr>
+                        <tr><td><code>--student_use_moe</code></td><td>0</td><td>学生是否用 MoE</td></tr>
+                        <tr><td><code>--teacher_use_moe</code></td><td>1</td><td>教师是否用 MoE</td></tr>
+                        <tr><td><code>--learning_rate</code></td><td>5e-6</td><td>学习率（比 SFT 更小）</td></tr>
+                        <tr><td><code>--epochs</code></td><td>6</td><td>训练轮数</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== MoE → Dense 场景 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>MoE 到 Dense</h3>
+                <h4>MiniMind 的默认蒸馏场景</h4>
+                <p>MoE 效果好但推理慢，蒸馏成 Dense 模型后部署更轻便：</p>
+                <pre><code class="language-bash">python trainer/train_distillation.py \
+    --student_hidden_size 768 \
+    --student_num_layers 8 \
+    --student_use_moe 0 \
+    --teacher_hidden_size 768 \
+    --teacher_num_layers 8 \
+    --teacher_use_moe 1 \
+    --alpha 0.5 \
+    --temperature 1.5 \
+    --from_student_weight full_sft \
+    --from_teacher_weight full_sft</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么这样做？</h4>
+                        <ul>
+                            <li>MoE 推理时每个 token 要经过门控网络选 expert，增加了计算复杂度</li>
+                            <li>Dense 结构简单，推理更快，部署更容易</li>
+                            <li>蒸馏后的 Dense 通常能达到教师 <strong>80%-95%</strong> 的性能</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>为什么要加载 SFT 权重？</h4>
+                        <p>学生和教师都加载 SFT 后的权重作为起点。<code>--from_student_weight full_sft</code> 意味着学生从一个已经经过 SFT 训练的小模型开始，而不是从零开始。这样收敛更快，效果更好。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Large → Small 场景 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>大模型到小模型</h3>
+                <h4>部署到资源受限环境的场景</h4>
+                <p>需要部署到手机、边缘设备时，用大模型蒸馏出小模型：</p>
+                <pre><code class="language-bash">python trainer/train_distillation.py \
+    --student_hidden_size 512 \
+    --student_num_layers 8 \
+    --student_use_moe 0 \
+    --teacher_hidden_size 1024 \
+    --teacher_num_layers 16 \
+    --teacher_use_moe 0 \
+    --alpha 0.5 \
+    --temperature 2.0 \
+    --from_student_weight full_sft \
+    --from_teacher_weight full_sft</code></pre>
+                <div class="intro-block">
+                    <p>教师和学生差距大时，建议提高温度到 <code>T=2.0</code>，让教师输出更平滑的分布，帮学生更好地"理解"教师。同时可以考虑将 α 调到 0.3 左右，让学生更多依赖教师的软标签。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 参数选择决策树 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>参数选择指南</h3>
+                <div class="ai-diagram">
+                  <h4>图：蒸馏参数选择决策树</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从顶部深色节点"我要蒸馏模型"开始的决策树，第一个分支问"教师和学生差距大吗？"，差距不大的分支直接给出推荐参数"α: 0.3~0.5, T: 1.0~1.5"；差距大的分支继续问"差异在结构还是大小？"
+                  - 各元素关系："MoE到Dense"分支推荐"α: 0.5, T: 1.5, 平衡结构与知识"；"大模型到小模型"分支推荐"α: 0.3, T: 2.0~3.0, 更多依赖教师"
+                  - 关键标注：每个叶子节点用不同颜色标注推荐参数值
+                  - 配色建议：浅灰背景，决策节点深灰，MoE→Dense 蓝绿色，Large→Small 橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="teaching-callout teaching-callout--compact">
+                    <p>口诀：教师越强，多听教师的话（α 小、T 大）。学生越弱，多看标准答案（α 大、T 小）。学习率一定要小，蒸馏是在微调而非重训。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 日志解读 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>日志解读</h3>
+                <h4>训练时你会看到这样的输出</h4>
+                <pre><code class="language-text">Epoch:[1/6](100/500), loss: 2.3456, ce: 1.8923,
+aux_loss: 0.0000, distill: 2.7989,
+learning_rate: 0.00000450, epoch_time: 3.200min</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>怎么看训练是否正常？</h4>
+                        <ul>
+                            <li><strong>ce</strong>（硬标签损失）：应该稳步下降。如果不变或上升，检查学习率和数据。</li>
+                            <li><strong>distill</strong>（蒸馏损失）：应该逐渐减小，说明学生在逼近教师。</li>
+                            <li><strong>loss</strong>（总损失）：ce 和 distill 的加权和，整体应下降。</li>
+                            <li><strong>aux_loss</strong>：仅 MoE 学生有，如果为 0 说明学生是 Dense。</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>什么时候停？</h4>
+                        <p>distill 不再下降时，说明学生已经学到了教师的大部分知识。继续训练可能过拟合。通常 4-6 个 epoch 就够了。</p>
+                        <p>如果 ce 在下降但 distill 不动，检查温度设置是否合理。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 模型初始化流程 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>初始化流程</h3>
+                <h4>从参数解析到模型加载的完整过程</h4>
+                <div class="ai-diagram">
+                  <h4>图：蒸馏训练的初始化流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从上到下的线性流程图，节点依次为："解析命令行参数" → "设置随机种子" → "创建学生/教师配置" → "检查检查点（可选续训）" → "设置混合精度" → 橙色高亮"初始化学生模型+教师模型" → 蓝色高亮"冻结教师参数" → "加载数据集" → "创建优化器和GradScaler" → "从检查点恢复（如有）" → "torch.compile（可选）" → 绿色高亮"开始训练循环"
+                  - 各元素关系：节点之间用向下的箭头依次连接，形成线性流程
+                  - 关键标注："初始化学生+教师模型"旁标注"两模型可独立配置"，"冻结教师参数"旁标注"eval()+requires_grad_(False)"
+                  - 配色建议：浅灰背景，模型初始化橙色，冻结教师蓝色，开始训练绿色，其余浅灰
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="intro-block">
+                    <p>关键步骤：学生模型用 <code>init_model</code> 加载并保持可训练状态；教师模型加载后立即调用 <code>eval()</code> 和 <code>requires_grad_(False)</code> 冻结。两个模型都需要指定权重来源（<code>from_student_weight</code> / <code>from_teacher_weight</code>）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 5: 练习与排错 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 练习与排错</h2>
+                <p>动手实践才能把知识变成技能。以下练习从简单到困难，建议按顺序完成。</p>
+                <div class="intro-block">
+                    <p>前面的知识需要动手才能内化。本节设计了从简单到进阶的练习，帮你验证温度的效果、理解教师冻结的必要性、探索 alpha 极端值的行为。同时整理了最常见的五个错误和排查清单，遇到问题可以直接对照解决。</p>
+                    <ul>
+                        <li><strong>基础练习</strong> —— 观察不同温度对 distill loss 的影响，验证冻结教师的显存差异，对比纯蒸馏和纯 SFT</li>
+                        <li><strong>进阶练习</strong> —— 用 KLDivLoss 模块重写蒸馏函数，尝试添加中间层蒸馏（TinyBERT 思路）</li>
+                        <li><strong>常见错误</strong> —— OOM、distill loss 不降、效果不如不蒸馏、KL 输出负数、维度不匹配的诊断清单</li>
+                        <li><strong>调优速查表</strong> —— 所有超参数的推荐范围和调优策略，一张表搞定</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>动手练习</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>练习 1：观察温度的影响</h4>
+                        <p>修改 <code>train_distillation.py</code> 的 <code>--temperature</code> 参数，分别用 T=0.5、1.0、1.5、3.0 跑一轮训练。观察 distill loss 和最终效果的变化。</p>
+                        <details class="teaching-accordion">
+                            <summary class="teaching-accordion__summary">预期结果</summary>
+                            <div class="teaching-accordion__body">
+                                <ul class="teaching-list">
+                                    <li>T=0.5：分布太尖，蒸馏几乎没有效果，distill loss 下降很慢</li>
+                                    <li>T=1.0：标准 softmax，有一定蒸馏效果</li>
+                                    <li>T=1.5：甜蜜点，distill loss 平稳下降</li>
+                                    <li>T=3.0：分布太平滑，噪声增加，loss 可能震荡</li>
+                                </ul>
+                            </div>
+                        </details>
+                    </div>
+                    <div class="card">
+                        <h4>练习 2：验证教师冻结的必要性</h4>
+                        <p>把 <code>teacher_model.requires_grad_(False)</code> 注释掉，运行训练。用 <code>nvidia-smi</code> 观察显存变化。</p>
+                        <details class="teaching-accordion">
+                            <summary class="teaching-accordion__summary">预期结果</summary>
+                            <div class="teaching-accordion__body">
+                                <ul class="teaching-list">
+                                    <li>显存占用会显著增加（因为要存教师的梯度和优化器状态）</li>
+                                    <li>训练速度变慢（反向传播要过两个模型）</li>
+                                    <li>教师的权重会被破坏，蒸馏失败</li>
+                                </ul>
+                            </div>
+                        </details>
+                    </div>
+                    <div class="card">
+                        <h4>练习 3：α 极端值实验</h4>
+                        <p>分别设 <code>--alpha 0.0</code>（纯蒸馏）和 <code>--alpha 1.0</code>（纯 SFT），对比两者的效果。思考：为什么纯蒸馏（不看真实标签）通常效果不如组合损失？</p>
+                        <details class="teaching-accordion">
+                            <summary class="teaching-accordion__summary">参考答案</summary>
+                            <div class="teaching-accordion__body">
+                                <p>纯蒸馏只跟教师学，如果教师本身在某些样本上有偏差，学生会放大这些偏差。加入 CE 损失可以锚定真实标签，保证基本能力不丢失。</p>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 4 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>进阶练习</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>练习 4：自定义 distillation_loss</h4>
+                        <p>当前函数使用 <code>F.kl_div</code>。尝试用 <code>torch.nn.KLDivLoss</code> 模块重写，实现相同功能。</p>
+                        <pre><code class="language-python"># 提示：KLDivLoss 的用法
+criterion = torch.nn.KLDivLoss(
+    reduction='batchmean'
+)
+# 注意第一个参数需要 log 概率</code></pre>
+                        <details class="teaching-accordion">
+                            <summary class="teaching-accordion__summary">参考答案</summary>
+                            <div class="teaching-accordion__body">
+                                <pre><code class="language-python">def distillation_loss_v2(student_logits, teacher_logits,
+                         temperature=1.0):
+    with torch.no_grad():
+        teacher_probs = F.softmax(
+            teacher_logits / temperature, dim=-1
+        ).detach()
+    student_log_probs = F.log_softmax(
+        student_logits / temperature, dim=-1
+    )
+    criterion = torch.nn.KLDivLoss(reduction='batchmean')
+    kl = criterion(student_log_probs, teacher_probs)
+    return (temperature ** 2) * kl</code></pre>
+                            </div>
+                        </details>
+                    </div>
+                    <div class="card">
+                        <h4>练习 5：添加中间层蒸馏</h4>
+                        <p>当前只蒸馏最终输出层。尝试添加教师和学生中间层的均方误差作为额外损失。这是 TinyBERT 的核心思想。</p>
+                        <p><strong>提示</strong>：需要修改模型的前向传播，返回中间层的 hidden states。然后用 MSE Loss 计算对应层的差异。</p>
+                        <details class="teaching-accordion">
+                            <summary class="teaching-accordion__summary">思路提示</summary>
+                            <div class="teaching-accordion__body">
+                                <ol class="teaching-list">
+                                    <li>在模型 forward 中收集每层的输出</li>
+                                    <li>如果教师层数 > 学生层数，需要做层映射（如每 2 层取 1 层）</li>
+                                    <li>对每对对应层计算 MSE Loss，加到总损失中</li>
+                                    <li>注意 hidden_size 可能不同，需要加一个线性投影层对齐</li>
+                                </ol>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 常见错误诊断 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见错误诊断</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>错误 1：显存爆炸 OOM</h4>
+                        <pre><code class="language-text">RuntimeError: CUDA out of memory</code></pre>
+                        <p><strong>排查清单</strong>：</p>
+                        <ul>
+                            <li>是否忘记冻结教师？检查 <code>teacher_model.requires_grad_(False)</code></li>
+                            <li>教师模型是否比学生大很多？减小 <code>--batch_size</code> 或增大 <code>--accumulation_steps</code></li>
+                            <li>混合精度是否开启？确保 <code>--dtype bfloat16</code></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>错误 2：distill loss 不下降</h4>
+                        <pre><code class="language-text">Epoch:[1/6](100/500), distill: 3.2456
+Epoch:[2/6](100/500), distill: 3.2431</code></pre>
+                        <p><strong>排查清单</strong>：</p>
+                        <ul>
+                            <li>学习率是否太小？蒸馏推荐 <code>5e-6</code>，可以试 <code>1e-5</code></li>
+                            <li>温度是否太高？T > 3 时信息被过度稀释，降到 1.5-2.0</li>
+                            <li>logits 形状是否对齐？打印 shape 检查</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 更多错误诊断 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>更多错误诊断</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>错误 3：效果不如不蒸馏</h4>
+                        <p><strong>排查清单</strong>：</p>
+                        <ul>
+                            <li>α 是否设为 0？纯蒸馏可能不稳定，调到 0.3-0.5</li>
+                            <li>教师模型本身效果是否足够好？先单独评估教师</li>
+                            <li>训练是否过拟合？减少 epochs，加 early stopping</li>
+                            <li>学生是否加载了预训练权重？<code>--from_student_weight</code> 要指向 SFT 后的权重</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>错误 4：KL 散度输出负数</h4>
+                        <pre><code class="language-text">distill: -0.5234</code></pre>
+                        <p><strong>原因</strong>：学生端传了 softmax 概率而不是 <strong>log_softmax</strong>。<code>F.kl_div</code> 要求第一个参数是 log 概率。</p>
+                        <p><strong>修复</strong>：确保用 <code>F.log_softmax(student_logits / T, dim=-1)</code>，不是 <code>F.softmax</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>错误 5：维度不匹配</h4>
+                        <pre><code class="language-text">RuntimeError: The size of tensor a (32000)
+must match the size of tensor b (32005)</code></pre>
+                        <p><strong>原因</strong>：教师和学生的词表大小不同，但代码中的词表对齐没有正确执行。</p>
+                        <p><strong>修复</strong>：确保教师模型配置中的词表大小 ≥ 学生。检查 <code>teacher_logits[..., :vocab_size_student]</code> 是否在正确的位置执行。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 调优速查表 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>调优速查表</h3>
+                <table>
+                    <thead>
+                        <tr><th>超参数</th><th>推荐范围</th><th>调优策略</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>α</code>（CE 权重）</td><td>0.3 ~ 0.7</td><td>教师越强，α 越小</td></tr>
+                        <tr><td><code>T</code>（温度）</td><td>1.0 ~ 3.0</td><td>差距越大，T 越高</td></tr>
+                        <tr><td>学习率</td><td>1e-6 ~ 1e-4</td><td>蒸馏比从头训练更小</td></tr>
+                        <tr><td>epochs</td><td>4 ~ 10</td><td>不宜过多，防止过拟合</td></tr>
+                        <tr><td>grad_clip</td><td>1.0</td><td>通常不需要调整</td></tr>
+                        <tr><td>accumulation_steps</td><td>1 ~ 4</td><td>显存不足时增大</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>调参顺序建议：先固定 T=1.5，调 α 到最佳；再固定最佳 α，微调 T。学习率一般用默认值 5e-6 即可，只有 loss 震荡时才考虑降低。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 总结 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>核心回顾</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>核心原理</h4>
+                        <ul>
+                            <li>教师传授知识给学生</li>
+                            <li>软标签蕴含暗知识</li>
+                            <li>教师冻结仅训练学生</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>关键技术</h4>
+                        <ul>
+                            <li>温度缩放 T：平滑概率分布</li>
+                            <li>T 的平方梯度补偿</li>
+                            <li>组合损失：alpha*CE + (1-alpha)*KL*T^2</li>
+                            <li>平衡硬标签与软标签</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>代码要点</h4>
+                        <ul>
+                            <li>distillation_loss 函数</li>
+                            <li>F.kl_div + log_softmax</li>
+                            <li>loss_mask 忽略 padding</li>
+                            <li>MoE aux_loss 叠加</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>使用场景</h4>
+                        <ul>
+                            <li>MoE 到 Dense</li>
+                            <li>Large 到 Small</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 延伸阅读 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>延伸阅读</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>经典论文</h4>
+                        <ul>
+                            <li><strong>Hinton 2015</strong>："Distilling the Knowledge in a Neural Network" —— 开山之作，首次提出暗知识概念</li>
+                            <li><strong>DistilBERT 2019</strong>：BERT 蒸馏经典实践，压缩 40% 保留 97% 能力</li>
+                            <li><strong>TinyBERT 2020</strong>：多层蒸馏，不仅蒸馏输出还蒸馏中间层（即练习 5 的思路）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>进阶方向</h4>
+                        <ul>
+                            <li><strong>Feature-level 蒸馏</strong>：不仅蒸馏 logits，还蒸馏注意力权重、隐藏层特征</li>
+                            <li><strong>Relation-based 蒸馏</strong>：蒸馏样本之间的关系（如相似度矩阵）</li>
+                            <li><strong>在线蒸馏</strong>：教师和学生同时训练，不需要预训练教师</li>
+                            <li><strong>自蒸馏</strong>：模型自己既是教师又是学生，不同层之间互相学习</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 收尾 ==================== -->
+        <section class="slide title-slide">
+            <h1>阶段 6 完成</h1>
+            <p>知识蒸馏是让大模型知识迁移到小模型的核心技术。</p>
+            <p>你学会了：教师-学生架构、KL 散度与温度缩放、组合损失公式、参数调优。</p>
+            <p style="margin-top:20px;">下一章：<strong>阶段 7 · DPO 直接偏好优化</strong>——让模型学会什么是"好回答"</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

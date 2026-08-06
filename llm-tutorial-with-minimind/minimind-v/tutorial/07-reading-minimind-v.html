@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第七阶段：阅读 MiniMind-V 源码</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="../../minimind/tutorial/references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面幻灯片 -->
+        <section class="slide title-slide active">
+            <h1>第七阶段：阅读 MiniMind-V 源码</h1>
+            <p>按正确顺序阅读 VLM 扩展部分的全部代码</p>
+        </section>
+
+        <!-- 开场：学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>学习目标与前提</h3>
+                <div class="intro-block">
+                    <ul>
+                        <li>⏰ 预计时间：<strong>1 周</strong></li>
+                        <li>📌 前提：已完成第一至第六阶段，理解 VLM 的核心概念和三大组件</li>
+                        <li>🎯 目标：按正确顺序阅读 MiniMind-V 的全部核心代码，理解 VLM 扩展的每个模块</li>
+                    </ul>
+                </div>
+                <p>本阶段涉及的文件和阅读顺序：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>1. model_vlm.py</h4>
+                        <p>VLM 核心模型定义——配置、视觉编码器集成、投影层与 forward()</p>
+                    </div>
+                    <div class="card">
+                        <h4>2. lm_dataset.py</h4>
+                        <p>多模态数据集加载——文本与图片的并行处理</p>
+                    </div>
+                    <div class="card">
+                        <h4>3. trainer_utils.py</h4>
+                        <p>训练工具——冻结策略与检查点管理</p>
+                    </div>
+                    <div class="card">
+                        <h4>4-7. 训练/推理/工具</h4>
+                        <p>train_sft_vlm.py、eval_vlm.py、web_demo_vlm.py、convert_vlm.py</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7.1 代码阅读路线 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>7.1 代码阅读路线</h2>
+                <p>为什么按这个顺序读？因为模型定义是一切的基础——先理解 VLM 模型的结构和数据流，再看数据如何喂给它，最后看训练和推理如何使用它。</p>
+                <div class="ai-diagram">
+                  <h4>图：VLM 源码阅读顺序</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从上到下的纵向流程图，展示 VLM 源码的阅读顺序，共 7 个步骤节点，用箭头依次连接
+                  - 各元素关系：1. model_vlm.py（VLM 核心代码，蓝色背景）→ 2. lm_dataset.py（数据处理，绿色背景）→ 3. trainer_utils.py（训练工具，橙色背景）→ 4. train_sft_vlm.py（SFT 训练脚本，粉色背景）→ 5. eval_vlm.py（推理脚本，紫色背景）→ 6. web_demo_vlm.py（Web 界面，青色背景）→ 7. convert_vlm.py（模型转换，灰色背景）
+                  - 关键标注：每个节点旁标注其核心职责的一句话摘要
+                  - 配色建议：浅蓝/浅灰背景，各模块节点使用不同的柔和色彩区分，箭头用深灰色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7.2 精读 model_vlm.py - 分部标题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>model_vlm.py</h2>
+                <p>VLM 核心模型定义：配置、视觉编码器集成与投影层</p>
+                <div class="intro-block">
+                    <p>这是最重要的一个文件。在上一阶段你已经理解了 VLM 的三大组件和 forward() 流程，现在我们逐行阅读代码，看这些概念是如何落地的。按顺序阅读：VLMConfig → MiniMindVLM 类 → forward() → generate()。</p>
+                    <ul>
+                        <li><strong>VLMConfig</strong> —— 视觉相关配置参数的定义（9 行）</li>
+                        <li><strong>MiniMindVLM 类</strong> —— 继承 LLM，组合视觉编码器与投影层</li>
+                        <li><strong>forward() 方法</strong> —— VLM 前向传播的 5 个步骤</li>
+                        <li><strong>generate() 方法</strong> —— 支持多图推理的生成逻辑</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- VLMConfig + MiniMindVLM 类 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>VLMConfig 与类</h3>
+                <p>VLMConfig 继承自 LLM 的 <code>MiniMindConfig</code>，新增了 4 个视觉相关参数。MiniMindVLM 继承自 <code>MiniMindForCausalLM</code>，通过 <code>super().__init__()</code> 获得 LLM 的全部能力，再额外加载视觉编码器和创建投影层。</p>
+                <pre><code class="language-python">class VLMConfig(MiniMindConfig):      # 继承 LLM 的配置
+    model_type = "minimind-v"
+
+    def __init__(self,
+        image_special_token='&lt;|image_pad|&gt;',   # 图片占位符
+        image_ids=[12],                         # 占位符的 token ID
+        image_hidden_size=768,                  # 视觉特征维度
+        image_token_len=64,                     # 每张图的 token 数
+        **kwargs):
+        self.image_special_token = image_special_token
+        self.image_ids = image_ids
+        self.image_hidden_size = image_hidden_size
+        self.image_token_len = image_token_len
+        super().__init__(**kwargs)              # 传递其余参数给父类</code></pre>
+                <div class="intro-block">
+                    <p><strong>Config 解读</strong>：<code>image_special_token</code> 是文本中的图片占位符字符串；<code>image_ids=[12]</code> 是占位符在词表中的 ID；<code>image_hidden_size=768</code> 是 SigLIP2 输出的特征维度；<code>image_token_len=64</code> 是每张图片生成的 token 数。注意 <code>**kwargs</code> 会把其余参数（如 <code>hidden_size</code>、<code>num_layers</code> 等）传递给父类 MiniMindConfig。</p>
+                </div>
+                <pre><code class="language-python">class MiniMindVLM(MiniMindForCausalLM):    # 继承 LLM！
+    config_class = VLMConfig
+
+    def __init__(self, config, vision_model_path="./model/siglip2-base-p32-256-ve"):
+        self.config = config or VLMConfig()
+        super().__init__(self.config)                     # 初始化 LLM 部分
+        self.vision_encoder, self.processor = \           # 加载视觉编码器
+            self.__class__.get_vision_model(vision_model_path)
+        self.vision_proj = MMVisionProjector(             # 创建投影层
+            self.config.image_hidden_size,                # 输入: 768 (视觉特征)
+            self.config.hidden_size)                      # 输出: 768 (LLM 隐藏维度)</code></pre>
+                <div class="intro-block">
+                    <p><strong>初始化流程</strong>：第4行先初始化 LLM（<code>super().__init__()</code>），获得嵌入层、8 层 Transformer、lm_head 等全部组件。第5-6行加载冻结的视觉编码器。第7-9行创建投影层，输入维度为视觉特征维度（768），输出维度为 LLM 隐藏维度（768）。三者组合起来，就是完整的 VLM。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- forward() 方法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>forward 方法</h3>
+                <p>这是 VLM 的核心——前向传播。上一阶段你已经看过七步流程图，现在看代码实现。关键点是 Step 2 中<strong>视觉处理只在有图片且处于序列起始位置时执行</strong>（KV Cache 推理时跳过）。</p>
+                <pre><code class="language-python">def forward(self, input_ids, labels=None, pixel_values=None, **args):
+    batch_size, seq_length = input_ids.shape
+
+    # === Step 1: 文本嵌入 ===
+    hidden_states = self.model.dropout(self.model.embed_tokens(input_ids))
+    # [batch, seq, 768] — 和纯 LLM 完全一样
+
+    # === Step 2: 处理视觉输入 ===
+    if pixel_values is not None and start_pos == 0:
+        # 2a: 提取视觉特征并投影
+        if hasattr(pixel_values, 'keys'):  # 字典格式 (SigLIP 输出)
+            vision_tensors = self.vision_proj(
+                MiniMindVLM.get_image_embeddings(pixel_values, self.vision_encoder))
+        # 2b: Token 替换 — 用视觉特征替换占位符嵌入
+        hidden_states = self.count_vision_proj(
+            tokens=input_ids, h=hidden_states,
+            vision_tensors=vision_tensors, seqlen=seq_length)
+
+    # === Step 3: Transformer 处理 ===
+    # 和纯 LLM 完全一样！Transformer 不知道有图片存在
+    for layer_idx, (layer, past_key_value) in enumerate(
+            zip(self.model.layers, past_key_values)):
+        hidden_states, present = layer(
+            hidden_states, position_embeddings,
+            past_key_value=past_key_value, use_cache=use_cache)
+        presents.append(present)
+
+    # === Step 4: 输出 ===
+    hidden_states = self.model.norm(hidden_states)
+    logits = self.lm_head(hidden_states[:, slice_indices, :])
+
+    # === Step 5: 计算损失 ===
+    if labels is not None:
+        loss = F.cross_entropy(
+            logits[..., :-1, :].contiguous(),
+            labels[..., 1:].contiguous(),
+            ignore_index=-100)</code></pre>
+                <div class="intro-block">
+                    <p><strong>逐步对比</strong>：Step 1 和纯 LLM 一样——token 过嵌入层。Step 2 是 VLM 新增的——提取视觉特征、投影、Token 替换。Step 3-5 和纯 LLM 完全一样——Transformer 处理、输出 logits、计算损失。整个 forward() 中只有 Step 2 是新增代码，约 30 行。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- generate() 方法 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>generate 方法</h3>
+                <p>VLM 重写了父类的 <code>generate()</code>，唯一改动是<strong>支持多图推理</strong>：当 <code>num_return_sequences > 1</code> 时，把 <code>pixel_values</code> 复制多份，使得每个生成序列都能看到同一张图片。其余逻辑直接调用父类 LLM 的 <code>generate()</code>。</p>
+                <pre><code class="language-python">def generate(self, *args, num_return_sequences=1, **kwargs):
+    # 支持多图：如果有 pixel_values，复制多份
+    if num_return_sequences &gt; 1 and 'pixel_values' in kwargs:
+        pv = kwargs['pixel_values']
+        kwargs['pixel_values'] = {k: v.repeat(num_return_sequences, ...)
+                                  for k, v in pv.items()}
+    # 调用父类 (LLM) 的 generate 方法
+    return super().generate(*args, num_return_sequences=num_return_sequences, **kwargs)</code></pre>
+                <div class="intro-block">
+                    <p><strong>设计思路</strong>：VLM 的 generate() 几乎不用改——因为 Token 替换已经把图片信息融入了 hidden_states，Transformer 和 LLM 完全一样。唯一需要处理的是多图/多样本场景下 pixel_values 的复制。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7.3 精读 lm_dataset.py - 分部标题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>lm_dataset.py</h2>
+                <p>多模态数据集的加载与预处理流程</p>
+                <div class="intro-block">
+                    <p>数据集类的职责是：从 Parquet 文件中读取一条记录，分别处理文本和图片，最终返回 <code>(input_ids, labels, pixel_values)</code> 三元组。文本路径做分词和标签生成，图片路径做解码和预处理——两条路径并行执行。</p>
+                    <ul>
+                        <li><strong>数据处理流程</strong> —— 文本与图片两条并行处理路径</li>
+                        <li><strong>__getitem__ 方法</strong> —— 同时处理文本和图片的核心加载逻辑</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 数据处理流程图 + __getitem__ 代码 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>__getitem__</h3>
+                <p>下面这张图展示了从 Parquet 文件到模型输入的完整流程。左边是文本路径，右边是图片路径，最后汇合为一个三元组。</p>
+                <div class="ai-diagram">
+                  <h4>图：多模态数据处理流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从顶部"Parquet 文件中的一条记录"出发，分为两个并行路径的流程图
+                  - 各元素关系：文本路径（左侧）—— 读取 conversations JSON → pre_processing_chat()（20% 概率加系统提示）→ create_chat_prompt()（替换 image 为 64 个占位符，应用 ChatML 模板）→ tokenize()（分词 + 截断/填充到 max_length）→ generate_labels()（标记 assistant 部分的 label）。图片路径（右侧）—— 读取 image_bytes 二进制 → Image.open(BytesIO()) 解码 JPEG → image2tensor() SigLIP 预处理 → pixel_values dict。两条路径汇合，返回 (input_ids, labels, pixel_values)
+                  - 关键标注：文本路径节点旁标注关键参数（如 max_length=768），图片路径标注 SigLIP 预处理
+                  - 配色建议：浅蓝/浅灰背景，文本路径用绿色节点，图片路径用橙色节点，汇合节点用蓝色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <pre><code class="language-python"># lm_dataset.py 第92-115行 (简化版)
+def __getitem__(self, index):
+    # 1. 读取数据
+    conversations = json.loads(self.table['conversations'][index].as_py())
+    image_bytes = self.table['image_bytes'][index].as_py()
+
+    # 2. 处理文本
+    conversations = pre_processing_chat(conversations)  # 随机加系统提示
+    prompt = self.create_chat_prompt(conversations)      # 应用模板
+    input_ids = self.tokenizer(prompt).input_ids[:768]   # 分词 + 截断
+    input_ids += [pad_token_id] * (768 - len(input_ids)) # 填充
+    labels = self.generate_labels(input_ids)             # 生成标签
+
+    # 3. 处理图片
+    image = Image.open(io.BytesIO(image_bytes))
+    image_data = MiniMindVLM.image2tensor(image, self.preprocess)
+
+    return torch.tensor(input_ids), torch.tensor(labels), image_data</code></pre>
+                <div class="intro-block">
+                    <p><strong>关键细节</strong>：<code>create_chat_prompt()</code> 会把 <code>&lt;image&gt;</code> 标记替换为 64 个 <code>&lt;|image_pad|&gt;</code> 占位符，再套上 ChatML 对话模板。<code>generate_labels()</code> 把 assistant 部分的 token 保留为真实 ID（用于计算损失），其余部分设为 -100（忽略）。图片路径直接调用 <code>image2tensor()</code> 进行 SigLIP 预处理，返回 <code>{pixel_values: [...], pixel_mask: [...]}</code>。</p>
+                </div>
+                <div class="warning">
+                    <strong>对照真实源码时的差异</strong>（简化版省略了这些，但你要知道）：
+                    <ul>
+                        <li>真实代码第 99 行多了 <code>post_processing_chat(prompt)</code>——按概率给 prompt 插入"思考"占位，用于支持推理型输出。</li>
+                        <li>真实代码<strong>支持多图</strong>：第 95 行 <code>image_bytes</code> 会被包成 list，第 104-108 行对每张图分别 <code>image2tensor</code>，再用 <code>torch.cat</code> 沿 batch 维合并。简化版只展示了单图。</li>
+                        <li>截断长度用的是 <code>self.max_length</code>（配置项），不是硬编码的 768。</li>
+                    </ul>
+                    <p>主线逻辑（读数据→套模板→生成标签→处理图片）是一致的，这些是工程增强。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7.4 精读 trainer_utils.py - 分部标题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>trainer_utils</h2>
+                <p>模型初始化、冻结策略与检查点管理</p>
+                <div class="intro-block">
+                    <p>这个文件包含训练所需的所有工具函数。重点是两个：<code>init_vlm_model</code> 负责创建模型并应用冻结策略，<code>vlm_checkpoint</code> 负责安全地保存和恢复训练状态。</p>
+                    <ul>
+                        <li><strong>init_vlm_model 冻结策略</strong> —— 三种冻结级别的选择与实现</li>
+                        <li><strong>vlm_checkpoint 检查点管理</strong> —— 安全保存与恢复训练状态</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- init_vlm_model 代码 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>init_vlm_model</h3>
+                <p>函数先创建 MiniMindVLM 并加载权重，然后按两步应用冻结策略：<strong>Step 1 先冻结一切</strong>（除了 vision_proj），<strong>Step 2 根据 freeze_llm 策略解冻</strong>对应的部分。</p>
+                <div class="ai-diagram">
+                  <h4>图：VLM 模型初始化与冻结策略选择</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从上到下的流程图，展示 VLM 模型初始化和冻结策略选择
+                  - 各元素关系：创建 MiniMindVLM → 加载预训练权重 → 冻结策略选择（菱形判断节点 freeze_llm = ?）。三个分支：freeze_llm = 0 → "全部可训练（除了视觉编码器）"；freeze_llm = 1 → "投影层 + LLM 首末层"；freeze_llm = 2 → "仅投影层"。三个分支汇合到 "返回 model, tokenizer, preprocess"
+                  - 关键标注：菱形判断节点突出显示，每个分支旁标注适用场景
+                  - 配色建议：浅蓝/浅灰背景，判断节点用黄色菱形，分支0用蓝色，分支1用橙色，分支2用绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <pre><code class="language-python">def init_vlm_model(vlm_config, from_weight='pretrain_vlm', freeze_llm=0):
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+    model = MiniMindVLM(vlm_config)
+
+    # 加载权重
+    if from_weight != 'none':
+        weights = torch.load(weight_path)
+        model.load_state_dict(weights, strict=False)
+
+    # Step 1: 先冻结一切（除了 vision_proj）
+    for name, param in model.named_parameters():
+        if 'vision_proj' not in name:
+            param.requires_grad = False
+
+    # Step 2: 根据 freeze_llm 策略解冻
+    if freeze_llm == 0:      # 全参训练
+        for name, param in model.named_parameters():
+            if 'vision_encoder' not in name:
+                param.requires_grad = True
+    elif freeze_llm == 1:    # 首末层
+        for name, param in model.model.named_parameters():
+            if 'layers.0.' in name or f'layers.{last_idx}.' in name:
+                param.requires_grad = True
+    elif freeze_llm == 2:    # 仅投影层
+        pass  # 已经只有 vision_proj 是可训练的
+
+    return model.to(device), tokenizer, preprocess</code></pre>
+                <div class="intro-block">
+                    <p><strong>代码逻辑</strong>：注意 Step 1 先把所有参数冻结（保留投影层可训练），Step 2 再按需解冻。这种"先全部冻结再解冻"的模式比"先解冻再冻结"更安全——万一逻辑有 bug，最多训练少了，不会多训练不该训练的参数。另外 <code>load_state_dict(weights, strict=False)</code> 中 <code>strict=False</code> 允许权重文件缺少某些 key（如首次训练时没有投影层权重）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- vlm_checkpoint 检查点管理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>vlm_checkpoint</h3>
+                <p>检查点管理有两个核心设计：<strong>排除视觉编码器参数</strong>（它永远冻结，不需要保存，每次从原始权重加载即可）和<strong>原子写入</strong>（先写 .tmp 临时文件，再用 <code>os.replace</code> 替换，防止训练中断导致检查点损坏）。</p>
+                <div class="ai-diagram">
+                  <h4>图：检查点保存与加载流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左右并列的两段流程图。左侧为"保存检查点"流程，右侧为"加载检查点"流程
+                  - 各元素关系：保存流程——保存检查点 → 提取 state_dict → 移除视觉编码器参数（不需要保存）→ 转为半精度（节省空间）→ 写入 .tmp 临时文件 → os.replace 原子替换（防止中断导致损坏）。加载流程——加载检查点 → 检查 .pth 文件是否存在 → 加载 state_dict → 适配 GPU 数量变化自动转换 step → 返回 epoch, step, optimizer 状态
+                  - 关键标注：原子替换处标注"防止中断导致损坏"，半精度处标注"节省空间"
+                  - 配色建议：浅蓝/浅灰背景，保存流程用蓝色节点，加载流程用绿色节点，关键安全步骤用橙色高亮
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="intro-block">
+                    <p><strong>GPU 数量适配</strong>：保存时如果用 4 个 GPU（分布式训练），加载时如果只有 2 个 GPU，step 会自动转换：<code>step = step * 4 / 2</code>。这确保了不同硬件环境下断点续训的正确性。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7.5 精读 train_sft_vlm.py - 分部标题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>train_sft_vlm</h2>
+                <p>SFT 训练的完整入口与训练循环</p>
+                <div class="intro-block">
+                    <p>训练脚本的入口函数做了 9 件事：初始化环境和种子 → 配置模型参数 → 设置混合精度 → 配置日志工具 → 加载模型和数据 → 恢复检查点 → 编译和分布式包装 → 训练循环 → 清理。重点是训练循环中的混合精度、梯度累积和学习率调度。</p>
+                    <ul>
+                        <li><strong>训练入口</strong> —— 9 个初始化步骤的完整流程</li>
+                        <li><strong>训练循环详解</strong> —— 混合精度、梯度累积、学习率调度的实现</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 训练循环代码 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练循环详解</h3>
+                <p>训练循环的核心逻辑和纯 LLM 几乎一样，唯一的区别是 DataLoader 返回的多了 <code>pixel_values</code>。以下是逐步解析：</p>
+                <pre><code class="language-python"># train_sft_vlm.py 第24-86行（简化版，省略了日志/尾步累积处理）
+def train_epoch(epoch, loader, iters, start_step=0):
+    for step, (input_ids, labels, pixel_values) in enumerate(loader):
+        # 1. 数据移到 GPU
+        input_ids = input_ids.to(device)
+        labels = labels.to(device)
+        pixel_values = pixel_values.to(device)
+
+        # 2. 更新学习率（余弦退火）
+        lr = get_lr(epoch * iters + step, total_steps, learning_rate)
+
+        # 3. 前向传播（混合精度）
+        with autocast_ctx:
+            res = model(input_ids, labels=labels, pixel_values=pixel_values)
+            loss = (res.loss + res.aux_loss) / accumulation_steps
+
+        # 4. 反向传播
+        scaler.scale(loss).backward()
+
+        # 5. 梯度累积 + 裁剪 + 更新
+        if step % accumulation_steps == 0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
+
+        # 6. 定期保存
+        if step % save_interval == 0:
+            torch.save(model.state_dict(), ckp_path)</code></pre>
+                <div class="intro-block">
+                    <p><strong>关键机制</strong>：<code>autocast_ctx</code> 开启 BFloat16 混合精度，前向传播用半精度加速；<code>scaler.scale(loss).backward()</code> 用 GradScaler 防止半精度梯度下溢；<code>accumulation_steps</code> 实现梯度累积——每 N 步才真正更新一次参数，等效于更大的 batch size；<code>clip_grad_norm_</code> 梯度裁剪防止梯度爆炸。</p>
+                </div>
+                <div class="warning">
+                    <strong>对照真实源码时的差异</strong>：
+                    <ul>
+                        <li><strong>pixel_values 是 dict 不是 tensor</strong>：真实代码第 30 行是 <code>pixel_values = {k: v.to(device) for k, v in pixel_values.items()}</code>，因为它要同时搬运 <code>pixel_values</code> 和 <code>pixel_mask</code> 两个键。简化版写成 <code>.to(device)</code> 只是为了易读。</li>
+                        <li>真实代码还有<strong>尾步处理</strong>（第 81-83 行）：当总步数不能被 <code>accumulation_steps</code> 整除时，循环结束后的残余梯度也要更新一次，否则最后几步白训了。</li>
+                        <li><code>start_step</code> 用于断点续训时从正确步数恢复，并据此换算学习率。</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7.6 精读 eval_vlm.py -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>eval_vlm.py</h2>
+                <p>推理脚本的完整流程——从加载模型到生成文本的 6 个步骤</p>
+                <div class="intro-block">
+                    <p>推理脚本展示了 VLM 的完整使用方式：加载模型 → 处理图片 → 构造 prompt → 分词 → 自回归生成 → 解码输出。理解这段代码后，你就知道如何在生产环境中使用 VLM。</p>
+                </div>
+                <pre><code class="language-python"># eval_vlm.py 核心流程（基于第 48-75 行，省略了 argparse 与分支）
+# 1. 加载模型 + 视觉编码器
+model, tokenizer, preprocess = init_model(args)   # 见第 13-28 行
+
+# 2. 对每张评估图片
+for image_file in sorted(os.listdir(args.image_dir)):
+    image = Image.open(image_path).convert('RGB')
+    # 图片转 tensor —— 注意是 dict（含 pixel_values 和 pixel_mask）
+    pixel_values = {k: v.to(args.device)
+                    for k, v in MiniMindVLM.image2tensor(image, preprocess).items()}
+
+    # 3. 构造 prompt：用 config 里的占位符 × 数量，别硬编码 64
+    messages = [{"role": "user", "content":
+        prompt.replace('&lt;image&gt;',
+            model.config.image_special_token * model.config.image_token_len)}]
+    # 4. 应用对话模板 + 分词
+    inputs_text = tokenizer.apply_chat_template(messages, tokenize=False,
+                                                add_generation_prompt=True)
+    inputs = tokenizer(inputs_text, return_tensors="pt").to(args.device)
+
+    # 5. 自回归生成（流式输出）
+    generated_ids = model.generate(
+        inputs=inputs["input_ids"], pixel_values=pixel_values,
+        max_new_tokens=512, temperature=0.7, top_p=0.85,
+        streamer=TextStreamer(tokenizer, skip_prompt=True))</code></pre>
+                <div class="intro-block">
+                    <p><strong>逐步解读</strong>：Step 3 中 <code>&lt;image&gt;</code> 会被替换成 <code>config.image_special_token × image_token_len</code>（即 64 个 <code>&lt;|image_pad|&gt;</code>），它们在 forward() 中被视觉特征替换。<strong>用 config 属性而非硬编码 64</strong>——这样改配置时不用动代码。<code>temperature=0.7</code> 控制随机性（比训练时 generate 默认的 0.85 更确定，适合评估）。<code>TextStreamer</code> 实现逐 token 打印的流式效果。整个推理过程和纯文本 LLM 一样是自回归的。</p>
+                </div>
+                <div class="intro-block">
+                    <p>第 9 章动手实践时，你会亲手运行 <code>$ python eval_vlm.py --weight sft_vlm</code>。这里看懂流程即可，具体命令第 9 章会给全。</p>
+                    <p>补充：<code>web_demo_vlm.py</code>（Gradio 网页界面）和 <code>convert_vlm.py</code>（把 torch 权重转成 HuggingFace transformers 格式）逻辑与上面类似，加载方式不同——它们用 <code>AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)</code> 加载转换后的模型。需要时直接读这两个文件即可。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7.7 文件功能速查 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>7.7 文件功能速查</h2>
+                <p>回顾所有文件之间的关系。模型定义是一切的基础，数据处理和训练工具都依赖它；训练脚本依赖训练工具；推理脚本直接使用模型。</p>
+                <div class="ai-diagram">
+                  <h4>图：MiniMind-V 模块关系图</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：模块关系图，分为 5 个分组的卡片式布局，展示各文件之间的依赖关系
+                  - 各元素关系：模型定义组——model_minimind.py（LLM 基础架构）和 model_vlm.py（VLM 扩展），model_vlm 指向 model_minimind 表示依赖。数据处理组——lm_dataset.py（数据集类），指向 model_vlm.py。训练组——train_pretrain_vlm.py（Pretrain 可选）、train_sft_vlm.py（SFT 必需）、trainer_utils.py（工具函数），训练脚本都依赖 trainer_utils.py。推理组——eval_vlm.py 和 web_demo_vlm.py。工具组——convert_vlm.py
+                  - 关键标注：每组用不同颜色的边框区分，依赖关系用箭头连接
+                  - 配色建议：浅蓝/浅灰背景，模型定义组用蓝色，数据处理组用绿色，训练组用橙色，推理组用紫色，工具组用灰色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7.8 自我检测 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>7.8 自我检测</h2>
+                <p>用以下问题检验你对源码的理解程度。尝试不看提示回答。</p>
+                <div class="intro-block">
+                    <ol>
+                        <li><strong><code>MiniMindVLM</code> 继承了哪个类？新增了哪些组件？</strong><br>提示：继承 <code>MiniMindForCausalLM</code>，新增视觉编码器和投影层</li>
+                        <li><strong><code>count_vision_proj()</code> 做了什么？</strong><br>提示：扫描 token 序列，找到连续的占位符，用视觉特征替换它们的嵌入</li>
+                        <li><strong><code>generate_labels()</code> 如何标记训练标签？</strong><br>提示：assistant 部分用真实 token ID（计算损失），其他部分用 -100（忽略）</li>
+                        <li><strong>三种冻结策略各适合什么场景？</strong><br>提示：0=数据足够多可全参训练，1=SFT默认解冻首末层，2=Pretrain默认仅训练投影层</li>
+                        <li><strong>为什么检查点保存要用 <code>.tmp + os.replace</code>？</strong><br>提示：原子操作，防止训练中断导致检查点文件损坏</li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <!-- 结尾幻灯片 -->
+        <section class="slide title-slide">
+            <h1>第七阶段完成！</h1>
+            <p>你已经阅读了 MiniMind-V 的全部核心代码——从模型定义到数据处理、从训练工具到推理脚本。</p>
+            <p>下一步：进入第八阶段，深入理解训练流程的每个细节。</p>
+        </section>
+
+    </main>
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / 18</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="../../minimind/tutorial/references/slide-nav.js"></script>
+    <script src="../../minimind/tutorial/references/slide-toc.js"></script>
+</body>
+</html>

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第六阶段：视觉语言模型（VLM）核心概念</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="../../minimind/tutorial/references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>第六阶段：视觉语言模型（VLM）核心概念</h1>
+            <p>理解如何让语言模型"看懂"图片</p>
+        </section>
+
+        <!-- 学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>学习目标与前提</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>🎯 目标</h4>
+                        <p>理解如何让语言模型"看懂"图片——掌握 VLM 的三大组件、Token 替换机制和冻结策略</p>
+                    </div>
+                    <div class="card">
+                        <h4>⏰ 预计时间</h4>
+                        <p>1-2 周</p>
+                    </div>
+                    <div class="card">
+                        <h4>📌 前提</h4>
+                        <p>已完成第一至第五阶段，理解 Transformer、嵌入层和训练基础</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 本章知识地图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>本章知识地图</h2>
+                <p>VLM 核心概念的全景概览——从"图片是外语"的类比出发，逐步理解三大组件和训练策略。</p>
+                <div class="ai-diagram">
+                    <h4>图：VLM 核心概念思维导图</h4>
+                    <p>【AI 生图提示词】请生成一张中文思维导图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：以"VLM 核心概念"为中心的思维导图，中心节点为圆形
+                    - 各元素关系：从中心分出四大分支：
+                      1. "核心思想"分支：子节点"图片是一门外语"、"视觉编码器 = 翻译词典"、"投影层 = 语言桥接"
+                      2. "三大组件"分支：子节点"视觉编码器 SigLIP2"、"MLP 投影层"、"语言模型 MiniMind"
+                      3. "关键技术"分支：子节点"Token 替换"、"跨模态对齐"、"特征投影"
+                      4. "训练策略"分支：子节点"冻结视觉编码器"、"两阶段训练"、"渐进解冻"
+                    - 关键标注：各分支用不同颜色区分，子节点用圆角矩形表示
+                    - 配色建议：浅蓝/浅灰背景，核心思想绿色、三大组件蓝色、关键技术橙色、训练策略紫色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <div class="intro-block">
+                    <ul>
+                        <li><b>6.1 核心思想</b> —— 图片是"外语"，视觉编码器是"翻译词典"</li>
+                        <li><b>6.2 三大组件</b> —— 视觉编码器、MLP 投影层、Token 替换</li>
+                        <li><b>6.3 forward() 流程</b> —— 七步从输入到输出的完整数据流</li>
+                        <li><b>6.4 LLM vs VLM</b> —— 改动量极小的架构对比</li>
+                        <li><b>6.5 冻结策略</b> —— 两阶段训练的冻结方案</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 6.1 VLM 的核心思想 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>6.1 VLM 的核心思想</h2>
+                <p>图片就是一门"外语"，视觉编码器就是"翻译词典"，投影层就是"语言桥接"。</p>
+                <div class="intro-block">
+                    <p>语言模型（LLM）本质上只会处理一串 token——它不认识图片，就像一个只会中文的人不认识英文。但如果有人帮你翻译，你就能理解英文内容。VLM 的核心思想就是：<strong>找一个"翻译官"把图片翻译成 token</strong>。</p>
+                    <ul>
+                        <li><b>一句话总结</b> —— 图片 = 外语，视觉编码器 = 翻译词典，投影层 = 语言桥接</li>
+                        <li><b>类比理解</b> —— "学外语"与"看图片"的过程惊人地相似</li>
+                        <li><b>为什么有效</b> —— 图片和文本都能变成 token 序列，LLM 天然能处理</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 类比 + 为什么有效 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>核心类比</h3>
+                <blockquote>
+                    <p><strong>图片就是一门"外语"，视觉编码器就是"翻译词典"，把图片翻译成语言模型能理解的"语言"。</strong></p>
+                </blockquote>
+                <div class="ai-diagram">
+                    <h4>图：学外语 vs 看图片 类比流程图</h4>
+                    <p>【AI 生图提示词】请生成一张中文对比示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：上下两条从左到右的流程图，形成类比
+                    - 上方流程（类比：学外语）：英文书 → 英汉词典（翻译） → 中文理解
+                    - 下方流程（VLM：看图片）：📷 图片 → 视觉编码器（翻译图片） → 语言模型理解
+                    - 各元素关系：两条流程上下对齐，"英汉词典"与"视觉编码器"对应，"中文理解"与"语言模型理解"对应
+                    - 关键标注：用虚线框分别包裹两条流程，中间用等号或对应线连接
+                    - 配色建议：浅蓝/浅灰背景，上方流程绿色系，下方流程蓝色系
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>语言模型（LLM）本质上是处理 <strong>token 序列</strong>的工具。文本经过分词器变成 token 大家已经熟悉了——<code>[你好, 世界, ...]</code>。而图片经过视觉编码器后，同样变成一系列 token——<code>[patch1, patch2, ...]</code>。既然都是 token，LLM 就能统一处理它们。<strong>这就是 VLM 能工作的根本原因。</strong></p>
+            </div>
+        </section>
+
+        <!-- ==================== 6.2 三大组件详解 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>6.2 三大组件详解</h2>
+                <p>视觉编码器、MLP 投影层、Token 替换——VLM 的三大核心组件。</p>
+                <div class="intro-block">
+                    <p>上一节讲了"图片是外语"的类比。这节我们深入看看，到底是哪三个组件合作完成了"翻译"工作。它们的分工非常清晰：<strong>视觉编码器负责"看"</strong>，<strong>投影层负责"翻译"</strong>，<strong>Token 替换负责"嵌入"</strong>。</p>
+                    <ul>
+                        <li><b>视觉编码器 SigLIP2</b> —— 把 256x256 图片变成 64 个 768 维向量（~95M 参数，冻结）</li>
+                        <li><b>MLP 投影层</b> —— 把视觉特征翻译到 LLM 的语义空间（~1M 参数，训练）</li>
+                        <li><b>Token 替换</b> —— 用视觉特征替换文本序列中的图片占位符</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 整体架构图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>整体架构：两条路径汇聚</h3>
+                <p>VLM 的数据流分为两条路径：<strong>视觉路径</strong>（图片 → 视觉编码器 → 投影层）和<strong>文本路径</strong>（文本 → 分词器 → 嵌入层）。两条路径在 Token 合并步骤汇合，然后一起送入 Transformer。</p>
+                <div class="ai-diagram">
+                    <h4>图：VLM 整体架构流程图</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：VLM 整体架构流程图，从上到下布局，包含视觉路径和文本路径
+                    - 各元素关系：视觉路径——📷 图片（256×256）→ 视觉编码器 SigLIP2（约95M参数，冻结，浅红色背景）→ 64 个视觉 Token（每个 768 维）→ MLP 投影层（约1M参数，训练，浅绿色背景）→ 64 个对齐 Token（每个 768 维）；文本路径——📝 文本"请描述这张图"→ 分词器 → 嵌入层（文本 Token 嵌入）
+                    - 关键标注：两条路径汇聚到"Token 合并（图片 Token 替换占位符）"→ Transformer ×8（约64M参数，部分训练，浅蓝色背景）→ 输出文本
+                    - 配色建议：浅灰背景，视觉编码器浅红色（冻结），投影层浅绿色（训练），Transformer 浅蓝色（部分训练）
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>注意看参数量对比：视觉编码器 ~95M（冻结不动），投影层只有 ~1M（唯一需要从头训练的），LLM ~64M（部分训练）。真正新增的"翻译"能力，只需要 ~1M 参数就能学到。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 组件1：视觉编码器 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组件1：视觉编码器</h3>
+                <p><strong>做什么</strong>：把 256x256 的图片变成 64 个 768 维的向量。具体来说，图片被切成 8x8=64 个小块（每块 32x32 像素），每个小块经过 Vision Transformer 处理后输出一个 768 维向量。这样一张图片就变成了 64 个"视觉 Token"。</p>
+                <div class="ai-diagram">
+                    <h4>图：图片变 Token 的处理流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从上到下的视觉编码器处理图片流程图
+                    - 各元素关系：原始图片（256×256×3）→ 切成 8×8 小块（每块 32×32 像素，用网格线展示切分效果）→ 64 个 Patch → Vision Transformer 处理每个 Patch → 64 个 Token（每个 768 维）
+                    - 关键标注：切分步骤标注"8×8 = 64 个 Patch"，每个 Patch 标注"32×32 像素"，最终输出标注"每个 Token 768 维"
+                    - 配色建议：浅蓝/浅灰背景，图片用浅黄色，Patch 用浅蓝色，Token 用浅绿色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 视觉编码器 - 加载代码 + 为什么冻结 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>加载与冻结视觉编码器</h3>
+                <p>视觉编码器是<strong>预训练好的</strong>——SigLIP2 已经在数亿图文对上训练过，非常擅长提取图片特征。我们直接拿来用，<strong>冻结它的所有参数</strong>，不计算梯度，不更新权重。这样做有两个好处：省训练时间 + 省显存。</p>
+                <pre><code class="language-python"># model_vlm.py 第46-59行
+@staticmethod
+def get_vision_model(model_path):
+    model = SiglipVisionModel.from_pretrained(model_path)  # 加载预训练模型
+    processor = SiglipImageProcessor.from_pretrained(model_path)
+
+    # 关键：冻结所有参数！
+    for param in model.parameters():
+        param.requires_grad = False   # 不计算梯度，不更新权重
+
+    return model.eval(), processor    # 设为评估模式</code></pre>
+                <div class="intro-block">
+                    <p><strong>逐行解读</strong>：第2行加载预训练的 SigLIP2 模型和对应的图片预处理器。第6-7行遍历模型所有参数，将 <code>requires_grad</code> 设为 <code>False</code>，表示反向传播时不计算这些参数的梯度。第9行调用 <code>.eval()</code> 关闭 Dropout 和 BatchNorm 的训练行为。整个视觉编码器从此"只读"。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 图片预处理 + 提取视觉特征 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>图片预处理与特征提取</h3>
+                <p>图片送入 SigLIP2 之前需要两步：<strong>预处理</strong>（调整格式、归一化像素值）和<strong>特征提取</strong>（前向传播得到 768 维向量）。这两步分别对应下面两个函数。</p>
+                <pre><code class="language-python"># model_vlm.py 第62-65行 —— 图片预处理
+@staticmethod
+def image2tensor(image, processor):
+    if image.mode in ['RGBA', 'LA']:
+        image = image.convert('RGB')       # 确保是 RGB 格式
+    inputs = processor(images=image, return_tensors="pt")  # 预处理
+    return inputs
+    # 返回: {pixel_values: [1, 3, 256, 256], pixel_mask: [1, 256, 256]}</code></pre>
+                <p><code>image2tensor</code> 做了两件事：先把 RGBA/LA 格式转为 RGB（去掉透明通道），然后用 SigLIP 的预处理器把图片变为 <code>[1, 3, 256, 256]</code> 的张量——即 batch=1、3 通道、256x256 像素。</p>
+                <pre><code class="language-python"># model_vlm.py 第68-73行 —— 提取视觉特征
+@staticmethod
+def get_image_embeddings(image_inputs, vision_model):
+    with torch.no_grad():                           # 不计算梯度
+        outputs = vision_model(**image_inputs)      # 前向传播
+    return outputs.last_hidden_state                 # [1, 64, 768]</code></pre>
+                <p><code>get_image_embeddings</code> 在 <code>torch.no_grad()</code> 上下文中执行前向传播（因为视觉编码器已冻结，不需要梯度）。输出的 <code>last_hidden_state</code> 形状为 <code>[1, 64, 768]</code>——64 个 Patch，每个 768 维。这就是图片的"数字表示"。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 组件2：MLP 投影层 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组件2：投影层</h3>
+                <p><strong>做什么</strong>：SigLIP2 输出的 768 维向量和 LLM 嵌入层的 768 维向量虽然维度相同，但它们处于<strong>完全不同的语义空间</strong>——就像两个人说不同的语言，即使声音大小一样也听不懂。MLP 投影层就是"翻译官"，把视觉特征空间映射到语言特征空间。</p>
+                <div class="ai-diagram">
+                    <h4>图：有无投影层对比</h4>
+                    <p>【AI 生图提示词】请生成一张中文对比示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：左右对比布局
+                    - 左侧"没有投影层 ❌"：视觉特征和文本特征在不同的空间，两者之间有断裂线，标注"LLM 无法理解视觉特征"，用红色边框
+                    - 右侧"有投影层 ✅"：视觉特征通过 MLP 投影层被"翻译"到文本特征空间，标注"LLM 把视觉 token 当作另一种文字"，用绿色边框
+                    - 配色建议：浅灰背景，左侧浅红背景带红色边框，右侧浅绿背景带绿色边框
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <pre><code class="language-python"># model_vlm.py 第23-33行
+class MMVisionProjector(nn.Module):
+    def __init__(self, in_dim, out_dim):
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(in_dim),          # 归一化 [768 → 768]
+            nn.Linear(in_dim, out_dim),    # 线性变换 [768 → 768]
+            nn.GELU(),                     # 激活函数
+            nn.Linear(out_dim, out_dim),   # 线性变换 [768 → 768]
+        )
+
+    def forward(self, x):
+        return self.mlp(x)
+        # 输入: [batch, 64, 768] → 输出: [batch, 64, 768]
+        # 维度没变，但语义空间变了！</code></pre>
+                <div class="intro-block">
+                    <p><strong>结构解读</strong>：投影层是一个两层 MLP。先用 <code>LayerNorm</code> 归一化输入，再经过两个线性层（中间用 GELU 激活）。虽然输入输出维度都是 768，但经过学习后，输出的向量会被"翻译"到 LLM 能理解的语言空间中。这个层只有 ~1M 参数，是整个 VLM 中<strong>唯一需要从头训练</strong>的部分。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 组件3：Token 替换 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>组件3：Token 替换</h3>
+                <p><strong>这是 VLM 最关键的一步</strong>：把投影后的图片特征"塞进"文本序列中。具体做法是——文本中预先放好 64 个 <code>&lt;|image_pad|&gt;</code> 占位符，LLM 的嵌入层会给它们生成普通的文本嵌入。然后在送入 Transformer 之前，<strong>用视觉特征直接替换</strong>这些占位符的嵌入。</p>
+                <div class="ai-diagram">
+                    <h4>图：Token 替换详细流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从上到下的六步流程图，各步骤用箭头依次连接
+                    - 各元素关系：步骤1 文本"&lt;|image_pad|&gt;×64 请描述图片" → 步骤2 嵌入后变为 [pad_emb, pad_emb, ..., 请_emb, 描述_emb] → 步骤3 找到所有 pad_emb 的位置 → 步骤4 用投影后的视觉特征替换 → 步骤5 结果为 [img_tok0, img_tok1, ..., 请_emb, 描述_emb] → 步骤6 送入 Transformer 处理
+                    - 关键标注：步骤3-4 高亮替换过程，pad_emb 用灰色，img_tok 用蓝色
+                    - 配色建议：浅蓝/浅灰背景，占位符灰色，视觉 Token 蓝色，文本 Token 绿色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <pre><code class="language-python"># model_vlm.py 第75-96行 (简化版)
+def count_vision_proj(self, tokens, h, vision_tensors):
+    marker = self.config.image_ids[0]   # &lt;|image_pad|&gt; 的 ID = 12
+    out = []
+    for b in range(batch_size):
+        hb = h[b]                       # 当前样本的嵌入 [seq, 768]
+        seq = tokens[b].tolist()        # 当前样本的 token ID 列表
+        k = 0                           # 第几张图
+        i = 0                           # 当前位置
+        while i &lt; len(seq):
+            if seq[i] == marker:        # 找到了 &lt;|image_pad|&gt;
+                start = i
+                while i &lt; len(seq) and seq[i] == marker:
+                    i += 1              # 跳过所有连续的占位符
+                # 用视觉特征替换这段占位符
+                hb = torch.cat((hb[:start], vf[b][k][:i-start], hb[i:]))
+                k += 1
+            else:
+                i += 1
+        out.append(hb)
+    return torch.stack(out)</code></pre>
+                <div class="intro-block">
+                    <p><strong>代码解读</strong>：<code>marker</code> 是占位符的 token ID（12）。外层循环遍历每个样本，内层 <code>while</code> 循环扫描 token 序列。当找到连续的占位符时，记录起始和结束位置，然后用 <code>torch.cat</code> 把视觉特征"拼"进去——占位符之前的嵌入 + 视觉特征 + 占位符之后的嵌入。这样图片信息就无缝融入了文本序列。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 6.3 VLM forward() 完整流程 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>6.3 forward 流程</h2>
+                <p>把上面三个组件串起来，就得到 VLM 的完整前向传播——七个步骤，从输入到输出。</p>
+                <div class="intro-block">
+                    <ul>
+                        <li><b>Step 1</b>：文本 token 经嵌入层变为 hidden_states <code>[batch, seq, 768]</code></li>
+                        <li><b>Step 2</b>：图片经 SigLIP2 提取视觉特征 <code>[batch, 64, 768]</code></li>
+                        <li><b>Step 3</b>：视觉特征经 MLP 投影层"翻译"</li>
+                        <li><b>Step 4</b>：用投影后的视觉特征替换 hidden_states 中的占位符</li>
+                        <li><b>Step 5</b>：替换后的序列经 8 层 Transformer 处理</li>
+                        <li><b>Step 6</b>：经 <code>lm_head</code> 输出 logits <code>[batch, seq, 6400]</code></li>
+                        <li><b>Step 7</b>：logits 与 labels 计算交叉熵损失</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- forward 流程图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>forward 七步</h3>
+                <p>下图展示了完整的七步数据流。注意 Step 2-4 只在 <code>pixel_values</code> 不为空且处于序列起始位置时执行——KV Cache 推理时跳过这些步骤。</p>
+                <div class="ai-diagram">
+                    <h4>图：VLM forward() 七步流程</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从上到下的七步流程图，各步骤用箭头依次连接
+                    - 各元素关系：Step 1 文本嵌入 input_ids → embed_tokens → hidden_states [batch, seq, 768] → Step 2 视觉特征提取 pixel_values → SigLIP2 → [batch, 64, 768] → Step 3 视觉投影 [batch, 64, 768] → MLP → [batch, 64, 768] → Step 4 Token 替换 hidden_states 中的 pad 嵌入 → 视觉 token → Step 5 Transformer 处理 替换后的 hidden_states → 8层 Transformer → Step 6 输出预测 → lm_head → logits [batch, seq, 6400] → Step 7 计算损失 logits vs labels → 交叉熵损失
+                    - 关键标注：每步标注操作名称和维度变化
+                    - 配色建议：浅蓝/浅灰背景，文本步骤蓝色，视觉步骤橙色，合并步骤紫色，输出步骤绿色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <div class="intro-block">
+                    <p><strong>关键理解</strong>：Step 1-4 是 VLM 相比 LLM 新增的部分。Step 5-7 和纯 LLM 完全一样——Transformer 不知道自己处理的 token 有些来自图片、有些来自文字，它只看到一串 768 维向量。这种"欺骗"Transformer 的设计非常优雅。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 6.4 LLM vs VLM ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>6.4 LLM 与 VLM</h2>
+                <p>VLM 在 LLM 基础上只新增了约 50 行核心代码。改动量极小，但能力从"只懂文字"扩展到了"同时懂图片和文字"。</p>
+                <div class="intro-block">
+                    <p>MiniMind-V 继承了 MiniMind 的全部代码，只新增了三个模块。下面这张对比图清楚展示了差异——LLM 是一条直线，VLM 在中间加了"视觉旁路"。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- LLM vs VLM 对比图 + 改动量 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>架构对比与改动量</h3>
+                <div class="ai-diagram">
+                    <h4>图：LLM vs VLM 架构对比</h4>
+                    <p>【AI 生图提示词】请生成一张中文对比示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：左右对比布局
+                    - 左侧"MiniMind LLM"：输入 Token IDs → 嵌入层 → Transformer ×8 → 输出文本，用虚线框包裹
+                    - 右侧"MiniMind-V VLM"：输入 Token IDs + 图片 → 嵌入层（上方路径）+ 视觉编码器 + 投影层（下方路径）→ 两条路径汇聚到 Token 替换 → Transformer ×8 → 输出文本，用虚线框包裹
+                    - 关键标注：右侧新增的部分（视觉编码器、投影层、Token 替换）用高亮颜色标注
+                    - 配色建议：浅灰背景，LLM 侧用蓝色系，VLM 新增部分用橙色高亮，共享部分用相同的蓝色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <p>VLM 在 LLM 基础上只新增了约 50 行核心代码：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>VLMConfig</h4>
+                        <p>9 行 — 添加图片占位符、token ID、特征维度等视觉相关配置</p>
+                    </div>
+                    <div class="card">
+                        <h4>MMVisionProjector</h4>
+                        <p>10 行 — 两层 MLP 投影层，将视觉特征翻译到语言空间</p>
+                    </div>
+                    <div class="card">
+                        <h4>count_vision_proj()</h4>
+                        <p>20 行 — 扫描 token 序列，用视觉特征替换占位符嵌入</p>
+                    </div>
+                    <div class="card">
+                        <h4>forward() 修改</h4>
+                        <p>约 30 行 — 在原有 LLM forward() 中插入视觉处理逻辑</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 6.5 冻结策略 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>6.5 冻结策略</h2>
+                <p>不同训练阶段，冻结不同的组件——先让投影层学会"翻译"，再微调 LLM 适应视觉输入。</p>
+                <div class="intro-block">
+                    <p>MiniMind-V 的训练分为两个阶段，每个阶段采用不同的冻结策略。<strong>视觉编码器始终冻结</strong>（它已经很擅长提取图片特征了），变的是投影层和 LLM 的训练范围。</p>
+                    <ul>
+                        <li><b>Pretrain 阶段（freeze_llm=2）</b> —— 只训练投影层，LLM 完全冻结。目标：让投影层干净地完成图文对齐</li>
+                        <li><b>SFT 阶段（freeze_llm=1）</b> —— 投影层 + LLM 首末层训练，中间层冻结。目标：学会看图问答，同时保留语言能力</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 冻结策略对比图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>两阶段冻结策略对比</h3>
+                <p>为什么 SFT 要解冻首末层？<strong>首层</strong>负责处理视觉和文本特征的融合，需要适应新的视觉输入；<strong>末层</strong>直接影响输出格式，需要学会生成看图回答的格式。中间层承载了 LLM 的语言知识，冻结它可以保留这些能力不被破坏。</p>
+                <div class="ai-diagram">
+                    <h4>图：两阶段冻结策略对比</h4>
+                    <p>【AI 生图提示词】请生成一张中文对比示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：左右对比布局，展示两个训练阶段的冻结策略
+                    - 左侧"Pretrain 阶段（freeze_llm=2）"：组件列表——视觉编码器 ❄️ 冻结、投影层 🔥 训练、LLM ❄️ 全部冻结
+                    - 右侧"SFT 阶段（freeze_llm=1）"：组件列表——视觉编码器 ❄️ 冻结、投影层 🔥 训练、LLM 首层 🔥 训练、LLM 中间层 ❄️ 冻结、LLM 末层 🔥 训练
+                    - 关键标注：用蓝色标注冻结组件，红色标注训练组件
+                    - 配色建议：浅灰背景，冻结组件浅蓝色，训练组件浅红色/浅橙色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果、杂乱的颜色
+                    </p>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>策略</th>
+                            <th>投影层</th>
+                            <th>LLM 首层</th>
+                            <th>LLM 中间层</th>
+                            <th>LLM 末层</th>
+                            <th>用途</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>freeze_llm=0</code></td>
+                            <td>🔥</td>
+                            <td>🔥</td>
+                            <td>🔥</td>
+                            <td>🔥</td>
+                            <td>全参训练（数据充足时）</td>
+                        </tr>
+                        <tr>
+                            <td><code>freeze_llm=1</code></td>
+                            <td>🔥</td>
+                            <td>🔥</td>
+                            <td>❄️</td>
+                            <td>🔥</td>
+                            <td><strong>SFT 默认</strong></td>
+                        </tr>
+                        <tr>
+                            <td><code>freeze_llm=2</code></td>
+                            <td>🔥</td>
+                            <td>❄️</td>
+                            <td>❄️</td>
+                            <td>❄️</td>
+                            <td><strong>Pretrain 默认</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 6.6 自我检测 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>6.6 自我检测</h2>
+                <p>检验你是否掌握了本章的核心知识点。尝试不看提示回答以下问题。</p>
+                <div class="intro-block">
+                    <ol>
+                        <li><strong>VLM 的核心思想是什么？</strong><br>提示：图片=外语，视觉编码器=词典，投影层=语言桥接</li>
+                        <li><strong>为什么要冻结视觉编码器？</strong><br>提示：SigLIP2 已在数亿图文对上训练过，不需要重新教它"看"图片</li>
+                        <li><strong>投影层的作用是什么？</strong><br>提示：把视觉特征"翻译"到语言模型的语义空间，维度不变但语义变了</li>
+                        <li><strong>Token 替换是怎么工作的？</strong><br>提示：找到文本序列中的占位符嵌入，用投影后的视觉特征直接替换</li>
+                        <li><strong>为什么 SFT 要解冻首末层？</strong><br>提示：首层处理视觉融合，末层影响输出格式，中间层冻结保留语言知识</li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <!-- 结尾 -->
+        <section class="slide title-slide">
+            <h1>恭喜完成第六阶段！</h1>
+            <p>你已经理解了 VLM 的核心概念——视觉编码器"看"图片、投影层"翻译"特征、Token 替换"嵌入"序列。</p>
+            <p>下一步：进入第七阶段，亲手阅读 MiniMind-V 的源码。</p>
+        </section>
+
+    </main>
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / 20</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="../../minimind/tutorial/references/slide-nav.js"></script>
+    <script src="../../minimind/tutorial/references/slide-toc.js"></script>
+</body>
+</html>

@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 3：预训练 Pretraining</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>预训练 Pretraining</h1>
+            <p>阶段 3 · 让模型学会"预测下一个字"——所有大语言模型最核心的能力</p>
+        </section>
+
+        <!-- ==================== 问题驱动开场 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>婴儿如何学语言</h3>
+                <p>一个婴儿从零开始学会说话，经历三步：</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>一开始：什么都听不懂</h4>
+                        <p>只是不停地听大人说话。</p>
+                        <p>听到海量的声音，毫无理解。</p>
+                    </div>
+                    <div class="card">
+                        <h4>慢慢地：发现规律</h4>
+                        <p>"天"后面可能跟"气"或"空"。</p>
+                        <p>"今天天气"后面大概率是好或差。</p>
+                    </div>
+                    <div class="card">
+                        <h4>最终：能预测下文</h4>
+                        <p>根据前面的内容，预测接下来会说什么。</p>
+                        <p>这不就是 ChatGPT 在做的事吗？</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>预训练做的正是这件事</strong>：让模型阅读海量文本，学会"根据前文预测下一个字"。这是所有 LLM 的基础能力，没有它，模型连一句完整的话都说不出来。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 训练三阶段 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练三阶段</h3>
+                <p>大模型训练分三个阶段，就像培养一个人才：</p>
+                                <div class="ai-diagram">
+                  <h4>图：大模型训练三阶段流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：三个圆角矩形从左到右排列，用粗箭头依次连接。第一个"预训练 Pretraining"（橙色底，加粗边框），第二个"监督微调 SFT"（绿色底），第三个"RLHF / DPO"（蓝色底）
+                  - 各元素关系：从左到右单向箭头流转，箭头代表阶段递进关系，第一阶段用加粗边框突出"当前正在学习"
+                  - 关键标注：每个矩形下方标注类比——预训练="通识教育"、SFT="专业培训"、RLHF="品格塑造"
+                  - 配色建议：浅灰背景，预训练橙色(#FFE0B2)加粗边框突出，SFT绿色(#C8E6C9)，RLHF蓝色(#BBDEFB)
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <table>
+                    <thead><tr><th>阶段</th><th>类比</th><th>目标</th><th>数据</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>预训练</strong></td><td>通识教育</td><td>学会语言规律</td><td>海量无标注文本</td></tr>
+                        <tr><td>监督微调</td><td>专业培训</td><td>学会对话格式</td><td>问答对数据</td></tr>
+                        <tr><td>RLHF/DPO</td><td>品格塑造</td><td>符合人类偏好</td><td>人类评分数据</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>你现在学的就是第一步——预训练。它消耗最多算力和数据，决定了模型的"天花板"。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: 核心思想 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 核心思想</h2>
+                <p>理解预训练的本质：Next Token Prediction。这是所有自回归语言模型的统一训练目标。</p>
+                <div class="intro-block">
+                    <p>在写任何训练代码之前，我们必须先想清楚一个问题：语言模型到底在"学"什么？答案出人意料地简单——预测下一个 token。不管是 GPT-4 还是 MiniMind，训练目标都是同一个：给模型一段文字，让它猜下一个字是什么。这一部分的目标就是把这个核心思想吃透，理解"一次前向传播 = 所有位置同时在学习"这个关键洞察。</p>
+                    <ul>
+                        <li><b>Next Token Prediction</b> —— 预测下一个字，自回归语言模型唯一的训练目标</li>
+                        <li><b>滑动预测全景</b> —— 一次前向传播中，序列的每个位置都在同时练习预测下一个 token</li>
+                        <li><b>输入与目标对齐</b> —— logits[:-1] 和 labels[1:] 的 shift 操作，确保预测和目标一一对应</li>
+                        <li><b>对齐代码溯源</b> —— 回到模型代码中找到 shift 操作的具体实现，打通理论和代码</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>预测下一个字</h3>
+                <h4>模型的任务：给定前面的字，预测下一个字</h4>
+                <p><strong>定义</strong>：Next Token Prediction——给定一个 token 序列，模型对每个位置输出一个概率分布，预测下一个 token 是什么。</p>
+                <table>
+                    <thead><tr><th>已知内容（输入）</th><th>要预测的下一个字</th></tr></thead>
+                    <tbody>
+                        <tr><td>今</td><td>天</td></tr>
+                        <tr><td>今天</td><td>天</td></tr>
+                        <tr><td>今天天</td><td>气</td></tr>
+                        <tr><td>今天天气</td><td>真</td></tr>
+                        <tr><td>今天天气真</td><td>好</td></tr>
+                    </tbody>
+                </table>
+                <p><strong>白话</strong>：就像手机输入法的"联想输入"——你打了"今天天"，它猜下一个字是"气"。但模型要同时在整个序列的每个位置做这件事。</p>
+                <div class="intro-block">
+                    <p>模型并不是一次只看一个字。它<strong>同时</strong>处理整个序列，对每个位置都做一次"预测下一个字"的练习。一次前向传播 = N 次预测练习。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>滑动预测全景</h3>
+                <h4>一次前向传播，所有位置都在练习</h4>
+                <div class="ai-diagram">
+                    <h4>图：Next Token Prediction 滑动预测</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：顶部一行"今 天 天 气 真 好"，下方5个并排预测框
+                    - 每个框左侧高亮已见部分（蓝色），右侧问号指向预测结果（橙色）
+                    - [今]→天? [今天]→天? [今天天]→气? [今天天气]→真? [今天天气真]→好?
+                    - 底部标注"一次前向传播 = 5次预测练习"
+                    - 右侧显示每个位置的交叉熵损失箭头指向正确答案（绿色）
+                    - 配色建议：已见token蓝色，预测目标橙色，正确答案绿色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果
+                    </p>
+                </div>
+                <p>关键洞察：序列长度为 N 时，一次前向传播产生 N-1 个训练信号。这就是 Transformer 高效的原因。</p>
+                <p><em>这里用"婴儿学说话"的比喻只是帮你建立直观。在计算机内部，它实际上是矩阵乘法 + softmax，对词表中每个 token 计算概率。</em></p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>输入与目标对齐</h3>
+                <h4>logits 取前 N-1 个，labels 取后 N-1 个，逐位比较</h4>
+                <pre><code class="language-plaintext">输入:  [你,  好,  世,  界]    (input_ids)
+预测:  [好', 世', 界', ?' ]   (logits)
+       取 [:-1] ↑  ↑  ↑
+标签:  [好,  世,  界,  ! ]    (labels)
+              取 [1:] ↑  ↑  ↑
+
+交叉熵 = 比较每个位置的预测与真实值</code></pre>
+                <p><strong>白话</strong>：模型看了"你"，要预测"好"；看了"你好"，要预测"世"。关键操作是——</p>
+                <table>
+                    <thead><tr><th>操作</th><th>含义</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>logits[..., :-1, :]</code></td><td>去掉最后一个位置的预测（没有对应标签）</td></tr>
+                        <tr><td><code>labels[..., 1:]</code></td><td>去掉第一个位置的标签（不需要预测它）</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>这不就是上一章 <code>MiniMindForCausalLM.forward</code> 里的 <code>shift</code> 操作吗？没错——模型架构已经写好了预测逻辑，现在要做的是：<strong>喂数据、算损失、更新参数</strong>。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>对齐代码溯源</h3>
+                <h4>回顾模型 forward 中的 shift 操作</h4>
+                <pre><code class="language-python"># model_minimind.py 中的 forward 方法（简化）
+def forward(self, input_ids, labels=None):
+    # 1. 词嵌入 + 位置编码
+    x = self.model(input_ids)
+    # 2. Transformer 层
+    x = self.lm_head(x)           # (batch, seq_len, vocab_size)
+
+    if labels is not None:
+        # 3. 关键：移位对齐
+        loss = F.cross_entropy(
+            x.view(-1, x.size(-1))[..., :-1, :],
+            labels.view(-1)[..., 1:]
+        )
+        return CausalLMOutput(loss=loss, logits=x)</code></pre>
+                <p><strong>三步走</strong>：</p>
+                <ol>
+                    <li><strong>定义</strong>：shift 操作让预测和标签错位对齐。</li>
+                    <li><strong>白话</strong>：就像批改作业——第 i 个位置的学生答案（logits[i]）对第 i+1 个位置的标准答案（labels[i+1]）。</li>
+                    <li><strong>代码</strong>：<code>logits[..., :-1, :]</code> 与 <code>labels[..., 1:]</code> 逐位计算交叉熵。</li>
+                </ol>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 数据处理 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 数据处理</h2>
+                <p>把原始文本变成模型能吃的数字。理解 PretrainDataset 的完整流水线。</p>
+                <div class="intro-block">
+                    <p>模型再好，没有数据也白搭。这一部分我们来看 MiniMind 的数据是怎么从原始文本变成训练用的 tensor 的。整个流水线只有四步——分词、加起止标记、填充对齐、构造 labels——但每一步都有它的道理。特别是 labels 中为什么要用 -100 标记填充位置，这个细节直接关系到损失计算的正确性。我们会用一个完整的数字例子走一遍，让你看得清清楚楚。</p>
+                    <ul>
+                        <li><b>数据文件格式</b> —— JSONL 格式的训练数据长什么样，每条数据的结构</li>
+                        <li><b>PretrainDataset 源码</b> —— 完整阅读数据集类的代码，理解 __getitem__ 的全流程</li>
+                        <li><b>四步处理流水线</b> —— 分词 → 加 BOS/EOS → PAD 填充 → labels 中 PAD 位置填 -100</li>
+                        <li><b>为什么是 -100</b> —— PyTorch 的 ignore_index 机制，让填充位置不参与损失计算</li>
+                        <li><b>max_length 的取舍</b> —— 序列长度如何影响显存、训练速度和上下文能力</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据文件格式</h3>
+                <h4>JSONL——每行一个 JSON 对象，简单直接</h4>
+                <pre><code class="language-json">{"text": "今天天气真好，我们去公园玩吧。"}
+{"text": "人工智能是计算机科学的一个分支。"}
+{"text": "深度学习是机器学习的子领域，它使用多层神经网络……"}</code></pre>
+                <table>
+                    <thead><tr><th>要求</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td>格式</td><td>JSONL（每行一个 JSON）</td></tr>
+                        <tr><td>字段</td><td>必须有 <code>"text"</code> 字段</td></tr>
+                        <tr><td>编码</td><td>UTF-8</td></tr>
+                        <tr><td>数据量</td><td>越大越好，MiniMind 用了数百万行</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>预训练数据不需要任何标注。只要是大段高质量的文本就行——百科、新闻、书籍、代码都可以。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据集类源码</h3>
+                <h4>PretrainDataset：把原始文本变成训练样本</h4>
+                <pre><code class="language-python">class PretrainDataset(Dataset):
+    def __init__(self, data_path, tokenizer, max_length=512):
+        super().__init__()
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        # 用 HuggingFace load_dataset 加载 JSONL 文件
+        self.samples = load_dataset('json', data_files=data_path, split='train')
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, index):
+        sample = self.samples[index]
+        # 第1步：分词，留2个位置给 BOS 和 EOS
+        tokens = self.tokenizer(str(sample['text']),
+            add_special_tokens=False,
+            max_length=self.max_length - 2,
+            truncation=True).input_ids
+        # 第2步：加 BOS（开头）和 EOS（结尾）
+        tokens = [self.tokenizer.bos_token_id] + tokens + [self.tokenizer.eos_token_id]
+        # 第3步：PAD 填充到固定长度
+        input_ids = tokens + [self.tokenizer.pad_token_id] * (self.max_length - len(tokens))
+        input_ids = torch.tensor(input_ids, dtype=torch.long)
+        # 第4步：labels = input_ids 的副本，PAD 位置设为 -100
+        labels = input_ids.clone()
+        labels[input_ids == self.tokenizer.pad_token_id] = -100
+        return input_ids, labels</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>四步处理流水线</h3>
+                <h4>从原始文本到训练样本的完整路径</h4>
+                                <div class="ai-diagram">
+                  <h4>图：PretrainDataset 四步处理流水线</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右4个圆角矩形，用粗箭头连接。①"原始文本"（示例：你好世界）→ ②"分词"（输出数字 [456, 789, 234]）→ ③"加 BOS/EOS"（输出 [1, 456, 789, 234, 2]）→ ④"PAD 填充"（输出 [1, 456, 789, 234, 2, 0, 0, 0]）
+                  - 各元素关系：从左到右依次处理，每步的输出作为下一步的输入
+                  - 关键标注：BOS 标蓝色并标注"序列开始"，EOS 标红色并标注"序列结束"，PAD 标灰色并标注"填充"
+                  - 配色建议：浅蓝背景，BOS蓝色，EOS红色，PAD灰色，步骤编号用橙色圆圈标注
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="ai-diagram">
+                    <h4>图：PretrainDataset 处理流水线</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：从左到右4步流水线：①原始文本→②分词[456,789,...]→③加BOS/EOS [1,...,2]→④PAD填充 [1,...,2,0,0]
+                    - 第4步下方两条输出箭头：input_ids 和 labels（PAD位置为-100）
+                    - BOS蓝色框标注"序列开始"，EOS红色框标注"序列结束"，PAD灰色框标注"填充"，-100橙色框标注"交叉熵忽略"
+                    - 每步之间用粗箭头连接，箭头上标注操作名
+                    - 配色建议：浅蓝背景，BOS蓝色，EOS红色，PAD灰色，-100橙色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果
+                    </p>
+                </div>
+                <p>每一步的目的：</p>
+                <ol>
+                    <li><strong>分词</strong>：文字→数字，模型只认数字。</li>
+                    <li><strong>加 BOS/EOS</strong>：告诉模型"从这开始"和"到这结束"。</li>
+                    <li><strong>PAD 填充</strong>：凑齐固定长度，方便组成 batch。</li>
+                    <li><strong>labels 中 PAD→-100</strong>：让损失函数忽略填充部分。</li>
+                </ol>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>完整数字例子</h3>
+                <h4>假设数据是 "你好"，max_length = 8，BOS=1，EOS=2，PAD=0</h4>
+                <table>
+                    <thead><tr><th>步骤</th><th>内容</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td>① 原始文本</td><td><code>"你好"</code></td><td>从 JSONL 中取出</td></tr>
+                        <tr><td>② 分词后</td><td><code>[456, 789]</code></td><td>tokenizer 把文字变成数字</td></tr>
+                        <tr><td>③ 加特殊标记</td><td><code>[1, 456, 789, 2]</code></td><td>BOS=1 开头, EOS=2 结尾</td></tr>
+                        <tr><td>④ 填充到长度 8</td><td><code>[1, 456, 789, 2, 0, 0, 0, 0]</code></td><td>PAD=0 填满</td></tr>
+                        <tr><td><strong>input_ids</strong></td><td><code>[1, 456, 789, 2, 0, 0, 0, 0]</code></td><td>送入模型</td></tr>
+                        <tr><td><strong>labels</strong></td><td><code>[1, 456, 789, 2, -100, -100, -100, -100]</code></td><td>PAD 变 -100</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>为什么 PAD 设为 -100？</strong>PyTorch 的 <code>cross_entropy</code> 函数默认 <code>ignore_index=-100</code>。所有 label 为 -100 的位置不参与损失计算。这样模型就不会在填充内容上浪费学习。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么是 -100？</h3>
+                <h4>深入理解 ignore_index 机制</h4>
+                <pre><code class="language-python"># PyTorch 源码中 cross_entropy 的核心逻辑（简化）
+def cross_entropy(input, target, ignore_index=-100):
+    loss = 0
+    count = 0
+    for i in range(len(target)):
+        if target[i] == ignore_index:
+            continue    # 直接跳过，不计入损失
+        loss += -log(softmax(input[i])[target[i]])
+        count += 1
+    return loss / count  # 只对有效位置求平均</code></pre>
+                <table>
+                    <thead><tr><th>位置</th><th>input_ids</th><th>labels</th><th>是否计入损失</th></tr></thead>
+                    <tbody>
+                        <tr><td>0</td><td>1 (BOS)</td><td>1</td><td>是</td></tr>
+                        <tr><td>1</td><td>456</td><td>456</td><td>是</td></tr>
+                        <tr><td>2</td><td>789</td><td>789</td><td>是</td></tr>
+                        <tr><td>3</td><td>2 (EOS)</td><td>2</td><td>是</td></tr>
+                        <tr><td>4</td><td>0 (PAD)</td><td>-100</td><td><strong>否</strong></td></tr>
+                        <tr><td>5</td><td>0 (PAD)</td><td>-100</td><td><strong>否</strong></td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>如果不设 -100，模型会努力预测填充位置也是 0，浪费大量学习能力在无意义的数据上。这个机制确保模型只从真实文本中学习。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>max_length 取舍</h3>
+                <h4>max_length 影响显存和训练效果</h4>
+                <table>
+                    <thead><tr><th>max_length</th><th>显存占用</th><th>训练信号</th><th>适用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td>256</td><td>低</td><td>短文本足够</td><td>快速实验</td></tr>
+                        <tr><td>340（默认）</td><td>中等</td><td>平衡</td><td>MiniMind 默认</td></tr>
+                        <tr><td>512</td><td>高</td><td>长文本更好</td><td>显存充裕时</td></tr>
+                        <tr><td>1024</td><td>很高</td><td>完整长文</td><td>SFT 阶段常用</td></tr>
+                    </tbody>
+                </table>
+                <p>MiniMind 默认 <code>max_seq_len=340</code>。中文约 1 token ≈ 1.5~1.7 个字符，340 token 约覆盖 500+ 字的段落。</p>
+                <div class="warning">
+                    <strong>分词时留 2 个位置！</strong>代码中 <code>max_length=self.max_length - 2</code>，因为还要塞进 BOS 和 EOS。如果忘记减 2，最终序列会超长。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 训练循环 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 训练循环</h2>
+                <p>精讲 train_epoch 函数的每一行。理解余弦调度、梯度累积、混合精度、梯度裁剪。</p>
+                <div class="intro-block">
+                    <p>数据准备好了，接下来就是训练的核心环节。这一部分我们会逐行精讲 train_epoch 函数，搞懂训练循环中的六大阶段：前向传播 → 损失计算 → 反向传播 → 梯度累积 → 梯度裁剪 → 参数更新。除此之外，还有几个让训练又快又稳的关键技巧——余弦学习率调度让学习率从高到低平滑衰减、混合精度训练用 float16 省显存、梯度累积在显存不够时模拟更大的 batch size。每一个技巧都值得单独理解。</p>
+                    <ul>
+                        <li><b>训练主循环源码</b> —— 逐行阅读 train_epoch 函数，理解每个变量和每步操作的含义</li>
+                        <li><b>余弦学习率调度</b> —— 学习率从高到低按余弦曲线衰减，训练后期更精细地调参</li>
+                        <li><b>梯度累积</b> —— 多个小 batch 的梯度累加后再更新，等效于更大的 batch size</li>
+                        <li><b>混合精度训练</b> —— float32 / float16 / bfloat16 三种精度对比，GradScaler 如何防止梯度下溢</li>
+                        <li><b>梯度裁剪与尾部处理</b> —— 限制梯度范数防止爆炸，以及累积最后一步残余梯度的细节</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练主循环源码</h3>
+                <h4>train_pretrain.py 中的 train_epoch 函数</h4>
+                <pre><code class="language-python">def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
+    start_time = time.time()
+    last_step = start_step
+    for step, (input_ids, labels) in enumerate(loader, start=start_step + 1):
+        input_ids = input_ids.to(args.device)
+        labels = labels.to(args.device)
+        last_step = step
+
+        # ① 计算当前学习率（余弦调度）
+        lr = get_lr(epoch * iters + step, args.epochs * iters, args.learning_rate)
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
+
+        # ② 前向传播（混合精度）
+        with autocast_ctx:
+            res = model(input_ids, labels=labels)
+            loss = res.loss + res.aux_loss       # 主损失 + MoE 辅助损失
+            loss = loss / args.accumulation_steps # 梯度累积：除以累积步数
+
+        # ③ 反向传播
+        scaler.scale(loss).backward()
+
+        # ④ 每隔 accumulation_steps 步才真正更新参数
+        if step % args.accumulation_steps == 0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
+
+        # ⑤ 日志记录
+        if step % args.log_interval == 0 or step == iters:
+            spend_time = time.time() - start_time
+            current_loss = loss.item() * args.accumulation_steps
+            Logger(f'Epoch:[{epoch+1}/{args.epochs}]({step}/{iters}), '
+                   f'loss:{current_loss:.4f}, lr:{lr:.8f}')
+
+        # ⑥ 定期保存检查点
+        if (step % args.save_interval == 0 or step == iters) and is_main_process():
+            model.eval()
+            # ... 保存逻辑 ...
+            model.train()</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>循环流程图</h3>
+                <h4>六个阶段：取数据→调学习率→前向→反向→更新→保存</h4>
+                                <div class="ai-diagram">
+                  <h4>图：训练循环六阶段流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：纵向流程图，从上到下6个阶段。①"取 batch 数据"→ ②"余弦调度学习率"→ ③"前向传播算 loss"→ ④"反向传播"→ 菱形判断"累积够了？"（否回到①，是继续）→ ⑤"梯度裁剪+更新参数"→ 菱形判断"到保存间隔？"（否继续，是执行⑥"保存检查点"）→ 菱形判断"epoch结束？"（否回到①，是结束）
+                  - 各元素关系：纵向主流程，菱形判断节点产生回路箭头回到"取 batch 数据"，形成循环
+                  - 关键标注：每个阶段用序号圆圈①-⑥标注，菱形判断节点用问号标注
+                  - 配色建议：浅蓝背景，处理步骤蓝绿色矩形，菱形判断橙色，回路箭头用虚线
+                  - 画面比例：9:16（纵向）
+                  - 避免：过度装饰、3D 效果、节点太密
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>余弦学习率</h3>
+                <h4>来自 trainer_utils.py 的 get_lr 函数</h4>
+                <p><strong>定义</strong>：学习率按余弦曲线从初始值平滑衰减到终值。</p>
+                <pre><code class="language-python">def get_lr(current_step, total_steps, lr):
+    """余弦学习率调度"""
+    return lr * (0.1 + 0.45 * (1 + math.cos(math.pi * current_step / total_steps)))</code></pre>
+                <p><strong>白话</strong>：学习率就像开车——起步时速度适中，中间平稳行驶，快到终点时慢慢减速。最低不会降到 0（保留 10%），让模型始终有微调能力。</p>
+                <table>
+                    <thead><tr><th>训练进度</th><th>current_step / total_steps</th><th>cos 值</th><th>学习率</th></tr></thead>
+                    <tbody>
+                        <tr><td>开始</td><td>0</td><td>1.0</td><td>lr × 1.0 = base_lr</td></tr>
+                        <tr><td>中间</td><td>0.5</td><td>0.0</td><td>lr × 0.55</td></tr>
+                        <tr><td>结束</td><td>1.0</td><td>-1.0</td><td>lr × 0.1 = 最低学习率</td></tr>
+                    </tbody>
+                </table>
+                <p><em>这个比喻只是为了帮你建立直观感受。在计算机内部，它实际上是余弦学习率调度，使用 math.cos 函数根据当前步数和总步数计算衰减系数。</em></p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>余弦调度曲线</h3>
+                <h4>学习率随训练步数的变化</h4>
+                <div class="ai-diagram">
+                    <h4>图：余弦学习率调度曲线</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：坐标系图，横轴"训练步数"，纵轴"学习率"，绘制余弦衰减曲线
+                    - 曲线从 lr=base_lr 开始，平滑下降到 lr=0.1×base_lr
+                    - 标注三个关键点：起始"lr = base_lr"，中点"余弦下降中"，终点"lr = 0.1×base_lr"
+                    - 曲线下方浅蓝色填充
+                    - 右上角公式：lr = base_lr × (0.1 + 0.45 × (1 + cos(πt/T)))
+                    - 配色建议：白色背景，曲线深蓝色，填充浅蓝色，关键点橙色圆点
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果
+                    </p>
+                </div>
+                                <div class="ai-diagram">
+                  <h4>图：余弦学习率从初始到最终的衰减路径</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：三个圆角矩形从左到右排列。"初始 lr = base_lr"（绿色，高位置）→ "余弦衰减"（中间带下降曲线箭头）→ "最终 lr = 0.1 × base_lr"（橙色，低位置）
+                  - 各元素关系：从左到右递减，中间用下降曲线箭头连接，表示学习率逐步降低
+                  - 关键标注：起始值标注"base_lr"，结束值标注"0.1 × base_lr"，衰减幅度约10倍
+                  - 配色建议：浅灰背景，起始绿色，结束橙色，中间渐变过渡
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+                <div class="intro-block">
+                    <p>为什么不直接用固定学习率？固定学习率到后期会"震荡"——参数在一个点附近来回跳动，无法收敛到最优。余弦衰减让后期步子变小，精调参数。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>梯度累积</h3>
+                <h4>小显存也能享受大批量的好处</h4>
+                <p>想用 batch_size=256 训练，但显卡只够放 batch_size=32？</p>
+                <p><strong>梯度累积</strong>：每次只放 32 条数据，但累积 8 次梯度（32 &times; 8 = 256），等效于 batch_size=256。</p>
+                <pre><code class="language-python"># 关键代码（train_pretrain.py）
+loss = loss / args.accumulation_steps  # ① loss 除以累积步数
+scaler.scale(loss).backward()          # ② 反向传播（梯度自动累加）
+
+if step % args.accumulation_steps == 0:  # ③ 每 8 步才更新一次
+    scaler.step(optimizer)
+    optimizer.zero_grad(set_to_none=True)</code></pre>
+                <div class="warning">
+                    <strong>loss / accumulation_steps 很关键！</strong>不除的话，累积 8 次梯度就是 8 倍大，等效学习率变成 8 倍，训练会炸。这一行代码是初学者最容易遗漏的。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>累积机制详解</h3>
+                <h4>梯度在内存中是如何一步步叠加的</h4>
+                <div class="ai-diagram">
+                    <h4>图：梯度累积机制</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：上方"理想"大方块(红色虚线框"显存不够")；下方"梯度累积"8个小batch方块(绿色)→累加器漏斗→等效大方块
+                    - 8个小batch编号①-⑧汇入累加器
+                    - 累加器旁标注"loss ÷ 8 再backward"
+                    - 底部显示等效结果：32 × 8 = 256 等效 batch
+                    - 配色建议：浅灰背景，理想方块红色虚线，小方块绿色，累加器橙色，输出蓝色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果
+                    </p>
+                </div>
+                <table>
+                    <thead><tr><th>Step</th><th>操作</th><th>梯度状态</th></tr></thead>
+                    <tbody>
+                        <tr><td>1</td><td>forward + backward</td><td>grad += grad_1</td></tr>
+                        <tr><td>2</td><td>forward + backward</td><td>grad += grad_2</td></tr>
+                        <tr><td>...</td><td>...</td><td>...</td></tr>
+                        <tr><td>8</td><td>forward + backward + <strong>update</strong></td><td>grad += grad_8 → 更新 → 清零</td></tr>
+                    </tbody>
+                </table>
+                <p>PyTorch 的 <code>backward()</code> 默认行为是<strong>累加</strong>梯度，不是覆盖。所以只有调用 <code>zero_grad()</code> 时才清零。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>混合精度训练</h3>
+                <h4>用更少的内存跑更大的模型</h4>
+                <p><strong>定义</strong>：混合精度 = 用低精度（16bit）做前向和反向，用高精度（32bit）维护参数主副本。</p>
+                <table>
+                    <thead><tr><th>精度类型</th><th>占用</th><th>速度</th><th>数值范围</th><th>需 GradScaler</th></tr></thead>
+                    <tbody>
+                        <tr><td>float32</td><td>高（4字节）</td><td>慢</td><td>±3.4e38</td><td>不需要</td></tr>
+                        <tr><td>float16</td><td>低（2字节）</td><td>快</td><td>±6.5e4</td><td><strong>需要</strong></td></tr>
+                        <tr><td>bfloat16</td><td>低（2字节）</td><td>快</td><td>±3.4e38</td><td>不需要</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-python"># train_pretrain.py 中的设置
+dtype = torch.bfloat16 if args.dtype == "bfloat16" else torch.float16
+autocast_ctx = nullcontext() if device_type == "cpu" \
+               else torch.cuda.amp.autocast(dtype=dtype)
+# GradScaler 仅 float16 需要（bfloat16 范围够大，不需要）
+scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype == 'float16'))</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三种精度对比</h3>
+                <h4>bfloat16 为什么是最佳选择？</h4>
+                <div class="ai-diagram">
+                    <h4>图：三种浮点精度格式的内存布局</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：三行对比。float32:"1位符号|8位指数|23位尾数"(32位)；float16:"1位符号|5位指数|10位尾数"(16位)；bfloat16:"1位符号|8位指数|7位尾数"(16位)
+                    - float32和bfloat16指数位同色(都是8位，蓝色)，float16指数位红色(只有5位)
+                    - 标注：float32"±3.4e38，4字节"；float16"±6.5e4，需GradScaler"；bfloat16"±3.4e38，无需Scaler"
+                    - 底部结论框："bfloat16 = float16 的内存 + float32 的范围"
+                    - 配色建议：白色背景，符号位灰色，指数位蓝色或红色，尾数绿色
+                    - 画面比例：16:9
+                    - 避免：过度装饰、3D 效果
+                    </p>
+                </div>
+                <p><strong>白话</strong>：float16 的"量程"太小（±6.5万），稍大的梯度就溢出了，需要 GradScaler 帮忙。bfloat16 和 float32 一样大（±3.4e38），但只要一半内存。MiniMind 默认用 bfloat16。</p>
+                <div class="intro-block">
+                    <p><strong>一句话记忆</strong>：bfloat16 = float16 的内存占用 + float32 的数值范围。能选 bfloat16 就选它。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GradScaler</h3>
+                <h4>float16 的"保镖"——防止梯度下溢</h4>
+                <pre><code class="language-python"># GradScaler 的工作流程
+# 1. 放大 loss，防止小梯度在 float16 下变成 0
+scaler.scale(loss).backward()
+
+# 2. 缩放回来，检查有没有 inf/nan
+scaler.unscale_(optimizer)
+
+# 3. 如果正常，更新参数；如果有 inf/nan，跳过这步
+scaler.step(optimizer)
+
+# 4. 调整缩放因子
+scaler.update()</code></pre>
+                <p>bfloat16 因为范围够大，不需要这个保镖。所以 MiniMind 的代码中 <code>enabled=(args.dtype == 'float16')</code>——只在 float16 时启用。</p>
+                <div class="warning">
+                    <strong>如果你用的是老旧 GPU（如 GTX 1080）</strong>，它不支持 bfloat16，只能选 float16。这时 GradScaler 是必需的，不能关。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>梯度裁剪</h3>
+                <h4>防止梯度爆炸的"限速器"</h4>
+                <pre><code class="language-python"># train_pretrain.py 第 43 行
+torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+# grad_clip 默认 1.0
+# 如果所有参数梯度范数 > 1.0，就等比例缩小到 1.0</code></pre>
+                <p><strong>三步走</strong>：</p>
+                <ol>
+                    <li><strong>定义</strong>：计算所有参数梯度的 L2 范数，超过阈值则等比缩放。</li>
+                    <li><strong>白话</strong>：给梯度设上限，就像汽车限速——不管多着急，最快 120。遇到"特别难"的数据时，梯度可能突然爆炸，裁剪防住它。</li>
+                    <li><strong>代码</strong>：<code>clip_grad_norm_(params, max_norm=1.0)</code>，超过 1.0 就缩到 1.0。</li>
+                </ol>
+                <p><em>这个比喻只是为了帮你建立直观感受。在计算机内部，梯度裁剪实际上是计算所有参数梯度向量的 L2 范数，除以 max_norm 得到缩放系数。</em></p>
+                <div class="intro-block">
+                    <p>裁剪位置很关键——必须在 <code>unscale_</code> 之后、<code>step</code> 之前。因为要先还原真实梯度大小，才能正确判断是否超阈值。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>尾部残余梯度</h3>
+                <h4>train_epoch 末尾的兜底处理</h4>
+                <pre><code class="language-python"># train_epoch 函数的末尾（第 74-79 行）
+if last_step > start_step and last_step % args.accumulation_steps != 0:
+    # 如果 epoch 结束时还有未更新的残余梯度
+    scaler.unscale_(optimizer)
+    torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+    scaler.step(optimizer)
+    scaler.update()
+    optimizer.zero_grad(set_to_none=True)</code></pre>
+                <p>假设 <code>accumulation_steps=8</code>，epoch 在 step=45 结束。45 % 8 = 5，还剩 5 步累积的梯度没有更新。</p>
+                <div class="intro-block">
+                    <p>这一段代码确保<strong>不浪费任何梯度</strong>。否则每个 epoch 末尾最多会丢失 7 步的梯度信息，训练数据利用率降低。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: 工程实战 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 工程实战</h2>
+                <p>训练脚本 9 步总览、工程基础设施、端到端数据流。</p>
+                <div class="intro-block">
+                    <p>理解了训练循环的内部逻辑，这一部分我们拉开视角，看完整的训练脚本是怎么组织的——从初始化分布式环境到最终清理资源，一共 9 个步骤。其中的检查点续训、多卡分布式等通用基础设施，所有训练器都共用同一套 <code>trainer_utils.py</code>，这里先建立直觉，深度实现留到阶段 11 系统讲解。</p>
+                    <ul>
+                        <li><b>训练脚本 9 步结构</b> —— 从环境初始化到训练启动的完整流程，心中有全局</li>
+                        <li><b>工程基础设施</b> —— 检查点续训、多卡分布式、原子保存，预训练视角的速览</li>
+                        <li><b>端到端数据流</b> —— 从 JSONL 文件到梯度更新的完整数据变换链路</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练脚本 9 步</h3>
+                <h4>train_pretrain.py 的完整结构</h4>
+                                <div class="ai-diagram">
+                  <h4>图：train_pretrain.py 训练脚本九步结构</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：纵向排列的9个圆角矩形，从上到下依次为：①"初始化分布式和随机种子"→②"配置目录模型参数"→③"设置混合精度"→④"配 SwanLab/WandB 日志"→⑤"定义模型、数据、优化器"→⑥"从 checkpoint 恢复状态"→⑦"编译和分布式包装"→⑧"开始训练循环"→⑨"清理分布进程"
+                  - 各元素关系：从上到下依次用箭头连接，表示执行顺序。每一步依赖前一步完成
+                  - 关键标注：每步用序号圆圈①-⑨标注，⑤⑥⑦三步用浅色背景框起来标注"核心初始化"
+                  - 配色建议：浅蓝背景，步骤矩形用浅蓝色，序号用橙色圆圈
+                  - 画面比例：9:16（纵向）
+                  - 避免：过度装饰、3D 效果、节点太密
+                  </p>
+                </div>
+                <p>从初始化到训练到清理，一共 9 步。每一步都不能跳过，否则训练可能静默出错。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>步骤 1-3 初始化</h3>
+                <h4>分布式环境、模型配置、混合精度</h4>
+                <pre><code class="language-python"># ① 初始化分布式环境和随机种子
+local_rank = init_distributed_mode()
+if dist.is_initialized():
+    args.device = f"cuda:{local_rank}"
+setup_seed(42 + (dist.get_rank() if dist.is_initialized() else 0))
+
+# ② 配置模型参数
+lm_config = MiniMindConfig(
+    hidden_size=args.hidden_size,        # 默认 768
+    num_hidden_layers=args.num_hidden_layers,  # 默认 8
+    use_moe=bool(args.use_moe)           # 默认 False
+)
+
+# ③ 设置混合精度
+device_type = "cuda" if "cuda" in args.device else "cpu"
+dtype = torch.bfloat16 if args.dtype == "bfloat16" else torch.float16
+autocast_ctx = nullcontext() if device_type == "cpu" \
+               else torch.cuda.amp.autocast(dtype=dtype)</code></pre>
+                <div class="intro-block">
+                    <p>随机种子加了 rank 偏移：<code>42 + rank</code>。这确保每张 GPU 的数据增强不同，增加数据多样性。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>步骤 4-5 定义组件</h3>
+                <h4>日志、模型、数据集、优化器</h4>
+                <pre><code class="language-python"># ④ 配 SwanLab 日志（可选）
+wandb = None
+if args.use_wandb and is_main_process():
+    import swanlab as wandb
+    wandb_id = ckp_data.get('wandb_id') if ckp_data else None
+    wandb.init(project=args.wandb_project, id=wandb_id,
+               resume='must' if wandb_id else None)
+
+# ⑤ 定义模型、数据、优化器
+model, tokenizer = init_model(lm_config, args.from_weight, device=args.device)
+train_ds = PretrainDataset(args.data_path, tokenizer, max_length=args.max_seq_len)
+train_sampler = DistributedSampler(train_ds) if dist.is_initialized() else None
+scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype == 'float16'))
+optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)</code></pre>
+                <table>
+                    <thead><tr><th>组件</th><th>默认值</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td>model</td><td>MiniMind-768</td><td>64M 参数的小模型（minimind-3）</td></tr>
+                        <tr><td>tokenizer</td><td>模型目录下的分词器</td><td>基于 sentencepiece</td></tr>
+                        <tr><td>optimizer</td><td>AdamW</td><td>带权重衰减的 Adam</td></tr>
+                        <tr><td>scaler</td><td>GradScaler</td><td>仅 float16 启用</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>步骤 6-7 恢复与包装</h3>
+                <h4>检查点恢复、torch.compile、DDP 包装</h4>
+                <pre><code class="language-python"># ⑥ 从 checkpoint 恢复状态
+start_epoch, start_step = 0, 0
+if ckp_data:
+    model.load_state_dict(ckp_data['model'])
+    optimizer.load_state_dict(ckp_data['optimizer'])
+    scaler.load_state_dict(ckp_data['scaler'])
+    start_epoch = ckp_data['epoch']
+    start_step = ckp_data.get('step', 0)
+
+# ⑦ 编译和分布式包装
+if args.use_compile == 1:
+    model = torch.compile(model)  # PyTorch 2.0 加速
+if dist.is_initialized():
+    model = DistributedDataParallel(model, device_ids=[local_rank])</code></pre>
+                <div class="intro-block">
+                    <p>恢复顺序很重要：先模型 → 再优化器 → 最后 scaler。因为优化器状态依赖模型参数结构。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>步骤 8-9 训练与清理</h3>
+                <h4>训练循环与 DataLoader 构建</h4>
+                <pre><code class="language-python"># ⑧ 开始训练循环
+for epoch in range(start_epoch, args.epochs):
+    train_sampler and train_sampler.set_epoch(epoch)
+    setup_seed(42 + epoch)
+    indices = torch.randperm(len(train_ds)).tolist()
+
+    # 关键：断点续训时跳过已训练的 batch
+    skip = start_step if (epoch == start_epoch and start_step > 0) else 0
+    batch_sampler = SkipBatchSampler(
+        train_sampler or indices, args.batch_size, skip
+    )
+    loader = DataLoader(train_ds, batch_sampler=batch_sampler,
+                        num_workers=args.num_workers, pin_memory=True)
+
+    if skip > 0:
+        Logger(f'跳过前{skip}个step，从step {skip+1}开始')
+    train_epoch(epoch, loader, len(loader) + skip, skip, wandb)
+
+# ⑨ 清理分布进程
+if dist.is_initialized():
+    dist.destroy_process_group()</code></pre>
+                <div class="intro-block">
+                    <p><code>SkipBatchSampler</code> 是断点续训的关键——它跳过已经训练过的 batch，直接从断点处继续。不用它的话，恢复后会重复训练已见过的数据。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>工程基础设施</h3>
+                <h4>检查点续训与多卡训练——这里先建立直觉，深度留给阶段 11</h4>
+                <p>上面 9 步里出现了两个工程必备件：<code>lm_checkpoint</code>（检查点）和 <code>init_distributed_mode</code>（分布式）。它们的具体实现都在 <code>trainer_utils.py</code> 里，是<strong>所有训练器共享</strong>的基础设施——预训练、SFT、DPO、RL 用的是同一套代码。这里先记住它们解决什么问题，细节留到阶段 11 系统讲。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>检查点（lm_checkpoint）</h4>
+                        <p>训练的"存档"机制。保存两类文件：<code>pretrain_768.pth</code>（纯权重，用于推理）和 <code>pretrain_768_resume.pth</code>（权重+优化器+epoch/step，用于断点续训）。配合 <code>SkipBatchSampler</code>，中断后能从断点无缝继续。</p>
+                    </div>
+                    <div class="card">
+                        <h4>分布式（init_distributed_mode）</h4>
+                        <p>多卡并行训练。每张 GPU 处理不同数据切片，算出梯度后用 All-Reduce 取平均，再用相同梯度更新。4 张卡接近 4 倍速。<code>DistributedSampler</code> 自动分片，无需手动切。</p>
+                    </div>
+                    <div class="card">
+                        <h4>原子保存</h4>
+                        <p>保存时先写 <code>.tmp</code> 临时文件，再用 <code>os.replace</code> 原子替换。即使保存中途断电，文件要么是旧的要么是新的，不会出现损坏的半成品。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>深入这些机制的实现细节</strong>（GPU 数量变化时 step 自动转换、All-Reduce 的通信原理、<code>SkipBatchSampler</code> 的断点跳过逻辑、<code>LMForRewardModel</code> 封装等），请跳转到 <strong><a href="./11-engineering.html">阶段 11 · 训练工具与工程实践</a></strong>——那一章是 <code>trainer_utils.py</code> 的系统精讲。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>端到端数据流</h3>
+                <h4>从文本到模型更新的完整路径</h4>
+                                <div class="ai-diagram">
+                  <h4>图：预训练端到端数据流完整闭环</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：纵向循环流程图。顶部"原始文本 JSONL {text: 你好世界}"→"PretrainDataset 分词+BOS/EOS+PAD"→"DataLoader 组成batch搬到GPU"→"model.forward 词嵌入→Transformer→logits"→"loss = cross_entropy + aux_loss"→"loss/accumulation_steps backward()"→菱形"累积够了？"（否回路到DataLoader）→"unscale→clip_grad→step→zero_grad"→菱形"到保存间隔？"（否回路到DataLoader）→"保存 .pth 和 _resume.pth"→回路到DataLoader
+                  - 各元素关系：纵向主流程，多个菱形判断产生回路形成循环
+                  - 关键标注：数据阶段用蓝色，模型阶段用绿色，优化阶段用橙色，保存阶段用紫色
+                  - 配色建议：浅灰背景，数据流蓝色系，模型计算绿色系，优化器橙色系
+                  - 画面比例：9:16（纵向）
+                  - 避免：过度装饰、3D 效果、节点太密
+                  </p>
+                </div>
+                <p>这就是训练的完整闭环。每一步你都已经在前面学过了，现在把它们串起来。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 5: 排错与练习 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 排错与练习</h2>
+                <p>常见错误诊断和动手练习。训练出问题时，先来这里查。</p>
+                <div class="intro-block">
+                    <p>训练不是一帆风顺的——Loss 不下降、显存爆了、突然出现 NaN……这些都是新手（和老手）都会遇到的问题。这一部分先帮你建一张"排错速查表"，覆盖最常见的训练异常和对应的排查思路。然后留几道动手练习题，从手写 labels 到手动计算学习率，让你在纸上把关键概念过一遍，确保不只是"看懂了"而是"真的会了"。</p>
+                    <ul>
+                        <li><b>OOM 与显存</b> —— 显存不够怎么办？从 batch size、序列长度到精度，逐项排查</li>
+                        <li><b>Loss 异常诊断</b> —— Loss 不下降、突然飙升、震荡不稳，各种异常的常见原因和对策</li>
+                        <li><b>NaN 与恢复异常</b> —— 梯度爆炸导致 NaN、checkpoint 恢复后训练行为异常的排查方法</li>
+                        <li><b>排查流程图</b> —— 一张图串联所有排错路径，出问题时按图索骥</li>
+                        <li><b>动手练习</b> —— 手写 labels、计算等效 batch size、手动推算学习率、分析显存占用</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>OOM 与显存</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>CUDA Out of Memory</h4>
+                        <p><strong>症状</strong>：RuntimeError: CUDA out of memory</p>
+                        <p><strong>原因</strong>：batch 太大或序列太长，显存放不下。</p>
+                        <p><strong>修复</strong>（按优先级）：</p>
+                        <ol>
+                            <li>减小 <code>batch_size</code>（32→16→8）</li>
+                            <li>减小 <code>max_seq_len</code>（340→256→128）</li>
+                            <li>增大 <code>accumulation_steps</code> 补偿 batch</li>
+                        </ol>
+                    </div>
+                    <div class="card">
+                        <h4>显存占用估算</h4>
+                        <p>粗略公式：</p>
+                        <pre><code class="language-plaintext">显存 ≈ 模型参数 × 4 (float32)
+     或 模型参数 × 2 (bfloat16)
+     + batch_size × seq_len × hidden × 4</code></pre>
+                        <p>MiniMind-768 约 64M 参数，float32 时约 256MB。加上梯度和优化器状态，总共约 1-1.3GB。非常省显存。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Loss 异常诊断</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Loss 不下降</h4>
+                        <p><strong>症状</strong>：训练几百步 loss 没变化</p>
+                        <p><strong>排查清单</strong>：</p>
+                        <ol>
+                            <li>学习率是否太小？（试试 1e-3）</li>
+                            <li>数据量是否太少？（至少需要上万条）</li>
+                            <li>数据质量是否太差？（大量乱码、重复）</li>
+                            <li>模型结构是否正确？（检查 config）</li>
+                        </ol>
+                    </div>
+                    <div class="card">
+                        <h4>Loss 突然飙升</h4>
+                        <p><strong>症状</strong>：loss 正常下降后突然变大</p>
+                        <p><strong>排查清单</strong>：</p>
+                        <ol>
+                            <li>学习率是否太大？（试试 1e-4）</li>
+                            <li>是否有异常数据？（空行、超长行）</li>
+                            <li>梯度裁剪是否生效？（检查 <code>grad_clip</code>）</li>
+                            <li>从最近的检查点重新开始</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>NaN 与恢复异常</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Loss 变成 NaN</h4>
+                        <p><strong>症状</strong>：训练几步后 loss 突然变成 NaN。</p>
+                        <p><strong>原因</strong>：学习率过高导致梯度爆炸，或混合精度下数值溢出。</p>
+                        <p><strong>修复</strong>：</p>
+                        <ol>
+                            <li>降低学习率（5e-4 → 1e-4）</li>
+                            <li>确认梯度裁剪生效</li>
+                            <li>使用 bfloat16 而非 float16</li>
+                            <li>检查数据是否有极端值</li>
+                        </ol>
+                    </div>
+                    <div class="card">
+                        <h4>恢复训练后异常</h4>
+                        <p><strong>症状</strong>：<code>--from_resume 1</code> 后 loss 跳到很大。</p>
+                        <p><strong>修复</strong>：</p>
+                        <ol>
+                            <li>确认 resume 文件完整（大小合理？）</li>
+                            <li>检查 optimizer 和 scaler 是否都恢复了</li>
+                            <li>确认恢复前后模型配置一致</li>
+                            <li>确认学习率调度器步数正确</li>
+                        </ol>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>NaN 是致命的！</strong>一旦出现 NaN，后续所有计算都是 NaN。唯一的办法是从最近的检查点重新开始，并降低学习率。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>排查流程图</h3>
+                <h4>遇到训练问题时，按此流程排查</h4>
+                                <div class="ai-diagram">
+                  <h4>图：训练问题排查决策树</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从顶部"训练出问题了"（红色圆角矩形）开始，向下经过菱形判断节点构成决策树。第一个判断"Loss 是 NaN？"（是→修复：降学习率、确认clip_grad、换bfloat16、从ckp重来），否→第二个判断"Loss 不下降？"（是→修复：检查数据量质量、增大学习率、检查模型结构），否→第三个判断"Loss 突然飙升？"（是→修复：降学习率、检查异常数据、确认clip_grad、从ckp重来），否→第四个判断"OOM？"（是→修复：减batch_size、减max_seq_len、增accumulation_steps）
+                  - 各元素关系：纵向决策树，每个菱形判断有"是"和"否"两条分支，"是"导向修复方案矩形，"否"导向下一个判断
+                  - 关键标注：每个修复方案用浅红色背景，判断节点用菱形，问题类型用粗体标注
+                  - 配色建议：浅灰背景，判断菱形橙色，修复方案浅红色(#FFE0E0)，箭头深灰色
+                  - 画面比例：9:16（纵向）
+                  - 避免：过度装饰、3D 效果、节点太密
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>动手练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h4>练习 1：写出 labels</h4>
+                        <p>假设 tokenized = <code>[3, 8, 15, 2]</code>（BOS=3, EOS=2），max_length=6，PAD=0。请写出最终的 input_ids 和 labels。</p>
+                        <div class="answer-section">
+                            <h4>参考</h4>
+                            <p>input_ids = <code>[3, 8, 15, 2, 0, 0]</code>，labels = <code>[3, 8, 15, 2, -100, -100]</code></p>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h4>练习 2：计算等效 batch size</h4>
+                        <p>如果 batch_size=16，accumulation_steps=4，等效 batch size 是多少？如果要等效 batch_size=256（batch_size=32），accumulation_steps 应该设多少？</p>
+                        <div class="answer-section">
+                            <h4>参考</h4>
+                            <p>等效 = 16 &times; 4 = 64。256 / 32 = 8，设 accumulation_steps=8。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>进阶练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h4>练习 3：手动计算学习率</h4>
+                        <p>假设 base_lr=5e-4，当前步数 current_step=500，总步数 total_steps=2000。请用 get_lr 公式计算当前学习率。</p>
+                        <div class="answer-section">
+                            <h4>参考</h4>
+                            <p>cos(π × 500/2000) = cos(π/4) ≈ 0.707</p>
+                            <p>lr = 5e-4 × (0.1 + 0.45 × (1 + 0.707)) = 5e-4 × (0.1 + 0.768) = 5e-4 × 0.868 ≈ 4.34e-4</p>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h4>练习 4：分析显存占用</h4>
+                        <p>MiniMind-768 有 64M 参数。使用 bfloat16 训练，batch_size=32，max_seq_len=340。估算最低显存需求。</p>
+                        <div class="answer-section">
+                            <h4>参考</h4>
+                            <p>模型参数：64M × 2 bytes ≈ 128MB</p>
+                            <p>梯度 + 优化器状态：约 3× 参数量 ≈ 384MB</p>
+                            <p>激活值：batch_size × seq_len × hidden ≈ 32 × 340 × 768 × 2 ≈ 17MB（粗略）</p>
+                            <p>总计约 529MB + CUDA 开销 ≈ 1~1.5GB。几乎所有 GPU 都能跑。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 完整命令 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>完整训练命令</h3>
+                <h4>从最简单到自定义到多卡</h4>
+                <pre><code class="language-bash"># 最简单的单卡训练（所有参数用默认值）
+$ python trainer/train_pretrain.py
+
+# 自定义参数
+$ python trainer/train_pretrain.py \
+    --epochs 2 \
+    --batch_size 32 \
+    --learning_rate 5e-4 \
+    --max_seq_len 340 \
+    --accumulation_steps 8 \
+    --hidden_size 768 \
+    --num_hidden_layers 8
+
+# 4卡训练 + SwanLab 日志
+$ torchrun --nproc_per_node=4 trainer/train_pretrain.py \
+    --use_wandb --epochs 4 --batch_size 64
+
+# 断点续训
+$ python trainer/train_pretrain.py --from_resume 1
+
+# 从已有权重继续预训练
+$ python trainer/train_pretrain.py --from_weight pretrain</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>参数速查表</h3>
+                <h4>train_pretrain.py 所有参数一览</h4>
+                <table>
+                    <thead><tr><th>参数</th><th>默认值</th><th>说明</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--epochs</code></td><td>2</td><td>训练轮数</td></tr>
+                        <tr><td><code>--batch_size</code></td><td>32</td><td>每步数据量</td></tr>
+                        <tr><td><code>--learning_rate</code></td><td>5e-4</td><td>初始学习率</td></tr>
+                        <tr><td><code>--max_seq_len</code></td><td>340</td><td>最大序列长度</td></tr>
+                        <tr><td><code>--accumulation_steps</code></td><td>8</td><td>梯度累积步数</td></tr>
+                        <tr><td><code>--grad_clip</code></td><td>1.0</td><td>梯度裁剪阈值</td></tr>
+                        <tr><td><code>--dtype</code></td><td>bfloat16</td><td>混合精度类型</td></tr>
+                        <tr><td><code>--hidden_size</code></td><td>768</td><td>隐藏层维度</td></tr>
+                        <tr><td><code>--num_hidden_layers</code></td><td>8</td><td>Transformer 层数</td></tr>
+                        <tr><td><code>--use_moe</code></td><td>0</td><td>是否使用 MoE</td></tr>
+                        <tr><td><code>--save_interval</code></td><td>1000</td><td>保存间隔（步）</td></tr>
+                        <tr><td><code>--log_interval</code></td><td>100</td><td>日志间隔（步）</td></tr>
+                        <tr><td><code>--from_resume</code></td><td>0</td><td>是否断点续训</td></tr>
+                        <tr><td><code>--use_compile</code></td><td>0</td><td>是否 torch.compile</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 知识全景 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>知识全景图</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>核心思想</h4>
+                        <p>Next Token Prediction——给定前文预测下一个字，logits[:-1] vs labels[1:] 对齐，一次前向传播 = N-1 次练习</p>
+                    </div>
+                    <div class="card">
+                        <h4>数据处理</h4>
+                        <p>JSONL 格式 text 字段，分词 + BOS + EOS + PAD，labels 中 PAD = -100，max_length 影响显存</p>
+                    </div>
+                    <div class="card">
+                        <h4>训练循环</h4>
+                        <p>余弦学习率调度、梯度累积等效大 batch、混合精度 bfloat16、GradScaler 保 float16、梯度裁剪防爆炸、尾部残余梯度处理</p>
+                    </div>
+                    <div class="card">
+                        <h4>工程实战</h4>
+                        <p>9 步脚本结构、检查点原子保存、DDP 多卡 All-Reduce、SkipBatchSampler 续训、torch.compile 加速</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 收尾 ==================== -->
+        <section class="slide title-slide">
+            <h1>阶段 3 完成</h1>
+            <p>预训练完成后，模型已具备基本的语言能力。</p>
+            <p>它能"续写"文本，但还不能"对话"。</p>
+            <p>下一章：<strong>阶段 4 · 监督微调（SFT）</strong>——教模型如何听懂指令、进行对话。</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第八阶段：训练流程详解</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="../../minimind/tutorial/references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面幻灯片 -->
+        <section class="slide title-slide active">
+            <h1>第八阶段：训练流程详解</h1>
+            <p>理解从数据准备到模型训练的完整流程</p>
+        </section>
+
+        <!-- 开场：学习目标 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>学习目标与前提</h3>
+                <div class="intro-block">
+                    <ul>
+                        <li>🎯 目标：理解从数据准备到模型训练的完整流程——两阶段训练、数据组成、冻结策略、训练循环、混合精度、断点续训</li>
+                        <li>⏰ 预计时间：<strong>1 周</strong></li>
+                        <li>📌 前提：已完成第一至第七阶段，已阅读过 MiniMind-V 的全部源码</li>
+                    </ul>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>8.1-8.2 两阶段与数据</h4>
+                        <p>Pretrain 和 SFT 的流程设计、数据来源与三种数据类型</p>
+                    </div>
+                    <div class="card">
+                        <h4>8.3-8.4 冻结策略与超参</h4>
+                        <p>三种冻结级别的原理与 Pretrain/SFT 超参数对比</p>
+                    </div>
+                    <div class="card">
+                        <h4>8.5-8.7 训练技术</h4>
+                        <p>训练循环、混合精度训练、断点续训的完整实现</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 8.1 两阶段训练总览 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>8.1 两阶段训练总览</h2>
+                <p>MiniMind-V 的训练分为两个阶段：Pretrain（基础图文对齐）和 SFT（指令微调）。Pretrain 可以跳过——因为 SFT 数据已包含 Pretrain 数据。</p>
+                <div class="intro-block">
+                    <p>两阶段的设计思路是：<strong>Pretrain 阶段只训练投影层</strong>，让它学会把视觉特征"翻译"到语言空间；<strong>SFT 阶段微调投影层 + LLM 首末层</strong>，让模型学会看图问答。这和人类学外语类似——先学会查词典（Pretrain），再学会用外语对话（SFT）。</p>
+                    <ul>
+                        <li><strong>Pretrain 阶段</strong> —— 127 万条图文描述，冻结 LLM，仅训练投影层（freeze_llm=2），学习率 4e-4</li>
+                        <li><strong>SFT 阶段</strong> —— 290 万条混合数据，解冻 LLM 首末层（freeze_llm=1），学习率 5e-6</li>
+                        <li><strong>可跳过 Pretrain</strong> —— SFT 的 290 万条数据已包含 Pretrain 的 127 万条</li>
+                    </ul>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：两阶段训练流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从上到下的流程图，展示两阶段训练的完整决策路径
+                  - 各元素关系：从"开始训练"出发，判断"是否需要 Pretrain"。如果"是"，进入第一阶段 Pretrain（基础图文对齐），数据为 127 万条图文描述，冻结仅训练投影层（freeze_llm=2），学习率 4e-4，输出 pretrain_vlm_768.pth；如果"否（可跳过）"，直接进入第二阶段 SFT（指令微调），数据为 290 万条混合数据，冻结投影层+LLM 首末层（freeze_llm=1），学习率 5e-6，输出 sft_vlm_768.pth。最后到达"训练完成"
+                  - 关键标注：Pretrain 标注"可跳过"，菱形判断节点突出显示
+                  - 配色建议：浅蓝/浅灰背景，Pretrain 阶段用蓝色节点，SFT 阶段用绿色节点，判断节点用橙色菱形
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 8.2 数据详解 - 分部标题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>8.2 数据详解</h2>
+                <p>训练数据的来源、格式和组成——理解模型"吃什么"才能理解它"学到什么"。</p>
+                <div class="intro-block">
+                    <p>所有数据来自 <a href="https://huggingface.co/datasets/FreedomIntelligence/ALLaVA-4V" target="_blank">ALLaVA-4V</a> 系列，存储为 Parquet 文件。数据分为三个类型：图文问答、图文描述和纯文本对话。下面逐一介绍。</p>
+                    <ul>
+                        <li><strong>数据来源</strong> —— Pretrain 和 SFT 各自从哪些子集组成</li>
+                        <li><strong>数据格式</strong> —— Parquet 文件的列结构（conversations + image_bytes）</li>
+                        <li><strong>三种数据类型</strong> —— 图文问答、图文描述、纯文本对话及其作用</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 数据来源 + 数据格式 + 三种类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据来源与组成</h3>
+                <div class="ai-diagram">
+                  <h4>图：Pretrain 与 SFT 数据来源</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左右并列的树状图，展示两类数据的来源组成
+                  - 各元素关系：左侧 Pretrain 数据（pretrain_i2t.parquet，约 127 万条）包含 ALLaVA-Caption-LAION 英/中（约 47 万 + 约 44 万）、ALLaVA-Caption-VFLAN 英/中（约 19 万 + 约 17 万）。右侧 SFT 数据（sft_i2t.parquet，约 290 万条）包含 ALLaVA-Instruct-LAION 英/中、ALLaVA-Instruct-VFLAN 英/中、Gemini/Claude 合成指令（约 5 万）、GPT-4o 迭代指令（约 5 万）、纯文本对话（约 23 万）、Pretrain caption 合并（约 127 万）
+                  - 关键标注：每个子集标注数据量，两个 Parquet 文件名标注在顶部
+                  - 配色建议：浅蓝/浅灰背景，Pretrain 用蓝色系，SFT 用绿色系，子集用更浅的同色系
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>每条数据的格式如下：</p>
+                <pre><code class="language-plaintext">Parquet 文件列:
+├── conversations: JSON 字符串
+│   例: [{"role":"user","content":"&lt;image&gt;\n描述图片"},
+│         {"role":"assistant","content":"这是一只金毛..."}]
+│
+└── image_bytes: 二进制 JPEG 数据
+    例: &lt;255, 216, 255, 224, ...&gt;  (JPEG 文件头)</code></pre>
+                <div class="intro-block">
+                    <p><strong>格式解读</strong>：<code>conversations</code> 是 JSON 格式的对话记录，<code>&lt;image&gt;</code> 标记图片出现的位置（后续会被替换为 64 个占位符）。<code>image_bytes</code> 是图片的二进制 JPEG 数据，直接从 Parquet 读取后用 <code>Image.open(BytesIO())</code> 解码。这种把图片和文本打包在同一行的设计简化了数据管理。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 三种数据类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三种数据类型与设计意图</h3>
+                <div class="ai-diagram">
+                  <h4>图：SFT 数据的三种类型</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从顶部"SFT 数据约 290 万条"出发分为三条路径的分支图
+                  - 各元素关系：图文问答约 140 万（围绕图片的推理式问答）、图文描述约 127 万（"请描述这张图片"，即 Pretrain 数据合并）、纯文本对话约 23 万（图像列填 8x8 黑图占位，保持语言能力）
+                  - 关键标注：每个分支标注数据量和用途说明
+                  - 配色建议：浅蓝/浅灰背景，图文问答用蓝色，图文描述用绿色，纯文本对话用橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>类型</th><th>数据量</th><th>用途</th><th>图片处理</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>图文问答</strong></td>
+                            <td>~140 万</td>
+                            <td>围绕图片的推理式问答，训练模型的看图理解能力</td>
+                            <td>正常图片</td>
+                        </tr>
+                        <tr>
+                            <td><strong>图文描述</strong></td>
+                            <td>~127 万</td>
+                            <td>"请描述这张图片"，即 Pretrain 数据合并</td>
+                            <td>正常图片</td>
+                        </tr>
+                        <tr>
+                            <td><strong>纯文本对话</strong></td>
+                            <td>~23 万</td>
+                            <td>保持语言对话能力</td>
+                            <td>8x8 黑图占位</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>为什么要混入纯文本对话？</strong>因为 SFT 数据中 92% 与图像有关。如果全用图文数据训练，模型可能"忘记"怎么做纯文本对话（灾难性遗忘）。纯文本数据就像"复习课"——确保模型在学习看图的同时，不丢掉语言能力。纯文本数据的 image_bytes 用 8x8 黑图占位，经过 SigLIP 处理后产生的视觉 token 对输出影响极小。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 8.3 冻结策略详解 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>8.3 冻结策略详解</h2>
+                <p>冻结策略决定了训练时哪些参数会被更新——这直接影响训练效率和模型能力。</p>
+                <div class="intro-block">
+                    <p>MiniMind-V 有三个可控制的部分：视觉编码器（~95M 参数，始终冻结）、投影层（~1M 参数，始终训练）、LLM（~64M 参数，可变）。冻结策略通过 <code>freeze_llm</code> 参数控制 LLM 部分的训练范围。</p>
+                    <ul>
+                        <li><strong>参数分布</strong> —— 视觉编码器占绝大部分参数，但永远不动</li>
+                        <li><strong>冻结策略对比</strong> —— 三种策略的适用场景与设计原理</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 冻结策略对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>冻结策略对比与工作原理</h3>
+                <p>三种冻结策略对应三种不同的训练阶段和数据量级。核心原则：<strong>数据越少，冻结越多</strong>——避免有限的数据破坏已经学到的知识。</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>策略</th>
+                            <th>投影层</th>
+                            <th>LLM 首层</th>
+                            <th>LLM 中间层</th>
+                            <th>LLM 末层</th>
+                            <th>用途</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>freeze_llm=0</code></td>
+                            <td>🔥</td>
+                            <td>🔥</td>
+                            <td>🔥</td>
+                            <td>🔥</td>
+                            <td>全参训练（数据充足时）</td>
+                        </tr>
+                        <tr>
+                            <td><code>freeze_llm=1</code></td>
+                            <td>🔥</td>
+                            <td>🔥</td>
+                            <td>❄️</td>
+                            <td>🔥</td>
+                            <td><strong>SFT 默认</strong></td>
+                        </tr>
+                        <tr>
+                            <td><code>freeze_llm=2</code></td>
+                            <td>🔥</td>
+                            <td>❄️</td>
+                            <td>❄️</td>
+                            <td>❄️</td>
+                            <td><strong>Pretrain 默认</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="ai-diagram">
+                  <h4>图：两种冻结策略的工作原理对比</h4>
+                  <p>【AI 生图提示词】请生成一张中文对比示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左右并列的流程图，对比两种冻结策略
+                  - 各元素关系：左侧 freeze_llm=2（Pretrain 阶段）—— 投影层训练从零学习翻译 → LLM 完全冻结不动，目标是让投影层干净地完成图文对齐。右侧 freeze_llm=1（SFT 阶段）—— 投影层继续优化 → 首层训练处理视觉融合 → 中间层冻结保留语言知识 → 末层训练优化输出格式，目标是学会看图问答同时保留语言能力
+                  - 关键标注：每个组件标注训练或冻结状态，底部标注各阶段目标
+                  - 配色建议：浅蓝/浅灰背景，Pretrain 用蓝色系，SFT 用绿色系，训练组件用橙色，冻结组件用蓝色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="intro-block">
+                    <p><strong>为什么 SFT 解冻首末层？</strong>首层负责处理视觉和文本特征的融合——视觉 token 刚进来时需要适配；末层直接影响输出格式——需要学会生成看图回答的格式。中间层承载了 LLM 的核心语言知识，冻结它可以防止灾难性遗忘。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 8.4 训练超参数对比 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>8.4 训练超参数对比</h2>
+                <p>Pretrain 和 SFT 在学习率、batch size、序列长度等超参数上有显著差异。理解这些差异背后的原因，比记住数字更重要。</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>参数</th>
+                            <th>Pretrain</th>
+                            <th>SFT</th>
+                            <th>为什么不同</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>learning_rate</strong></td>
+                            <td>4e-4</td>
+                            <td>5e-6</td>
+                            <td>Pretrain 投影层随机初始化，需要大学习率快速收敛；SFT 微调已有权重，需要小学习率精细调整（差 80 倍！）</td>
+                        </tr>
+                        <tr>
+                            <td><strong>batch_size</strong></td>
+                            <td>16</td>
+                            <td>4</td>
+                            <td>Pretrain 任务简单（看图说描述），可以大 batch；SFT 任务复杂（看图推理问答），需要小 batch 精细学习</td>
+                        </tr>
+                        <tr>
+                            <td><strong>max_seq_len</strong></td>
+                            <td>450</td>
+                            <td>768</td>
+                            <td>Pretrain 主要是短描述（"这是一只金毛"）；SFT 包含长对话和多轮交互</td>
+                        </tr>
+                        <tr>
+                            <td><strong>freeze_llm</strong></td>
+                            <td>2</td>
+                            <td>1</td>
+                            <td>Pretrain 只需对齐视觉和语言；SFT 还需微调 LLM 学会指令遵循</td>
+                        </tr>
+                        <tr>
+                            <td><strong>数据量</strong></td>
+                            <td>~127 万</td>
+                            <td>~290 万</td>
+                            <td>SFT 数据已包含 Pretrain 数据，是 Pretrain 的超集</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>最重要的差异是学习率</strong>：4e-4 vs 5e-6，差了将近 80 倍。原因很简单——Pretrain 时投影层是随机初始化的（像一张白纸），需要大学习率快速学到有用的表示；SFT 时所有参数已经有了一个不错的起点，只需要小学习率微调。如果 SFT 用 4e-4 的学习率，会把已经学好的知识"冲掉"。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 8.5 训练循环逐步解析 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>8.5 训练循环逐步解析</h2>
+                <p>这一节逐行解析训练循环中的每一步操作——从数据加载到参数更新的完整过程。</p>
+                <div class="intro-block">
+                    <p>训练循环是训练脚本的核心。它包含 7 个步骤：数据移到 GPU → 更新学习率 → 前向传播 → 计算损失 → 反向传播 → 梯度累积与更新 → 定期保存。下面先用流程图看全局，再用代码逐行对照。</p>
+                    <ul>
+                        <li><strong>训练循环流程</strong> —— 完整的状态机视图</li>
+                        <li><strong>关键代码对应</strong> —— 流程图中的每一步对应哪行代码</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 训练循环流程图 + 代码 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练循环流程与代码对照</h3>
+                <div class="ai-diagram">
+                  <h4>图：训练循环完整状态机</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从上到下的状态机流程图，展示训练循环的完整步骤
+                  - 各元素关系：初始化模型/数据/优化器 → 从 DataLoader 取一个 batch → 数据移到 GPU → 更新学习率（余弦退火）→ 前向传播（混合精度）→ 计算损失 = CE 损失 + MoE 辅助损失 → 反向传播 → 梯度累积 → 判断累积够了没 → 梯度裁剪（max_norm=1.0）→ 更新参数 → 清零梯度 → 判断需要保存吗 → 每 1000 步保存模型 → 判断是否结束 → 还有数据则继续，Epoch 结束则退出
+                  - 关键标注：菱形判断节点标注判断条件，前向传播和反向传播标注为关键步骤
+                  - 配色建议：浅蓝/浅灰背景，普通步骤用蓝色节点，判断节点用黄色菱形，关键步骤用橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <pre><code class="language-python"># 对应: train_sft_vlm.py 第27-79行
+for step, (input_ids, labels, pixel_values) in enumerate(loader):
+    # Step 1: 数据 → GPU
+    input_ids = input_ids.to(device)                                    # 第28行
+    labels = labels.to(device)                                          # 第29行
+    pixel_values = pixel_values.to(device)                              # 第30行
+
+    # Step 2: 余弦学习率 — 随训练进度平滑衰减
+    lr = get_lr(epoch * iters + step, args.epochs * iters, learning_rate)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr                                          # 第33-34行
+
+    # Step 3: 前向传播（混合精度）— BF16 加速
+    with autocast_ctx:                                                  # 第36行
+        res = model(input_ids, labels=labels, pixel_values=pixel_values)
+        loss = (res.loss + res.aux_loss) / accumulation_steps           # 第38-39行
+
+    # Step 4: 反向传播 — 自动求导
+    scaler.scale(loss).backward()                                       # 第41行
+
+    # Step 5: 梯度累积 + 裁剪 + 更新
+    if step % accumulation_steps == 0:
+        scaler.unscale_(optimizer)                                      # 第44行
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)        # 第45行 防止梯度爆炸
+        scaler.step(optimizer)                                          # 第47行
+        scaler.update()                                                 # 第48行
+        optimizer.zero_grad(set_to_none=True)                           # 第50行
+
+    # Step 6: 日志
+    if step % log_interval == 0:
+        Logger(f'Epoch:[{epoch+1}/{epochs}]({step}/{iters}), loss: {loss:.4f}')
+
+    # Step 7: 保存模型
+    if step % save_interval == 0:
+        torch.save(model.state_dict(), ckp_path)                        # 第73行</code></pre>
+                <div class="intro-block">
+                    <p><strong>关键机制逐个解释</strong>：<code>get_lr()</code> 实现余弦退火——学习率先保持 warmup，然后按余弦曲线衰减到接近 0。<code>accumulation_steps</code> 实现梯度累积——每 N 步才更新一次参数，等效于 batch_size 放大 N 倍。<code>clip_grad_norm_</code> 梯度裁剪——将梯度范数限制在 1.0 以内，防止梯度爆炸导致训练崩溃。<code>loss + aux_loss</code>——主损失是交叉熵，辅助损失来自 MoE 的负载均衡。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 8.6 混合精度训练 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>8.6 混合精度训练</h2>
+                <p>混合精度训练用 BFloat16 替代 Float32 进行前向和反向传播，在几乎不损失精度的情况下将速度提升近 2 倍、显存减半。这对小显存显卡训练大模型至关重要。</p>
+                <div class="intro-block">
+                    <p><strong>核心思路</strong>：模型权重保留一份 FP32 "主副本"（保证精度），但前向和反向传播用 BF16（提速减存）。梯度更新时回到 FP32（防止精度丢失）。加上损失缩放（Loss Scaling）防止 BF16 梯度下溢。整个循环自动完成，只需开启 <code>autocast</code> 和 <code>GradScaler</code>。</p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：混合精度训练工作原理</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：环形流程图，展示混合精度训练的循环过程
+                  - 各元素关系：FP32 模型权重（主副本）→ BF16 前向传播（快速计算）→ BF16 损失值 → FP32 损失缩放（防止梯度下溢）→ BF16 反向传播 → FP32 梯度更新（保持精度）→ 回到 FP32 模型权重，形成循环
+                  - 关键标注：FP32 步骤标注"保持精度"，BF16 步骤标注"快速计算"，损失缩放标注"防止梯度下溢"
+                  - 配色建议：浅蓝/浅灰背景，FP32 步骤用蓝色，BF16 步骤用绿色，损失缩放用橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>指标</th><th>Float32（传统）</th><th>BFloat16（混合精度）</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>每个数的位数</td><td>32 位</td><td>16 位</td></tr>
+                        <tr><td>精度</td><td>高</td><td>够用（和 FP32 同样的指数范围）</td></tr>
+                        <tr><td>速度</td><td>基准</td><td>快 ~2x</td></tr>
+                        <tr><td>显存</td><td>基准</td><td>减少约一半</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 8.7 断点续训 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>8.7 断点续训</h2>
+                <p>训练过程中可能因为断电、OOM 等原因中断。断点续训机制确保从中断处继续，不丢失已训练的进度。</p>
+                <div class="intro-block">
+                    <p>断点续训需要保存四个东西：<strong>模型权重</strong>（当前参数状态）、<strong>优化器状态</strong>（动量、自适应学习率等历史信息）、<strong>epoch 和 step</strong>（训练进度）、<strong>scaler 状态</strong>（混合精度的缩放因子）。加载时全部恢复，从上次的 step 继续训练。</p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：断点续训流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从上到下的流程图，展示断点续训的完整流程
+                  - 各元素关系：训练中 Step 5000 → 中断 → 检查点已保存（model + optimizer + epoch + step）→ 重新启动训练（--from_resume 1）→ 加载检查点 → 恢复模型权重 → 恢复优化器状态 → 恢复 epoch 和 step → 从 Step 5001 继续训练。另外展示自动处理 GPU 数量变化：保存时 4 GPU，加载时 2 GPU，step 自动转换为 5000 x 4/2 = 10000
+                  - 关键标注：中断处用红色闪电标记，检查点标注保存内容，GPU 适配标注转换公式
+                  - 配色建议：浅蓝/浅灰背景，正常流程用蓝色节点，中断用红色标记，恢复流程用绿色节点
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="intro-block">
+                    <p><strong>GPU 数量适配</strong>：分布式训练时 step 数与 GPU 数量相关。保存时用 4 个 GPU，加载时只有 2 个 GPU，step 会自动转换：<code>step = step * old_gpu_count / new_gpu_count</code>。这确保不同硬件环境下断点续训的正确性。</p>
+                    <p><strong>安全保存策略</strong>：检查点先写入 <code>.tmp</code> 临时文件，写入完成后用 <code>os.replace</code> 原子替换正式文件。这样即使写入过程中断电，正式文件也不会损坏——要么是旧的完整检查点，要么是新的完整检查点。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 8.8 自我检测 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>8.8 自我检测</h2>
+                <p>用以下问题检验你对训练流程的理解程度。尝试不看提示回答。</p>
+                <div class="intro-block">
+                    <ol>
+                        <li><strong>为什么 Pretrain 的学习率比 SFT 大 80 倍？</strong><br>提示：Pretrain 时投影层随机初始化（像白纸），需要大学习率快速收敛；SFT 时所有参数已有好的起点，需要小学习率精细调整</li>
+                        <li><strong>SFT 数据为什么混入纯文本？</strong><br>提示：SFT 数据 92% 与图像有关，不混纯文本会导致模型"忘记"语言对话能力（灾难性遗忘）</li>
+                        <li><strong><code>freeze_llm=1</code> 解冻了哪些层？</strong><br>提示：投影层 + LLM 首层（处理视觉融合）+ LLM 末层（优化输出格式），中间层冻结保留语言知识</li>
+                        <li><strong>为什么要梯度裁剪？</strong><br>提示：防止梯度爆炸导致训练不稳定——将梯度范数限制在 1.0 以内</li>
+                        <li><strong>断点续训保存了什么？</strong><br>提示：模型权重 + 优化器状态（动量等）+ epoch/step 进度 + GradScaler 缩放因子</li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <!-- 结尾幻灯片 -->
+        <section class="slide title-slide">
+            <h1>第八阶段完成！</h1>
+            <p>你已经理解了 VLM 训练的完整流程——两阶段训练、数据组成、冻结策略、训练循环、混合精度和断点续训。</p>
+            <p>恭喜完成 MiniMind-V 教程的全部学习！</p>
+        </section>
+
+    </main>
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / 15</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="../../minimind/tutorial/references/slide-nav.js"></script>
+    <script src="../../minimind/tutorial/references/slide-toc.js"></script>
+</body>
+</html>

@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 10：模型推理与部署</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>模型推理与部署</h1>
+            <p>阶段 10 · 训练好的模型如何变成人人可用的服务</p>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>模型训好了</h3>
+                <p>你花了几天时间完成了预训练、SFT、DPO，终于得到了一个对话还不错的模型。现在你想让其他人也能用它。</p>
+                <p>你不能让每个人都 clone 你的代码、装 PyTorch、手动加载权重。你需要一个<strong>服务</strong>。</p>
+                <div class="intro-block">
+                    <p>这一章把训练好的模型变成三种可用形态：命令行对话、OpenAI 兼容 API、Web 聊天界面。以及一个容易被忽视但很实用的能力——模型格式转换。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 知识地图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>本章地图</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>推理基础</h4>
+                        <ul>
+                            <li>加载权重</li>
+                            <li>命令行对话</li>
+                            <li>采样参数</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>API 服务</h4>
+                        <ul>
+                            <li>FastAPI</li>
+                            <li>OpenAI 兼容</li>
+                            <li>流式输出 SSE</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>Web 界面</h4>
+                        <ul>
+                            <li>Streamlit</li>
+                            <li>实时聊天</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>格式转换</h4>
+                        <ul>
+                            <li>torch 到 transformers</li>
+                            <li>LoRA 合并</li>
+                            <li>Qwen3 兼容</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>高性能推理</h4>
+                        <ul>
+                            <li>vLLM 启动实战</li>
+                            <li>吞吐量对比</li>
+                            <li>FastAPI 多 worker</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 1 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：推理</h2>
+                <p>从加载权重到生成文本的完整流程。</p>
+                <div class="intro-block">
+                    <p>训练好模型只是第一步，让它"跑起来"才是目的。这一节从最基础的四步推理流水线讲起——加载权重、编码输入、自回归生成、解码输出。先搞懂命令行对话怎么跑，再去包装成 API 和 Web 服务。</p>
+                    <ul>
+                        <li><strong>推理流水线</strong>：加载模型权重 → Tokenizer 编码 → model.generate() 自回归生成 → Tokenizer 解码输出文本</li>
+                        <li><strong>模型加载 init_model</strong>：两条路径——原生 MiniMind .pth 权重或 HuggingFace transformers 格式，后者可用 vLLM 加速</li>
+                        <li><strong>采样参数详解</strong>：temperature 控制随机性、top_p 控制候选词范围、max_new_tokens 控制回答长度</li>
+                        <li><strong>命令行对话</strong>：eval_llm.py 的各种启动方式——基础用法、LoRA 权重、调整采样参数、MoE 模型、思考模式</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 推理流水线 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>推理流水线</h3>
+                <h4>四步走：加载 → 编码 → 生成 → 解码</h4>
+                <div class="ai-diagram">
+                  <h4>图：模型推理的四步流水线</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一条从左到右的四步流水线，包含四个方框
+                  - 方框1："加载模型权重 model.half().eval()"
+                  - 方框2："用户输入 Tokenizer 编码"
+                  - 方框3："model.generate() 自回归生成"
+                  - 方框4："Tokenizer 解码 输出文本"
+                  - 各元素关系：方框1用箭头指向方框2指向方框3指向方框4，形成线性流水线
+                  - 关键标注：每个方框上方标注步骤编号"第一步/第二步/第三步/第四步"
+                  - 配色建议：浅蓝/浅灰背景，方框白色带蓝色边框，箭头橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <pre><code class="language-python"># eval_llm.py 核心流程
+model, tokenizer = init_model(args)  # 加载模型
+
+while True:
+    user_input = input("用户: ")
+    messages = [{"role": "user", "content": user_input}]
+    # 编码
+    inputs = tokenizer.apply_chat_template(messages, return_tensors="pt")
+    # 生成
+    outputs = model.generate(inputs.to(device), max_new_tokens=8192,
+                              temperature=0.85, top_p=0.95)
+    # 解码
+    response = tokenizer.decode(outputs[0][inputs.shape[-1]:])
+    print(f"助手: {response}")</code></pre>
+            </div>
+        </section>
+
+        <!-- init_model -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>模型加载</h3>
+                <h4>支持两种权重格式：原生 torch 和 HuggingFace transformers</h4>
+                <pre><code class="language-python">def init_model(args):
+    tokenizer = AutoTokenizer.from_pretrained(args.load_from)
+    if 'model' in args.load_from:
+        # 路径1：原生 MiniMind 格式（.pth 权重）
+        model = MiniMindForCausalLM(MiniMindConfig(...))
+        model.load_state_dict(torch.load(ckp, map_location=args.device))
+        if args.lora_weight != 'None':
+            apply_lora(model)  # 可选：加载 LoRA 旁路
+            load_lora(model, lora_path)
+    else:
+        # 路径2：HuggingFace transformers 格式
+        model = AutoModelForCausalLM.from_pretrained(args.load_from)
+    return model.half().eval().to(args.device), tokenizer</code></pre>
+                <div class="intro-block">
+                    <p>两条路径的区别：路径 1 直接加载 MiniMind 原生权重（<code>.pth</code>），路径 2 加载转换后的 HuggingFace 格式。后者可以用 vLLM 等推理加速框架。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 采样参数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>采样参数详解</h3>
+                <h4>控制模型"怎么说"的三个旋钮</h4>
+                <table>
+                    <thead><tr><th>参数</th><th>默认值</th><th>作用</th><th>调大</th><th>调小</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>temperature</code></td><td>0.85</td><td>控制随机性</td><td>更发散、有创意</td><td>更确定、保守</td></tr>
+                        <tr><td><code>top_p</code></td><td>0.95</td><td>核采样阈值</td><td>候选词更多</td><td>只保留高概率词</td></tr>
+                        <tr><td><code>max_new_tokens</code></td><td>8192</td><td>最大生成长度</td><td>回答更长</td><td>回答更短</td></tr>
+                    </tbody>
+                </table>
+                <p>这是上一章 MiniMindForCausalLM.generate() 中讲过的 Temperature、Top-P 采样的实际应用。temperature=0 表示贪心解码（每次选概率最高的词）。</p>
+            </div>
+        </section>
+
+        <!-- 命令行推理 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>命令行对话</h3>
+                <h4>eval_llm.py —— 最快的验证方式</h4>
+                <pre><code class="language-bash"># 基础用法
+$ python eval_llm.py --weight full_sft
+
+# 使用 LoRA 权重
+$ python eval_llm.py --weight full_sft --lora_weight lora_medical
+
+# 调整采样参数
+$ python eval_llm.py --weight full_sft \
+    --temperature 0.5 --top_p 0.9 --max_new_tokens 2048
+
+# 使用 MoE 模型
+$ python eval_llm.py --weight full_sft --use_moe 1
+
+# 开启思考模式
+$ python eval_llm.py --weight full_sft --open_thinking 1</code></pre>
+                <div class="intro-block">
+                    <p><code>--historys</code> 参数控制携带的历史对话轮数（需为偶数）。0 表示不携带历史，每次对话独立。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 2 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：API</h2>
+                <p>把模型包装成 OpenAI 兼容的 API，任何客户端都能调用。</p>
+                <div class="intro-block">
+                    <p>命令行对话只能自己用，想让其他人也能调用你的模型，就得把它包装成 API 服务。这一节用 FastAPI 搭建一个 OpenAI 兼容的接口——这意味着你能把 MiniMind 直接接入任何基于 OpenAI API 的应用，包括流式输出的"打字机效果"。</p>
+                    <ul>
+                        <li><strong>API 服务架构</strong>：客户端 → FastAPI 服务 → MiniMind 模型，POST /v1/chat/completions 端点处理请求</li>
+                        <li><strong>流式输出 SSE</strong>：Server-Sent Events 实现"打字机"效果，每生成一个 Token 立即推送，用 CustomStreamer + 队列实现</li>
+                        <li><strong>SSE 数据格式</strong>：兼容 OpenAI 的 data: {...} 格式，客户端可直接用 OpenAI SDK 消费</li>
+                        <li><strong>启动 API 服务</strong>：serve_openai_api.py 的启动方式，支持指定端口、模型参数、HuggingFace 格式</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- API 架构 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>API 服务架构</h3>
+                <div class="ai-diagram">
+                  <h4>图：OpenAI 兼容 API 服务的请求-响应架构</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：三个竖向排列的方框，从左到右分别是"客户端（OpenAI SDK / curl）"、"FastAPI 服务（serve_openai_api.py）"、"MiniMind 模型（model.generate()）"
+                  - 请求流：客户端发送"POST /v1/chat/completions"到FastAPI服务
+                  - 模型调用：FastAPI服务调用MiniMind模型生成
+                  - 响应流：模型返回"SSE流式/JSON"给FastAPI，FastAPI返回"逐Token/完整"给客户端
+                  - 各元素关系：客户端和FastAPI之间双向箭头，FastAPI和模型之间双向箭头，标注数据流向
+                  - 关键标注：请求箭头标注POST路径，响应箭头标注输出方式
+                  - 配色建议：浅蓝/浅灰背景，客户端蓝色，FastAPI绿色，模型橙色，关键箭头用橙色标注
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <pre><code class="language-python"># serve_openai_api.py 核心端点
+@app.post("/v1/chat/completions")
+async def chat_completions(request: ChatRequest):
+    messages = request.messages
+    # 应用聊天模板
+    inputs = tokenizer.apply_chat_template(messages, return_tensors="pt")
+    if request.stream:
+        # 流式输出
+        return StreamingResponse(generate_stream(inputs, request),
+                                 media_type="text/event-stream")
+    else:
+        # 同步输出
+        outputs = model.generate(inputs, max_new_tokens=request.max_tokens)
+        return format_response(outputs, request)</code></pre>
+            </div>
+        </section>
+
+        <!-- 流式输出 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>流式输出</h3>
+                <h4>逐 Token 推送，不用等完整回答生成</h4>
+                <p><strong>定义</strong>：Server-Sent Events（SSE）是一种服务器向客户端单向推送的技术。每生成一个 Token 就立即推送，用户看到"打字机"效果。</p>
+                <p>说白了，就像微信语音转文字——不用等整段话说完，一边说一边出字。</p>
+                <p><em>这个比喻只是为了帮你建立直观感受。在计算机内部，SSE 是一种 HTTP 长连接协议，服务器通过 <code>data:</code> 前缀逐行发送文本块，浏览器用 EventSource API 接收。</em></p>
+                <pre><code class="language-python">class CustomStreamer(TextStreamer):
+    def __init__(self, tokenizer, queue):
+        super().__init__(tokenizer)
+        self.queue = queue
+
+    def on_finalized_text(self, text, stream_end=False):
+        # 每生成一个 token，推入队列
+        self.queue.put(text)
+        if stream_end:
+            self.queue.put(None)  # 发送结束信号</code></pre>
+            </div>
+        </section>
+
+        <!-- SSE 数据格式 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>SSE 数据格式</h3>
+                <h4>兼容 OpenAI 的 <code>data: {...}</code> 格式</h4>
+                <pre><code class="language-plaintext">data: {"id":"chatcmpl-1","object":"chat.completion.chunk",
+       "choices":[{"delta":{"content":"你"},"index":0}]}
+
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk",
+       "choices":[{"delta":{"content":"好"},"index":0}]}
+
+data: [DONE]</code></pre>
+                <p>客户端用 OpenAI SDK 可以直接消费：</p>
+                <pre><code class="language-python">from openai import OpenAI
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="dummy")
+
+response = client.chat.completions.create(
+    model="minimind",
+    messages=[{"role": "user", "content": "你好"}],
+    stream=True
+)
+for chunk in response:
+    print(chunk.choices[0].delta.content or "", end="")</code></pre>
+            </div>
+        </section>
+
+        <!-- 启动 API -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>启动 API 服务</h3>
+                <pre><code class="language-bash"># 启动服务（默认端口 8000）
+$ python scripts/serve_openai_api.py --weight full_sft
+
+# 指定端口和模型参数
+$ python scripts/serve_openai_api.py \
+    --weight full_sft --port 8080 \
+    --hidden_size 768 --num_hidden_layers 8
+
+# 使用 HuggingFace 格式模型
+$ python scripts/serve_openai_api.py \
+    --load_from ../transformers_minimind/</code></pre>
+                <div class="intro-block">
+                    <p>API 兼容 OpenAI 格式，可以直接用 OpenAI SDK、curl、或任何支持 OpenAI API 的工具调用。这意味着你能把 MiniMind 接入任何基于 OpenAI API 的应用。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 3 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：Web</h2>
+                <p>用 Streamlit 快速搭建一个网页聊天界面。</p>
+                <div class="intro-block">
+                    <p>API 是给开发者用的，普通用户需要一个更友好的界面。这一节用 Streamlit 几十行代码搭一个网页聊天室——左侧调参数，右侧聊天。虽然内容不多，但它是模型从"实验品"变成"产品"的关键一步。</p>
+                    <ul>
+                        <li><strong>Streamlit 界面</strong>：web_demo.py 的启动方式、界面布局——左侧模型配置面板（温度、Top-P、最大长度、LoRA、MoE），右侧聊天区域</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Streamlit -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Web 界面</h3>
+                <h4>web_demo.py —— 几十行代码的 Web 聊天</h4>
+                <pre><code class="language-bash"># 启动 Web 界面
+$ streamlit run scripts/web_demo.py -- --weight full_sft</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：MiniMind Web 聊天界面布局</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个网页聊天界面的线框图
+                  - 左侧：模型配置面板（温度滑块、Top-P 滑块、最大长度输入、LoRA 选择下拉框、MoE 开关）
+                  - 右侧：聊天区域（用户消息气泡蓝色、助手回复气泡灰色、底部输入框）
+                  - 顶部：标题栏"MiniMind 对话"
+                  - 配色建议：浅灰背景，蓝色用户气泡，灰色助手气泡，橙色配置元素
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 4 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：转换</h2>
+                <p>让 MiniMind 模型兼容更广泛的生态系统。</p>
+                <div class="intro-block">
+                    <p>原生 .pth 权重只能用 MiniMind 代码加载——不能用 vLLM 加速、不能上传 HuggingFace Hub。转换成 transformers 格式后，你的模型就进入了整个 HuggingFace 生态。这一节讲解两种转换路径、Qwen3 架构兼容原理，以及 LoRA 合并转换的完整流程。</p>
+                    <ul>
+                        <li><strong>为什么需要转换</strong>：原生 .pth 只能 MiniMind 代码加载，Transformers 格式可用 vLLM/SGLang 加速、可上传 HuggingFace Hub</li>
+                        <li><strong>两种转换方式</strong>：转为 Qwen3 兼容格式（推荐，可用 vLLM）或保留 MiniMind 格式（兼容 transformers 库）</li>
+                        <li><strong>Qwen3 兼容原理</strong>：MiniMind 架构与 Qwen3 高度相似——RMSNorm、RoPE、GQA、SwiGLU 全部一致，转换后可直接用 vLLM 获 5-10 倍加速</li>
+                        <li><strong>LoRA 合并转换</strong>：先合并 LoRA 到基础模型，再转格式，两步搞定</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 为什么需要转换 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么需要转换</h3>
+                <h4>原生 .pth 权重只能用 MiniMind 代码加载</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>原生格式</h4>
+                        <ul>
+                            <li>只能用 MiniMind 代码加载</li>
+                            <li>不能使用 vLLM 加速</li>
+                            <li>不能使用 HuggingFace Hub</li>
+                            <li>适合：学习和实验</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>Transformers 格式</h4>
+                        <ul>
+                            <li>可用 HuggingFace 生态加载</li>
+                            <li>可用 vLLM / SGLang 加速</li>
+                            <li>可上传到 HuggingFace Hub</li>
+                            <li>适合：生产部署</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 转换函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>两种转换方式</h3>
+                <h4>convert_model.py 提供两个函数</h4>
+                <div class="ai-diagram">
+                  <h4>图：MiniMind 模型格式转换的两种路径</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个自上而下的分支流程图
+                  - 顶部方框："MiniMind .pth 权重"
+                  - 菱形判断："选择转换方式"
+                  - 左分支："convert_torch2transformers 转为Qwen3格式 兼容vLLM/SGLang"
+                  - 右分支："convert_torch2transformers_minimind 保留MiniMind格式 兼容transformers库"
+                  - 各元素关系：顶部方框指向菱形判断，菱形分出左右两条路径
+                  - 关键标注：左分支旁标注"推荐，可用于vLLM加速"，右分支旁标注"保持原生格式"
+                  - 配色建议：浅蓝/浅灰背景，起始白色，判断黄色菱形，左分支绿色，右分支蓝色，关键箭头用橙色标注
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <pre><code class="language-bash"># 转换为 Qwen3 兼容格式（推荐，可用于 vLLM）
+$ python scripts/convert_model.py \
+    --convert_type torch2transformers \
+    --torch_path ../out/full_sft_768.pth \
+    --transformers_path ../transformers_minimind/
+
+# 转换为 MiniMind transformers 格式
+$ python scripts/convert_model.py \
+    --convert_type torch2transformers_minimind \
+    --torch_path ../out/full_sft_768.pth \
+    --transformers_path ../transformers_minimind_custom/</code></pre>
+            </div>
+        </section>
+
+        <!-- Qwen3 兼容 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>兼容原理</h3>
+                <h4>MiniMind 的架构与 Qwen3 高度相似</h4>
+                <table>
+                    <thead><tr><th>组件</th><th>MiniMind</th><th>Qwen3</th><th>兼容？</th></tr></thead>
+                    <tbody>
+                        <tr><td>归一化</td><td>RMSNorm</td><td>RMSNorm</td><td>✅ 一致</td></tr>
+                        <tr><td>位置编码</td><td>RoPE</td><td>RoPE</td><td>✅ 一致</td></tr>
+                        <tr><td>注意力</td><td>GQA</td><td>GQA</td><td>✅ 一致</td></tr>
+                        <tr><td>前馈网络</td><td>SwiGLU</td><td>SwiGLU</td><td>✅ 一致</td></tr>
+                        <tr><td>权重绑定</td><td>不共享</td><td>可选</td><td>✅ 可配置</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>因为架构一致，转换后可以直接用 vLLM 部署，获得比原生 PyTorch 快 5-10 倍的推理速度。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- LoRA 合并转换 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>LoRA 合并转换</h3>
+                <h4>先合并 LoRA，再转格式</h4>
+                <pre><code class="language-bash"># 步骤 1：合并 LoRA 到基础模型
+$ python -c "
+from model.model_lora import merge_lora
+from model.model_minimind import MiniMindConfig, MiniMindForCausalLM
+config = MiniMindConfig()
+model = MiniMindForCausalLM(config)
+merge_lora(model, '../out/lora_medical_768.pth', '../out/merged_768.pth')
+"
+
+# 步骤 2：转换合并后的模型
+$ python scripts/convert_model.py \
+    --convert_type torch2transformers \
+    --torch_path ../out/merged_768.pth \
+    --transformers_path ../transformers_medical/</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== Part 5: 高性能推理 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5：高性能</h2>
+                <p>转换成 Qwen3 格式后，用 vLLM / SGLang 把吞吐量拉满。</p>
+                <div class="intro-block">
+                    <p>前面 Part 4 把 MiniMind 权重转成了 Qwen3 兼容格式——这不是为了好玩，而是为了<strong>借用成熟的推理引擎</strong>。vLLM 和 SGLang 这类引擎原生支持 Qwen3 架构，能提供 PagedAttention、连续批处理（continuous batching）、前缀缓存等优化，把单卡吞吐量提升一个数量级。MiniMind 自带的 FastAPI 服务适合学习和调试，真正要扛并发、压性能时，就该切换到这些引擎。</p>
+                    <ul>
+                        <li><b>vLLM 启动实战</b> —— 一条命令把转换后的模型变成 OpenAI 兼容的高吞吐服务</li>
+                        <li><b>FastAPI 生产部署</b> —— 多 worker 并发、超时控制、稳定性</li>
+                        <li><b>性能对比</b> —— 原生 PyTorch vs vLLM，什么场景该用哪个</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>vLLM 启动实战</h3>
+                <h4>转换成 Qwen3 格式后，一条命令起高吞吐服务</h4>
+                <p>vLLM 不认识 MiniMind 的私有架构，但它认识 Qwen3。上一节 <code>convert_torch2transformers</code> 把权重转成 Qwen3Config 结构后，vLLM 就能直接加载。</p>
+                <pre><code class="language-bash"># 1. 安装 vLLM（需要 CUDA 环境）
+$ pip install vllm
+
+# 2. 一条命令启动 OpenAI 兼容服务
+$ python -m vllm.entrypoints.openai.api_server \
+    --model ./transformers_minimind_768/ \
+    --served-model-name minimind \
+    --dtype bfloat16 \
+    --max-model-len 2048 \
+    --port 8000
+
+# 3. 用同样的 chat_api.py 调用（接口完全兼容）
+$ python scripts/chat_api.py</code></pre>
+                <div class="intro-block">
+                    <p>vLLM 默认开启了几个关键优化：<strong>PagedAttention</strong>（把 KV-Cache 像虚拟内存一样分页管理，减少显存碎片）、<strong>连续批处理</strong>（新请求随时插入正在处理的 batch，不必等整批完成）、<strong>前缀缓存</strong>（相同 system prompt 只算一次）。这就是它比原生 PyTorch 快的原因。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>吞吐量对比</h3>
+                <h4>原生 PyTorch vs vLLM，差在哪</h4>
+                <table>
+                    <thead><tr><th>方案</th><th>并发能力</th><th>吞吐量（相对）</th><th>显存效率</th><th>适用场景</th></tr></thead>
+                    <tbody>
+                        <tr><td>MiniMind FastAPI</td><td>单进程串行</td><td>1×</td><td>低（KV-Cache 预分配）</td><td>学习、调试、低并发</td></tr>
+                        <tr><td>vLLM / SGLang</td><td>连续批处理</td><td>10×~20×</td><td>高（PagedAttention）</td><td>生产、高并发、压性能</td></tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>不要盲目上 vLLM</strong>：MiniMind 只有 64M 参数，模型本身极小。在单用户场景下，原生 PyTorch 的延迟反而可能更低（少了引擎开销）。vLLM 的优势在<strong>高并发</strong>——当同时有几十个请求涌入时，连续批处理才能体现价值。自己玩用 FastAPI，要扛流量再上 vLLM。
+                </div>
+                <p><strong>深度边界</strong>：SGLang 是另一个高性能引擎，优势在复杂提示词结构（多轮、分支）的编译优化。MiniMind 的 <code>rollout_engine.py</code>（阶段 8 RL 训练用）已经集成了 SGLang 客户端，这里不再展开。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>FastAPI 并发</h3>
+                <h4>不用 vLLM 时，怎么让自带服务扛住多请求</h4>
+                <p>MiniMind 自带的 <code>serve_openai_api.py</code> 默认单进程运行，同一时刻只处理一个请求。要扛并发，用 uvicorn 的多 worker 模式：</p>
+                <pre><code class="language-bash"># 单 worker（默认，适合调试）
+$ python scripts/serve_openai_api.py
+
+# 多 worker 并发（生产部署）
+$ uvicorn scripts.serve_openai_api:app \
+    --host 0.0.0.0 --port 8000 \
+    --workers 4
+
+# 配合 gunicorn 更稳定（Linux）
+$ gunicorn scripts.serve_openai_api:app \
+    -w 4 -k uvicorn.workers.UvicornWorker \
+    --bind 0.0.0.0:8000</code></pre>
+                <div class="intro-block">
+                    <p>每个 worker 是独立进程，各加载一份模型。<strong>worker 数量</strong>建议等于 GPU 数（每卡一个 worker），或等于 CPU 核数（纯 CPU 推理时）。注意：4 个 worker = 4 倍显存，64M 模型还好，大模型要谨慎。</p>
+                </div>
+                <div class="warning">
+                    <strong>流式输出的坑</strong>：多 worker 模式下，负载均衡器（如 nginx）必须关闭缓冲（<code>proxy_buffering off</code>），否则 SSE 流会被攒成一坨再返回，失去"逐字输出"的效果。
+                </div>
+            </div>
+        </section>
+
+        <!-- Part 6 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6：排错</h2>
+                <p>部署中常见的问题。</p>
+                <div class="intro-block">
+                    <p>部署阶段的问题通常不是算法问题，而是工程配置问题——显存不够、权重不匹配、API 返回空、精度丢失。这一节把最常见的坑列出来，给你排查思路。最后两个动手练习帮你熟悉 API 调用和采样参数调优。</p>
+                    <ul>
+                        <li><strong>常见错误诊断</strong>：CUDA OOM（确认 .half()、减小 max_new_tokens、用 CPU）、输出乱码（权重与配置不匹配）、API 响应为空（EOS token 问题）、转换后效果变差（精度损失）</li>
+                        <li><strong>动手练习</strong>：启动 API 并用 curl 调用观察 JSON 格式；对比不同 temperature 下的回答差异（0.1 vs 1.5）</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 常见错误 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见错误诊断</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>CUDA Out of Memory</h4>
+                        <p><strong>症状</strong>：推理时报显存不足</p>
+                        <p><strong>修复</strong>：① 确认用了 <code>.half()</code>；② 减小 <code>max_new_tokens</code>；③ 用 CPU 推理 <code>--device cpu</code></p>
+                    </div>
+                    <div class="card">
+                        <h4>输出乱码</h4>
+                        <p><strong>症状</strong>：生成结果是随机字符</p>
+                        <p><strong>原因</strong>：权重文件与模型配置不匹配</p>
+                        <p><strong>修复</strong>：确认 hidden_size、num_layers、use_moe 参数与训练时一致</p>
+                    </div>
+                    <div class="card">
+                        <h4>API 响应为空</h4>
+                        <p><strong>症状</strong>：curl 返回空内容</p>
+                        <p><strong>原因</strong>：模型没有正确生成 EOS token</p>
+                        <p><strong>修复</strong>：检查 tokenizer 的 eos_token_id 是否正确</p>
+                    </div>
+                    <div class="card">
+                        <h4>转换后效果变差</h4>
+                        <p><strong>症状</strong>：转换后推理结果与原始不同</p>
+                        <p><strong>原因</strong>：精度损失（float32→float16）</p>
+                        <p><strong>修复</strong>：用 float16 而非 bfloat16 转换，或验证权重是否完整</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>动手练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h4>练习 1：启动 API 并调用</h4>
+                        <ol>
+                            <li>启动 <code>serve_openai_api.py</code></li>
+                            <li>用 curl 发送请求：<code>curl -X POST http://localhost:8000/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"minimind","messages":[{"role":"user","content":"你好"}]}'</code></li>
+                            <li>观察返回的 JSON 格式</li>
+                        </ol>
+                    </div>
+                    <div class="practice-step">
+                        <h4>练习 2：对比采样参数</h4>
+                        <p>用同一个问题，分别设置 temperature=0.1 和 temperature=1.5，观察回答的差异。</p>
+                        <div class="answer-section">
+                            <h4>预期结果</h4>
+                            <p>temperature=0.1：回答确定性强，每次几乎一样。temperature=1.5：回答多样性强，每次不同。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 知识全景 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>知识全景图</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>推理基础</h4>
+                        <ul>
+                            <li>加载权重 eval</li>
+                            <li>Tokenizer 编解码</li>
+                            <li>Temperature Top-P 采样</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>API 服务</h4>
+                        <ul>
+                            <li>FastAPI 端点</li>
+                            <li>OpenAI 兼容格式</li>
+                            <li>SSE 流式输出</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>Web 界面</h4>
+                        <ul>
+                            <li>Streamlit 聊天</li>
+                            <li>参数调节面板</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>格式转换</h4>
+                        <ul>
+                            <li>torch 到 transformers</li>
+                            <li>Qwen3 架构兼容</li>
+                            <li>vLLM 加速部署</li>
+                            <li>LoRA 合并转换</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>阶段 10 完成</h1>
+            <p>训练好的模型现在可以通过命令行、API、Web 三种方式使用了。</p>
+            <p>恭喜！你已经完整走过了从零训练一个大语言模型的全部流程。</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

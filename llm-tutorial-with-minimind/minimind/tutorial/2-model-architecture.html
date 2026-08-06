@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 2：模型架构</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>模型架构</h1>
+            <p>阶段 2 · 打开 model_minimind.py，288 行代码浓缩现代 LLM 全部精华</p>
+        </section>
+
+        <!-- ==================== 问题驱动开场 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>文本进了模型</h3>
+                <p>上一章你学会了分词——一段文字变成了一串数字 ID。但然后呢？这些 ID 丢进模型之后，经历了什么变换，才能"预测下一个字"？</p>
+                <p>答案全在一个文件里：<code>model/model_minimind.py</code>，一共 288 行。GPT、Llama 的核心架构，就在这里。</p>
+                <div class="intro-block">
+                    <p>这一章的目标：<strong>搞清楚 LLM 内部的每一个零件为什么这样设计</strong>。我们不急着读代码——先理解每个组件要解决什么问题、设计者为什么这么做，再去看代码实现。读完之后，你看任何大模型论文的架构图都不会再感到陌生。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>知识地图</h3>
+                <p>在深入每个组件之前，先建立全局视野。这张思维导图展示了 MiniMind 模型包含的所有核心组件——接下来的每一页都会围绕它展开。</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>配置 MiniMindConfig</h4>
+                        <p>定义模型所有超参数的"基因"，控制模型大小和行为</p>
+                    </div>
+                    <div class="card">
+                        <h4>归一化 RMSNorm</h4>
+                        <p>比 LayerNorm 更高效的归一化方式，防止数值爆炸或消失</p>
+                    </div>
+                    <div class="card">
+                        <h4>位置编码 RoPE</h4>
+                        <p>旋转位置编码，通过旋转向量编码相对位置信息</p>
+                    </div>
+                    <div class="card">
+                        <h4>注意力 GQA + KV-Cache</h4>
+                        <p>分组查询注意力减少 KV 缓存量，KV-Cache 加速自回归生成</p>
+                    </div>
+                    <div class="card">
+                        <h4>前馈网络 SwiGLU</h4>
+                        <p>门控机制的前馈网络，升维后激活再降维，增强表达能力</p>
+                    </div>
+                    <div class="card">
+                        <h4>MoE 混合专家</h4>
+                        <p>多个专家 FFN 由 Router 分配，参数量大但计算量不变</p>
+                    </div>
+                    <div class="card">
+                        <h4>Transformer Block</h4>
+                        <p>Pre-Norm 残差结构，堆叠 8 层构建模型深度</p>
+                    </div>
+                    <div class="card">
+                        <h4>forward 与 generate</h4>
+                        <p>前向推理输出 logits，自回归生成逐 token 采样</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: 全景概览 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：全景</h2>
+                <p>先看全貌，再看零件。这一部分建立数据从输入到输出的完整直觉。</p>
+                <div class="intro-block">
+                    <p>在拆解每一个组件之前，我们需要先搞清楚 MiniMind 的整体长什么样——数据从进入模型到输出预测，中间经历了哪些环节？模型由哪些类组成？每个超参数的物理含义是什么？这部分的目标就是建立这张"全景地图"，有了它，后面每学一个模块都能找到自己的位置。</p>
+                    <ul>
+                        <li><b>数据流水线</b> —— 从一段文本到最终预测输出，完整走一遍 forward 的全流程，建立端到端的数据直觉</li>
+                        <li><b>类的组成关系</b> —— 搞清楚 MiniMindForCausalLM 里面嵌套了哪些子模块，谁负责什么</li>
+                        <li><b>Config 设计图纸</b> —— 看懂每一个配置参数的含义和默认值，理解模型的"蓝图"</li>
+                        <li><b>参数一览表</b> —— 快速预览模型各组件的参数量，对整体规模有个数</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据流水线</h3>
+                <h4>文字进去，经过层层处理，最后预测下一个字</h4>
+                <p>"你好世"这 3 个字进到模型里，到底经历了什么？看下面这条流水线——每个箭头都是一个关键变换步骤。</p>
+                <div class="ai-diagram">
+                  <h4>图：MiniMind 模型从文本输入到预测输出的完整数据流水线</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的水平流水线图，展示文本"你好世"经过模型各组件最终预测出"界"的完整过程
+                  - 各元素关系：输入"你好世" → Tokenizer（分词）→ Token IDs [34,89,502] → Embedding（6400到768，查表变成向量）→ x8 Transformer Blocks（多层注意力+前馈）→ RMSNorm（最终归一化）→ lm_head（768到6400，映射回词表）→ Softmax（转概率）→ 预测"界" 概率0.92，用粗箭头依次连接
+                  - 关键标注：Embedding 旁标注"6400→768 离散变连续"；Transformer Blocks 旁标注"8层，维度不变 768"；lm_head 旁标注"768→6400 连续变回离散"；Softmax 旁标注"概率分布"
+                  - 配色建议：浅蓝/浅灰背景，输入文本用绿色，中间处理节点用蓝色，输出预测用紫色，维度标注用深灰色小字，关键箭头用橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="intro-block">
+                    <p>6400 是词表大小（模型认识多少个字），768 是隐藏维度（模型内部用多长的向量表示每个字）。从 6400 压缩到 768，是"把离散的 ID 变成连续的稠密向量"——这正是 Embedding 做的事。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>类的组成</h3>
+                <h4>MiniMind 用了哪些类，谁包含谁</h4>
+                <p>288 行代码分成了 7 个类/函数。理解它们的包含关系，就像拿到了一张地图。</p>
+                <div class="intro-block">
+<pre><code class="language-plaintext">MiniMindForCausalLM          # 顶层模型
+  └── MiniMindModel           # Transformer 主体
+        ├── embed_tokens      # 词嵌入层
+        ├── layers × N        # N 个 Transformer Block
+        │     └── MiniMindBlock
+        │           ├── self_attn      # GQA 注意力
+        │           ├── mlp            # SwiGLU 前馈 / MoE
+        │           ├── input_layernorm
+        │           └── post_attention_layernorm
+        └── norm               # 最终 RMSNorm
+  └── lm_head                 # 输出投影层 (768 → 6400)</code></pre>
+                </div>
+                <p>最外层是 <code>MiniMindForCausalLM</code>，它包含一个 <code>MiniMindModel</code>（主体）和一个 <code>lm_head</code>（输出头）。Model 内部有 Embedding + 8 层 Block + 最终 Norm。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Config 图纸</h3>
+                <h4>所有超参数都在这里定义——模型的"基因"</h4>
+                <p>在盖楼之前先看图纸。<code>MiniMindConfig</code> 定义了模型的所有超参数。以下代码对应源文件第 10-45 行。</p>
+                <pre><code class="language-python"># model_minimind.py 第 10-45 行
+class MiniMindConfig(PretrainedConfig):
+    model_type = "minimind"
+    def __init__(self, hidden_size=768, num_hidden_layers=8,
+                 use_moe=False, **kwargs):
+        super().__init__(**kwargs)
+        self.hidden_size = hidden_size          # 模型"宽度"
+        self.num_hidden_layers = num_hidden_layers  # 模型"深度"
+        self.vocab_size = kwargs.get("vocab_size", 6400)
+        self.num_attention_heads = kwargs.get("num_attention_heads", 8)
+        self.num_key_value_heads = kwargs.get("num_key_value_heads", 4)
+        self.head_dim = kwargs.get("head_dim",
+            self.hidden_size // self.num_attention_heads)  # = 96
+        self.intermediate_size = kwargs.get("intermediate_size",
+            math.ceil(hidden_size * math.pi / 64) * 64)    # = 2432</code></pre>
+                <div class="intro-block">
+                    <p><code>intermediate_size</code> 的计算看起来奇怪：<code>ceil(768 * π / 64) * 64 = 2432</code>。先按 π 倍放大约 2.4 倍（Transformer 的经验值），再向上取 64 的整数倍——GPU 的张量核按 64 对齐计算最快，所以很多 LLM 项目（如 Llama、Mistrel）都这么做。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Config 参数</h3>
+                <h4>每个参数控制模型的哪个方面</h4>
+                <table>
+                    <thead><tr><th>参数</th><th>默认值</th><th>含义</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>hidden_size</code></td><td>768</td><td>隐藏层维度（模型"宽度"）</td></tr>
+                        <tr><td><code>num_hidden_layers</code></td><td>8</td><td>Transformer 层数（"深度"）</td></tr>
+                        <tr><td><code>num_attention_heads</code></td><td>8</td><td>Query 头数</td></tr>
+                        <tr><td><code>num_key_value_heads</code></td><td>4</td><td>KV 头数（GQA 分组）</td></tr>
+                        <tr><td><code>head_dim</code></td><td>96</td><td>每个头的维度 = 768/8</td></tr>
+                        <tr><td><code>vocab_size</code></td><td>6400</td><td>词汇表大小</td></tr>
+                        <tr><td><code>intermediate_size</code></td><td>2432</td><td>FFN 中间升维维度</td></tr>
+                        <tr><td><code>use_moe</code></td><td>False</td><td>是否启用混合专家</td></tr>
+                        <tr><td><code>rope_theta</code></td><td>1e6</td><td>RoPE 位置编码的基频</td></tr>
+                        <tr><td><code>tie_word_embeddings</code></td><td>True</td><td>Embedding 和 lm_head 共享权重</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>一个关键的尺寸关系：<code>hidden_size = num_attention_heads × head_dim</code>，即 768 = 8 × 96。这保证 Q 投影后能刚好拆成 8 个头。如果这个关系不成立，代码会在 <code>view()</code> 时报 shape 错误。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 归一化与位置编码 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：归一化</h2>
+                <p>Transformer 的两大基础设施：让数值稳定、让模型知道位置。</p>
+                <div class="intro-block">
+                    <p>在进入注意力机制之前，有两件事必须先搞定：第一，深层网络中数值容易爆炸或消失，归一化是训练稳定的基本保障；第二，注意力机制本身是"排列不变"的——打乱输入顺序它完全不在乎，所以必须想办法告诉模型每个 token 在哪里。这一部分就来搞定这两个基础设施。</p>
+                    <ul>
+                        <li><b>RMSNorm 归一化</b> —— 比 LayerNorm 更轻量的归一化方案，只缩放不偏移，计算更快</li>
+                        <li><b>为什么需要位置编码</b> —— 从注意力的排列不变性出发，理解位置信息的必要性</li>
+                        <li><b>RoPE 旋转位置编码原理</b> —— 用复数旋转巧妙地将绝对位置编码为相对位置关系</li>
+                        <li><b>预计算 RoPE 缓冲</b> —— 提前算好 cos/sin 表，避免重复计算，提升效率</li>
+                        <li><b>应用旋转位置编码到 Q 和 K</b> —— 将 RoPE 真正融入注意力计算的前向过程</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>RMSNorm</h3>
+                <h4>比 LayerNorm 更快，效果几乎相同</h4>
+                <p><strong>定义</strong>：对每个向量的所有维度求均方根（RMS），然后做逐元素除法，将向量归一化到单位长度附近。目的是防止训练时数值爆炸或消失。</p>
+                <p><strong>白话</strong>：就像调节音响音量——不管输入多大多小，输出都保持在合理区间。</p>
+                <p><em>这个比喻只是为了帮你建立直观感受。在计算机内部，RMSNorm 是对每个向量做纯数值运算——求平方均值、取倒数平方根、逐元素除——没有"音量"这种物理概念。</em></p>
+                <pre><code class="language-python"># model_minimind.py 第 50-60 行
+class RMSNorm(torch.nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))  # 可学习的缩放参数
+
+    def norm(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x):
+        return (self.weight * self.norm(x.float())).type_as(x)</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>RMSNorm 解读</h3>
+                <h4>每一步在算什么，为什么要这么做</h4>
+                <pre><code class="language-python"># 核心公式：RMSNorm(x) = weight * (x / sqrt(mean(x²) + eps))
+#
+# self.norm(x) 做了什么？
+#   1. x.pow(2)     → 每个元素平方
+#   2. .mean(-1)    → 沿最后一维求均值（得到每个向量的 RMS²）
+#   3. + self.eps   → 加一个小数防止除以 0
+#   4. torch.rsqrt  → 取倒数平方根（= 1 / sqrt(...)）
+#   5. x * ...      → 逐元素相乘，归一化到单位长度附近
+#
+# forward 做了什么？
+#   self.weight * self.norm(x.float())  → 归一化后乘以可学习缩放系数
+#   .type_as(x)                         → 转回原始精度（bf16/fp16）
+
+# 维度追踪（假设输入 (2, 5, 768)）：
+# x.pow(2)                    → (2, 5, 768)    每个元素平方
+# .mean(-1, keepdim=True)     → (2, 5, 1)      每个向量一个均值
+# torch.rsqrt(...)            → (2, 5, 1)      标量因子
+# x * ...                     → (2, 5, 768)    逐元素除法（广播）</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>LayerNorm</h4>
+                        <pre><code class="language-python"># (x - mean) / std * gamma + beta
+# 减均值、有偏移项 beta
+# 计算两次求和（均值+方差）</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>RMSNorm</h4>
+                        <pre><code class="language-python"># x / rms * weight
+# 不减均值、无偏移项
+# 只计算一次求和（平方均值）
+# 快 10-15%，效果相当</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为何要位置编码</h3>
+                <h4>注意力机制本身不知道词的顺序</h4>
+                <p>"我爱你"和"你爱我"在注意力看来完全一样——都是三个向量。自注意力是排列不变的：它计算的是向量之间的相关性，和位置无关。</p>
+                <p>如果模型不知道"我"在第 1 个位置、"你"在第 3 个位置，它就分不清主语和宾语。位置编码就是给每个位置打上"标签"，让模型能区分顺序。</p>
+                <div class="warning">
+                    <strong>常见误解</strong>：位置编码不是在输入后面"拼接"一个位置向量。RoPE 的做法更巧妙——它通过<strong>旋转</strong> Q 和 K 向量来编码位置，不增加任何额外维度。
+                </div>
+                <div class="intro-block">
+                    <p><strong>为什么选择 RoPE</strong>：早期的正弦位置编码是绝对位置——只知道"我在第 3 个位置"，不知道和其他 token 的相对距离。RoPE 编码的是相对位置——两个位置的 Q 和 K 做点积时，结果只和它们的相对距离有关，和绝对位置无关。这让模型能更好地泛化到未见过的序列长度。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>RoPE 原理</h3>
+                <h4>通过旋转角度编码位置，点积自动包含相对距离信息</h4>
+                <p><strong>白话</strong>：想象一个指南针，不同位置的向量旋转不同角度。位置 0 转 θ 度，位置 1 转 2θ 度。两个位置做点积时，角度差就自然编码了相对距离。</p>
+                <p><em>这个比喻只是为了帮你建立直观感受。在计算机内部，RoPE 通过在 cos/sin 频率矩阵上做外积运算，将位置信息转化为旋转变换的三角函数值，然后对 Q 和 K 向量施加这个旋转变换——没有真正的"指南针"在转，只有矩阵运算。</em></p>
+                <div class="ai-diagram">
+                  <h4>图：RoPE 旋转位置编码原理</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左侧三个位置(pos=0,1,2)的二维向量箭头，角度递增(0°、45°、90°)，背景浅灰同心圆
+                  - 右上方放大镜展示 Q·K 点积 = cos(θ_q - θ_k)，角度差编码相对位置
+                  - 标注：pos=0绿色、pos=1橙色、pos=2紫色；"实际是对96维向量每两个维度做2D旋转"
+                  - 配色建议：浅蓝背景，向量不同颜色，角度差红色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>预计算缓冲</h3>
+                <h4>cos/sin 值只需算一次，之后反复使用</h4>
+                <pre><code class="language-python"># model_minimind.py 第 62-78 行（简化版）
+def precompute_freqs_cis(dim, end=32768, rope_base=1e6, rope_scaling=None):
+    # 第1步：计算频率 θ_i = 1 / (base^(2i/d))
+    # dim=96 时，产生 dim/2=48 个不同频率
+    freqs = 1.0 / (rope_base ** (torch.arange(0, dim, 2).float() / dim))
+
+    # 第2步：如果需要长度外推（YaRN），调整频率
+    if rope_scaling is not None:
+        # 低频维度缩放 1/factor，高频保持不变，中间线性过渡
+        ramp = torch.clamp(...)
+        freqs = freqs * (1 - ramp + ramp / factor)
+
+    # 第3步：位置 t × 频率 θ → 外积矩阵
+    t = torch.arange(end)
+    freqs = torch.outer(t, freqs).float()  # (32768, 48)
+
+    # 第4步：计算 cos/sin 并各复制一份拼接
+    freqs_cos = torch.cat([torch.cos(freqs), torch.cos(freqs)], dim=-1)  # (32768, 96)
+    freqs_sin = torch.cat([torch.sin(freqs), torch.sin(freqs)], dim=-1)  # (32768, 96)
+    return freqs_cos, freqs_sin</code></pre>
+                <div class="intro-block">
+                    <p><strong>维度追踪</strong>：<code>freqs</code> 初始形状 (32768, 48)，拼接后变成 (32768, 96)，和 <code>head_dim</code> 一致。推理时用 <code>freqs_cos[start:start+seq_len]</code> 切片取出当前序列需要的那几行。</p>
+                    <p><strong>深度边界</strong>：YaRN 外推（第 64-73 行）涉及频率域上的复杂插值逻辑，用于推理时序列超长（如 32768 token）的场景。初次学习时只需要知道它存在即可。训练时序列长度在 2048 以内，不需要 YaRN。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>应用 RoPE</h3>
+                <h4>把预计算的 cos/sin 应用到 Q 和 K 上</h4>
+                <pre><code class="language-python"># model_minimind.py 第 80-84 行
+def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
+    def rotate_half(x):
+        # 把向量切成两半，交叉互换：[a,b] → [-b,a]
+        # 这等价于二维旋转矩阵 [cos -sin; sin cos] 的一半
+        return torch.cat((-x[..., x.shape[-1]//2:],
+                           x[..., :x.shape[-1]//2]), dim=-1)
+
+    # q_embed = q * cos + rotate_half(q) * sin
+    q_embed = (q * cos.unsqueeze(unsqueeze_dim)
+             + rotate_half(q) * sin.unsqueeze(unsqueeze_dim))
+    k_embed = (k * cos.unsqueeze(unsqueeze_dim)
+             + rotate_half(k) * sin.unsqueeze(unsqueeze_dim))
+    return q_embed.to(q.dtype), k_embed.to(k.dtype)</code></pre>
+                <div class="intro-block">
+                    <p><code>rotate_half</code> 实现了二维旋转的矩阵形式。数学上等价于把每对相邻维度当作一个复数做旋转变换。你不需要手推这个等式——只要知道：<strong>不同位置的 Q/K 会旋转不同角度，点积结果自然包含相对位置信息</strong>。</p>
+                </div>
+                <div class="warning">
+                    <strong>只对 Q 和 K 做旋转，V 不做</strong>。因为注意力权重 = softmax(Q·K)，位置信息需要编码在 Q 和 K 的交互中。V 是被加权求和的内容，不需要位置信息。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 注意力机制 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：注意力</h2>
+                <p>Transformer 最核心的组件——决定"我该关注谁"。</p>
+                <div class="intro-block">
+                    <p>注意力机制是 Transformer 的灵魂——它决定了模型在处理当前 token 时应该"看向"序列中的哪些其他位置。这一部分我们会从 Q、K、V 的角色讲起，逐步深入到 GQA 分组查询、因果掩码、KV-Cache 加速，以及 Flash Attention 等工程优化。理解了注意力，你就理解了 Transformer 一半以上的设计动机。</p>
+                    <ul>
+                        <li><b>注意力全景</b> —— 搞清楚 Q（查询）、K（键）、V（值）各自的角色和直觉含义</li>
+                        <li><b>投影与 QK-Norm</b> —— 四个线性投影矩阵如何将输入变换为 QKV，以及 QK-Norm 稳定训练的技巧</li>
+                        <li><b>GQA 分组查询注意力</b> —— 在 MHA 和 MQA 之间取折中，多头共享 KV 以节省显存</li>
+                        <li><b>因果掩码与 KV-Cache</b> —— 防止"偷看未来"的掩码机制，以及推理阶段用 KV-Cache 大幅加速</li>
+                        <li><b>Flash Attention</b> —— 不需要显式存储注意力矩阵的 IO 优化方案，训练速度的关键</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>注意力全景</h3>
+                <h4>Query、Key、Value 三个角色如何协作</h4>
+                <p>想象你去图书馆找书。Query 是"你想找什么"，Key 是每本书的"标签"，Value 是"书的内容"。注意力机制就是：用你的 Query 和所有 Key 比对（点积），找出最相关的几本，然后把对应的 Value 加权求和。</p>
+                <p><em>比喻到此为止。在数学上，注意力就是 Q·K^T 得到权重矩阵，softmax 归一化后乘以 V。纯粹的矩阵运算。</em></p>
+                <div class="ai-diagram">
+                  <h4>图：注意力机制完整计算流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的数据流，展示注意力机制的完整计算过程
+                  - 流程节点：① 输入 x (B,S,768) 同时经过 q_proj、k_proj、v_proj 三个线性投影 → ② 拆分为多头（Q: 8头, KV: 4头 GQA） → ③ 对 Q 和 K 应用 RoPE 旋转位置编码 → ④ 计算 Q·K^T 点积得到注意力分数矩阵 → ⑤ 除以 sqrt(head_dim=96) 缩放 → ⑥ 应用因果掩码（上三角填 -∞） → ⑦ Softmax 归一化得到权重 → ⑧ 权重矩阵乘以 V 得到加权输出 → ⑨ 合并多头后经 o_proj 输出投影
+                  - 各元素关系：q_proj/k_proj/v_proj 三路并行分叉；GQA 中 4个KV头复制为8个与Q头匹配；因果掩码作用在 softmax 之前
+                  - 关键标注：每步标注维度变化，如 Q·K^T 得到 (B,8,S,S) 注意力矩阵；GQA 复用箭头用虚线表示
+                  - 配色建议：浅蓝/浅灰背景，深色文字，Q/K/V 三路分别用蓝/绿/紫色，关键箭头用橙色标注，因果掩码区域用浅红色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>注意力初始化</h3>
+                <h4>四个投影矩阵和 QK-Norm</h4>
+                <pre><code class="language-python"># model_minimind.py 第 91-109 行
+class Attention(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.n_local_heads = config.num_attention_heads     # 8 个 Q 头
+        self.n_local_kv_heads = config.num_key_value_heads  # 4 个 KV 头
+        self.n_rep = self.n_local_heads // self.n_local_kv_heads  # = 2
+        self.head_dim = config.head_dim                     # 96
+        # 四个投影矩阵（无偏置）
+        self.q_proj = nn.Linear(768, 8 * 96, bias=False)    # 768 → 768
+        self.k_proj = nn.Linear(768, 4 * 96, bias=False)    # 768 → 384
+        self.v_proj = nn.Linear(768, 4 * 96, bias=False)    # 768 → 384
+        self.o_proj = nn.Linear(8 * 96, 768, bias=False)    # 768 → 768
+        # QK-Norm：对每个头的表示做归一化（提升训练稳定性）
+        self.q_norm = RMSNorm(96)
+        self.k_norm = RMSNorm(96)</code></pre>
+                <div class="intro-block">
+                    <p><strong>为什么 k_proj 输出 384 而不是 768？</strong>因为 MiniMind 使用了 GQA（分组查询注意力）。8 个 Q 头共享 4 组 KV 头。每个 KV 头被 2 个 Q 头复用。这样 KV 缓存只需要存储一半的数据，推理更省显存。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>投影与 QK-Norm</h3>
+                <h4>Attention forward 的前半段（第 111-123 行）</h4>
+                <pre><code class="language-python">def forward(self, x, position_embeddings, past_key_value=None,
+            use_cache=False, attention_mask=None):
+    bsz, seq_len, _ = x.shape
+    # ① 线性投影：x → Q, K, V
+    xq, xk, xv = self.q_proj(x), self.k_proj(x), self.v_proj(x)
+    xq = xq.view(bsz, seq_len, 8, 96)   # 拆成 8 个 Q 头
+    xk = xk.view(bsz, seq_len, 4, 96)   # 拆成 4 个 KV 头
+    xv = xv.view(bsz, seq_len, 4, 96)
+
+    # ② QK-Norm：稳定训练（防止 Q/K 幅度过大导致注意力退化）
+    xq, xk = self.q_norm(xq), self.k_norm(xk)
+    # ③ 应用 RoPE 旋转位置编码
+    cos, sin = position_embeddings
+    xq, xk = apply_rotary_pos_emb(xq, xk, cos, sin)
+
+    # ④ KV-Cache：拼接历史 KV
+    if past_key_value is not None:
+        xk = torch.cat([past_key_value[0], xk], dim=1)  # 沿序列维拼接
+        xv = torch.cat([past_key_value[1], xv], dim=1)
+    past_kv = (xk, xv) if use_cache else None</code></pre>
+                <div class="intro-block">
+                    <p><strong>维度追踪</strong>：假设输入 (2, 5, 768)，经过 q_proj → (2, 5, 768)，view → (2, 5, 8, 96)。如果有 KV-Cache 且已缓存 3 个 token，xk 拼接后变为 (2, 8, 96)。这 8 = 3(历史) + 5(当前)。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>注意力与 GQA</h3>
+                <h4>4 个 KV 头复制成 8 个，和 Q 头匹配后计算注意力</h4>
+                <pre><code class="language-python">    # model_minimind.py 第 124-134 行
+    # ④ repeat_kv：4 个 KV 头复制成 8 个，和 Q 头匹配
+    xq = xq.transpose(1, 2)                           # (B, 8, S, 96)
+    xk = repeat_kv(xk, self.n_rep).transpose(1, 2)    # (B, 8, S, 96)
+    xv = repeat_kv(xv, self.n_rep).transpose(1, 2)    # (B, 8, S, 96)
+
+    # ⑤ 计算注意力（Flash Attention 或手动实现）
+    if self.flash and seq_len > 1:
+        output = F.scaled_dot_product_attention(
+            xq, xk, xv, dropout_p=self.dropout, is_causal=True)
+    else:
+        scores = (xq @ xk.transpose(-2, -1)) / math.sqrt(96)
+        # 因果掩码：上三角填 -∞
+        scores[:, :, :, -seq_len:] += torch.full(
+            (seq_len, seq_len), float("-inf")).triu(1)
+        output = F.softmax(scores.float(), dim=-1).type_as(xq) @ xv
+
+    # ⑥ 合并多头，投影输出
+    output = output.transpose(1, 2).reshape(bsz, seq_len, -1)
+    output = self.resid_dropout(self.o_proj(output))
+    return output, past_kv</code></pre>
+                <div class="intro-block">
+                    <p><strong>维度追踪</strong>：xq (2,8,5,96) @ xk^T (2,8,96,5) → scores (2,8,5,5)。Softmax 后 @ xv (2,8,5,96) → output (2,8,5,96)。Reshape → (2,5,768)。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GQA 分组查询</h3>
+                <h4>8 个 Q 头共享 4 组 KV——用更少显存获得几乎相同的效果</h4>
+                <div class="ai-diagram">
+                  <h4>图：GQA 分组查询注意力的头分配关系</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左侧 8 个 Q 头（Q头0~Q头7），右侧 4 个 KV 头（KV头0~KV头3），用连线展示分组共享关系
+                  - 各元素关系：Q头0 和 Q头1 共享 KV头0；Q头2 和 Q头3 共享 KV头1；Q头4 和 Q头5 共享 KV头2；Q头6 和 Q头7 共享 KV头3。每组用不同的背景色区分
+                  - 关键标注：每组 KV 头旁标注"2个Q头共享1个KV头"；底部总结"8Q : 4KV = 2:1，KV缓存减半"；标注"n_rep = 8/4 = 2"
+                  - 配色建议：浅灰背景，4 组分别用蓝/绿/橙/紫四种颜色，Q 头用圆形，KV 头用方形，连线与组同色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <pre><code class="language-python"># model_minimind.py 第 86-89 行
+# repeat_kv：把 4 个 KV 头复制成 8 个
+def repeat_kv(x, n_rep):
+    # x: (batch, seq, 4, 96) → (batch, seq, 8, 96)
+    bs, slen, num_kv_heads, head_dim = x.shape
+    if n_rep == 1: return x
+    return (x[:, :, :, None, :]
+            .expand(bs, slen, num_kv_heads, n_rep, head_dim)
+            .reshape(bs, slen, num_kv_heads * n_rep, head_dim))</code></pre>
+                <p><code>repeat_kv</code> 不是真正复制数据（<code>expand</code> 是视图操作，不占额外内存）。只是在计算时让每个 Q 头"看到"对应的 KV 头。4 组 KV 被 8 个 Q 头共享，显存减半。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>因果掩码</h3>
+                <h4>当前 token 只能看到它之前的 token，不能"偷看"未来</h4>
+                <p>语言模型是逐字预测的——预测第 3 个字时，不能偷看第 4 个字。因果掩码就是把"未来"的注意力权重强制归零。</p>
+                <pre><code class="language-plaintext">      你  好  世  界
+你 [  0  -∞  -∞  -∞ ]    softmax(-∞) = 0，完全忽略
+好 [  0   0  -∞  -∞ ]    "好"能看到"你"和自己
+世 [  0   0   0  -∞ ]    "世"能看到"你""好"和自己
+界 [  0   0   0   0 ]    "界"能看到所有之前的字</code></pre>
+                <pre><code class="language-python"># 源码第 129 行：
+scores[:, :, :, -seq_len:] += torch.full(
+    (seq_len, seq_len), float("-inf")).triu(1)
+# triu(1) = 上三角矩阵（对角线以上为 1）
+# 加到 scores 上，上三角全变 -∞
+# 注意 triu(1) 中的 1：对角线保留为 0（自己看自己），
+# 如果写成 triu(0) 则对角线也变 -∞，模型连自己都看不到</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：因果掩码矩阵</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：5x5网格矩阵，行列为"你""好""世""界""！"
+                  - 对角线及以下浅绿色"可见"，对角线以上灰色"-∞不可见"
+                  - 标注："softmax(-∞)=0""每个token只能看到自己和之前的token"
+                  - 配色建议：白色背景，可见浅绿，不可见浅灰
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>KV-Cache</h3>
+                <h4>缓存历史 KV，每步只算新 token</h4>
+                <div class="ai-diagram">
+                  <h4>图：KV-Cache 在自回归生成中的工作流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个时序图（从上到下），展示 KV-Cache 在生成"你好世界"时逐步缓存和复用 KV 的过程
+                  - 时序步骤（三个阶段）：第1步：输入"你好"（2个token），模型计算 K1V1 并存入 KV-Cache → 第2步：只算"世"1个新token的 KV，从缓存取出 K1V1 拼接得到完整 KV 序列，然后缓存 K2V2 → 第3步：只算"界"1个新 token，取出全部历史 KV，缓存 K3V3
+                  - 各元素关系：左侧"模型"竖条，右侧"KV-Cache"竖条；每步模型向缓存写入新 KV（实线箭头），缓存向模型返回历史 KV（虚线箭头）；缓存中的 KV 数量逐步递增
+                  - 关键标注：第1步旁标注"缓存 2 个 token 的 KV"；第2步旁标注"只需计算 1 个新 token"；第3步旁标注"历史 KV 直接复用"；底部标注"总计算量 O(N)，无 Cache 则 O(N^2)"
+                  - 配色建议：浅灰背景，模型竖条用蓝色，缓存竖条用橙色，写入箭头实线深色，读取箭头虚线浅色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="columns">
+                    <div class="column">
+                        <h4>无 KV-Cache</h4>
+                        <p>生成第 N 个 token 时，重算前 N-1 个。</p>
+                        <p>总计算量 O(N&sup2;)。</p>
+                    </div>
+                    <div class="column">
+                        <h4>有 KV-Cache</h4>
+                        <p>每步只算 1 个新 token，拼接历史 KV。</p>
+                        <p>总计算量 O(N)，快 N 倍。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>GQA 让 KV-Cache 效果更显著：4 个 KV 头（vs 8 个 Q 头）意味着缓存量直接减半。生成长序列时，显存节省非常可观。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Flash Attention</h3>
+                <h4>分块计算，显存从 O(S²) 降到 O(S)</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>普通注意力</h4>
+                        <p>完整存储注意力矩阵 (B, H, S, S)</p>
+                        <p>显存 O(seq&sup2;)</p>
+                        <p>S=2048 时矩阵约 32MB/头</p>
+                    </div>
+                    <div class="column">
+                        <h4>Flash Attention</h4>
+                        <p>分块计算，不存储中间矩阵</p>
+                        <p>显存 O(seq)，速度 2-4x</p>
+                        <p>S=2048 时几乎零额外显存</p>
+                    </div>
+                </div>
+                <pre><code class="language-python"># 源码第 109 行：自动判断是否可用
+self.flash = hasattr(torch.nn.functional,
+    'scaled_dot_product_attention') and config.flash_attn
+
+# 源码第 125-126 行：满足条件就用 Flash Attention
+# 条件：可用 + 序列长度>1 + 首次前向（无KV-Cache）+ 无attention_mask
+if self.flash and seq_len > 1 and past_key_value is None:
+    output = F.scaled_dot_product_attention(
+        xq, xk, xv, dropout_p=self.dropout, is_causal=True)</code></pre>
+                <div class="warning">
+                    <strong>Flash Attention 不可用时自动回退</strong>。PyTorch 2.0+ 才有 <code>scaled_dot_product_attention</code>。如果你的 PyTorch 版本较旧，会自动走手动实现路径，结果一样但更慢。
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: 前馈与专家 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：前馈</h2>
+                <p>注意力决定"关注谁"，前馈网络决定"怎么处理"。MoE 让不同 token 由不同专家处理。</p>
+                <div class="intro-block">
+                    <p>注意力负责收集信息，前馈网络（FFN）负责处理信息——这是 Transformer 中参数量最大的部分。MiniMind 没有用普通的 FFN，而是用了 SwiGLU 门控激活函数来提升表达能力。更酷的是，它还引入了 MoE（混合专家）机制：不再是一个 FFN 处理所有 token，而是由多个"专家"各自擅长不同领域，每个 token 动态选择最合适的专家来处理。这一部分我们来拆解这两个关键设计。</p>
+                    <ul>
+                        <li><b>FeedForward 与 SwiGLU</b> —— 理解门控激活函数的结构：gate 路和 up 路双路控制，比 ReLU 更强</li>
+                        <li><b>MoE 混合专家架构</b> —— 多个 FFN 并行存在，Router 动态决定每个 token 走哪条路</li>
+                        <li><b>MoE 路由过程</b> —— 从 Router 打分、Top-1 选择、专家计算到加权合并的完整流程</li>
+                        <li><b>负载均衡损失</b> —— 防止所有 token 都涌向同一个专家的辅助训练目标</li>
+                        <li><b>Dense vs MoE 对比</b> —— 直观比较传统稠密 FFN 与稀疏 MoE 在结构和计算上的差异</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>FeedForward</h3>
+                <h4>SwiGLU 结构——Llama 系列使用的 FFN</h4>
+                <p><strong>定义</strong>：对每个位置独立做非线性变换，增强模型的表达能力。输入先升维（768→2432），经过激活函数，再降维回来（2432→768）。</p>
+                <p><strong>白话</strong>：注意力决定"看谁"，FFN 决定"怎么想"。注意力是"看"的动作，FFN 是"思考"的动作。</p>
+                <p><em>比喻卸甲：在数学上，FFN 就是两个线性变换中间夹一个非线性激活函数。"看"和"思考"只是拟人化的辅助理解。</em></p>
+                <pre><code class="language-python"># model_minimind.py 第 136-146 行——整个 FFN 只有 6 行！
+class FeedForward(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.gate_proj = nn.Linear(768, 2432, bias=False)  # 门控投影
+        self.down_proj = nn.Linear(2432, 768, bias=False)  # 降回原维度
+        self.up_proj   = nn.Linear(768, 2432, bias=False)  # 升维投影
+        self.act_fn    = ACT2FN[config.hidden_act]         # SiLU 激活
+
+    def forward(self, x):
+        # SwiGLU = SiLU(gate_proj(x)) * up_proj(x)，然后 down 投影回去
+        return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>SwiGLU 计算图</h3>
+                <h4>gate 和 up 两条路，门控机制让模型"选择性地通过信息"</h4>
+                <div class="ai-diagram">
+                  <h4>图：SwiGLU 前馈网络数据流</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的 Y 形数据流，展示 SwiGLU 的门控计算过程
+                  - 流程节点：① 输入 (2,5,768) 在左侧分叉为上下两条并行路径 → ② 上路：gate_proj 线性投影 (768→2432) → SiLU 激活函数 (x * sigmoid(x))，输出 0~1 范围的门控信号 → ③ 下路：up_proj 线性投影 (768→2432)，保持原始内容 → ④ 两路逐元素相乘（门控信号过滤内容） → ⑤ down_proj 线性投影 (2432→768) 降回原维度 → ⑥ 输出 (2,5,768)
+                  - 各元素关系：gate_proj 和 up_proj 从同一个输入并行出发；SiLU 只作用在 gate 路上；逐元素乘法节点是两条路径的汇合点
+                  - 关键标注：gate 路标注"选择性通过"（橙色），up 路标注"原始内容"（蓝色）；乘法节点标注"门控 = 过滤"；每步标注维度变化
+                  - 配色建议：浅蓝/浅灰背景，深色文字，gate 路用橙色系，up 路用蓝色系，汇合后用紫色，down_proj 用绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p><strong>SiLU</strong>：SiLU(x) = x &times; sigmoid(x)。比 ReLU 更平滑——ReLU 在 x&lt;0 时梯度直接为 0，SiLU 在 x&lt;0 时仍有微小梯度，训练更稳定。</p>
+                <p><strong>为什么用 gate + up 两条路？</strong> gate 路经过 SiLU 激活后输出 0~1 范围的"门控信号"，控制"哪些信息通过"；up 路提供原始内容。两者相乘实现"选择性过滤"。这比简单的 ReLU(Linear(x)) 表达能力更强。</p>
+                <div class="intro-block">
+                    <p><strong>参数量</strong>：gate_proj (768×2432) + up_proj (768×2432) + down_proj (2432×768) = 3 × 768 × 2432 ≈ 5.6M 参数。这是单层 FFN 的参数量，占了 Transformer Block 的大部分。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>MoE 混合专家</h3>
+                <h4>不同 token 由不同"专家"处理</h4>
+                <p><strong>定义</strong>：MoE（Mixture of Experts）把一个大的 FFN 拆成多个小的"专家"FFN，每次只激活少数几个。参数量增大了，但计算量几乎不变。</p>
+                <p><strong>白话</strong>：像一个医院，全科医生什么都能看（Dense FFN），但专科医生更专业（MoE）。每个 token 来了先挂号（Router），然后被分到对应科室（Expert）。</p>
+                <p><em>比喻卸甲：在数学上，MoE 就是多个并行的 FFN，一个线性层（Router）输出每个 token 对各专家的偏好分数，只取 top-k 个专家计算并加权求和。</em></p>
+                <pre><code class="language-python"># model_minimind.py 第 148-154 行
+class MOEFeedForward(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.gate = nn.Linear(768, config.num_experts, bias=False)  # 路由器
+        self.experts = nn.ModuleList([
+            FeedForward(config, config.moe_intermediate_size)
+            for _ in range(config.num_experts)  # 默认 4 个专家
+        ])</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>MoE 路由过程</h3>
+                <h4>Router 打分 → Top-1 选择 → 专家计算 → 加权合并</h4>
+                <pre><code class="language-python"># model_minimind.py 第 156-176 行（简化版）
+def forward(self, x):
+    batch_size, seq_len, hidden_dim = x.shape
+    x_flat = x.view(-1, hidden_dim)          # 展平: (N, 768)
+
+    # ① 路由器给每个 token 对 4 个专家打分
+    scores = F.softmax(self.gate(x_flat), dim=-1)  # (N, 4)
+
+    # ② 选得分最高的 1 个专家（Top-1）
+    topk_weight, topk_idx = torch.topk(scores, k=1, dim=-1)
+
+    # ③ 只让选中的专家处理对应的 token
+    y = torch.zeros_like(x_flat)
+    for i, expert in enumerate(self.experts):
+        mask = (topk_idx == i)               # 哪些 token 选了专家 i
+        if mask.any():
+            token_idx = mask.any(dim=-1).nonzero().flatten()
+            weight = topk_weight[mask].view(-1, 1)
+            y.index_add_(0, token_idx, expert(x_flat[token_idx]) * weight)
+
+    # ④ 计算负载均衡损失
+    load = F.one_hot(topk_idx, 4).float().mean(0)
+    self.aux_loss = (load * scores.mean(0)).sum() * 4 * 5e-4
+    return y.view(batch_size, seq_len, hidden_dim)</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：MoE 路由全景</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左侧6个token方块，中间Router方块，右侧4个专家FFN
+                  - token通过Router连向被选中的专家(高亮)，未选中专家半透明
+                  - 标注："Top-1选择""4个专家=4倍参数，每次只激活1个"
+                  - 配色建议：浅灰背景，Router橙色，Expert不同颜色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>负载均衡损失</h3>
+                <h4>防止所有 token 涌向同一个专家</h4>
+                <div class="warning">
+                    <strong>问题</strong>：所有 token 都涌向 Expert 1，其他三个专家闲着。极端情况下，模型退化为单专家——4 倍参数，只有 1 倍在干活。
+                </div>
+                <p><strong>解决方案</strong>：<code>aux_loss</code> 惩罚负载不均。如果某个专家被选中太多（load 高）或得分太高（score 高），损失就变大。训练会自动纠正这种不均衡。</p>
+                <pre><code class="language-python"># aux_loss = N * sum(load_i * score_i) * coef
+# load_i = 专家 i 被选中的比例
+# score_i = 专家 i 的平均得分
+# coef = 0.0005（很小，不干扰主损失）
+#
+# 为什么乘 load * score 而不是只看 load？
+# 只看 load：专家被均分了但每个都不太确定 → 没解决问题
+# load * score：惩罚"既被频繁选中又自信"的专家
+# 这迫使 Router 的决策更分散、更均匀</code></pre>
+                <div class="intro-block">
+                    <p>4 个专家 = 4 倍参数量，但每次只激活 1 个，计算量几乎不变。这就是 MoE 的魅力——用少量计算获得大模型的效果。</p>
+                    <p><strong>深度边界</strong>：aux_loss 的梯度如何反向影响 Router 的 gate 层、Top-K 选择在反向传播中的梯度处理（直通估计器）、以及源码第 169-170 行的"空操作占位"技巧（确保所有专家参数参与计算图，避免梯度为 None）——这些属于 MoE 实现的高级细节，初次学习时先理解"为什么需要"和"公式是什么"就够了。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Dense vs MoE</h3>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Dense FFN</h4>
+                        <pre><code class="language-python"># 所有 token 经过同一个 FFN
+# 参数量：~5.6M
+# 每个 token 激活全部参数
+# 优点：简单稳定
+# 缺点：参数利用率低</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>MoE FFN</h4>
+                        <pre><code class="language-python"># token 被 Router 分配给不同专家
+# 参数量：~5.6M x 4 = 22.4M
+# 每个 token 只激活 1/4 参数
+# 优点：参数量大、计算量小
+# 缺点：需要 aux_loss 均衡</code></pre>
+                    </div>
+                </div>
+                <p>MiniMind 默认 <code>use_moe=False</code>，使用 Dense FFN。在配置中把 <code>use_moe</code> 设为 <code>True</code> 即可启用 MoE。两种模式在 <code>MiniMindBlock</code> 中通过一个 if-else 切换，其他代码完全不变。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 5: 组装与生成 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5：组装</h2>
+                <p>把所有零件组装成完整的 Transformer Block，堆叠 8 层，加上输出头，实现自回归生成。</p>
+                <div class="intro-block">
+                    <p>前面我们一个个拆解了归一化、位置编码、注意力、前馈网络这些零件。现在到了最激动人心的环节——把它们全部组装起来！这一部分会看到 Transformer Block 如何用 Pre-Norm 残差结构把注意力和 FFN 串在一起，8 层 Block 如何堆叠成完整的 MiniMindModel，最后加上语言模型头和损失函数，实现从输入到输出的完整闭环。我们还会深入生成阶段的各种采样策略，理解 Temperature、Top-K、Top-P 这些参数到底在控制什么。</p>
+                    <ul>
+                        <li><b>Transformer Block</b> —— Pre-Norm 残差结构：先归一化再计算，残差连接保证梯度流通</li>
+                        <li><b>MiniMindModel 组装</b> —— Embedding + 8 层 Block + 最终 Norm，拼出完整的模型骨架</li>
+                        <li><b>lm_head 与损失计算</b> —— 输出投影到词表大小，用交叉熵损失训练，理解 shift 操作的奥秘</li>
+                        <li><b>自回归生成 generate</b> —— 逐 token 生成文本的完整推理循环</li>
+                        <li><b>采样策略详解</b> —— Temperature 调温度、Top-K 截断、Top-P 核采样、Repetition Penalty 惩罚重复</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Transformer块</h3>
+                <h4>Pre-Norm 残差结构——信息层层叠加</h4>
+                <pre><code class="language-python"># model_minimind.py 第 178-194 行
+class MiniMindBlock(nn.Module):
+    def __init__(self, layer_id, config):
+        super().__init__()
+        self.self_attn = Attention(config)
+        self.input_layernorm = RMSNorm(config.hidden_size)
+        self.post_attention_layernorm = RMSNorm(config.hidden_size)
+        self.mlp = FeedForward(config) if not config.use_moe \
+                   else MOEFeedForward(config)
+
+    def forward(self, hidden_states, position_embeddings, ...):
+        residual = hidden_states                              # 保存副本
+        hidden_states, present_kv = self.self_attn(
+            self.input_layernorm(hidden_states),              # 先归一化再注意力
+            position_embeddings, ...)
+        hidden_states += residual                             # 残差连接
+
+        hidden_states = hidden_states + self.mlp(
+            self.post_attention_layernorm(hidden_states))     # 归一化+FFN+残差
+        return hidden_states, present_kv</code></pre>
+                <div class="intro-block">
+                    <p><strong>Pre-Norm vs Post-Norm</strong>：MiniMind 用的是 Pre-Norm——先归一化再进 Attention/FFN。早期 Transformer 用 Post-Norm（先进 Attention 再归一化），但训练不稳定。现代 LLM 基本都用 Pre-Norm。</p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：Transformer Block 内部架构</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从上到下数据流。输入(B,S,768)→左侧残差虚线→右侧主路径：RMSNorm→Attention(GQA,RoPE)→残差加法→RMSNorm→FFN/MoE→残差加法→输出(B,S,768)
+                  - 每个组件旁标注维度；残差连接橙色虚线；加法节点红色"+"
+                  - 配色建议：浅蓝背景，RMSNorm淡黄，Attention淡蓝，FFN淡绿
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>残差连接的意义</h3>
+                <h4>输出 = 输入 + 变化量——让信息有"捷径"传递</h4>
+                <div class="ai-diagram">
+                  <h4>图：Transformer Block 中的残差连接数据流</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从上到下的数据流图，展示一个 Transformer Block 内部的 Pre-Norm 残差结构，包含两条并行路径
+                  - 主路径（右侧）：输入 x → RMSNorm → Attention（GQA + RoPE）→ 残差加法 "+" → RMSNorm → FFN 或 MoE → 残差加法 "+" → 输出
+                  - 残差路径（左侧虚线）：输入 x 分出一条虚线直接连到第一个"+"号（保存为 residual）；第一个加法结果再分出一条虚线连到第二个"+"号（保存为 residual）
+                  - 关键标注：残差虚线旁标注"捷径：信息直达，不丢失"；每个 RMSNorm 旁标注"Pre-Norm 先归一化"；Attention 旁标注"决定看谁"；FFN 旁标注"决定怎么想"；加法节点用红色圆圈标注"+"
+                  - 配色建议：浅灰背景，主路径节点用蓝色，残差虚线用橙色，加法节点用红色，RMSNorm 用淡黄色，Attention 用浅蓝色，FFN 用浅绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>即使某一层没学到有用的东西（变化量 = 0），信息也不会丢失——直接从残差路径传过去。这就是恒等映射。</p>
+                <div class="intro-block">
+                    <p>为什么现代 LLM 能堆叠几十层甚至上百层？因为残差连接让梯度有"捷径"回传。没有残差连接时，梯度经过十几层连乘后会趋近于 0（梯度消失）。有了残差连接，梯度至少有一条路径可以直接回传到浅层。</p>
+                </div>
+                <div class="warning">
+                    <strong>调试技巧</strong>：如果训练 loss 不下降，检查残差连接是否正确写成 <code>+=</code> 而不是 <code>=</code>。少一个加号，信息就断了。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>模型组装</h3>
+                <h4>Embedding + 8 层 Block + 最终 Norm（第 196-232 行）</h4>
+                <pre><code class="language-python"># model_minimind.py 第 196-207 行
+class MiniMindModel(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.embed_tokens = nn.Embedding(6400, 768)     # 词嵌入
+        self.dropout = nn.Dropout(config.dropout)
+        self.layers = nn.ModuleList([
+            MiniMindBlock(l, config) for l in range(8)]) # 8 层 Block
+        self.norm = RMSNorm(768)                         # 最终归一化
+        # 预计算 RoPE 的 cos/sin 缓冲区（不参与梯度更新）
+        freqs_cos, freqs_sin = precompute_freqs_cis(
+            dim=96, end=32768, rope_base=1e6, rope_scaling=config.rope_scaling)
+        self.register_buffer("freqs_cos", freqs_cos, persistent=False)
+        self.register_buffer("freqs_sin", freqs_sin, persistent=False)</code></pre>
+                <div class="intro-block">
+                    <p><code>register_buffer</code> 把 cos/sin 注册为模型的"状态"但不作为可训练参数。它们会随模型一起保存/加载（persistent=False 时不保存），但不参与梯度计算。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>forward 流程</h3>
+                <h4>数据从 Embedding 到最终 hidden_states 的完整旅程</h4>
+                <pre><code class="language-python"># model_minimind.py 第 209-232 行（简化版）
+def forward(self, input_ids, attention_mask=None,
+            past_key_values=None, use_cache=False, **kwargs):
+    batch_size, seq_length = input_ids.shape
+
+    # ① 词嵌入：离散 ID → 连续向量
+    hidden_states = self.dropout(self.embed_tokens(input_ids))  # (B, S, 768)
+
+    # ② 取出当前位置的 RoPE cos/sin（支持 KV-Cache 偏移）
+    start_pos = past_key_values[0][0].shape[1] if past_key_values[0] is not None else 0
+    position_embeddings = (
+        self.freqs_cos[start_pos:start_pos + seq_length],
+        self.freqs_sin[start_pos:start_pos + seq_length])
+
+    # ③ 逐层通过 Transformer Block
+    presents = []
+    for layer, past_kv in zip(self.layers, past_key_values):
+        hidden_states, present = layer(
+            hidden_states, position_embeddings,
+            past_key_value=past_kv, use_cache=use_cache)
+        presents.append(present)
+
+    # ④ 最终归一化 + 收集 MoE 的 aux_loss
+    hidden_states = self.norm(hidden_states)
+    aux_loss = sum([l.mlp.aux_loss for l in self.layers
+                    if isinstance(l.mlp, MOEFeedForward)])
+    return hidden_states, presents, aux_loss</code></pre>
+                <div class="intro-block">
+                    <p><strong>维度全程追踪</strong>：input_ids (2,5) → embed (2,5,768) → 8 层 Block（维度不变）→ norm (2,5,768)。整个过程中 hidden_size 始终是 768，形状不变。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>CausalLM 头</h3>
+                <h4>在 MiniMindModel 之上加 lm_head 做词汇预测</h4>
+                <pre><code class="language-python"># model_minimind.py 第 234-253 行
+class MiniMindForCausalLM(PreTrainedModel, GenerationMixin):
+    def __init__(self, config):
+        self.model = MiniMindModel(config)
+        self.lm_head = nn.Linear(768, 6400, bias=False)  # 768 → 词汇表大小
+        # 关键：embed 和 lm_head 共享权重！
+        if config.tie_word_embeddings:
+            self.model.embed_tokens.weight = self.lm_head.weight
+
+    def forward(self, input_ids, labels=None, ...):
+        hidden_states, past_kv, aux_loss = self.model(input_ids, ...)
+        logits = self.lm_head(hidden_states)      # (B, S, 6400)
+
+        if labels is not None:
+            # 预测左移一位，和真实标签右移一位对齐
+            loss = F.cross_entropy(
+                logits[..., :-1, :].contiguous().view(-1, 6400),
+                labels[..., 1:].contiguous().view(-1),
+                ignore_index=-100)
+        return MoeCausalLMOutputWithPast(
+            loss=loss, aux_loss=aux_loss, logits=logits, ...)</code></pre>
+                <div class="intro-block">
+                    <p><strong>权重共享</strong>：<code>tie_word_embeddings=True</code> 意味着 <code>embed_tokens</code> 和 <code>lm_head</code> 用同一套权重。嵌入是把 token ID 变成向量，lm_head 是把向量变回 token 概率——本质上是同一个映射的正反方向。共享权重可以节省 6400×768 = 4.9M 参数。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>损失计算的秘密</h3>
+                <h4>为什么 logits 取 [:-1] 而 labels 取 [1:]？</h4>
+                <pre><code class="language-plaintext">输入:  [你,  好,  世,  界]    (input_ids)
+       ↓ embed → ×8层 → lm_head
+logits:[好', 世', 界', ?' ]   模型对每个位置的预测
+       取[:-1] ↑ ↑ ↑
+labels:[好,  世,  界,  ! ]    真实的下一个字
+              取[1:] ↑ ↑ ↑
+
+对齐后：
+logits[:-1] = [好', 世', 界']  vs  labels[1:] = [好, 世, 界]
+→ 交叉熵衡量每个位置的预测与真实的差距</code></pre>
+                <p>本质就是：模型在每个位置预测下一个字，损失衡量预测和真实下一个字的差距。<code>ignore_index=-100</code> 让 padding 和不需要计算损失的位置被忽略。</p>
+                <div class="ai-diagram">
+                  <h4>图：权重共享</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：中央大矩阵"共享权重 6400x768"，左上embed_tokens箭头取行(橙色高亮)，右下lm_head箭头矩阵乘法
+                  - 标注："同一块内存""tie_word_embeddings=True 节省 4.9M 参数"
+                  - 配色建议：白色背景，矩阵浅蓝网格，高亮行橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自回归生成</h3>
+                <h4>逐步生成 token 直到遇到 EOS（第 256-288 行）</h4>
+                <p>自回归生成是模型推理的核心过程：每次前向传播只预测一个 token，把它拼到输入后面，再预测下一个。如此循环直到遇到结束符或达到最大长度。</p>
+                <pre><code class="language-python"># model_minimind.py 第 256-288 行（简化版）
+@torch.inference_mode()
+def generate(self, input_ids, max_new_tokens=8192,
+             temperature=0.85, top_p=0.85, top_k=50,
+             eos_token_id=2, repetition_penalty=1.0, ...):
+    for _ in range(max_new_tokens):
+        # ① 前向传播，只取最后一个 token 的 logits
+        past_len = past_key_values[0][0].shape[1] if past_key_values else 0
+        outputs = self.forward(input_ids[:, past_len:], ...)  # 只算新 token
+        logits = outputs.logits[:, -1, :] / temperature       # 温度缩放
+
+        # ② Repetition Penalty：惩罚已出现的 token
+        if repetition_penalty != 1.0:
+            for i in range(input_ids.shape[0]):
+                seen = torch.unique(input_ids[i])
+                logits[i, seen] = torch.where(
+                    logits[i, seen] > 0,
+                    logits[i, seen] / repetition_penalty,
+                    logits[i, seen] * repetition_penalty)
+
+        # ③ Top-K：只保留概率最高的 K 个
+        # ④ Top-P：累积概率超过 P 后面的都去掉
+        # ⑤ 从过滤后的分布中采样
+        next_token = torch.multinomial(torch.softmax(logits, dim=-1), 1)
+        input_ids = torch.cat([input_ids, next_token], dim=-1)
+        if (next_token == eos_token_id).all(): break  # 遇到结束符就停
+    return input_ids</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>采样策略详解</h3>
+                <h4>Temperature / Top-K / Top-P 三重过滤</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>Temperature</h4>
+                        <p><code>logits / temperature</code></p>
+                        <p>&lt; 1 → 更确定（选最高概率的）</p>
+                        <p>&gt; 1 → 更随机（趋向均匀分布）</p>
+                        <p>= 1 → 原始分布不变</p>
+                        <p>默认 0.85，略偏确定</p>
+                    </div>
+                    <div class="column">
+                        <h4>Top-K + Top-P</h4>
+                        <p><strong>Top-K=50</strong>：只看概率最高的 50 个候选，其余设为 -∞</p>
+                        <p><strong>Top-P=0.85</strong>：把候选按概率从高到低排序，累积概率到 85% 后面的都去掉</p>
+                        <p>两者叠加：先 Top-K 截断，再 Top-P 精筛</p>
+                    </div>
+                </div>
+                <pre><code class="language-python"># Top-K 实现（第 271-272 行）
+logits[logits < torch.topk(logits, top_k)[0][..., -1, None]] = -float('inf')
+
+# Top-P 实现（第 273-277 行）
+sorted_logits, sorted_idx = torch.sort(logits, descending=True)
+mask = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1) > top_p
+mask[..., 1:], mask[..., 0] = mask[..., :-1].clone(), 0  # 保留第一个
+logits[mask.scatter(1, sorted_idx, mask)] = -float('inf')</code></pre>
+                <div class="intro-block">
+                    <p>MiniMind 的默认值（T=0.85, K=50, P=0.85）是实践中效果不错的组合。想更"有创意"就调高 T，想要更稳定就降低 T。Top-P 的那个 <code>mask[..., 0] = 0</code> 很关键——确保概率最高的那个 token 永远不会被过滤掉。</p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：采样策略对比</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：三行柱状图。"原始logits"高低不一；"Temperature=0.5"两极分化；"Top-K=3+Top-P"只保留3个其余灰色
+                  - 标注："T<1更确定""被过滤"
+                  - 配色建议：浅灰背景，保留蓝色，被过滤灰色，过滤箭头红色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>重复惩罚</h3>
+                <h4>惩罚已生成的 token，防止重复循环</h4>
+                <pre><code class="language-python"># model_minimind.py 第 268-270 行
+if repetition_penalty != 1.0:
+    for i in range(input_ids.shape[0]):
+        seen = torch.unique(input_ids[i])
+        score = logits[i, seen]
+        # 正分数除以 penalty（变小），负分数乘以 penalty（变更负）
+        logits[i, seen] = torch.where(
+            score > 0, score / repetition_penalty,
+            score * repetition_penalty)</code></pre>
+                <p>为什么正负分数要分别处理？如果统一除以 penalty：正分数变小（好），但负分数会变大（变接近 0，反而增加被选中的概率）。所以正的除、负的乘，确保已出现的 token 在两个方向都被"推开"。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 6: 总结与练习 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6：总结</h2>
+                <p>回顾全景，清点参数，动手验证。</p>
+                <div class="intro-block">
+                    <p>学完了所有组件，最后这一部分做三件事：用参数量追踪表和维度变化总览帮你把零散的知识串成体系；用常见错误排查表帮你提前埋好"地雷探测器"，避免在动手实践时踩坑；最后留几道练习题，从维度追踪到代码修改，真正动手验证自己是否理解了每个环节。</p>
+                    <ul>
+                        <li><b>参数量追踪表</b> —— 逐层清点每个组件的参数量，搞清楚模型的总参数是怎么算出来的</li>
+                        <li><b>维度变化总览</b> —— 从输入到输出，跟踪张量形状在每一步的变化</li>
+                        <li><b>常见错误排查</b> —— shape 不匹配、CUDA OOM、RoPE 偏移错误、因果掩码 triu 错误等高频坑</li>
+                        <li><b>动手练习</b> —— 维度追踪练习、代码理解题、修改实验建议，在实战中加深理解</li>
+                        <li><b>延伸阅读</b> —— 推荐进一步学习的论文和资源，继续深入 Transformer 的世界</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>参数量追踪</h3>
+                <h4>每一层有多少参数，它们花在哪了</h4>
+                <table>
+                    <thead><tr><th>组件</th><th>计算</th><th>参数量</th></tr></thead>
+                    <tbody>
+                        <tr><td>embed_tokens</td><td>6400 &times; 768</td><td>4.92M</td></tr>
+                        <tr><td>q_proj</td><td>768 &times; (8&times;96)</td><td>0.59M</td></tr>
+                        <tr><td>k_proj</td><td>768 &times; (4&times;96)</td><td>0.29M</td></tr>
+                        <tr><td>v_proj</td><td>768 &times; (4&times;96)</td><td>0.29M</td></tr>
+                        <tr><td>o_proj</td><td>(8&times;96) &times; 768</td><td>0.59M</td></tr>
+                        <tr><td>QK-Norm (2个)</td><td>96 &times; 2</td><td>0.0002M</td></tr>
+                        <tr><td>gate + up + down</td><td>768&times;2432 &times; 3</td><td>5.60M</td></tr>
+                        <tr><td><strong>单层 Block</strong></td><td>Attn 1.77M + FFN 5.60M + 2&times;Norm</td><td><strong>~7.37M</strong></td></tr>
+                        <tr><td><strong>8 层 Block</strong></td><td>7.37M &times; 8</td><td><strong>~59.00M</strong></td></tr>
+                        <tr><td><strong>lm_head</strong></td><td>与 embed 共享 (tied)</td><td><strong>0</strong></td></tr>
+                        <tr><td><strong>总参数</strong></td><td>embed 4.92M + 8 层 59.00M + final norm</td><td><strong>~63.9M</strong></td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>对账：<code>embed 4.92M + 8 &times; 7.37M + final norm 768 &asymp; 63.9M</code>，这就是当前源码默认配置（minimind-3）的真实参数量。两个关键点：(1) <code>tie_word_embeddings=True</code>——lm_head 的 4.92M 参数和 embed 共享同一份权重，<strong>不重复计算</strong>，所以总表里 lm_head 是 0。(2) 历史版本的 <code>minimind2-small</code>（hidden=512）约 26M、<code>minimind2-moe</code> 约 145M；如果你看到旧文档写"26M"，那是更早的小尺寸版本，不是这里的默认配置。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>维度变化总览</h3>
+                <h4>数据在模型中每一步的形状</h4>
+                <pre><code class="language-python"># 假设输入 input_ids: (2, 5)，即 batch=2, seq_len=5
+# 假设已缓存 past_len=3 个 token 的 KV-Cache
+
+# ===== MiniMindModel.forward =====
+input_ids                              # (2, 5)
+embed_tokens(input_ids)                # (2, 5, 768)
+
+# ===== Attention.forward（单层）=====
+q_proj(x)                              # (2, 5, 768)
+view → xq                              # (2, 5, 8, 96)    8个Q头
+k_proj(x) → view                       # (2, 5, 4, 96)    4个KV头
+QK-Norm                                # (2, 5, 8, 96) / (2, 5, 4, 96)
+RoPE                                   # 维度不变
+KV-Cache 拼接后 xk                     # (2, 8, 4, 96)    seq=3+5=8
+repeat_kv(xk, 2)                       # (2, 8, 8, 96)    复制成8个头
+xq @ xk^T                              # (2, 8, 5, 8)     注意力分数
+softmax @ xv                           # (2, 8, 5, 96)
+reshape → o_proj                       # (2, 5, 768)
+
+# ===== FeedForward.forward =====
+gate_proj(x)                           # (2, 5, 2432)
+up_proj(x)                             # (2, 5, 2432)
+SiLU(gate) * up                        # (2, 5, 2432)
+down_proj                              # (2, 5, 768)
+
+# ===== MiniMindForCausalLM.forward =====
+lm_head(hidden_states)                 # (2, 5, 6400)     logits
+logits[:, -1, :]                       # (2, 6400)         最后一个token的预测</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见错误排查</h3>
+                <div class="warning">
+                    <strong>shape 不匹配 RuntimeError</strong>：<code>xq @ xk.transpose(-2, -1)</code> 要求最后两个维度是 (96) @ (96) → (seq, seq)。如果中间某个 view 或 transpose 写错了维度，这里就会报错。
+                </div>
+                <p><strong>排查方法</strong>：在 forward 的每一步加 <code>print(x.shape)</code>，和上面的维度追踪表对照。最常见的错误是把 <code>view(bsz, seq_len, n_heads, head_dim)</code> 中的 n_heads 和 head_dim 写反。</p>
+                <div class="warning">
+                    <strong>CUDA OOM on generate</strong>：如果 <code>max_new_tokens</code> 设太大，KV-Cache 会撑爆显存。KV-Cache 大小 = batch × num_kv_heads × seq_len × head_dim × 2(K和V) × dtype_size。MiniMind 在 24G 显卡上大约能生成 4000+ token。
+                </div>
+                <div class="warning">
+                    <strong>RoPE 位置偏移错误</strong>：使用 KV-Cache 时，必须从 <code>start_pos</code> 开始取 cos/sin，而不是从 0。如果忘了偏移，模型会认为所有新 token 都在位置 0，导致输出乱码。
+                </div>
+                <div class="warning">
+                    <strong>因果掩码 triu(1) 写成 triu(0)</strong>：<code>triu(0)</code> 会把对角线也设为 -∞，模型连自己都看不到。症状：loss 不下降或 NaN。
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：维度</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h4>任务</h4>
+                        <p>打开 <code>model_minimind.py</code>，在 Attention.forward 的每一行后面标注 tensor 的 shape。假设输入是 <code>(2, 5, 768)</code>，KV-Cache 中已有 3 个 token。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-python">x = input                               # (2, 5, 768)
+xq = self.q_proj(x)                     # (2, 5, 768)
+xq = xq.view(2, 5, 8, 96)              # (2, 5, 8, 96)
+xk = self.k_proj(x).view(2, 5, 4, 96)  # (2, 5, 4, 96)
+xk = cat([past_k, xk], dim=1)          # (2, 8, 4, 96)    3+5=8
+xq = xq.transpose(1, 2)                # (2, 8, 5, 96)
+xk = repeat_kv(xk, 2).transpose(1, 2)  # (2, 8, 8, 96)
+scores = xq @ xk.transpose(-2, -1)     # (2, 8, 5, 8)
+output = softmax(scores) @ xv           # (2, 8, 5, 96)
+output = output.transpose(1,2).reshape()# (2, 5, 768)</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：理解</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>问题 1</h4>
+                        <p>为什么 <code>k_proj</code> 输出维度是 384（4&times;96）而不是 768（8&times;96）？如果把 <code>num_key_value_heads</code> 改成 8 会怎样？</p>
+                        <p style="color: var(--info-color);">提示：想想 GQA 和 KV-Cache 的关系。</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 2</h4>
+                        <p><code>repeat_kv</code> 做了什么？为什么 Q 不需要 repeat，只有 KV 需要？</p>
+                        <p style="color: var(--info-color);">提示：看看 repeat 的方向——是把少的复制成多的。</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 3</h4>
+                        <p>因果掩码中，<code>triu(1)</code> 的 1 代表什么？如果是 <code>triu(0)</code> 会怎样？</p>
+                        <p style="color: var(--info-color);">提示：triu(1) 保留对角线，triu(0) 不保留。</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 4</h4>
+                        <p>如果去掉残差连接（<code>hidden_states += residual</code> 改为直接赋值），训练会发生什么？为什么？</p>
+                        <p style="color: var(--info-color);">提示：想想梯度如何回传到浅层。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：修改</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h4>任务 A：调整模型大小</h4>
+                        <p>把 <code>hidden_size</code> 从 768 改成 512，<code>num_hidden_layers</code> 从 8 改成 4。手动计算新的 <code>head_dim</code>、<code>intermediate_size</code>、每层参数量。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-python"># head_dim = 512 // 8 = 64
+# intermediate_size = ceil(512 * pi / 64) * 64 = ceil(25.13) * 64 = 26 * 64 = 1664
+# q_proj: 512 * 512 = 0.26M
+# k_proj: 512 * 256 = 0.13M
+# FFN: 3 * 512 * 1664 = 2.56M
+# 单层: ~3.1M, 4 层: ~12.4M + embed 3.3M ≈ 15.7M</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h4>任务 B：启用 MoE</h4>
+                        <p>在配置中设置 <code>use_moe=True</code>，<code>num_experts=4</code>。计算启用 MoE 后的总参数量。思考：为什么计算量几乎不变？</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-python"># MoE 参数 = Router(768*4) + 4 * FFN(5.6M) ≈ 22.4M
+# 每层从 ~7.37M 变为 ~24.2M（约 3 倍）
+# 但每次只激活 1 个专家，计算量 ≈ 1 * FFN + Router ≈ 不变
+# 这就是 MoE 的核心优势：参数多、计算少</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>延伸阅读</h3>
+                <div class="intro-block">
+                    <p><strong>Attention Is All You Need</strong>（2017）——Transformer 原始论文。读完后你会发现 MiniMind 的架构和它几乎一样，只是把 LayerNorm 换成了 RMSNorm，加了 GQA 和 RoPE。</p>
+                    <p><strong>LLaMA: Open and Efficient Foundation Language Models</strong>（2023）——Meta 的开源 LLM。MiniMind 的架构基本就是小号 LLaMA：RMSNorm + RoPE + SwiGLU + GQA。读这篇论文可以了解每个设计选择的动机。</p>
+                    <p><strong>Mixture of Experts</strong>——Mixtral 论文（2024）展示了 MoE 在生产级 LLM 中的实际效果。4.5x 参数量，1x 计算量，性能接近更大的 Dense 模型。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 收尾 ==================== -->
+        <section class="slide title-slide">
+            <h1>阶段 2 完成</h1>
+            <p>你刚刚理解了一个完整的 LLM 架构——从"为什么需要归一化"到"模型如何一个字一个字地生成"。</p>
+            <p>你学会了：RMSNorm 归一化、RoPE 位置编码、GQA 注意力、SwiGLU 前馈网络、MoE 混合专家、Pre-Norm 残差连接、自回归生成与采样策略。</p>
+            <p>下一章：预训练——让这些代码跑起来，学会"说人话"。</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

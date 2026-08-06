@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 9：Agent RL 工具调用</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>Agent RL 工具调用</h1>
+            <p>阶段 9 · 教小模型学会"使用工具"——从只会说话，到会动手解决问题</p>
+        </section>
+
+        <!-- ==================== 问题驱动开场 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>模型的盲区</h3>
+                <p>经过前面八个阶段的训练，你的 MiniMind 已经能流利对话、区分好坏回答、甚至学会推理。但它有一个根本性的局限——</p>
+                <div class="warning">
+                    <strong>它只能靠"记忆"回答问题，无法获取实时信息或执行精确计算。</strong>
+                    <p>你问 "256 x 37 = ?"，它靠训练数据猜，可能猜对也可能猜错。你问"北京今天天气"，它只能编一个。训练数据再好，也覆盖不了所有事实和计算。</p>
+                </div>
+                <p>怎么办？给它<strong>工具</strong>。让模型学会在需要的时候调用计算器、查天气、翻译文本——从"背书的书呆子"变成"会查资料的实用派"。</p>
+                <p>这就是 <strong>Agent RL</strong>：用强化学习教会模型使用工具。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 成长路线 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>成长路线</h3>
+                <div class="ai-diagram">
+                  <h4>图：MiniMind 从"学会说话"到"学会使用工具"的成长路线</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一条从左到右的横向成长路线，包含四个阶段节点
+                  - 节点1（灰色）："Stage 3-4 预训练+SFT = 学会说话"
+                  - 节点2（灰色）："Stage 5-8 LoRA/蒸馏/DPO/RL = 学会说好话"
+                  - 节点3（红色高亮，大边框）："Stage 9 Agent RL = 学会使用工具"
+                  - 节点4（绿色高亮，大边框）："MiniMind Agent 能说话+会思考+会用工具"
+                  - 各元素关系：节点1用箭头指向节点2指向节点3指向节点4，依次递进
+                  - 关键标注：节点3旁标注"本阶段重点"，节点4旁标注"最终目标"
+                  - 配色建议：浅蓝/浅灰背景，已完成阶段灰色，当前阶段红色，目标绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>前八个阶段教模型"怎么说"和"说得好"。本阶段教它一个全新能力：<strong>什么时候需要借助外部工具，怎么调用，怎么利用结果</strong>。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 本阶段路线图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>本阶段路线图</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>1. Agent 概念</h4>
+                        <p>LLM + 工具 = Agent，从回答者到执行者</p>
+                    </div>
+                    <div class="card">
+                        <h4>2. 工具定义</h4>
+                        <p>6 个模拟工具 + 调用格式</p>
+                    </div>
+                    <div class="card">
+                        <h4>3. 模型如何调用工具</h4>
+                        <p>解析调用意图 + 安全执行</p>
+                    </div>
+                    <div class="card">
+                        <h4>4. 让对话动起来</h4>
+                        <p>生成-调工具-再生成的循环</p>
+                    </div>
+                    <div class="card">
+                        <h4>5. 奖励计算</h4>
+                        <p>工具对齐 + GT 匹配 + 格式惩罚</p>
+                    </div>
+                    <div class="card">
+                        <h4>6. 训练：从单轮到多轮</h4>
+                        <p>突出与 GRPO 的关键差异</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: Agent 概念 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: Agent 概念</h2>
+                <p>理解什么是 Agent，以及为什么 LLM 需要工具。</p>
+                <div class="intro-block">
+                    <p>模型再能说会道，也只会"靠记忆回答问题"——算术可能算错，天气只能瞎编。给它工具，它就从"背书的书呆子"变成了"会查资料的实用派"。这一节建立 Agent 的基本概念：LLM + 工具 = 能决策、能执行的智能体。</p>
+                    <ul>
+                        <li><strong>什么是 Agent</strong>：Agent = LLM + 外部工具。模型生成特殊格式的标记来请求执行函数，外部系统解析后返回结果——本质是纯文本协议</li>
+                        <li><strong>核心工作流</strong>：用户提问 → Agent 理解意图并决策用哪个工具 → 调用工具拿到结果 → 基于结果组织回答</li>
+                        <li><strong>架构全景</strong>：文本协议层是核心——所有交互都是纯文本，模型不直接调用函数，通过 tool_call/tool_response 标签通信</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 什么是 Agent ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>什么是 Agent</h3>
+                <div class="intro-block">
+                    <p><strong>定义</strong>：Agent = LLM + 使用外部工具的能力。模型在生成文本的过程中，可以插入特定格式的标记来请求执行外部函数，然后基于函数返回结果继续生成。</p>
+                    <p><strong>白话</strong>：想象你雇了一个助手。没有工具时，你问 256 x 37，他靠心算，可能算错。给了他计算器后，他会主动拿计算器按一下——结果一定准确。</p>
+                    <p><em>这个比喻只为建立直观感受。实际上，模型只是生成了特殊格式的文本标记，外部系统解析这些标记后执行函数并返回结果——没有真正的"助手"在工作。</em></p>
+                </div>
+                <pre><code class="language-python"># Agent 的核心循环（伪代码）
+while 模型还在输出:
+    text = model.generate()           # 模型生成文本
+    calls = parse_tool_calls(text)    # 解析工具调用
+    if calls:
+        results = execute_tools(calls)  # 执行工具
+        text += format_results(results) # 结果注入上下文
+    else:
+        break  # 没有工具调用，回答完毕</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== Agent 工作流时序 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>核心工作流</h3>
+                <div class="ai-diagram">
+                  <h4>图：AI Agent 查天气的完整交互时序</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个三栏时序图，从左到右分别是"用户"、"AI Agent（MiniMind）"、"外部工具"
+                  - 时序步骤：用户发问"北京今天天气怎么样？"到Agent思考"需要查天气"（标注"1.理解意图"）到Agent调用 get_current_weather(location=北京)到工具返回 28度晴到Agent基于结果组织回答（标注"2.基于工具结果回答"）到回复用户"北京今天晴朗，气温28度！"
+                  - 各元素关系：用户和Agent之间用实线箭头表示对话，Agent和工具之间用实线/虚线箭头表示调用和返回
+                  - 关键标注：Agent侧两个黄色注释框分别标注"1.理解意图：需要查天气"和"2.基于工具结果组织回答"
+                  - 配色建议：浅蓝/浅灰背景，用户蓝色，Agent绿色，工具橙色，关键箭头用橙色标注
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>两个关键能力：<strong>决策</strong>（何时用工具、用哪个、传什么参数）+ <strong>整合</strong>（把工具结果融入最终回答）。Agent RL 的训练目标就是教会模型这两个能力。</p>
+            </div>
+        </section>
+
+        <!-- ==================== LLM Agent 架构全景 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>架构全景</h3>
+                <div class="ai-diagram">
+                  <h4>图：LLM Agent 架构全景</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：中央是一个大框标注"LLM（MiniMind 模型）"，左侧是"用户输入"，右侧是"外部工具系统"（包含计算器、天气API、翻译服务等小图标）
+                  - LLM 和工具系统之间有一个"文本协议层"的虚线框，里面展示 tool_call 和 tool_response 标签的示例
+                  - 各元素关系：用户输入→LLM思考→生成tool_call→工具执行→tool_response→LLM继续→最终回答
+                  - 关键标注：文本协议层旁标注"所有交互都是纯文本，模型不直接调用函数"
+                  - 配色建议：浅灰背景，LLM蓝色，工具系统绿色，协议层橙色虚线
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 工具定义与格式 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 工具定义</h2>
+                <p>6 个模拟工具的定义、调用格式和模拟数据机制。</p>
+                <div class="intro-block">
+                    <p>模型只会输出文字，怎么让它"调用工具"？答案是约定一套文本协议：模型输出 <code>&lt;tool_call&gt;</code> 标签，外部系统就执行对应函数。这一节介绍 MiniMind 定义的 6 个训练工具、它们的调用格式，以及为什么训练时用模拟数据而不是真实 API。</p>
+                    <ul>
+                        <li><strong>标签协议</strong>：<code>&lt;tool_call&gt;</code> 和 <code>&lt;tool_response&gt;</code> 标签机制，标签内必须是合法 JSON，包含 name 和 arguments</li>
+                        <li><strong>6 个内置工具</strong>：calculate_math、unit_converter、get_current_weather、get_current_time、get_exchange_rate、translate_text，每个遵循 OpenAI Function Calling 标准</li>
+                        <li><strong>模拟数据机制</strong>：训练时不调真实 API——太慢、不稳定、要花钱。模拟执行器用 eval 做计算（带安全限制），CHECK_ARGS 做参数校验</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Tool Calling 格式 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么用标签</h3>
+                <div class="intro-block">
+                    <p><strong>核心矛盾</strong>：模型只会输出文字，不会真的"按按钮"。那怎么让它调用工具？</p>
+                    <p><strong>解决方案</strong>：约定一套文本协议。模型输出特殊标签 <code>&lt;tool_call&gt;</code> 时，外部系统就执行对应工具。本质上，工具调用只是"生成特殊格式的文本"。</p>
+                </div>
+                <pre><code class="language-xml">&lt;!-- 模型发出：工具调用 --&gt;
+&lt;tool_call
+{"name": "calculate_math", "arguments": {"expression": "256*37"}}
+&lt;/tool_call
+
+&lt;!-- 系统返回：工具响应（模型不生成这个） --&gt;
+&lt;tool_response
+{"result": "9472"}
+&lt;/tool_response</code></pre>
+                <p>格式要求：标签内必须是合法 JSON，包含 <code>name</code>（工具名）和 <code>arguments</code>（参数字典）。为什么不用其他格式（比如纯 JSON 或 XML）？因为标签对正则解析更友好，且与模型已有的特殊 token（如 <code>&lt;|im_start|&gt;</code>）风格一致。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 完整交互示例 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>交互实例</h3>
+                <p>用户问："帮我把 100 公里换算成英里"。完整的交互过程如下：</p>
+                <pre><code class="language-plaintext">用户: 帮我把100公里换算成英里
+
+模型的第一次输出:
+<tool_call
+{"name": "unit_converter", "arguments": {"value": 100, "from_unit": "km", "to_unit": "miles"}}
+</tool_call
+
+系统自动注入工具结果:
+<tool_response
+{"result": 62.1371}
+</tool_response
+
+模型的第二次输出:
+100公里等于62.14英里。</code></pre>
+                <div class="intro-block">
+                    <p>模型需要学会两件事：<strong>正确生成 tool_call</strong>（选择对的工具、传对的参数），以及<strong>看到 tool_response 后用它组织最终回答</strong>。这两件事正是 Agent RL 训练的目标。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 6 个内置工具（精简版） ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>6 个内置工具</h3>
+                <div class="intro-block">
+                    <p>MiniMind 定义了 6 个模拟工具用于训练。以 <code>calculate_math</code> 为例看看工具定义长什么样：</p>
+                </div>
+                <pre><code class="language-python">{"type": "function", "function": {
+    "name": "calculate_math",
+    "description": "计算数学表达式",
+    "parameters": {"type": "object",
+      "properties": {"expression": {"type": "string"}},
+      "required": ["expression"]}
+}}</code></pre>
+                <p>每个工具遵循 OpenAI Function Calling 标准：<code>name</code> 标识工具，<code>description</code> 帮助模型理解何时使用，<code>parameters</code> 定义输入规范。其余 5 个工具结构相同，只是字段不同：</p>
+                <table>
+                    <thead><tr><th>工具名称</th><th>功能</th><th>必需参数</th><th>示例调用</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>calculate_math</code></td><td>计算数学表达式</td><td><code>expression</code></td><td><code>{"expression": "256*37"}</code></td></tr>
+                        <tr><td><code>unit_converter</code></td><td>单位换算</td><td><code>value, from_unit, to_unit</code></td><td><code>{"value":100,"from_unit":"km","to_unit":"miles"}</code></td></tr>
+                        <tr><td><code>get_current_weather</code></td><td>获取天气</td><td><code>location</code></td><td><code>{"location": "北京"}</code></td></tr>
+                        <tr><td><code>get_current_time</code></td><td>获取时间</td><td>无必需参数</td><td><code>{"timezone": "Asia/Shanghai"}</code></td></tr>
+                        <tr><td><code>get_exchange_rate</code></td><td>查询汇率</td><td><code>from_currency, to_currency</code></td><td><code>{"from_currency":"USD","to_currency":"CNY"}</code></td></tr>
+                        <tr><td><code>translate_text</code></td><td>翻译文本</td><td><code>text, target_language</code></td><td><code>{"text":"你好世界","target_language":"english"}</code></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 模拟数据机制 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>模拟数据机制</h3>
+                <div class="columns">
+                    <div class="column">
+                        <div class="intro-block">
+                            <p><strong>为什么要模拟？</strong>训练时不调用真实 API——太慢、不稳定、要花钱。就像在教室里用模拟题训练，等学会了方法，换真实工具没问题。</p>
+                        </div>
+                        <pre><code class="language-python"># 模拟执行器（部分）
+MOCK_RESULTS = {
+  "calculate_math":
+    lambda args: {"result": str(
+      eval(args.get("expression", "0"),
+           {"__builtins__": {}}))},
+  "get_current_weather":
+    lambda args: {"city": args.get("location"),
+      "temperature": "28°C", "condition": "晴"},
+}</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>两个关键设计</h4>
+                        <ol>
+                            <li><strong>eval 的安全限制</strong>：<code>calculate_math</code> 使用 <code>eval()</code> 执行表达式，但 <code>__builtins__</code> 设为空字典，禁止调用危险函数。</li>
+                            <li><strong>参数校验 CHECK_ARGS</strong>：每个工具有校验函数，用于奖励计算时判断调用是否合法（不是运行时校验）。</li>
+                        </ol>
+                        <pre><code class="language-python"># 参数校验示例
+CHECK_ARGS = {
+  "calculate_math":
+    lambda a: bool(a.get("expression")),
+  "get_current_weather":
+    lambda a: bool(a.get("location")),
+  # ... 其余工具类似
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 模型如何调用工具 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: 模型如何调用工具</h2>
+                <p>模型生成了 <code>&lt;tool_call&gt;</code> 文本，系统如何提取意图并安全执行？</p>
+                <div class="intro-block">
+                    <p>上一节定义了工具的"字典"，这一节搞定工具的"执行管线"：从模型输出的一大段文本中准确提取工具调用，然后安全地执行。两个核心问题——怎么从混合文本中提取 JSON？怎么防止 eval() 执行恶意代码把训练进程卡死？</p>
+                    <ul>
+                        <li><strong>解析设计</strong>：用 <code>&lt;tool_call&gt;</code> 标签做"信封"，正则提取标签内 JSON。容错策略：解析失败直接跳过，不崩溃</li>
+                        <li><strong>parse_tool_calls 代码</strong>：正则 <code>&lt;tool_call\n(.*?)\n&lt;/tool_call</code> 非贪婪匹配 + re.DOTALL，JSON 解析失败静默跳过</li>
+                        <li><strong>安全执行 execute_tool</strong>：1 秒超时保护防止 eval() 执行死循环，出错返回 None 不中断训练</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 解析的设计动机 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么要这样解析</h3>
+                <div class="intro-block">
+                    <p><strong>问题</strong>：模型的输出是一大段文本，里面可能混杂着自然语言和工具调用。怎么准确提取工具调用？</p>
+                    <p><strong>思路</strong>：用 <code>&lt;tool_call&gt;</code> 标签做"信封"——正则表达式找到标签，再解析里面的 JSON。标签机制的好处是：<strong>模型可以同时输出自然语言和工具调用，两者不冲突</strong>。</p>
+                </div>
+                <pre><code class="language-plaintext">模型输出:
+  "让我帮你查一下天气"
+  <tool_call
+  {"name": "get_current_weather", "arguments": {"location": "北京"}}
+  </tool_call
+
+解析结果:
+  → [{'name': 'get_current_weather',
+      'arguments': {'location': '北京'}}]</code></pre>
+                <p>解析失败怎么办？模型可能生成格式错误的 JSON。设计上采用<strong>容错策略</strong>：失败的调用直接跳过，不会导致训练崩溃。宁可漏掉一个调用，也不能让整个流程挂掉。</p>
+            </div>
+        </section>
+
+        <!-- ==================== parse_tool_calls 精简代码 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>解析核心逻辑</h3>
+                <pre><code class="language-python">def parse_tool_calls(text):
+    calls = []
+    for m in re.findall(
+        r'<tool_call\n(.*?)\n</tool_call', text, re.DOTALL):
+        try:
+            calls.append(json.loads(m.strip()))
+        except:
+            pass  # JSON 解析失败就跳过
+    return calls</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>正则拆解</h4>
+                        <table>
+                            <thead><tr><th>部分</th><th>作用</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>&lt;tool_call\n</code></td><td>匹配标签开始 + 换行</td></tr>
+                                <tr><td><code>(.*?)</code></td><td>非贪婪捕获 JSON 内容</td></tr>
+                                <tr><td><code>re.DOTALL</code></td><td>让 <code>.</code> 匹配换行符</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="column">
+                        <h4>容错示例</h4>
+                        <pre><code class="language-python"># 正常输入 → 提取成功
+parse_tool_calls(
+  '<tool_call\n{"name":"weather"}\n</tool_call\n')
+# → [{'name': 'weather'}]
+
+# 格式错误 → 静默跳过
+parse_tool_calls(
+  '<tool_call\n{bad json}\n</tool_call\n')
+# → []</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== execute_tool 设计动机 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>安全执行工具</h3>
+                <div class="intro-block">
+                    <p><strong>为什么需要超时保护？</strong><code>calculate_math</code> 使用 <code>eval()</code> 执行用户输入的表达式。如果模型传了 <code>"while True: pass"</code>，没有超时保护会卡死整个训练进程。</p>
+                </div>
+                <pre><code class="language-python">def execute_tool(name, args):
+    fn = MOCK_RESULTS.get(name)
+    if not fn: return None        # 工具不存在
+    try:
+        signal.alarm(1)           # 1秒超时保护
+        return fn(args)           # 执行工具
+    except:
+        return None               # 出错就返回None
+    finally:
+        signal.alarm(0)           # 取消超时</code></pre>
+                <p>执行管线的完整流程：模型输出 → <code>parse_tool_calls()</code> 提取调用 → <code>execute_tool()</code> 执行 → 结果以 <code>role='tool'</code> 注入上下文 → 模型继续生成。参数校验（CHECK_ARGS）不在执行时使用，而是在<strong>奖励计算</strong>阶段判断调用是否合法。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: 让对话动起来 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4: 让对话动起来</h2>
+                <p>Agent 的核心循环——生成、调工具、拿结果、继续生成。</p>
+                <div class="intro-block">
+                    <p>普通 RL 一次生成就够了，但 Agent 可能需要多轮：先查天气，再查汇率，最后综合回答。这一节是 Agent RL 最核心的部分——多轮交互循环的实现。理解了 rollout_single 的流程和 response_mask 的设计，后面所有训练逻辑都是在这个基础上搭建的。</p>
+                    <ul>
+                        <li><strong>多轮交互设计</strong>：rollout_single 实现"思考-行动"循环——每轮重新渲染完整上下文、模型生成、解析工具调用、执行并注入结果</li>
+                        <li><strong>response_mask</strong>：Agent RL 与普通 RL 最核心的架构差异。mask=1 表示模型生成的 token（参与梯度），mask=0 表示工具结果（不参与梯度）</li>
+                        <li><strong>批量生成 rollout_batch</strong>：每个样本生成 num_generations 次，必须深拷贝 messages 防止数据污染</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 多轮交互的整体设计（时序图） ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>多轮交互设计</h3>
+                <div class="intro-block">
+                    <p><strong>为什么需要多轮？</strong>普通 RL 只需生成一次回答。但 Agent 可能需要多轮交互——先查天气，再查汇率，最后综合回答。<code>rollout_single()</code> 就是实现这个"思考-行动"循环的核心函数。</p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：Agent 多轮工具调用的完整时序（天气+汇率）</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个三栏时序图，从左到右分别是"Prompt"、"MiniMind"、"工具系统"
+                  - Turn 1区域：Prompt发出"北京天气？汇率多少？"到MiniMind调用 get_current_weather(location=北京)到工具系统返回 28度晴
+                  - Turn 2区域：MiniMind将工具结果加入上下文后继续生成到调用 get_exchange_rate(USD到CNY)到工具系统返回 7.21
+                  - Turn 3区域：MiniMind将结果加入上下文后到直接回复"北京今天28度晴，汇率7.21"到标注"没有工具调用，结束！"
+                  - 各元素关系：每一轮用虚线分隔，箭头表示调用方向，虚线箭头表示返回
+                  - 关键标注：每个Turn左侧用标签标注"Turn 1/2/3"
+                  - 配色建议：浅蓝/浅灰背景，MiniMind绿色，工具系统橙色，轮次分隔虚线灰色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>每一轮都经历完整的"构建上下文 → 模型生成 → 解析工具调用 → 执行 → 结果注入"循环。关键变量：<code>max_turns</code> 控制上限，防止无限循环。</p>
+            </div>
+        </section>
+
+        <!-- ==================== rollout_single 关键代码 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>循环核心逻辑</h3>
+                <div class="ai-diagram">
+                  <h4>图：rollout_single 多轮交互循环流程图</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个自上而下的流程图，描述 rollout_single 函数的完整循环
+                  - 顶部蓝色圆角矩形"开始 rollout_single"到"初始化变量"到菱形判断"循环 turn=0..max_turns-1"
+                  - 循环体："构建上下文 apply_chat_template"到"模型生成 rollout_engine.rollout()"到"保存本轮结果 mask=1"到黄色菱形判断"解析工具调用"
+                  - 无工具调用路径：到绿色圆角"结束！"
+                  - 有工具调用路径：到黄色菱形"最后一轮？"到是则"unfinished=True" / 否则"assistant+tool消息加入messages"到"execute_tool() 工具结果追加"到"obs_delta追加 mask=0不参与梯度"到回到循环顶部
+                  - 各元素关系：箭头连接各步骤，菱形判断有两个出口
+                  - 关键标注：起始蓝色，结束绿色，判断黄色
+                  - 配色建议：浅蓝/浅灰背景，步骤白色，判断黄色菱形，开始蓝色，结束绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>伪代码概括：每轮<strong>重新渲染完整上下文</strong>（因为 messages 在增长）→ 模型生成 → 如果有工具调用，执行并把结果加入上下文。用 <code>obs_delta</code> 精确捕获模板渲染后的差异 token，标记为 mask=0。</p>
+            </div>
+        </section>
+
+        <!-- ==================== response_mask 详解 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>response_mask</h3>
+                <div class="intro-block">
+                    <p><strong>为什么需要 mask？</strong>模型只能对自己"说出来的话"负责。工具返回的结果不是模型说的，不该算它的错。mask=1 表示模型自己生成的 token（参与梯度），mask=0 表示工具结果（不参与梯度）。</p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：多轮 Agent 交互中 token 序列的 mask 标注示意</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一条从左到右的横向 token 序列条带，被分成6个色块
+                  - 色块依次为：灰色"Prompt (mask=0)"、绿色"Turn1生成 (mask=1)"、灰色"Turn1工具结果 (mask=0)"、绿色"Turn2生成 (mask=1)"、灰色"Turn2工具结果 (mask=0)"、绿色"Turn3最终回答 (mask=1)"
+                  - 各元素关系：色块从左到右依次排列，用箭头连接，展示多轮交互中 token 的来源
+                  - 关键标注：绿色块旁标注"参与梯度更新"，灰色块旁标注"不参与梯度"
+                  - 底部图例：绿色=模型生成(mask=1) 灰色=非模型生成(mask=0)
+                  - 配色建议：浅灰背景，绿色(mask=1)用亮绿色，灰色(mask=0)用中灰色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p><strong>绿色 mask=1</strong>：模型生成，参与 RL 梯度更新。<strong>灰色 mask=0</strong>：prompt / 工具结果，不参与。这是 Agent RL 与普通 RL 最核心的架构差异。</p>
+            </div>
+        </section>
+
+        <!-- ==================== rollout_batch ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>批量生成</h3>
+                <p><code>rollout_batch()</code> 对每个样本生成 <code>num_generations</code> 次（默认 4 次），用于后续的优势计算。一个关键细节：</p>
+                <div class="warning">
+                    <p><strong>必须深拷贝 messages</strong>：<code>rollout_single()</code> 会修改 <code>messages</code> 列表（追加 assistant 和 tool 消息）。每次生成都必须深拷贝，否则第 2 次生成会从第 1 次的状态开始，导致数据污染。</p>
+                </div>
+                <pre><code class="language-python">def rollout_batch(rollout_engine, tokenizer,
+        messages_batch, tools_batch, num_gen, ...):
+    for messages, tools in zip(messages_batch, tools_batch):
+        for _ in range(num_gen):
+            msgs_copy = [dict(m) for m in messages]  # 深拷贝！
+            result = rollout_single(
+                rollout_engine, tokenizer, msgs_copy, tools, ...)
+            # 收集结果 ...</code></pre>
+            </div>
+        </section>
+
+        <!-- ==================== Part 5: 奖励计算 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 奖励计算</h2>
+                <p>Agent RL 的奖励信号比普通 RL 更复杂——工具对齐、GT 匹配、标签格式、完成度。</p>
+                <div class="intro-block">
+                    <p>普通 RL 只需要 RM 打分就行，Agent RL 则需要回答一连串问题：工具调对了没？参数传对了没？最终答案对不对？标签格式规范吗？模型是不是磨蹭到 max_turns 还没回答完？这一节拆解 Agent RL 的多层奖励设计——核心原则是"结果正确 > 过程正确 > 格式规范"。</p>
+                    <ul>
+                        <li><strong>奖励设计理念</strong>：GT 匹配分（0~+2.5，权重最高）> 工具对齐分（过程指标）> 标签格式惩罚（基础规范）> 未完成惩罚（效率信号）> 重复惩罚（质量底线）</li>
+                        <li><strong>计算流程</strong>：有工具调用和无工具调用走两条分支，最终总分 clip 到 [-3.0, +3.0] 保证训练稳定</li>
+                        <li><strong>标签格式与工具对齐</strong>：标签不闭合扣分；合法调用数与 GT 期望数的差距决定过程分</li>
+                        <li><strong>GT 匹配与数值实例</strong>：支持文本子串匹配和数值近似匹配，通过成功/失败两个场景理解奖励叠加</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 奖励设计理念总览 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>奖励设计理念</h3>
+                <p>先看全局：为什么要选这些奖励信号？每个信号的<strong>设计目的</strong>是什么？</p>
+                <table>
+                    <thead><tr><th>奖励信号</th><th>分值范围</th><th>为什么需要它</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>GT 匹配分</strong></td><td>0 ~ +2.5</td><td>终极目标：答对了才算好。权重最高，因为过程再正确，答错也不行</td></tr>
+                        <tr><td><strong>工具对齐分</strong></td><td>+0.5 或 -0.5*gap</td><td>过程指标：调了几个工具？合法吗？与 GT 期望的数量一致吗？</td></tr>
+                        <tr><td><strong>标签格式惩罚</strong></td><td>-0.5 * N</td><td>基础规范：标签不闭合说明模型还没学会协议格式</td></tr>
+                        <tr><td><strong>未完成惩罚</strong></td><td>-0.5</td><td>效率信号：达到 max_turns 还没给出最终回答，说明规划能力不足</td></tr>
+                        <tr><td><strong>重复惩罚</strong></td><td>0 ~ -0.5</td><td>质量底线：防止模型生成"天气很好天气很好天气很好"</td></tr>
+                        <tr><td><strong>总分 Clip</strong></td><td>[-3.0, +3.0]</td><td>稳定性保障：防止极端值导致训练不稳定</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p>核心思想：<strong>结果正确（GT 匹配）&gt; 过程正确（工具对齐）&gt; 格式规范（标签闭合）</strong>。下面逐项展开。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 奖励计算总览流程图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>计算流程</h3>
+                <div class="ai-diagram">
+                  <h4>图：Agent RL 奖励计算的两条分支流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个自上而下的流程图
+                  - 顶部蓝色圆角"开始计算奖励"到"标签格式扣分"到黄色菱形判断"调用了工具？"
+                  - 无工具分支（左）：到"无工具分支：长度+思考+RM+重复惩罚"到"Clip到[-3.0, 3.0]"
+                  - 有工具分支（右）：到"有工具分支：工具对齐+GT匹配"到"Clip到[-3.0, 3.0]"
+                  - 两条分支汇合到绿色圆角"返回奖励值"
+                  - 各元素关系：菱形判断分流两条路径，最终汇合到同一个出口
+                  - 关键标注：判断节点黄色，起始蓝色，结束绿色
+                  - 配色建议：浅蓝/浅灰背景，判断黄色菱形，步骤白色矩形，关键箭头用橙色标注
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>奖励计算分两条路径：<strong>有工具调用</strong>和<strong>无工具调用</strong>。无工具时走普通 RL 奖励逻辑（长度分 + RM 打分）；有工具时走 Agent 专用逻辑（工具对齐 + GT 匹配）。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 标签格式惩罚 + 工具对齐分 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>格式与对齐</h3>
+                <div class="columns">
+                    <div class="column">
+                        <h4>标签格式惩罚</h4>
+                        <p>无论是否有工具调用，都检查 <code>&lt;tool_call&gt;</code> 标签是否成对：</p>
+                        <pre><code class="language-python">reward -= 0.5 * sum(
+  abs(turn.count('<tool_call')
+    - turn.count('</tool_call'))
+  for turn in turn_answers
+)</code></pre>
+                        <p>不闭合就扣 0.5 分/对。教会模型：调用工具，标签必须完整。</p>
+                    </div>
+                    <div class="column">
+                        <h4>工具对齐分</h4>
+                        <p>衡量"合法调用数"与"GT 期望数"的差距：</p>
+                        <pre><code class="language-python"># 合法 = 工具名有效 + 参数通过校验
+valid = sum(1 for call in tool_calls
+  if name in valid_names
+  and CHECK_ARGS[name](args))
+gap = abs(valid - len(gt)) + \
+  max(0, len(tool_calls) - valid)
+reward += 0.5 if gap == 0 \
+  else -0.5 * gap</code></pre>
+                        <p>GT 期望 1 个调用，模型调了 3 个（1 合法）→ gap=2，扣 1.0 分。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== GT 匹配分 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>GT 匹配分</h3>
+                <div class="intro-block">
+                    <p><strong>为什么权重最高？</strong>工具对齐只是过程指标——调对了工具但答错了，依然不该得高分。GT 匹配直接衡量最终效果。最高 +2.5 分。</p>
+                </div>
+                <pre><code class="language-python"># 最终回答 = 最后一次 tool_call 之后的内容
+final_text = answer.split('</tool_call')[-1] \
+    if '</tool_call' in answer else answer
+verified = validate_gt_in_text(final_text, gt)
+reward += 2.5 * len(verified) / len(gt)</code></pre>
+                <p><code>validate_gt_in_text()</code> 支持两种匹配模式：</p>
+                <table>
+                    <thead><tr><th>模式</th><th>适用场景</th><th>示例</th></tr></thead>
+                    <tbody>
+                        <tr><td>文本子串匹配</td><td>天气、翻译等文本 GT</td><td>GT="晴"，回答含"晴"→匹配</td></tr>
+                        <tr><td>数值近似匹配</td><td>计算、汇率等数字 GT</td><td>GT="9472"，回答含 9472→匹配（误差 &lt; 1e-6）</td></tr>
+                    </tbody>
+                </table>
+                <p>加上未完成惩罚（-0.5）和重复惩罚（3-gram 重复率，上限 0.5），总分 clip 到 [-3, 3]。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 奖励计算实例 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>奖励计算实例</h3>
+                <p>假设 gt=["9472"]，模型调用了 1 次正确的 calculate_math，最终回答是 "256*37=9472"：</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>成功场景</h4>
+                        <pre><code class="language-python"># 标签格式：完整闭合 → 0
+# 工具对齐：1合法 vs 1个GT → gap=0 → +0.5
+# GT匹配：9472在回答中 → +2.5
+# 重复惩罚：无 → 0
+# 未完成：False → 0
+
+total = 0 + 0.5 + 2.5 + 0 + 0 = 3.0</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>失败场景</h4>
+                        <pre><code class="language-python"># 标签格式：缺少闭合标签 → -0.5
+# 工具对齐：调2次(1合法) vs 1个GT
+#   gap = |1-1| + max(0,2-1) = 1 → -0.5
+# GT匹配：回答里没9472 → 0
+# 重复惩罚：轻微重复 → -0.1
+# 未完成：True → -0.5
+
+total = -0.5-0.5+0-0.1-0.5 = -1.6</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 6: 训练：从单轮到多轮 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: 从单轮到多轮</h2>
+                <p>Agent RL 训练与普通 GRPO 有什么关键差异？</p>
+                <div class="intro-block">
+                    <p>前面五节铺垫了 Agent 的所有组件——工具、解析、多轮循环、奖励。这一节把它们串起来，看 Agent RL 的完整训练流程。核心是理解它与普通 GRPO 的三大差异：多轮 rollout（上下文动态增长）、工具感知奖励（不只是 RM 打分）、mask 区分来源（工具结果不参与梯度）。</p>
+                    <ul>
+                        <li><strong>对比普通 RL</strong>：生成方式从一次性变为多轮交互、上下文从固定变为动态增长、训练目标从"生成好回答"变为"何时调用、调哪个、怎么用结果"</li>
+                        <li><strong>训练数据格式</strong>：JSONL 包含 conversations、tools、gt 三个字段，messages[:-1] 去掉最后一条让模型自己生成</li>
+                        <li><strong>训练循环四阶段</strong>：多轮 Rollout → 工具感知奖励计算 → 组内标准化优势 → CISPO 策略更新（completion_mask 精确控制梯度）</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Agent RL vs 普通 RL 对比 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>对比普通 RL</h3>
+                <table>
+                    <thead><tr><th>对比项</th><th>普通 RL（GRPO）</th><th>Agent RL</th></tr></thead>
+                    <tbody>
+                        <tr><td>输入</td><td>prompt</td><td>prompt + tools</td></tr>
+                        <tr><td>生成方式</td><td>一次性生成</td><td><strong>多轮交互</strong></td></tr>
+                        <tr><td>上下文</td><td>固定不变</td><td><strong>动态增长</strong></td></tr>
+                        <tr><td>奖励来源</td><td>RM 打分 / 格式</td><td>工具对齐 + GT + 格式 + RM</td></tr>
+                        <tr><td>mask 设计</td><td>区分 prompt/response</td><td>还区分<strong>模型生成/工具结果</strong></td></tr>
+                        <tr><td>数据格式</td><td>{prompt, answer}</td><td>{messages, tools, gt}</td></tr>
+                        <tr><td>训练目标</td><td>生成好回答</td><td><strong>何时调用、调哪个、怎么用结果</strong></td></tr>
+                    </tbody>
+                </table>
+                <p>记住这三个差异就够了：<strong>多轮 rollout</strong>（上下文动态增长）、<strong>工具感知奖励</strong>（不只是 RM 打分）、<strong>mask 区分来源</strong>（工具结果不参与梯度）。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 训练数据格式 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练数据</h3>
+                <p>训练数据为 JSONL 格式（<code>dataset/agent_rl.jsonl</code>），每条数据包含三个字段：</p>
+                <pre><code class="language-json">{
+  "conversations": [
+    {"role": "system",
+     "content": "你是一个有用的AI助手...",
+     "tools": "[{\"type\":\"function\",...}]"},
+    {"role": "user",
+     "content": "帮我算一下 256 乘以 37"},
+    {"role": "assistant",
+     "content": "<tool_call\n{...}\n</tool_call\n256*37=9472"}
+  ],
+  "gt": ["9472"]
+}</code></pre>
+                <div class="warning">
+                    <p><strong>为什么 messages[:-1] 去掉最后一条？</strong>最后一条是 assistant 的标准回复，模型需要<strong>自己通过 rollout 生成</strong>，而不是复制训练数据。AgentRLDataset 返回的是"问题 + 可用工具"，答案由模型自行探索。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 训练架构总览 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练架构</h3>
+                <div class="ai-diagram">
+                  <h4>图：Agent RL 训练架构全景（数据准备、模型初始化、训练循环）</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：三个水平排列的虚线大框，分别标注"数据准备"、"模型初始化"、"训练循环"
+                  - 数据准备框内：黄色"AgentRLDataset (agent_rl.jsonl)"到"DataLoader"
+                  - 模型初始化框内："策略模型（要训练的）"到"参考模型（冻结）"，"奖励模型（可选）"+"策略模型"到"Rollout Engine"
+                  - 训练循环框内："batch: messages, tools, gt"到红色"rollout_batch() 多轮交互生成"到绿色"calculate_rewards()"到"advantages=(r-mean)/std"到蓝色"CISPO Loss+KL惩罚"到紫色"梯度更新"
+                  - 各元素关系：DataLoader连接batch，Rollout Engine连接rollout_batch，参考模型虚线连接CISPO Loss（标注"参考logps"）
+                  - 关键标注：rollout红色，奖励绿色，Loss蓝色，更新紫色
+                  - 配色建议：浅蓝/浅灰背景，各模块按功能着色，关键箭头用橙色标注
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 训练循环关键步骤 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练循环</h3>
+                <p><code>rl_train_epoch()</code> 一个 batch 的处理分四个阶段。与普通 GRPO 相比，<strong>核心差异在 Phase 1（多轮 Rollout）和 Phase 2（工具感知奖励）</strong>：</p>
+                <pre><code class="language-python"># Phase 1: 多轮 Rollout（与GRPO的最大区别）
+with torch.no_grad():
+    results = rollout_batch(
+        rollout_engine, tokenizer, messages_batch,
+        tools_batch, num_generations=4, max_turns=3)
+
+# Phase 2: 工具感知奖励（不只是RM打分）
+rewards = calculate_rewards(
+    prompts, completions, gt_batch, tools_batch,
+    num_generations, reward_model)
+
+# Phase 3: 优势计算（与GRPO相同：组内标准化）
+advantages = (rewards - mean) / (std + 1e-4)
+
+# Phase 4: CISPO策略更新（与GRPO类似）
+# 用 completion_mask 只更新模型生成的 token
+# mask=0的工具结果 token 被排除在 loss 之外</code></pre>
+                <div class="intro-block">
+                    <p>CISPO 与 PPO 的区别：PPO 用 <code>clamp(ratio, 1-eps, 1+eps)</code> 限制更新幅度，CISPO 只限制上界 <code>clamp(ratio, max=epsilon_high)</code>，允许策略自由下降但限制上升幅度，训练更稳定。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== completion_mask ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>精确控制梯度</h3>
+                <div class="intro-block">
+                    <p><strong>为什么 completion_mask 这么重要？</strong>多轮 Rollout 生成的序列很长，包含 prompt、模型生成、工具结果、padding。训练时必须精确控制：只有<strong>模型自己生成的、EOS 之前的</strong> token 参与 loss 计算。</p>
+                </div>
+                <pre><code class="language-python"># 构建流程：
+# 1. response_mask 标记: mask=1(模型生成), mask=0(工具结果)
+# 2. 找到 EOS 位置，mask 掉 EOS 之后的 token
+# 3. 最终：completion_mask = response_mask ∩ (位置<=EOS)
+
+# 效果：只有绿色部分参与梯度
+# [prompt(0) | Turn1生成(1) | 工具结果(0) | Turn2生成(1) | ... ]</code></pre>
+                <p>此外，超长序列会从右侧截断（保留最近的 token，通常是最终回答部分）。所有序列 pad 到 batch 内最大长度后组成 batch 张量。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 关键超参数 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关键超参数</h3>
+                <table>
+                    <thead><tr><th>参数</th><th>默认值</th><th>含义</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--num_generations</code></td><td>4</td><td>每个 prompt 生成几条回答（用于优势估计）</td></tr>
+                        <tr><td><code>--max_turns</code></td><td>3</td><td>多轮交互最大轮数</td></tr>
+                        <tr><td><code>--max_total_len</code></td><td>2500</td><td>总序列长度上界（含多轮）</td></tr>
+                        <tr><td><code>--thinking_ratio</code></td><td>0.1</td><td>开启 thinking 的概率</td></tr>
+                        <tr><td><code>--learning_rate</code></td><td>3e-7</td><td>学习率（比 SFT 小 100 倍）</td></tr>
+                        <tr><td><code>--beta</code></td><td>0.1</td><td>KL 散度惩罚系数</td></tr>
+                        <tr><td><code>--loss_type</code></td><td>cispo</td><td>损失类型（grpo/cispo）</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 训练命令 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练命令</h3>
+                <pre><code class="language-bash">python trainer/train_agent.py \
+    --data_path ../dataset/agent_rl.jsonl \
+    --from_weight full_sft \
+    --save_weight agent \
+    --epochs 1 \
+    --batch_size 2 \
+    --num_generations 4 \
+    --learning_rate 3e-7 \
+    --loss_type cispo \
+    --thinking_ratio 0.1</code></pre>
+                <p>注意事项：</p>
+                <ul>
+                    <li><code>--from_weight full_sft</code>：从 SFT 模型开始，不是从 RL 模型开始</li>
+                    <li><code>--batch_size 2</code>：因为每个样本要生成 4 次 rollout，实际计算量是 8 倍</li>
+                    <li><code>--learning_rate 3e-7</code>：远小于 SFT 的学习率，防止灾难性遗忘</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- ==================== Batch 完整生命周期 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Batch 生命周期</h3>
+                <div class="ai-diagram">
+                  <h4>图：Agent RL 训练一个 Batch 的完整生命周期（三阶段时序）</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个六栏时序图，从左到右分别是"DataLoader"、"RolloutEngine"、"工具执行器"、"RewardModel"、"策略模型"、"参考模型"
+                  - Phase 1（多轮Rollout，绿色底色区域）：DataLoader给RolloutEngine发batch，循环（模型生成到解析执行工具到返回结果到继续生成），最终回答
+                  - Phase 2（奖励计算，橙色底色区域）：RolloutEngine请求RewardModel打分，返回分数，综合计算奖励
+                  - Phase 3（策略更新，蓝色底色区域）：RolloutEngine到策略模型前向传播计算新logps，参考模型前向传播计算参考logps，策略模型CISPO loss+KL惩罚，反向传播梯度更新
+                  - 各元素关系：三个阶段用虚线分隔，阶段内箭头表示数据流向
+                  - 关键标注：每个Phase左侧用大标签标注名称
+                  - 配色建议：浅蓝/浅灰背景，Phase1绿色区域，Phase2橙色区域，Phase3蓝色区域
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 7: 扩展与实战 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 7: 扩展实战</h2>
+                <p>如何添加新工具、评估模型、诊断常见错误。</p>
+                <div class="intro-block">
+                    <p>理论学完了，这一节帮你把能力延伸到实战。三个主题：怎么给 Agent 加新工具（定义 → 执行 → 校验 → 数据）、怎么评估工具调用模型的好坏、训练中出了问题怎么排查。还有动手练习帮你巩固前面的知识点。</p>
+                    <ul>
+                        <li><strong>添加新工具</strong>：修改 TOOLS 列表（工具定义）→ MOCK_RESULTS（执行函数）→ CHECK_ARGS（参数校验）→ agent_rl.jsonl（训练数据），四处保持一致</li>
+                        <li><strong>评估方法</strong>：eval_toolcall.py 支持 local 和 api 两种后端，评估指标包括工具调用率、工具正确率、GT 匹配率</li>
+                        <li><strong>常见错误诊断</strong>：模型不生成 tool_call、格式错误 JSON 解析失败、unfinished 惩罚过高、奖励不收敛、OOM、GT 匹配分总是 0 等</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 如何扩展新工具 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>添加新工具</h3>
+                <p>要添加新工具，需要修改 <code>train_agent.py</code> 中的四个位置：</p>
+                <pre><code class="language-python"># 第一步：在 TOOLS 列表中添加工具定义
+TOOLS.append({
+    "type": "function",
+    "function": {
+        "name": "search_web",
+        "description": "搜索网页",
+        "parameters": {"type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"]}
+    }
+})
+
+# 第二步：在 MOCK_RESULTS 中添加执行函数
+MOCK_RESULTS["search_web"] = lambda args: {
+    "results": [f"搜索结果: {args.get('query')} 的相关信息..."]
+}
+
+# 第三步：在 CHECK_ARGS 中添加参数校验
+CHECK_ARGS["search_web"] = lambda a: bool(a.get("query"))
+
+# 第四步：更新训练数据 agent_rl.jsonl
+# 在 system.tools 中包含新工具的定义，gt 中包含期望答案</code></pre>
+                <div class="intro-block">
+                    <p>扩展工具的四个步骤：<strong>定义 → 执行 → 校验 → 数据</strong>。确保工具名在四处保持一致。训练数据中必须包含使用新工具的样本。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 扩展注意事项 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>扩展注意</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>工具描述要清晰</h4>
+                        <p>模型的工具选择依赖 description 字段。描述越精确，模型越容易学会何时调用。比如"搜索网页"比"搜索引擎"更好。</p>
+                    </div>
+                    <div class="card">
+                        <h4>参数类型要准确</h4>
+                        <p>parameters 中的 type 字段影响模型的参数格式。数字用 number，字符串用 string。错误类型会导致模型传参失败。</p>
+                    </div>
+                    <div class="card">
+                        <h4>MOCK 数据要合理</h4>
+                        <p>模拟数据应该覆盖典型用例。如果 MOCK 数据太简单，模型可能学到的是"记住答案"而非"学会调用工具"。</p>
+                    </div>
+                    <div class="card">
+                        <h4>gt 字段要精确</h4>
+                        <p>gt 列表中的值会在最终回答中被精确匹配（数值用浮点近似，文本用子串）。确保 gt 值在回答中的表述方式一致。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 评估工具调用 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>评估方法</h3>
+                <pre><code class="language-bash"># 本地模型评估
+python scripts/eval_toolcall.py \
+    --backend local \
+    --load_from ../model \
+    --weight agent \
+    --hidden_size 768 \
+    --num_hidden_layers 8
+
+# API 模式评估（OpenAI 兼容接口）
+python scripts/eval_toolcall.py \
+    --backend api \
+    --api_base_url http://localhost:11434/v1 \
+    --api_model jingyaogong/minimind-3:latest</code></pre>
+                <div class="intro-block">
+                    <p>评估脚本会运行一组预设测试用例，检查模型是否能正确调用工具并给出包含正确答案的最终回复。评估指标包括：工具调用率、工具正确率、GT 匹配率。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 测试用例概览 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>测试用例</h3>
+                <table>
+                    <thead><tr><th>类别</th><th>测试问题</th><th>期望工具</th><th>GT</th></tr></thead>
+                    <tbody>
+                        <tr><td>数学计算</td><td>"帮我算 256 乘以 37"</td><td>calculate_math</td><td>["9472"]</td></tr>
+                        <tr><td>天气查询</td><td>"北京今天天气怎样？"</td><td>get_current_weather</td><td>["28°C", "晴"]</td></tr>
+                        <tr><td>单位换算</td><td>"100公里换算英里"</td><td>unit_converter</td><td>["62.1371"]</td></tr>
+                        <tr><td>汇率查询</td><td>"美元兑人民币汇率"</td><td>get_exchange_rate</td><td>["7.21"]</td></tr>
+                        <tr><td>文本翻译</td><td>"把'你好世界'翻译成英文"</td><td>translate_text</td><td>["Hello World"]</td></tr>
+                        <tr><td>当前时间</td><td>"现在几点了？"</td><td>get_current_time</td><td>["14:30"]</td></tr>
+                        <tr><td>组合调用</td><td>"北京天气+东京天气"</td><td>weather x2</td><td>["28°C", "12°C"]</td></tr>
+                        <tr><td>多工具</td><td>"天气+汇率"</td><td>weather + exchange</td><td>["28°C", "7.21"]</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 常见错误诊断 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见错误诊断</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>模型不生成 tool_call</h4>
+                        <p><strong>症状</strong>：模型总是直接回答，从不调用工具。</p>
+                        <p><strong>原因</strong>：SFT 阶段没见过工具调用格式的数据，或 tokenizer 的 chat_template 不支持 tools 参数。</p>
+                        <p><strong>解决</strong>：确保 <code>agent_rl.jsonl</code> 中 system 消息包含 <code>tools</code> 字段。检查 tokenizer 的 chat_template 是否正确处理 tools。</p>
+                    </div>
+                    <div class="card">
+                        <h4>tool_call 格式错误</h4>
+                        <p><strong>症状</strong>：生成了 tool_call 标签但 JSON 解析失败。</p>
+                        <p><strong>原因</strong>：模型没学会正确的 JSON 格式，比如少了引号或括号。</p>
+                        <p><strong>解决</strong>：检查 <code>parse_tool_calls()</code> 的正则是否能匹配模型输出。增加 SFT 数据中的工具调用示例。</p>
+                    </div>
+                    <div class="card">
+                        <h4>unfinished 惩罚过高</h4>
+                        <p><strong>症状</strong>：奖励一直是负数，频繁触发 max_turns。</p>
+                        <p><strong>原因</strong>：<code>max_gen_len</code> 太小，模型没空间生成最终回答。</p>
+                        <p><strong>解决</strong>：增大 <code>max_gen_len</code>（默认 768）或减小 <code>max_turns</code>（默认 3）。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 更多常见错误 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>更多排错</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>奖励不收敛</h4>
+                        <p><strong>症状</strong>：训练多 epoch，奖励值仍剧烈波动。</p>
+                        <p><strong>原因</strong>：<code>learning_rate</code> 太大或 <code>num_generations</code> 太少。</p>
+                        <p><strong>解决</strong>：降低 <code>learning_rate</code>（默认 3e-7），增大 <code>num_generations</code>（默认 4）来稳定优势估计。</p>
+                    </div>
+                    <div class="card">
+                        <h4>OOM 显存溢出</h4>
+                        <p><strong>症状</strong>：多轮 Rollout 后显存暴增。</p>
+                        <p><strong>原因</strong>：<code>max_total_len</code>（默认 2500）允许的总序列太长。</p>
+                        <p><strong>解决</strong>：减小 <code>max_total_len</code>、<code>batch_size</code> 或 <code>max_turns</code>。或用 <code>--accumulation_steps</code> 替代大 batch。</p>
+                    </div>
+                    <div class="card">
+                        <h4>GT 匹配分总是 0</h4>
+                        <p><strong>症状</strong>：<code>validate_gt_in_text</code> 始终返回空集。</p>
+                        <p><strong>原因</strong>：模型调了工具但最终回答没包含 GT 值。或 gt 格式不对。</p>
+                        <p><strong>解决</strong>：检查 gt 格式（应为字符串列表，如 <code>["9472"]</code>）。检查模型能否将工具结果整合进回答。</p>
+                    </div>
+                    <div class="card">
+                        <h4>重复输出严重</h4>
+                        <p><strong>症状</strong>：模型反复输出相同内容。</p>
+                        <p><strong>原因</strong>：<code>rep_penalty</code> 不够，或模型太小无法同时处理多轮上下文。</p>
+                        <p><strong>解决</strong>：降低 <code>temperature</code>（rollout 中默认 0.8），增大 <code>thinking_ratio</code> 让模型"先想后说"。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Debug 模式 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Debug 模式</h3>
+                <p>训练脚本内置了 debug 模式，可以打印每个样本的完整信息：</p>
+                <pre><code class="language-bash">python trainer/train_agent.py \
+    --debug_mode \
+    --debug_interval 20 \
+    ...</code></pre>
+                <p>Debug 日志输出示例：</p>
+                <pre><code class="language-plaintext">============================== [DEBUG] gen[0][0] CONTEXT_BEGIN ==============================
+[系统提示 + 用户问题 + 工具定义]
+=============================== [DEBUG] gen[0][0] CONTEXT_END ================================
+[DEBUG] gen[0][0] prompt_len=45, seq_len=312
+============================ [DEBUG] gen[0][0] COMPLETION_BEGIN [45:312] ============================
+<tool_call
+{"name": "calculate_math", "arguments": {"expression": "256*37"}}
+</tool_call
+256乘以37等于9472。
+============================ [DEBUG] gen[0][0] COMPLETION_END ============================
+[DEBUG] gen[0][0] reward=3.0000</code></pre>
+                <div class="intro-block">
+                    <p>Debug 模式每 <code>debug_interval</code> 步打印一次，包含完整上下文、模型输出、奖励值。强烈建议在调参时开启。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>动手练习</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>练习 1：奖励计算</h3>
+                        <p><strong>任务</strong>：假设 gt=["7.21"]，模型调用了 1 次正确的 get_exchange_rate，最终回答是 "美元兑人民币汇率是7.21"。标签格式正确，无重复，finished。计算总奖励。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-python"># 标签格式：完整闭合 → 0
+# 工具对齐：1合法调用 vs 1个GT → gap=0 → +0.5
+# GT匹配：7.21在回答中 → +2.5*1/1 = +2.5
+# 重复惩罚：无 → 0
+# 未完成：False → 0
+total = 0 + 0.5 + 2.5 + 0 + 0 = 3.0</code></pre>
+                        </div>
+                    </div>
+                    <div class="practice-step">
+                        <h3>练习 2：mask 追踪</h3>
+                        <p><strong>任务</strong>：跟踪 rollout_single 执行过程。假设 max_turns=3，模型在第 1 轮调用了 weather，第 2 轮调用了 exchange，第 3 轮没调工具直接回答。画出 response_mask 的示意图。</p>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <pre><code class="language-plaintext">[1,1,...,1,  0,0,...,0,  1,1,...,1,  0,0,...,0,  1,1,...,1]
+ ↑Turn1生成   ↑Turn1工具   ↑Turn2生成   ↑Turn2工具   ↑Turn3回答
+ mask=1        mask=0        mask=1        mask=0        mask=1</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 2 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>更多练习</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>练习 3：添加工具</h4>
+                        <p>尝试添加一个新工具 <code>get_stock_price</code>（查询股票价格）。需要修改哪四处？MOCK 数据怎么设计？写出一组训练数据样本。</p>
+                    </div>
+                    <div class="card">
+                        <h4>练习 4：格式分析</h4>
+                        <p>写出一段包含两个工具调用的完整交互（天气 + 汇率）。模型需要生成几次？每次的 context 包含什么？</p>
+                    </div>
+                    <div class="card">
+                        <h4>练习 5：数据设计</h4>
+                        <p>设计一条 agent_rl.jsonl 数据，要求模型同时调用 calculate_math 和 unit_converter。gt 应该怎么写？</p>
+                    </div>
+                    <div class="card">
+                        <h4>练习 6：动手实验</h4>
+                        <p>开启 <code>--debug_mode</code> 运行训练，观察前 20 步的 reward 变化。如果 unfinished 频繁出现，尝试调大 <code>max_gen_len</code> 到 1024，观察变化。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 知识体系总结 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>知识体系</h3>
+                <div class="ai-diagram">
+                  <h4>图：Stage 9 Agent RL 完整知识体系（七大模块）</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个从上到下的纵向知识链，包含7个彩色节点
+                  - 节点依次为：红色"Agent概念 = LLM+工具使用"、橙色"调用格式 tool_call/tool_response"、黄色"6个内置工具 计算/天气/时间/汇率/翻译/换算"、浅绿"多轮Rollout 生成到调工具到再生"、蓝色"解析与执行 parse+execute+超时保护"、紫色"奖励计算 工具对齐+GT匹配+格式惩罚"、深蓝"训练流程 Rollout到Reward到CISPO"
+                  - 各元素关系：节点从上到下用箭头依次连接，形成学习路径
+                  - 关键标注：每个节点用不同颜色，整体形成彩虹色系的学习路线
+                  - 配色建议：白色背景，节点依次红到橙到黄到绿到蓝到紫到深蓝
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 代码文件速查 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>代码速查</h3>
+                <table>
+                    <thead><tr><th>文件</th><th>作用</th><th>关键函数/类</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>trainer/train_agent.py</code></td><td>Agent RL 训练主脚本</td><td>rollout_single(), rollout_batch(), calculate_rewards(), rl_train_epoch()</td></tr>
+                        <tr><td><code>dataset/lm_dataset.py</code></td><td>数据加载</td><td>AgentRLDataset 类</td></tr>
+                        <tr><td><code>trainer/rollout_engine.py</code></td><td>Rollout 引擎</td><td>create_rollout_engine(), compute_per_token_logps()</td></tr>
+                        <tr><td><code>scripts/eval_toolcall.py</code></td><td>工具调用评估</td><td>parse_tool_calls(), execute_tool()</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 一句话总结 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>一句话总结</h3>
+                <div class="intro-block">
+                    <p><strong>Agent RL 的本质，就是教模型学会三件事：什么时候该用工具、用哪个工具、怎么用工具的结果来回答问题。</strong></p>
+                    <p>不是让它背下所有答案，而是教它学会利用工具来解决问题。面对新问题、新工具，也能举一反三。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== MiniMind 完整成长之路 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>完整成长之路</h3>
+                <div class="ai-diagram">
+                  <h4>图：MiniMind 全部九个训练阶段的完整成长之路</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一条从左到右的横向路线，包含9个阶段节点
+                  - 节点依次为：S1预训练、S2 SFT、S3 RLHF、S4 DPO、S5 PPO、S6 GRPO、S7推理强化、S8 SPO、S9 Agent RL（红色高亮大边框）
+                  - 节点之间用实线箭头连接表示顺序
+                  - 上方用弧线+文字标注学习目标：S1到S2"学说话"，S2到S3"学对话"，S3到S5"学对齐"，S5到S6"学探索"，S6到S7"学思考"，S7到S9"学用工具"
+                  - 各元素关系：9个阶段线性递进，弧线标注学习能力的跃迁
+                  - 关键标注：S9红色高亮+粗边框，标注"当前阶段"
+                  - 配色建议：浅蓝/浅灰背景，节点统一浅蓝，S9红色高亮，弧线标注橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 收尾 ==================== -->
+        <section class="slide title-slide">
+            <h1>阶段 9 完成</h1>
+            <p>让模型学会使用工具——从回答者进化为执行者。</p>
+            <p>下一章：<strong>阶段 10 · 模型推理与部署</strong>——让训练好的模型真正上线服务</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

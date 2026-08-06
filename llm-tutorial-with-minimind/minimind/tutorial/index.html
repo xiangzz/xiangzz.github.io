@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>从零训练大语言模型 — MiniMind 实战教程</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap');
+
+        :root {
+            --bg: #F9F9F7;
+            --surface: #FFFFFF;
+            --text: #1A1A1A;
+            --text-secondary: #6B7280;
+            --text-muted: #9CA3AF;
+            --primary: #D06519;
+            --primary-dim: rgba(208, 101, 25, 0.08);
+            --primary-soft: rgba(208, 101, 25, 0.14);
+            --accent: #8A4A12;
+            --border: #E5E7EB;
+            --radius: 14px;
+            --radius-sm: 10px;
+            --font-body: 'Noto Sans SC', system-ui, sans-serif;
+            --font-mono: 'Roboto Mono', monospace;
+            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            line-height: 1.7;
+        }
+
+        .page-wrapper {
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 0 40px;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .top-bar-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.88rem;
+            font-weight: 500;
+            transition: var(--transition);
+        }
+
+        .back-link:hover { color: var(--primary); }
+
+        .github-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: var(--transition);
+        }
+
+        .github-link:hover { color: var(--primary); }
+
+        /* Hero */
+        .hero {
+            padding: 80px 0 60px;
+            position: relative;
+        }
+
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            gap: 60px;
+            align-items: center;
+        }
+
+        .hero-eyebrow {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 16px;
+        }
+
+        .hero h1 {
+            font-size: 2.8rem;
+            font-weight: 700;
+            line-height: 1.2;
+            margin-bottom: 18px;
+            letter-spacing: -0.02em;
+        }
+
+        .hero h1 span {
+            color: var(--primary);
+        }
+
+        .hero-desc {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            line-height: 1.8;
+            margin-bottom: 28px;
+            max-width: 520px;
+        }
+
+        .hero-stats {
+            display: flex;
+            gap: 32px;
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .stat-label {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+
+        .hero-right {
+            display: flex;
+            justify-content: center;
+        }
+
+        .hero-code {
+            background: #1E1E2E;
+            border-radius: var(--radius);
+            padding: 28px 24px;
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+            line-height: 1.8;
+            color: #CDD6F4;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.12);
+        }
+
+        .hero-code .comment { color: #6C7086; }
+        .hero-code .keyword { color: #CBA6F7; }
+        .hero-code .string { color: #A6E3A1; }
+        .hero-code .func { color: #89B4FA; }
+        .hero-code .number { color: #FAB387; }
+        .hero-code .op { color: #89DCEB; }
+
+        /* Pipeline */
+        .pipeline-section {
+            padding: 60px 0;
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .section-desc {
+            color: var(--text-secondary);
+            margin-bottom: 36px;
+            font-size: 0.95rem;
+        }
+
+        .pipeline-flow {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            padding: 28px 24px;
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+        }
+
+        .pipeline-step {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border-radius: var(--radius-sm);
+            background: var(--primary-dim);
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--accent);
+            white-space: nowrap;
+            transition: var(--transition);
+            cursor: default;
+        }
+
+        .pipeline-step:hover {
+            background: var(--primary-soft);
+            transform: translateY(-1px);
+        }
+
+        .pipeline-step i {
+            font-size: 0.75rem;
+            color: var(--primary);
+        }
+
+        .pipeline-arrow {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        /* Chapters */
+        .chapters-section {
+            padding: 40px 0 80px;
+        }
+
+        .chapters-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .chapter-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 28px;
+            text-decoration: none;
+            color: inherit;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chapter-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 30px rgba(208, 101, 25, 0.08);
+        }
+
+        .chapter-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--primary);
+            opacity: 0;
+            transition: var(--transition);
+        }
+
+        .chapter-card:hover::before { opacity: 1; }
+
+        .chapter-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: var(--primary-dim);
+            color: var(--primary);
+            font-size: 0.85rem;
+            font-weight: 700;
+            margin-bottom: 14px;
+        }
+
+        .chapter-card h3 {
+            font-size: 1.05rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .chapter-card p {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .chapter-tags {
+            display: flex;
+            gap: 6px;
+            margin-top: 14px;
+            flex-wrap: wrap;
+        }
+
+        .chapter-tag {
+            font-size: 0.72rem;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: var(--primary-dim);
+            color: var(--accent);
+            font-weight: 500;
+        }
+
+        .chapter-tag.core {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+
+        .chapter-tag.advanced {
+            background: #EDE9FE;
+            color: #5B21B6;
+        }
+
+        .chapter-arrow {
+            position: absolute;
+            right: 24px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            opacity: 0;
+            transition: var(--transition);
+        }
+
+        .chapter-card:hover .chapter-arrow {
+            opacity: 1;
+            transform: translateY(-50%) translateX(3px);
+            color: var(--primary);
+        }
+
+        /* Footer */
+        .footer {
+            padding: 30px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+            .hero h1 { font-size: 2.2rem; }
+            .hero-right { display: none; }
+            .chapters-grid { grid-template-columns: 1fr; }
+            .page-wrapper { padding: 0 20px; }
+            .pipeline-flow { gap: 4px; }
+        }
+
+        @media (max-width: 600px) {
+            .hero { padding: 50px 0 30px; }
+            .hero h1 { font-size: 1.8rem; }
+            .hero-stats { gap: 20px; }
+            .pipeline-step { font-size: 0.75rem; padding: 6px 10px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <div class="page-wrapper">
+            <div class="top-bar-inner">
+                <a href="../../" class="back-link">
+                    <i class="fas fa-arrow-left"></i>
+                    返回主页
+                </a>
+                <a href="https://github.com/jingyaogong/minimind" class="github-link" target="_blank">
+                    <i class="fab fa-github"></i>
+                    MiniMind GitHub
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hero -->
+    <div class="hero">
+        <div class="page-wrapper">
+            <div class="hero-grid">
+                <div class="hero-left">
+                    <div class="hero-eyebrow">开源 · 实战 · 从零开始</div>
+                    <h1>从零训练一个<span>大语言模型</span></h1>
+                    <p class="hero-desc">
+                        基于 MiniMind 项目，用约 4600 行代码，完整走一遍现代大语言模型的训练全流程。
+                        不依赖任何黑盒框架，每一行代码都看得见、改得动、跑得通。
+                    </p>
+                    <div class="hero-stats">
+                        <div class="stat">
+                            <span class="stat-value">11 章</span>
+                            <span class="stat-label">互动教程</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value">4600+</span>
+                            <span class="stat-label">行源码精讲</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value">64M</span>
+                            <span class="stat-label">参数模型</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="hero-right">
+                    <div class="hero-code">
+                        <span class="comment"># 完整训练流程，只需 9 条命令</span><br>
+                        <span class="keyword">python</span> trainer/train_tokenizer.py<br>
+                        <span class="keyword">python</span> trainer/train_pretrain.py<br>
+                        <span class="keyword">python</span> trainer/train_full_sft.py <span class="op">--from_weight</span> pretrain<br>
+                        <span class="keyword">python</span> trainer/train_lora.py <span class="op">--from_weight</span> full_sft<br>
+                        <span class="keyword">python</span> trainer/train_distillation.py <span class="op">...</span><br>
+                        <span class="keyword">python</span> trainer/train_dpo.py <span class="op">--from_weight</span> full_sft<br>
+                        <span class="keyword">python</span> trainer/train_grpo.py <span class="op">--from_weight</span> full_sft<br>
+                        <span class="keyword">python</span> trainer/train_ppo.py <span class="op">--from_weight</span> full_sft<br>
+                        <span class="keyword">python</span> trainer/train_agent.py <span class="op">--from_weight</span> full_sft<br>
+                        <br>
+                        <span class="comment"># 启动对话</span><br>
+                        <span class="keyword">python</span> <span class="func">eval_llm.py</span> <span class="op">--weight</span> full_sft
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Training Pipeline -->
+    <div class="pipeline-section">
+        <div class="page-wrapper">
+            <h2 class="section-title">训练全流程</h2>
+            <p class="section-desc">从分词到部署，每一步都亲手实现。点击任意阶段跳转到对应教程。</p>
+            <div class="pipeline-flow">
+                <a href="./1-tokenizer.html" class="pipeline-step" style="text-decoration:none"><i class="fas fa-language"></i> 分词器</a>
+                <span class="pipeline-arrow"><i class="fas fa-chevron-right"></i></span>
+                <a href="./3-pretrain.html" class="pipeline-step" style="text-decoration:none"><i class="fas fa-brain"></i> 预训练</a>
+                <span class="pipeline-arrow"><i class="fas fa-chevron-right"></i></span>
+                <a href="./4-sft.html" class="pipeline-step" style="text-decoration:none"><i class="fas fa-comments"></i> 监督微调</a>
+                <span class="pipeline-arrow"><i class="fas fa-chevron-right"></i></span>
+                <a href="./5-lora.html" class="pipeline-step" style="text-decoration:none"><i class="fas fa-compress-arrows-alt"></i> LoRA</a>
+                <span class="pipeline-arrow"><i class="fas fa-chevron-right"></i></span>
+                <a href="./7-dpo.html" class="pipeline-step" style="text-decoration:none"><i class="fas fa-balance-scale"></i> DPO</a>
+                <span class="pipeline-arrow"><i class="fas fa-chevron-right"></i></span>
+                <a href="./8-rl.html" class="pipeline-step" style="text-decoration:none"><i class="fas fa-gamepad"></i> GRPO/PPO</a>
+                <span class="pipeline-arrow"><i class="fas fa-chevron-right"></i></span>
+                <a href="./9-agent.html" class="pipeline-step" style="text-decoration:none"><i class="fas fa-robot"></i> Agent</a>
+                <span class="pipeline-arrow"><i class="fas fa-chevron-right"></i></span>
+                <a href="./10-deployment.html" class="pipeline-step" style="text-decoration:none"><i class="fas fa-rocket"></i> 部署</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chapters -->
+    <div class="chapters-section">
+        <div class="page-wrapper">
+            <h2 class="section-title">全部章节</h2>
+            <p class="section-desc">按顺序学习，或跳到你最感兴趣的阶段。每章都是自包含的交互式幻灯片。</p>
+            <div class="chapters-grid">
+                <!-- Stage 0 -->
+                <a href="./0-basics.html" class="chapter-card">
+                    <div class="chapter-number">0</div>
+                    <h3>Python 与深度学习基础</h3>
+                    <p>阅读本项目代码所需的一切前置知识：Python 语法、PyTorch 核心概念、必要的数学基础。</p>
+                    <div class="chapter-tags">
+                        <span class="chapter-tag">Python</span>
+                        <span class="chapter-tag">PyTorch</span>
+                        <span class="chapter-tag">前置准备</span>
+                    </div>
+                    <span class="chapter-arrow"><i class="fas fa-arrow-right"></i></span>
+                </a>
+
+                <!-- Stage 1 -->
+                <a href="./1-tokenizer.html" class="chapter-card">
+                    <div class="chapter-number">1</div>
+                    <h3>Tokenizer 分词器</h3>
+                    <p>文本如何变成数字？BPE 算法、词表构建、Chat Template 对话格式化——连接人类语言与机器语言的第一座桥。</p>
+                    <div class="chapter-tags">
+                        <span class="chapter-tag core">核心</span>
+                        <span class="chapter-tag">BPE</span>
+                        <span class="chapter-tag">词表 6400</span>
+                    </div>
+                    <span class="chapter-arrow"><i class="fas fa-arrow-right"></i></span>
+                </a>
+
+                <!-- Stage 2 -->
+                <a href="./2-model-architecture.html" class="chapter-card">
+                    <div class="chapter-number">2</div>
+                    <h3>模型架构</h3>
+                    <p>逐行读懂 model_minimind.py —— 287 行代码浓缩 Transformer、RoPE、GQA、KV-Cache、MoE 全部精华。</p>
+                    <div class="chapter-tags">
+                        <span class="chapter-tag core">核心</span>
+                        <span class="chapter-tag">Transformer</span>
+                        <span class="chapter-tag">287行</span>
+                    </div>
+                    <span class="chapter-arrow"><i class="fas fa-arrow-right"></i></span>
+                </a>
+
+                <!-- Stage 3 -->
+                <a href="./3-pretrain.html" class="chapter-card">
+                    <div class="chapter-number">3</div>
+                    <h3>预训练 Pretraining</h3>
+                    <p>Next Token Prediction —— 让模型阅读大量文本，学会"根据前文预测下一个字"。这是所有 LLM 的基础能力。</p>
+                    <div class="chapter-tags">
+                        <span class="chapter-tag core">核心</span>
+                        <span class="chapter-tag">交叉熵</span>
+                        <span class="chapter-tag">余弦LR</span>
+                    </div>
+                    <span class="chapter-arrow"><i class="fas fa-arrow-right"></i></span>
+                </a>
+
+                <!-- Stage 4 -->
+                <a href="./4-sft.html" class="chapter-card">
+                    <div class="chapter-number">4</div>
+                    <h3>监督微调 SFT</h3>
+                    <p>把预训练模型微调为对话模型。关键技巧：Label Masking —— 只在 assistant 回答的部分计算 loss。</p>
+                    <div class="chapter-tags">
+                        <span class="chapter-tag core">核心</span>
+                        <span class="chapter-tag">对话能力</span>
+                        <span class="chapter-tag">Label Mask</span>
+                    </div>
+                    <span class="chapter-arrow"><i class="fas fa-arrow-right"></i></span>
+                </a>
+
+                <!-- Stage 5 -->
+                <a href="./5-lora.html" class="chapter-card">
+                    <div class="chapter-number">5</div>
+                    <h3>LoRA 参数高效微调</h3>
+                    <p>只训练 4% 的参数，就能获得接近全量微调的效果。低秩分解旁路的原理与实现。</p>
+                    <div class="chapter-tags">
+                        <span class="chapter-tag">参数高效</span>
+                        <span class="chapter-tag">低秩分解</span>
+                        <span class="chapter-tag">4%参数</span>
+                    </div>
+                    <span class="chapter-arrow"><i class="fas fa-arrow-right"></i></span>
+                </a>
+
+                <!-- Stage 6 -->
+                <a href="./6-distillation.html" class="chapter-card">
+                    <div class="chapter-number">6</div>
+                    <h3>知识蒸馏</h3>
+                    <p>用大模型（教师）的输出分布来指导小模型（学生）训练。温度缩放暴露"暗知识"。</p>
+                    <div class="chapter-tags">
+                        <span class="chapter-tag">教师-学生</span>
+                        <span class="chapter-tag">KL散度</span>
+                        <span class="chapter-tag">温度T</span>
+                    </div>
+                    <span class="chapter-arrow"><i class="fas fa-arrow-right"></i></span>
+                </a>
+
+                <!-- Stage 7 -->
+                <a href="./7-dpo.html" class="chapter-card">
+                    <div class="chapter-number">7</div>
+                    <h3>DPO 偏好优化</h3>
+                    <p>不需要奖励模型，直接用偏好数据（好/差回答对）对齐模型。Bradley-Terry 模型实战。</p>
+                    <div class="chapter-tags">
+                        <span class="chapter-tag core">核心</span>
+                        <span class="chapter-tag">偏好对齐</span>
+                        <span class="chapter-tag">β=0.15</span>
+                    </div>
+                    <span class="chapter-arrow"><i class="fas fa-arrow-right"></i></span>
+                </a>
+
+                <!-- Stage 8 -->
+                <a href="./8-rl.html" class="chapter-card">
+                    <div class="chapter-number">8</div>
+                    <h3>GRPO 与 PPO 强化学习</h3>
+                    <p>RLHF 的两种主流算法：GRPO 用组内相对优势简化训练；PPO 用 Actor-Critic 架构精确优化。</p>
+                    <div class="chapter-tags">
+                        <span class="chapter-tag advanced">进阶</span>
+                        <span class="chapter-tag">GAE</span>
+                        <span class="chapter-tag">Rollout</span>
+                    </div>
+                    <span class="chapter-arrow"><i class="fas fa-arrow-right"></i></span>
+                </a>
+
+                <!-- Stage 9 -->
+                <a href="./9-agent.html" class="chapter-card">
+                    <div class="chapter-number">9</div>
+                    <h3>Agent 工具调用</h3>
+                    <p>训练模型学会使用外部工具——计算器、天气查询、翻译。多轮 Rollout + 工具执行模拟。</p>
+                    <div class="chapter-tags">
+                        <span class="chapter-tag advanced">进阶</span>
+                        <span class="chapter-tag">Tool Call</span>
+                        <span class="chapter-tag">多轮交互</span>
+                    </div>
+                    <span class="chapter-arrow"><i class="fas fa-arrow-right"></i></span>
+                </a>
+
+                <!-- Stage 10 -->
+                <a href="./10-deployment.html" class="chapter-card">
+                    <div class="chapter-number">10</div>
+                    <h3>模型推理与部署</h3>
+                    <p>训练好的模型如何变成可用的服务：命令行对话、OpenAI 兼容 API、Web 聊天界面。</p>
+                    <div class="chapter-tags">
+                        <span class="chapter-tag">FastAPI</span>
+                        <span class="chapter-tag">流式输出</span>
+                        <span class="chapter-tag">格式转换</span>
+                    </div>
+                    <span class="chapter-arrow"><i class="fas fa-arrow-right"></i></span>
+                </a>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <div class="page-wrapper">
+            <p>基于 <a href="https://github.com/jingyaogong/minimind" style="color: var(--primary); text-decoration: none;">MiniMind</a> 开源项目 · 教程采用互动幻灯片形式</p>
+        </div>
+    </div>
+
+</body>
+</html>

@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 0：Python 与深度学习基础</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- 封面 -->
+        <section class="slide title-slide active">
+            <h1>Python 与深度学习基础</h1>
+            <p>阶段 0 · 读懂数据流与训练循环的一切前置知识</p>
+        </section>
+
+        <!-- 问题驱动开场 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>看不懂这些代码？</h3>
+                <pre><code class="language-python">scaler.scale(loss).backward()
+scaler.unscale_(optimizer)
+torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+scaler.step(optimizer)
+optimizer.zero_grad(set_to_none=True)</code></pre>
+                <p>这是 MiniMind 训练循环的核心五行。如果你觉得像天书，没关系——这一章把它们逐行拆开。</p>
+                <div class="intro-block">
+                    <p><strong>适合谁</strong>：有基础编程经验，但没系统学过 Python / PyTorch 的人。</p>
+                    <p><strong>不适合谁</strong>：如果你能独立用 PyTorch 写训练循环，直接跳到阶段 1。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 知识地图 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>本章路线图</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Python 速查</h4>
+                        <p>数据类型与控制流、函数与 Lambda、面向对象 class、装饰器与生成器——项目中反复出现的语法</p>
+                    </div>
+                    <div class="card">
+                        <h4>PyTorch 核心</h4>
+                        <p>Tensor 张量操作、自动求导 autograd、nn.Module 层定义、训练循环五步、DataLoader 加载、混合精度训练</p>
+                    </div>
+                    <div class="card">
+                        <h4>数学最低限度</h4>
+                        <p>矩阵乘法、概率与 softmax、交叉熵与梯度——理解模型训练所需的最少数学知识</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: Python 基础 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：Python 速查</h2>
+                <p>MiniMind 全部用 Python 编写。这一节只覆盖项目中反复出现的语法，不追求面面俱到。</p>
+                <div class="intro-block">
+                    <p>读懂 MiniMind 的代码不需要你是 Python 专家，但有几类语法在整个项目中反复出现——如果它们让你卡壳，后面每一节都会觉得吃力。这一节的目标就是把这些"拦路虎"一次性扫清。</p>
+                    <ul>
+                        <li><strong>数据类型速查</strong> —— int、float、str、list、dict、tuple、bool 在 MiniMind 里分别扮演什么角色</li>
+                        <li><strong>控制流与函数</strong> —— if/for/while 以及函数定义的基本写法</li>
+                        <li><strong>列表推导与 f-string</strong> —— 项目中最常见的一行式写法</li>
+                        <li><strong>面向对象：class 与继承</strong> —— 理解 <code>nn.Module</code> 的前提，搞清楚 <code>__init__</code>、<code>super()</code> 和 <code>self</code></li>
+                        <li><strong>装饰器与生成器</strong> —— <code>@staticmethod</code>、<code>@property</code> 等用法，以及 <code>yield</code> 在数据加载中的角色</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 数据类型 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>数据类型速查</h3>
+                <table>
+                    <thead><tr><th>类型</th><th>示例</th><th>MiniMind 中的用途</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>int</code></td><td><code>768</code>, <code>8</code></td><td>模型参数（hidden_size, layers）</td></tr>
+                        <tr><td><code>float</code></td><td><code>5e-4</code>, <code>0.85</code></td><td>学习率、温度参数</td></tr>
+                        <tr><td><code>str</code></td><td><code>"pretrain"</code></td><td>文件路径、配置名</td></tr>
+                        <tr><td><code>list</code></td><td><code>[1, 2, 3]</code></td><td>token ID 序列</td></tr>
+                        <tr><td><code>dict</code></td><td><code>{"role": "user"}</code></td><td>对话消息结构</td></tr>
+                        <tr><td><code>tuple</code></td><td><code>(xk, xv)</code></td><td>KV-Cache 存储对</td></tr>
+                        <tr><td><code>bool</code></td><td><code>True</code></td><td>开关（use_moe, use_cache）</td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-python"># MiniMind 配置文件 config.py 中实际出现的数据类型
+dim = 768                       # int: 隐藏层维度
+n_layers = 8                    # int: Transformer 层数
+lr = 5e-4                       # float: 学习率
+data_path = "dataset/pretrain"  # str: 数据路径
+vocab = [i for i in range(6400)]  # list: 词表索引
+msg = {"role": "user", "content": "你好"}  # dict: 对话</code></pre>
+            </div>
+        </section>
+
+        <!-- 控制流与函数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>控制流与函数</h3>
+                <h4>if / for / 函数是读懂任何代码的基础</h4>
+                <pre><code class="language-python"># ---- 条件分支：MiniMind 中的典型模式 ----
+if use_cache:                          # bool 控制是否缓存 KV
+    xk, xv = past_kv[layer_idx]
+else:
+    xk, xv = self.k_proj(x), self.v_proj(x)
+
+# ---- 循环：逐层过 Transformer ----
+for layer in self.layers:
+    x = layer(x, start_pos, mask)
+
+# ---- 函数：封装可复用的逻辑 ----
+def get_lr(step, total_steps, base_lr):
+    """余弦学习率调度——训练中动态调整学习率"""
+    return base_lr * (0.1 + 0.45 * (
+        1 + math.cos(math.pi * step / total_steps)
+    ))</code></pre>
+                <p><strong>Lambda</strong> 是一行函数的简写。项目中偶尔出现：<code>key=lambda x: x[1]</code>，意思是"以第二个元素排序"。</p>
+            </div>
+        </section>
+
+        <!-- 列表推导与 f-string -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>推导式与格式化</h3>
+                <h4>两种 Pythonic 写法，项目中几乎每页都出现</h4>
+                <pre><code class="language-python"># ---- 列表推导：一行创建列表 ----
+layers = [TransformerBlock(config) for _ in range(n_layers)]
+# 等价于：
+# layers = []
+# for _ in range(n_layers):
+#     layers.append(TransformerBlock(config))
+
+# ---- f-string：在字符串中嵌入变量 ----
+epoch, total, loss, lr = 1, 10, 3.1416, 0.0005
+print(f'Epoch:[{epoch+1}/{total}] loss:{loss:.4f} lr:{lr:.8f}')
+# 输出: Epoch:[2/10] loss:3.1416 lr:0.00050000
+#   {loss:.4f}  → 保留 4 位小数
+#   {lr:.8f}   → 保留 8 位小数</code></pre>
+            </div>
+        </section>
+
+        <!-- 面向对象 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>面向对象编程</h3>
+                <h4>class 把数据和操作绑在一起，MiniMind 全是 class</h4>
+                <div class="intro-block">
+<pre><code class="language-plaintext">nn.Module                    # PyTorch 所有网络层的基类
+  ├── parameters()            # 收集所有可学习参数
+  ├── forward(x)              # 定义前向计算
+  ├── state_dict()            # 导出参数字典（保存模型）
+  └── load_state_dict()       # 加载参数字典（加载模型）
+
+MiniMindModel(nn.Module)     # 继承 nn.Module
+  ├── embed_tokens            # 词嵌入层
+  ├── layers                  # Transformer Block 列表
+  ├── norm                    # 最终归一化
+  └── forward(input_ids)      # 前向传播
+
+Attention(nn.Module)          # 也继承 nn.Module
+  ├── q_proj: Linear          # Query 投影
+  ├── k_proj: Linear          # Key 投影
+  ├── v_proj: Linear          # Value 投影
+  └── forward(x, mask)        # 注意力计算</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>继承与 self</h3>
+                <h4>三步理解面向对象：定义蓝图 → 创建对象 → 调用方法</h4>
+                <pre><code class="language-python">class Attention(nn.Module):          # ① 继承 nn.Module
+    def __init__(self, dim):          # ② 构造函数：买积木
+        super().__init__()            # 调用父类构造（必须）
+        self.q_proj = nn.Linear(dim, dim, bias=False)  # 用 self 存储层
+
+    def forward(self, x):             # ③ 前向计算：搭积木
+        return self.q_proj(x)         # self = "我自己"
+
+# 使用：创建对象 → 调方法
+attn = Attention(dim=768)             # 触发 __init__
+out = attn.forward(x)                 # 触发 forward</code></pre>
+                <ul>
+                    <li><strong>继承</strong>：<code>class Child(Parent)</code>，子类获得父类全部能力</li>
+                    <li><strong><code>self</code></strong>：对象自身的引用，类似日常说的"我的"</li>
+                    <li><strong><code>super().__init__()</code></strong>：先让父类完成初始化</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 装饰器与生成器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>装饰器与生成器</h3>
+                <h4>两个 Python 进阶语法，在项目中反复出现</h4>
+                <pre><code class="language-python"># ---- 装饰器：给函数"穿外套"，不改动原代码 ----
+@torch.no_grad()          # 推理时不计算梯度，节省显存
+def generate(self, ...):
+    ...
+
+@abstractmethod           # 强制子类必须实现此方法
+def rollout(self, ...):
+    pass</code></pre>
+                <pre><code class="language-python"># ---- 生成器 yield：一次只吐一行，不把文件全读进内存 ----
+def get_training_texts(path):
+    with open(path, 'r') as f:
+        for line in f:
+            yield line.strip()   # 暂停，把这一行交给调用方
+
+for text in get_training_texts("data.txt"):
+    tokens = tokenizer(text)     # 逐行处理，内存友好</code></pre>
+            </div>
+        </section>
+
+        <!-- Python 常见陷阱 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Python 常见陷阱</h3>
+                <div class="warning">
+                    <strong>可变默认参数</strong>：<code>def f(x, lst=[])</code> 的 <code>lst</code> 只创建一次，多次调用共享。修复：<code>def f(x, lst=None): lst = lst or []</code>
+                </div>
+                <div class="warning">
+                    <strong>整数除法 vs 浮点除法</strong>：<code>3 / 2 = 1.5</code>（浮点），<code>3 // 2 = 1</code>（整除）。MiniMind 中维度计算常用 <code>//</code>，如 <code>dim // n_heads</code>。
+                </div>
+                <div class="warning">
+                    <strong>浅拷贝</strong>：<code>b = a</code> 只是让 b 指向 a。修改 b 会改 a。修复：用 <code>b = a.copy()</code> 或 <code>import copy; b = copy.deepcopy(a)</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习：Python -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：Python</h3>
+                <p><strong>任务</strong>：阅读以下代码，回答三个问题。</p>
+                <pre><code class="language-python">class MyModel(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.linear = nn.Linear(dim, dim)
+
+    @torch.no_grad()
+    def predict(self, x):
+        return self.linear(x)
+
+model = MyModel(dim=768)
+print(sum(p.numel() for p in model.parameters()))</code></pre>
+                <h4>问题</h4>
+                <ol>
+                    <li><code>super().__init__()</code> 如果删掉，会怎样？</li>
+                    <li><code>@torch.no_grad()</code> 在这里的效果是什么？</li>
+                    <li>最后一行会输出什么数字？（提示：<code>nn.Linear(768, 768)</code> 有 bias）</li>
+                </ol>
+                <div class="intro-block">
+                    <p>参考答案：① 父类 <code>nn.Module</code> 的初始化被跳过，<code>parameters()</code> 等方法失效；② 推理时不计算梯度，节省显存；③ 768×768 + 768 = 590,592 个参数。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: PyTorch 基础 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：PyTorch 核心</h2>
+                <p>MiniMind 使用 PyTorch 框架。这一部分覆盖模型定义、训练循环、数据加载中反复出现的 API。</p>
+                <div class="intro-block">
+                    <p>PyTorch 是 MiniMind 的"操作系统"——从数据加载到模型定义、从训练循环到权重保存，几乎每一行代码都在调用 PyTorch 的 API。这一节不会讲所有细节，但会把你在 MiniMind 中反复遇到的那些概念全部理一遍。</p>
+                    <ul>
+                        <li><strong>Tensor 张量操作</strong> —— PyTorch 的基本数据结构，包括创建、变形、索引和 GPU 加速</li>
+                        <li><strong>自动求导 autograd</strong> —— <code>requires_grad</code>、<code>.backward()</code>、计算图的概念</li>
+                        <li><strong>训练循环五步</strong> —— 前向 → 算损失 → 反向 → 梯度清零 → 更新参数，这个套路贯穿整个项目</li>
+                        <li><strong>nn.Module 与层定义</strong> —— 如何用 <code>nn.Linear</code>、<code>nn.Embedding</code> 等搭建网络</li>
+                        <li><strong>混合精度与模型保存</strong> —— 用 <code>autocast</code> 加速训练，用 <code>state_dict</code> 存取模型权重</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tensor -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Tensor 张量</h3>
+                <h4>定义：多维数组 | 白话：GPU 上的 NumPy | 用途：模型中所有数据都是 Tensor</h4>
+                <div class="ai-diagram">
+                  <h4>图：Tensor 维度从标量到四维的层级关系</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的递进式层级图，展示 Tensor 维度从标量到四维的递增关系
+                  - 各元素关系：标量 scalar（shape: ()）→ 向量 vector（shape: (4,)）→ 矩阵 matrix（shape: (3,4)）→ 3D 张量（shape: (2,3,4)）→ 4D 张量（shape: (B, seq, heads, head_dim)），用带箭头的连线依次连接
+                  - 关键标注：每个节点标注类型名称和具体 shape 值；右侧用小图标直观展示维度形状（标量用点、向量用线、矩阵用面、3D 用立方体、4D 用堆叠立方体）
+                  - 配色建议：浅灰背景，节点从左到右用渐变蓝色（浅蓝→深蓝），关键箭头用橙色标注
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <pre><code class="language-python">import torch
+x = torch.tensor([1.0, 2.0, 3.0])   # 从列表创建
+print(x.shape)    # torch.Size([3])
+print(x.device)   # cpu 或 cuda:0
+
+# MiniMind 中的维度标注
+# input_ids:  (batch, seq_len)       例如 (4, 512)
+# embeddings: (batch, seq_len, 768)  例如 (4, 512, 768)
+# logits:     (batch, seq_len, 6400) 例如 (4, 512, 6400)</code></pre>
+            </div>
+        </section>
+
+        <!-- MiniMind 数据流 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>MiniMind 数据流</h3>
+                <h4>从输入文本到输出概率，维度如何一步步变化</h4>
+                <div class="ai-diagram">
+                  <h4>图：MiniMind 从输入文本到输出概率的数据流</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的水平流水线图，展示文本输入经过模型各阶段后输出概率的完整数据流
+                  - 各元素关系：input_ids（B, seq）→ Embedding 层（B, seq, 768）→ Attention ×N 层（B, seq, 768）→ FFN ×N 层（B, seq, 768）→ lm_head 层（B, seq, 6400），用粗箭头依次连接
+                  - 关键标注：每个方框内标注层名称和输出维度 shape；Embedding 旁标注"查表将 token 转向量"；Attention 旁标注"自注意力机制"；FFN 旁标注"前馈网络"；lm_head 旁标注"线性映射到词表大小"
+                  - 配色建议：浅蓝/浅灰背景，输入节点用绿色，中间层用蓝色，输出节点用紫色，维度标注用深灰色小字
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>每个方框对应模型中的一个 <code>nn.Module</code>。数据的 shape 在每个阶段都标注出来——这是调试 shape 错误时最重要的参考。</p>
+                <pre><code class="language-python"># 在 MiniMind 中你可以这样打印每一步的 shape
+def forward(self, input_ids):
+    x = self.embed_tokens(input_ids)  # (B, seq, 768)
+    for layer in self.layers:
+        x = layer(x)                  # 每层保持 (B, seq, 768)
+    x = self.norm(x)                  # 最后归一化
+    logits = self.lm_head(x)          # (B, seq, 6400)
+    return logits</code></pre>
+            </div>
+        </section>
+
+        <!-- Tensor 常用操作 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Tensor 高频操作</h3>
+                <h4>这些操作在 MiniMind 源码中反复出现</h4>
+                <pre><code class="language-python"># ===== 形状操作（MiniMind 中最频繁） =====
+x.view(batch, seq_len, 768)       # 改形状，不复制数据
+x.unsqueeze(1)                    # 加维度: (B,D) → (B,1,D)
+x.transpose(1, 2)                 # 交换两个维度
+torch.cat([a, b], dim=1)          # 沿维度1拼接（KV-Cache）
+
+# ===== 索引（取特定位置的数据） =====
+x[:, -1, :]                       # 取最后一个 token 的表示
+x[mask == 1]                      # 按条件筛选
+
+# ===== 数学运算（神经网络的核心） =====
+torch.softmax(x, dim=-1)          # 转概率分布（生成时采样用）
+torch.gather(logits, 2, idx)      # 按索引取值（提取 log 概率）
+torch.topk(x, k=50)               # 取最大的 k 个（Top-K 采样）</code></pre>
+                <div class="warning">
+                    <strong>view vs reshape</strong>：<code>view()</code> 要求内存连续。遇到 <code>RuntimeError: view size is not compatible</code>，先调用 <code>.contiguous()</code> 再 <code>.view()</code>，或直接用 <code>.reshape()</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- 自动求导 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自动求导</h3>
+                <h4>定义：PyTorch 自动追踪运算并计算梯度 | 白话：你说"算"，它帮你求导 | 用途：训练的核心机制</h4>
+                <div class="ai-diagram">
+                  <h4>图：PyTorch 自动求导的五步循环</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个环形循环流程图，展示 PyTorch 自动求导的五个步骤
+                  - 各元素关系：① 前向传播 Forward → ② 计算 Loss → ③ backward 求梯度 → ④ step 更新参数 → ⑤ zero_grad 清零 → 回到①，形成顺时针循环
+                  - 关键标注：每个节点用圆角矩形，内部标注步骤编号和中文名称；箭头旁可标注简短说明，如①→②旁标"模型预测"，②→③旁标"反向传播"，③→④旁标"优化器更新"，④→⑤旁标"为下一步准备"
+                  - 配色建议：浅灰背景，节点用浅蓝色，箭头用深灰色，循环箭头用橙色强调
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <pre><code class="language-python">import torch
+w = torch.tensor([2.0], requires_grad=True)  # 标记：需要对 w 求导
+y = w ** 2 + 3 * w       # 前向传播：y = w² + 3w
+y.backward()             # 反向传播：自动算 dy/dw
+print(w.grad)            # tensor([7.]) → 2w+3=2×2+3=7
+
+# 关键：只有 requires_grad=True 的张量才会计算梯度
+# 推理时用 torch.no_grad() 可以完全关闭追踪，节省显存</code></pre>
+            </div>
+        </section>
+
+        <!-- 训练循环 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练循环五步</h3>
+                <h4>MiniMind 中 train_pretrain.py 的核心——记住这五步就够了</h4>
+                <pre><code class="language-python"># ① 前向传播：输入数据，得到预测和损失
+res = model(input_ids, labels=labels)
+loss = res.loss
+
+# ② 反向传播：计算每个参数的梯度
+scaler.scale(loss).backward()
+
+# ③ 梯度裁剪：防止梯度爆炸
+scaler.unscale_(optimizer)
+torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
+# ④ 更新参数：用梯度调整权重
+scaler.step(optimizer)
+
+# ⑤ 梯度清零：为下一步准备
+optimizer.zero_grad(set_to_none=True)</code></pre>
+                <p>这五步在每一个训练 step 中重复执行。<code>scaler</code> 的作用见混合精度幻灯片。</p>
+            </div>
+        </section>
+
+        <!-- nn.Module -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>nn.Module</h3>
+                <h4>定义：神经网络层的基类 | 白话：所有层都是它的子类 | 用法：__init__ 买积木，forward 搭积木</h4>
+                <pre><code class="language-python">class Attention(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        # __init__：定义需要哪些层（买积木）
+        self.q_proj = nn.Linear(dim, dim, bias=False)
+        self.k_proj = nn.Linear(dim, dim // 2, bias=False)
+        self.v_proj = nn.Linear(dim, dim // 2, bias=False)
+        self.out_proj = nn.Linear(dim, dim, bias=False)
+
+    def forward(self, x, mask=None):
+        # forward：定义计算流程（搭积木）
+        q = self.q_proj(x)          # (B, seq, dim)
+        k = self.k_proj(x)          # (B, seq, dim//2)
+        v = self.v_proj(x)
+        # ... 注意力计算（阶段 2 详解）
+        return self.out_proj(attn_output)</code></pre>
+                <p>关键特性：在 <code>__init__</code> 中赋值给 <code>self</code> 的 <code>nn.Module</code> 会被自动追踪。<code>model.parameters()</code> 能递归收集所有参数。</p>
+                <p><em>比喻卸甲：上面"买积木/搭积木"只是为了建立直观感受。在 PyTorch 内部，<code>nn.Module</code> 实际上是通过一个 <code>_modules</code> 字典注册子层、在 <code>forward</code> 中按你写的计算图顺序调用它们——并不存在物理意义上的"拼接"，子层之间是函数调用关系，不是结构连接。</em></p>
+            </div>
+        </section>
+
+        <!-- 优化器 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>优化器与学习率</h3>
+                <h4>AdamW 控制参数更新方向和步长</h4>
+                <pre><code class="language-python">import torch.optim as optim
+
+optimizer = optim.AdamW(
+    model.parameters(),  # 需要优化的参数
+    lr=5e-4,             # 学习率：每步更新多大
+    weight_decay=0.1     # 权重衰减：防止过拟合
+)
+
+# MiniMind 使用余弦学习率调度
+def get_lr(step, total, lr):
+    return lr / (1 + step * 1e-5) * \
+           (0.1 + 0.45 * (1 + math.cos(
+               math.pi * step / total)))</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：余弦学习率调度的四阶段变化</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左侧是一条余弦曲线的时间轴图，展示学习率随训练步数的变化；右侧或下方用四个阶段节点辅助说明
+                  - 各元素关系：初始 lr 0.1x → warmup 升高 → 峰值 lr 1.0x → 余弦衰减 → 终 lr 0.1x，用带箭头的连线依次连接
+                  - 关键标注：曲线上标注四个关键点的学习率值；warmup 阶段旁标注"稳步上升避免震荡"；衰减阶段旁标注"余弦曲线平滑下降"；横轴标注"训练步数"，纵轴标注"学习率"
+                  - 配色建议：浅灰背景，曲线用深蓝色，warmup 阶段用绿色，峰值用橙色，衰减用浅蓝色，节点用圆角矩形
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>学习率太大 → 训练发散；太小 → 收敛太慢。余弦调度是实践中最好用的策略之一。</p>
+            </div>
+        </section>
+
+        <!-- DataLoader -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>DataLoader</h3>
+                <h4>定义：数据加载管道 | 白话：自动帮你分批、打乱、并行加载 | 用途：喂给模型训练数据</h4>
+                <div class="ai-diagram">
+                  <h4>图：DataLoader 数据加载管道</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的流水线图，展示原始数据如何经过 DataLoader 管道喂给模型训练
+                  - 各元素关系：原始数据 JSONL → Dataset.__getitem__()（逐条读取并转 tensor）→ DataLoader（自动组 batch、打乱顺序、并行加载）→ 训练循环 for batch in loader，用粗箭头依次连接
+                  - 关键标注：原始数据旁标注"磁盘上的文本文件"；Dataset 旁标注"自定义数据类"；DataLoader 旁标注"batch_size=32, shuffle=True, num_workers=4"；训练循环旁标注"每个 batch 送入模型"
+                  - 配色建议：浅蓝/浅灰背景，数据节点用绿色，处理节点用蓝色，输出节点用紫色，关键箭头用橙色标注
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <pre><code class="language-python">from torch.utils.data import Dataset, DataLoader
+
+class PretrainDataset(Dataset):
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        text = self.samples[idx]
+        tokens = self.tokenizer(text)
+        return torch.tensor(tokens[:-1]), torch.tensor(tokens[1:])
+        # 输入是 [0..n-1]，目标是 [1..n]（预测下一个 token）
+
+loader = DataLoader(dataset, batch_size=32, shuffle=True)
+for input_ids, labels in loader:  # 每次取一个 batch
+    loss = model(input_ids, labels=labels).loss</code></pre>
+            </div>
+        </section>
+
+        <!-- 混合精度 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>混合精度训练</h3>
+                <h4>定义：用 BF16 算前向，FP32 存权重 | 白话：算得快、省显存、精度不掉 | 用途：MiniMind 默认开启</h4>
+                <pre><code class="language-python"># MiniMind 中的混合精度写法
+scaler = torch.amp.GradScaler('cuda')
+
+with torch.amp.autocast('cuda', dtype=torch.bfloat16):
+    # 前向用 bf16（每个数 2 字节，比 fp32 的 4 字节省一半）
+    res = model(input_ids, labels=labels)
+    loss = res.loss
+
+scaler.scale(loss).backward()    # 反向传播（自动缩放梯度）
+scaler.step(optimizer)           # 更新参数（自动转回 fp32）
+optimizer.zero_grad(set_to_none=True)</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：混合精度训练一个 Step 的精度转换</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个环形数据流，展示混合精度训练一个 step 中数据精度的转换过程
+                  - 流程节点（按顺时针排列）：① FP32 主权重（深蓝色）→ ② 转为 BF16 前向传播（浅蓝色）→ ③ BF16 计算损失 → ④ GradScaler 放大梯度转回 FP32（橙色）→ ⑤ FP32 梯度裁剪 → ⑥ FP32 更新主权重（深蓝色，回到①）
+                  - 关键标注：②→③ 旁标注"计算密集、显存减半"；④ 旁标注"防梯度下溢"；⑥ 旁标注"精度无损"
+                  - 配色建议：浅灰背景，FP32 用深蓝色，BF16 用浅蓝色，Scaler 操作用橙色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 模型保存与加载 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>模型保存与加载</h3>
+                <h4>训练完了要存盘，推理时再读回来</h4>
+                <pre><code class="language-python"># ---- 保存模型 ----
+torch.save(model.state_dict(), "model.pth")
+# state_dict() 返回一个 dict，key=层名, value=参数张量
+
+# ---- 加载模型 ----
+model.load_state_dict(torch.load("model.pth"))
+model.eval()  # 切换到评估模式（关闭 Dropout 等）
+
+# ---- MiniMind 中的实际用法 ----
+# 训练：每 N 步自动保存 checkpoint
+# 推理：加载 checkpoint → generate() 生成文本
+# HuggingFace 格式：save_pretrained() / from_pretrained()</code></pre>
+                <div class="warning">
+                    <strong>常见错误</strong>：<code>model.eval()</code> 和 <code>torch.no_grad()</code> 是两件事。前者关闭 Dropout 和 BatchNorm 的训练行为，后者关闭梯度计算。推理时两个都要用。
+                </div>
+            </div>
+        </section>
+
+        <!-- 常见错误 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>PyTorch 排错指南</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>shape 不匹配</h4>
+                        <p><strong>症状</strong>：<code>RuntimeError: mat1 and mat2 shapes cannot be multiplied</code></p>
+                        <p><strong>修复</strong>：打印 <code>tensor.shape</code> 逐步排查，对照数据流图检查维度</p>
+                    </div>
+                    <div class="card">
+                        <h4>view() 报错</h4>
+                        <p><strong>症状</strong>：<code>RuntimeError: view size is not compatible</code></p>
+                        <p><strong>修复</strong>：先 <code>.contiguous()</code> 再 <code>.view()</code>，或直接 <code>.reshape()</code></p>
+                    </div>
+                    <div class="card">
+                        <h4>gradient is None</h4>
+                        <p><strong>症状</strong>：<code>loss.backward()</code> 后 <code>.grad</code> 是 None</p>
+                        <p><strong>修复</strong>：确认 <code>requires_grad=True</code>；不在 <code>no_grad()</code> 内调用 <code>backward()</code></p>
+                    </div>
+                    <div class="card">
+                        <h4>CUDA OOM</h4>
+                        <p><strong>症状</strong>：<code>CUDA out of memory</code></p>
+                        <p><strong>修复</strong>：减小 batch_size；开启混合精度；用 <code>del</code> 释放不需要的张量</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 练习：PyTorch -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：PyTorch</h3>
+                <p><strong>任务</strong>：在终端运行以下代码，观察 Tensor 形状变化。</p>
+                <pre><code class="language-python">>>> import torch
+>>> x = torch.randn(2, 3, 4)
+>>> print("原始:", x.shape)            # torch.Size([2, 3, 4])
+>>> print("view:", x.view(2, 12).shape) # torch.Size([2, 12])
+>>> print("unsqueeze:", x.unsqueeze(1).shape)  # torch.Size([2, 1, 3, 4])
+>>> print("transpose:", x.transpose(1,2).shape) # torch.Size([2, 4, 3])
+>>> print("最后token:", x[:, -1, :].shape)      # torch.Size([2, 4])</code></pre>
+                <h4>挑战</h4>
+                <ol>
+                    <li>把 <code>view(2, 12)</code> 改成 <code>view(2, 11)</code>，看报什么错？为什么？</li>
+                    <li><code>unsqueeze(1)</code> 和 <code>unsqueeze(-1)</code> 的结果有什么不同？</li>
+                    <li>对 transpose 后的张量直接 <code>.view(2, 12)</code>，能成功吗？为什么？</li>
+                </ol>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 数学基础 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：数学最低限度</h2>
+                <p>不追求数学严谨，只记住结论和直觉。后面遇到具体公式时再回来查。</p>
+                <div class="intro-block">
+                    <p>训练语言模型离不开几个关键的数学概念，但你完全不需要推导证明——只要能看懂公式在干什么、为什么需要它就够了。这一节用最直白的方式把这些概念讲清楚，后面真正遇到时不会一脸懵。</p>
+                    <ul>
+                        <li><strong>线性代数</strong> —— 矩阵乘法和点积是 Transformer 里最基本的运算，理解"维度对齐"就够了</li>
+                        <li><strong>概率与 Softmax</strong> —— 模型输出的"下一个词的概率分布"是怎么算出来的</li>
+                        <li><strong>交叉熵与损失函数</strong> —— 用一个数字衡量"模型猜得有多离谱"</li>
+                        <li><strong>梯度与链式法则</strong> —— 为什么反向传播能自动算出每个参数该调多少</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 线性代数 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>线性代数</h3>
+                <h4>神经网络的所有计算本质上是矩阵乘法</h4>
+                <pre><code class="language-python">import torch
+
+# 矩阵乘法：神经网络层的本质
+x = torch.randn(1, 512, 768)   # 输入: (batch, seq_len, dim)
+W = torch.randn(768, 768)      # 权重矩阵
+y = x @ W.T                    # 线性变换: y = xW^T
+print(y.shape)                  # (1, 512, 768)
+
+# 点积：Attention 中衡量"相关性"
+q = torch.randn(1, 512, 64)    # Query 向量
+k = torch.randn(1, 512, 64)    # Key 向量
+score = q @ k.transpose(-2,-1)  # 点积 → 注意力分数
+print(score.shape)               # (1, 512, 512)</code></pre>
+                <ul>
+                    <li><strong>向量</strong>：一列数字，如 <code>[0.1, 0.5, -0.3]</code>，可以理解为"方向"</li>
+                    <li><strong>矩阵乘法</strong>：<code>nn.Linear(768, 768)</code> 本质就是 <code>y = xW^T + b</code></li>
+                    <li><strong>点积</strong>：衡量两个向量的"相似度"。Attention 中 Q·K 就是用点积算相关性</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 概率论 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>概率与 Softmax</h3>
+                <h4>语言模型的核心任务：预测下一个 token 的概率</h4>
+                <pre><code class="language-python">import torch
+
+# Softmax：把任意数字变成概率分布（加起来等于 1）
+logits = torch.tensor([2.0, 1.0, 0.0])
+probs = torch.softmax(logits, dim=-1)
+print(probs)  # tensor([0.6654, 0.2447, 0.0900])
+# 最大的 logits 对应最大的概率
+
+# MiniMind 生成时：从概率分布中采样下一个 token
+next_token = torch.multinomial(probs, num_samples=1)</code></pre>
+                <ul>
+                    <li><strong>概率分布</strong>：所有可能性之和 = 1，softmax 保证这一点</li>
+                    <li><strong>条件概率</strong>：语言模型就是 P(下一个词 | 前面的词)</li>
+                    <li><strong>训练目标</strong>：让正确 token 的概率尽可能大</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 交叉熵与梯度 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>交叉熵与损失</h3>
+                <h4>衡量预测与真实差距的标尺——Loss 越小，模型越准</h4>
+                <div class="ai-diagram">
+                  <h4>图：交叉熵损失驱动的训练循环</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个环形循环流程图，展示交叉熵损失如何驱动模型训练
+                  - 各元素关系：① 交叉熵 Loss（衡量预测与真实的差距）→ ② backward 计算梯度 → ③ 梯度下降更新参数 → ④ Loss 降低 → 回到①，形成顺时针循环
+                  - 关键标注：Loss 节点旁标注"越小=预测越准"；backward 节点旁标注"链式法则自动求导"；梯度下降旁标注"沿梯度反方向走"；Loss 降低旁标注"模型越来越准"
+                  - 配色建议：浅灰背景，节点用浅蓝色圆角矩形，Loss 节点用橙色强调，循环箭头用深灰色，关键说明用小字标注在节点旁
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <ul>
+                    <li><strong>交叉熵</strong>：越小 = 预测越准。公式 <code>-Σ y_i × log(p_i)</code>。MiniMind 中 <code>CrossEntropyLoss</code> 就是它</li>
+                    <li><strong>KL 散度</strong>：衡量两个分布的差异。蒸馏和 RL 中用来约束模型不要跑偏</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 梯度下降 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>梯度与链式法则</h3>
+                <h4>训练能work的数学原理——你不需要手算，但需要直觉</h4>
+                <pre><code class="language-python">import torch
+
+# 梯度：告诉参数"往哪个方向调、调多少"
+w = torch.randn(3, requires_grad=True)
+loss = (w ** 2).sum()     # 前向：计算损失
+loss.backward()            # 反向：自动求梯度
+print(w.grad)              # tensor([2w1, 2w2, 2w3]) → ∂loss/∂w
+
+# 链式法则：复合函数的导数 = 各层导数相乘
+# 这就是"反向传播"的数学基础
+# PyTorch 的 autograd 自动帮你算，你不需要手写</code></pre>
+                <ul>
+                    <li><strong>导数</strong>：函数在某点的变化率。正 = 上升，负 = 下降</li>
+                    <li><strong>梯度</strong>：多维导数，指向函数值增长最快的方向。训练沿梯度的<em>反方向</em>走</li>
+                    <li><strong>链式法则</strong>：复合函数的导数 = 各层导数相乘。反向传播就是链式法则的自动执行</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 自测题 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>学完自测</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>问题 1</h4>
+                        <p><code>nn.Linear(768, 768, bias=False)</code> 有多少参数？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 2</h4>
+                        <p><code>loss.backward()</code> 之后为什么必须 <code>zero_grad()</code>？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 3</h4>
+                        <p><code>torch.no_grad()</code> 节省了什么？为什么推理时用它？</p>
+                    </div>
+                    <div class="card">
+                        <h4>问题 4</h4>
+                        <p><code>x.view(B, -1, 768)</code> 中 <code>-1</code> 是什么意思？</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 学习资源 -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>推荐学习资源</h3>
+                <table>
+                    <thead><tr><th>资源</th><th>适合阶段</th><th>为什么推荐</th></tr></thead>
+                    <tbody>
+                        <tr><td><a href="https://liaoxuefeng.com" target="_blank">廖雪峰 Python 教程</a></td><td>Python 零基础</td><td>简洁实用，1-2 天可读完</td></tr>
+                        <tr><td><a href="https://pytorch.org/tutorials" target="_blank">PyTorch 官方教程</a></td><td>有 Python 基础</td><td>60 分钟入门，直接上手</td></tr>
+                        <tr><td><a href="https://www.bilibili.com/video/BV1ys411472E" target="_blank">3Blue1Brown 线性代数</a></td><td>想直觉理解矩阵</td><td>动画讲解，不枯燥</td></tr>
+                        <tr><td><a href="https://d2l.ai" target="_blank">动手学深度学习</a></td><td>想系统学 DL</td><td>理论 + 代码，PyTorch 版</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>阅读建议</strong>：不需要先学完这些再开始。遇到不懂的随时回来查。最好的学习方式是读 MiniMind 源码 + 查资料，交替进行。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 收尾 -->
+        <section class="slide title-slide">
+            <h1>阶段 0 完成</h1>
+            <p>你已经掌握了读 MiniMind 代码所需的 Python 和 PyTorch 基础</p>
+            <p>下一章：<strong>阶段 1 · Tokenizer 分词器</strong>——文本如何变成模型能理解的数字</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

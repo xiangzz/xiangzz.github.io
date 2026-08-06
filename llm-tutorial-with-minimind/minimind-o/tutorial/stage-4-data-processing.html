@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 4：喂给模型的那一口</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍱</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>喂给模型的那一口</h1>
+            <p>阶段 4 · 全模态训练里最棘手的一环——把三种模态对齐</p>
+        </section>
+
+        <!-- ==================== 开篇 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练数据从哪来</h3>
+                <p>上一章我们拆解了 Thinker-Talker 架构。但模型不会自己学会说话——它得靠数据喂出来。</p>
+                <p>纯文本 LLM 的数据处理简单：一段话切成 token 就完事。但 MiniMind-O 是全模态：一条训练样本里<strong>同时有文字、语音、可能还有图片</strong>，它们长度不同、维度不同、含义不同。怎么把它们塞进同一次训练？</p>
+                <div class="intro-block">
+                    <p>这是全模态训练里最容易被忽视、却最决定成败的一环。本章不讲模型，专讲「数据怎么准备」——你会看到一条样本如何被一步步加工成模型能消化的 9 通道张量。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>一条样本装了什么</h3>
+                <p>训练数据存在 Parquet 文件里，每条样本是一段「对话 + 配套的多模态素材」。一个典型样本：</p>
+                <pre><code class="language-json">{
+  "conversations": [
+    {"role": "user", "content": "你好"},
+    {"role": "assistant", "content": "你好！有什么可以帮你的吗？"}
+  ],
+  "question_audios": ["用户说话的语音字节"],
+  "answer_audios": [120, 450, 890, 23, ...],   // 助手回复的 Mimi 码
+  "image_bytes": null,                          // 这条没图片
+  "ref_audios": [...],                          // 参考音频码（声音克隆用）
+  "spk_emb": [0.12, -0.34, ...]                 // 192 维说话人嵌入
+}</code></pre>
+                <p>六个字段，涵盖了对话内容、用户语音、助手回复的声音、可选的图片、克隆用的音色参考。模型要学的，就是「看到/听到这些输入后，该怎么回复（文字+声音）」。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: 9通道对齐 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：三种模态对齐</h2>
+                <p>这是全章的核心难题。</p>
+                <div class="intro-block">
+                    <p>回想阶段 3：模型的输入是 <code>(9, T)</code> 的 9 通道张量——8 个音频通道 + 1 个文本通道，共享长度 T。但原始数据里，文本有几个 token、音频有几帧，是完全独立的两串数。怎么让它们「对齐」到同一长度 T？这是数据处理的头号任务。</p>
+                </div>
+                <p><strong>📌 本章全部源码锚点：</strong>都在 <code>dataset/omni_dataset.py</code> 的 <code>OmniDataset</code> 类里（第 44 行起）。下面这张地图帮你打开源码知道从哪读起。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📜 源码地图</h3>
+                <p>本章所有概念都能在下表里找到对应的类/方法。打开 <code>dataset/omni_dataset.py</code>，按这张图读源码，每个方法都会「似曾相识」。</p>
+                <table>
+                    <thead><tr><th>类/方法</th><th>行号</th><th>一句话职责</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>OmniDataset.__init__</code></td><td>45-74</td><td>加载 parquet、缓存 tokenizer、注册所有特殊 token 的 id（audio/image/think_end/bos/eos）</td></tr>
+                        <tr><td><code>pre_processing_chat</code></td><td>18-36</td><td>给对话按 20% 概率随机插一句 system prompt</td></tr>
+                        <tr><td><code>post_processing_chat</code></td><td>38-41</td><td>按 20% 概率保留/丢弃空 <code>&lt;think&gt;&lt;/think&gt;</code>，做「带思考/不带思考」混合训练</td></tr>
+                        <tr><td><code>create_chat_prompt</code></td><td>155-176</td><td>把对话渲染成文本 prompt，按概率决定 audio/image 占位符的位置</td></tr>
+                        <tr><td><code>generate_text_labels</code></td><td>179-197</td><td>两步法：先用 bos/eos 子串扫描标出每个 assistant 区间，再设为真实 label</td></tr>
+                        <tr><td><code>apply_scheduled_sampling</code></td><td>199-209</td><td>只在「要算损失」的位置按 5% 概率把输入替换成随机 token</td></tr>
+                        <tr><td><code>augment_wav</code></td><td>89-121</td><td>波形增强：变速/加噪/音量/掩蔽/低通/混响/粉噪，7 种按概率叠加</td></tr>
+                        <tr><td><code>augment_mel</code></td><td>123-136</td><td>频谱增强：SpecAugment 的频率掩蔽 + 时间掩蔽</td></tr>
+                        <tr><td><code>OmniDataset.__getitem__</code></td><td>211-329</td><td>核心：把一条样本加工成 9 通道张量 + 两份标签（本章主线）</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>阅读顺序建议</strong>：先扫 <code>__init__</code> 弄清有哪些特殊 token → 跳到 <code>__getitem__</code> 看整体流程 → 再回头细看它调用的 <code>create_chat_prompt</code> / <code>generate_text_labels</code> / <code>apply_scheduled_sampling</code>。本章后面的每一页都会精确对应到这张图里的某一行。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关键洞察：共享时间步</h3>
+                <p>解决方案很巧妙：<strong>让文本 token 和音频码本共享同一根时间轴</strong>。在每个时间步上，既有这个位置的文本 token（通道 8），也有这个位置的 8 层音频码（通道 0-7）。</p>
+                <div class="ai-diagram">
+                  <h4>图：9 通道张量——文本与音频共享时间轴</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个 9 行 × T 列的网格，表示 9 通道张量 (9, T)
+                  - 第 0-7 行（上方 8 行，浅紫色）：分别标注「码本层 0」到「码本层 7」，每行是一串小方块，方块里填整数（音频码）
+                  - 第 8 行（最下方，浅蓝色）：标注「文本通道」，方块里填文字 token（如 &lt;|im_start|&gt;, system, 你好, ...）
+                  - 所有 9 行的列数（宽度）相同，强调「共享同一时间轴 T」
+                  - 关键标注：左侧用大括号标「8 层音频（通道0-7）」和「文本（通道8）」；底部标注「同一列 = 同一时间步，文本 token 和它对应的声音码本对齐」
+                  - 配色建议：浅灰背景，音频通道浅紫色，文本通道浅蓝色，方块边框深灰色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>这样做的好处：模型在每个时间步都<strong>同时看到文字和它的声音</strong>，能从数据中学到「这个词对应什么样的声音」。这正是全模态对齐的根基。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>输入目标错位：左移一位</h3>
+                <p>语言模型的训练目标是「根据前文预测下一个词」。所以输入和目标要<strong>错开一位</strong>：输入是第 0~T-2 步，目标是第 1~T-1 步。</p>
+                <pre><code class="language-plaintext">位置:    0      1      2      3
+输入:  [你好]  [有什么][能帮的] [...]     ← 左移，预测用
+目标:  [有什么][能帮的][的吗?]  [&lt;end&gt;]  ← 右移，监督用</code></pre>
+                <p>9 个通道都做同样的错位。这样一次前向，每个位置都在「预测下一个 token 和下一个音频码」。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📜 真实源码：错位怎么切</h3>
+                <p>教程里画的「左移/右移」很直观，但真实代码没有两个独立数组——它是<strong>从已经构造好的目标数组里切前缀</strong>当输入。这是最反直觉的一步，看懂它就看懂了 9 通道对齐。</p>
+                <p><strong>📌 对应源码：</strong><code>omni_dataset.py</code> 的 <code>OmniDataset.__getitem__</code> 末尾（第 320-325 行）</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程简化版</h4>
+                        <pre><code class="language-python"># 概念上：
+#   输入 = 序列[0:T-1]   （左移一位）
+#   目标 = 序列[1:T]     （右移一位）
+# 文本和音频各做一次
+X_text  = input_ids[:-1]
+text_labels  = text_labels[1:]
+X_audio = audio_codes[:, :-1]
+audio_labels = audio_codes[:, 1:]</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 omni_dataset.py:320-325</h4>
+                        <pre><code class="language-python"># 构造9路输入：input_ids = (9, T) = 8路audio + 1路text
+# 关键反直觉点：音频输入 X_audio 取自
+#   音频目标数组 Y_audio_layers 的 [:-1]
+X_audio = torch.tensor(
+    [layer[:-1] for layer in Y_audio_layers],
+    dtype=torch.long)                       # (8, T-1)
+X_text  = torch.tensor(input_ids[:-1],
+    dtype=torch.long)                       # (T-1,)
+input_ids = torch.cat(
+    (X_audio, X_text.unsqueeze(0)), dim=0)  # (9, T-1)
+
+text_labels = torch.tensor(text_labels[1:],
+    dtype=torch.long)                       # (T-1,)
+audio_labels = torch.tensor(
+    [layer[1:] for layer in audio_labels],
+    dtype=torch.long)                       # (8, T-1)</code></pre>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>反直觉关键点</strong>：音频输入侧 <code>X_audio</code> 塞的<strong>不是「干净的输入码」</strong>，而是<strong>音频目标数组 <code>Y_audio_layers</code> 切掉最后一位的前缀</strong>（<code>[:-1]</code>）。换句话说，<strong>输入侧塞的是「真实音频目标码」往前挪一格</strong>，再叠上一份 <code>[1:]</code> 的目标。这就是「预测下一个音频码」的本质实现——不需要再单独构造一份输入，目标的「错位副本」就是输入。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📜 真实源码：概率分支</h3>
+                <p>在错位之前，输入序列是怎么拼出来的？答案在 <code>create_chat_prompt</code>——它不只是渲染对话，还按多种<strong>概率分支</strong>随机决定 audio / image 占位符的位置，让模型见过各种排布。</p>
+                <p><strong>📌 对应源码：</strong><code>omni_dataset.py</code> 的 <code>OmniDataset.create_chat_prompt()</code>（第 155-176 行）+ <code>__getitem__</code> 的随机轮次截断（第 220-229 行）</p>
+                <p><strong>📜 真实源码：omni_dataset.py 第 161-173 行</strong></p>
+                <pre><code class="language-python"># 最后一个 user 的音频占位符按 4 种概率分支放置
+if role == 'user' and is_last_user(idx) and audio_features_length > 0:
+    ap = self.audio_token * audio_features_length      # 拼出 N 个 &lt;|audio_pad|&gt;
+    r = random.random()
+    if   r &lt; 0.4: content = ap                         # 纯 audio（40%）
+    elif r &lt; 0.6: content = content                   # 纯 text（20%）
+    elif r &lt; 0.8: content = ap + '\n\n' + content      # audio 在前 text 在后（20%）
+    else:          content = content + '\n\n' + ap      # text 在前 audio 在后（20%）
+# &lt;image&gt; 占位符也按 4 种位置随机插入
+if '&lt;image&gt;' in content:
+    r = random.random()
+    if   r &lt; 0.2: content = '&lt;image&gt;\n'   + content.replace('&lt;image&gt;', '').strip()
+    elif r &lt; 0.4: content = '&lt;image&gt;\n\n' + content.replace('&lt;image&gt;', '').strip()
+    elif r &lt; 0.6: content = content.replace('&lt;image&gt;', '').strip() + '\n'   + '&lt;image&gt;'
+    else:          content = content.replace('&lt;image&gt;', '').strip() + '\n\n' + '&lt;image&gt;'</code></pre>
+                <p>此外还有<strong>随机轮次截断</strong>（多轮对话时，随机选一轮为终点往前回退试长度）：</p>
+                <p><strong>📜 真实源码：omni_dataset.py 第 220-229 行</strong></p>
+                <pre><code class="language-python"># 随机截断到某一轮（每轮=user+assistant）
+asst_indices = [i for i, t in enumerate(conversations) if t['role'] == 'assistant']
+if len(asst_indices) > 1:
+    rand_idx = random.randint(0, len(asst_indices) - 1)
+    # 从随机轮次开始，向前回退直到长度安全
+    for i in range(rand_idx, -1, -1):
+        conversations = conversations[:asst_indices[i] + 1]
+        test_prompt = self.create_chat_prompt(conversations, 0)
+        if len(self.tokenizer(test_prompt).input_ids) + 100 &lt; self.max_length:
+            break</code></pre>
+                <div class="intro-block">
+                    <p><strong>这些随机性为什么重要</strong>：同一条样本，每次被采样时占位符位置、保留几轮对话都可能不同。模型必须学到「不管 audio 放前面还是后面、不管截到第几轮，都能理解语义」——这种位置鲁棒性是全模态模型在真实推理时面对任意输入的前提。配合 <code>pre_processing_chat</code>（20% 加 system prompt）和 <code>post_processing_chat</code>（20% 保留空 think），整条样本的呈现形式高度随机化。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 标签 mask ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：屏蔽与损失</h2>
+                <p>不是序列里每个位置都该参与训练。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>用 -100 屏蔽无关位置</h3>
+                <p>一段对话里有 system 提示、有用户的话、有助手的历史回复、还有助手这次的回复。模型<strong>只该学「这次怎么回复」</strong>——前面的都是上下文，不是要学的内容。</p>
+                <p>做法：把不该计算损失的位置，标签设成 <strong>-100</strong>。PyTorch 的 CrossEntropyLoss 见到 -100 就自动跳过，不算这些位置的损失。</p>
+                <div class="ai-diagram">
+                  <h4>图：标签 mask——只在最后回复处计算损失</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：上下两行对照，上行是输入序列的每个 token，下行是对应的标签
+                  - 上行（输入）：[&lt;im_start&gt;, system, 你是助手, &lt;im_end&gt;, &lt;im_start&gt;, user, 你好, &lt;im_end&gt;, &lt;im_start&gt;, assistant, 你好！, &lt;im_end&gt;]
+                  - 下行（标签）：system 和 user 部分（前 9 个位置）全部标注 -100 且用浅红色「不计算损失」；assistant 的回复部分（最后 3 个位置：你好！、&lt;im_end&gt;）标注真实标签且用浅绿色「计算损失」
+                  - 上下用竖线对齐每个位置
+                  - 关键标注：在浅红色区域标注「上下文，不是要学的内容」；在浅绿色区域标注「只在这里算损失，教模型『根据历史生成这次回复』」；右侧标注「-100 是 PyTorch CrossEntropyLoss 的默认忽略值」
+                  - 配色建议：浅灰背景，输入行浅蓝色，-100 标签浅红色，真实标签浅绿色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p><strong>音频侧也类似</strong>：在 assistant 开始说话（<code>\n\n</code> 标记，叫 <code>think_end</code>）之前，音频标签全是 -100；之后才是真正要学的音频码。这保证了模型只在「该回复的时间段」学发声。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📜 真实源码：两步法</h3>
+                <p>「只训最后一个 assistant」不是一步到位的——它分两步完成，第二步藏在 <code>__getitem__</code> 里。这是源码里最容易看漏的细节。</p>
+                <p><strong>📌 对应源码：</strong><code>omni_dataset.py</code> 的 <code>OmniDataset.generate_text_labels()</code>（第 179-197 行）+ <code>__getitem__</code>（第 277-280 行）</p>
+                <p><strong>📜 真实源码：omni_dataset.py 第 179-197 行</strong></p>
+                <pre><code class="language-python">def generate_text_labels(self, input_ids):
+    labels = [-100] * len(input_ids)
+    ranges = []
+    i = 0
+    while i &lt; len(input_ids):
+        # 第一步：用 bos_id（'{bos}assistant\n' 的编码）
+        #         子串扫描，定位每个 assistant 区间的起点
+        if input_ids[i:i + len(self.bos_id)] == self.bos_id:
+            start = i + len(self.bos_id)
+            end = start
+            #         再用 eos_id 子串扫描，找到区间终点
+            while end &lt; len(input_ids):
+                if input_ids[end:end + len(self.eos_id)] == self.eos_id:
+                    break
+                end += 1
+            ranges.append((start, end))
+            # 把 [start, end+eos] 设为真实 label（先全部保留）
+            for j in range(start, min(end + len(self.eos_id), self.max_length)):
+                labels[j] = input_ids[j]
+            i = end + len(self.eos_id) if end &lt; len(input_ids) else len(input_ids)
+        else:
+            i += 1
+    return labels, ranges   # ranges = [(s0,e0),(s1,e1),...] 每个assistant一段</code></pre>
+                <p>注意：到这里 <code>labels</code> 把<strong>所有 assistant 区间</strong>都设成了真实 label。真正的「只留最后一个」发生在 <code>__getitem__</code> 里——把 <code>ranges[:-1]</code>（除最后一轮以外的所有 assistant）<strong>重新 mask 回 -100</strong>：</p>
+                <p><strong>📜 真实源码：omni_dataset.py 第 277-280 行</strong></p>
+                <pre><code class="language-python"># 生成labels（只训练最后一个assistant）
+text_labels, assistant_ranges = self.generate_text_labels(input_ids)
+for start, end in assistant_ranges[:-1]:          # ← 关键：[:-1] 排除最后一轮
+    mask_end = min(end + len(self.eos_id), self.max_length)
+    text_labels[start:mask_end] = [-100] * (mask_end - start)   # 重新 mask 回 -100</code></pre>
+                <div class="intro-block">
+                    <p><strong>为什么要分两步</strong>？第一步必须先标出<strong>所有</strong> assistant 区间，因为音频目标的精密构造（下一页）需要用到「最后一个 assistant 的起始位置 <code>assistant_start</code>」来定位。但文本 loss 只想要最后一个，所以第二步再把非最后一轮的 label 重新打回 -100。两步法同时满足了「音频要精确对位」和「文本只训最后一段」两个需求。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📜 真实源码：8 层目标</h3>
+                <p>音频目标不是简单填进去的——它要处理 8 层拆解、think_end 搜索、spk 占位、ref 右对齐、按层偏移 5 件事。这是 <code>__getitem__</code> 里最复杂的一段。</p>
+                <p><strong>📌 对应源码：</strong><code>omni_dataset.py</code> 的 <code>OmniDataset.__getitem__</code>（第 282-318 行）</p>
+                <p><strong>📜 真实源码：omni_dataset.py 第 282-318 行</strong></p>
+                <pre><code class="language-python"># 生成8层audio targets（只填充最后一个assistant）
+Y_audio_layers = [[self.audio_pad_token] * self.max_length for _ in range(8)]
+audio_labels   = [[-100] * self.max_length for _ in range(8)]
+if assistant_ranges and last_audio_codes:
+    assistant_start, assistant_end = assistant_ranges[-1]
+    # 1) 在 assistant_start 起 50 token 窗口内搜 think_end_ids
+    #    （跳过空 &lt;think&gt;&lt;/think&gt; 后的真实回复起点）
+    for pos in range(assistant_start, min(assistant_end, assistant_start + 50)):
+        if input_ids[pos:pos + len(self.think_end_ids)] == self.think_end_ids:
+            assistant_start = pos + len(self.think_end_ids)
+            break
+    # 2) spk_emb 占位 + ref_codes 右对齐（50% 概率 drop ref）
+    has_spk = bool(spk_emb_raw)
+    has_ref = bool(ref_audios) and random.random() > 0.5
+    spk_reserve = 1 if has_spk else 0
+    if has_ref:
+        ref_codes = [[] for _ in range(8)]
+        for i in range(0, len(ref_audios) - 7, 8):
+            for j in range(8): ref_codes[j].append(ref_audios[i + j])
+        ref_len = len(ref_codes[0])
+        ref_start = max(spk_reserve, assistant_start - ref_len)
+        for layer_idx in range(8):
+            codes = ref_codes[layer_idx][-(assistant_start - ref_start):] if ref_len > (assistant_start - ref_start) else ref_codes[layer_idx]
+            for i, code in enumerate(codes):
+                Y_audio_layers[layer_idx][ref_start + i] = code   # ref 只进 Y，不进 label
+    else:
+        ref_start = assistant_start
+    if has_spk and ref_start > 0:
+        spk_pos = ref_start - 1
+        for layer_idx in range(8):
+            Y_audio_layers[layer_idx][spk_pos] = self.audio_spk_token   # 2051
+    # 3) target codes 填到 assistant_start 之后（真正参与 loss 的部分）
+    for layer_idx in range(8):
+        codes = last_audio_codes[layer_idx]
+        start_pos = assistant_start + layer_idx + 1              # ← 按层偏移！
+        for i, code in enumerate(codes):
+            if start_pos + i &lt; self.max_length:
+                Y_audio_layers[layer_idx][start_pos + i] = code  # 进输入侧
+                audio_labels[layer_idx][start_pos + i] = code    # 同时进目标侧</code></pre>
+                <div class="intro-block">
+                    <p><strong>5 个关键细节逐条对照</strong>：</p>
+                    <ul>
+                        <li><strong>① 8 层拆解</strong>：answer_audios 是一维数组，每 8 个连续整数是一帧的 8 个码本层，按 <code>for j in range(8)</code> 拆成 8 路。</li>
+                        <li><strong>② 50 token 窗口搜 think_end</strong>：assistant 开头可能有空 <code>&lt;think&gt;&lt;/think&gt;</code>，要在前 50 token 内找到 <code>&lt;/think&gt;\n\n</code>，把 <code>assistant_start</code> 推到真实回复起点。</li>
+                        <li><strong>③ spk_emb 占位</strong>：说话人嵌入占 <code>audio_spk_token</code>(2051) 一个位置，放在 ref 之前。</li>
+                        <li><strong>④ ref_audios 50% drop + 右对齐</strong>：克隆参考音以 50% 概率丢弃，保留时右对齐塞进 <code>assistant_start</code> 之前；ref 只写进 <code>Y_audio_layers</code>（输入侧），<strong>不写进 audio_labels</strong>（不算损失）。</li>
+                        <li><strong>⑤ 按层偏移</strong>：真正 target codes 按 <code>start_pos = assistant_start + layer_idx + 1</code> 填充，第 0 层比第 7 层早开始 7 个位置——这是「错位」在 8 层上的体现。</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 数据增强 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：为何搞坏数据</h2>
+                <p>数据增强听起来反直觉，却是防止模型变傻的关键。</p>
+                <div class="intro-block">
+                    <p>如果训练数据全是干净清晰的录音，模型会「死记」这些干净样本，一到真实环境（有噪声、有口音、语速不同）就抓瞎。数据增强就是<strong>主动给训练数据加各种「脏」</strong>，逼模型学会在乱七八糟的输入下也能工作。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>波形增强：模拟真实声音</h3>
+                <p>原始音频波形会被随机施加这些变换，每一种都模拟一种真实场景：</p>
+                <p><strong>📌 对应源码：</strong><code>omni_dataset.py</code> 的 <code>OmniDataset.augment_wav()</code>（第 89-121 行）</p>
+                <table>
+                    <thead><tr><th>增强</th><th>模拟的场景</th></tr></thead>
+                    <tbody>
+                        <tr><td>随机变速（0.7~1.6 倍）</td><td>说话快慢不同的人</td></tr>
+                        <tr><td>高斯噪声</td><td>录音环境的底噪</td></tr>
+                        <tr><td>音量缩放</td><td>话筒远近、说话大小声</td></tr>
+                        <tr><td>时间掩蔽（置零一小段）</td><td>信号丢包、短暂中断</td></tr>
+                        <tr><td>低通滤波</td><td>电话音质（高频丢失）</td></tr>
+                        <tr><td>混响（指数衰减）</td><td>空旷房间的回声</td></tr>
+                    </tbody>
+                </table>
+                <p>这些变换<strong>按概率随机施加</strong>，所以同一段语音每次喂给模型都不太一样——模型见过的「变体」越多，泛化能力越强。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>频谱增强：在特征层面动刀</h3>
+                <p>波形增强后，还要提取 fbank 特征（阶段 0 提过）。在频谱上还有两种增强：</p>
+                <p><strong>📌 对应源码：</strong><code>omni_dataset.py</code> 的 <code>OmniDataset.augment_mel()</code>（第 123-136 行）——波形增强在 <code>augment_wav</code>，频谱增强在这里，两者都在 <code>load_audio_inputs</code>（第 138-146 行）里依次调用：先 <code>augment_wav(wav)</code> 再提 fbank 再 <code>augment_mel(fbank)</code>。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>频率掩蔽</h4>
+                        <p>随机遮蔽几个频率 bin。</p>
+                        <p>防止模型过度依赖某个特定频段。</p>
+                    </div>
+                    <div class="column">
+                        <h4>时间掩蔽</h4>
+                        <p>随机遮蔽几帧。</p>
+                        <p>提升对不完整输入的容错。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>一句话理解数据增强</strong>：它制造了「同一个意思、不同表现」的大量样本，让模型学到的是「本质」而非「表面」。这是小数据集训练出能用模型的核心技巧。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>计划采样</h3>
+                <h4>Scheduled Sampling：偶尔喂「错答案」</h4>
+                <p>还有一个更反直觉的增强：以 5% 的概率，把输入序列里的某些 token <strong>随机替换</strong>成别的 token。</p>
+                <div class="ai-diagram">
+                  <h4>图：Scheduled Sampling——故意制造错误输入</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个分叉流程图，展示正常输入和被随机替换的输入两条路径
+                  - 起点：正常输入序列 [100, 450, 890, 23, ...]
+                  - 95% 概率路径（绿色）：保持不变 → 模型学习「从正确历史预测」
+                  - 5% 概率路径（橙色）：随机替换成 [387, 12, 1500, 2048, ...] → 模型学习「从错误历史中恢复」
+                  - 两条路径汇合到「送入模型训练」
+                  - 关键标注：在橙色路径旁画一个小类比图——「老师偶尔故意写错答案，训练学生纠错能力」；底部标注「让模型不依赖『历史一定正确』，提升推理时的鲁棒性」
+                  - 配色建议：浅灰背景，正常路径绿色，替换路径橙色，序列方块浅蓝色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>推理时模型是自回归的——每一步的输出会喂回下一步当输入。如果训练时它只见过的「完美历史」，一旦自己生成时出点小错，错误就会滚雪球。Scheduled Sampling 提前让模型练过「从错误中恢复」，推理时就更稳。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>📜 真实源码：非无脑替换</h3>
+                <p>教程里说「5% 概率随机替换」是简化。真实代码有三个<strong>保护性条件</strong>，避免破坏关键结构。</p>
+                <p><strong>📌 对应源码：</strong><code>omni_dataset.py</code> 的 <code>OmniDataset.apply_scheduled_sampling()</code>（第 199-209 行）</p>
+                <p><strong>📜 真实源码：omni_dataset.py 第 199-209 行</strong></p>
+                <pre><code class="language-python">def apply_scheduled_sampling(self, input_ids, audio_labels, text_labels):
+    """Scheduled Sampling: 用随机值替代部分GT，让模型学会从错误历史中恢复"""
+    if self.scheduled_sampling_prob &lt;= 0:
+        return input_ids
+    # 条件①：只在 audio_labels != -100 的位置（即「要算损失」的位置）替换
+    # 条件②：且随机命中 scheduled_sampling_prob(默认0.05)
+    audio_mask = (audio_labels != -100).any(dim=0) & (torch.rand(input_ids.size(1)) &lt; self.scheduled_sampling_prob)
+    for i in range(8):
+        # 条件③：替换值域是 [0, audio_vocab_size=2112)，不是任意 token
+        input_ids[i] = torch.where(audio_mask, torch.randint(0, self.audio_vocab_size, input_ids[i].shape), input_ids[i])
+    # 保护 image token 的连续性：文本侧排除 image_token_id，且同样只在 label!=-100 + 概率命中处替换
+    text_mask = (text_labels != -100) & (input_ids[8] != self.image_token_id) & (torch.rand(input_ids.size(1)) &lt; self.scheduled_sampling_prob)
+    input_ids[8] = torch.where(text_mask, torch.randint(0, self.text_vocab_size, input_ids[8].shape), input_ids[8])
+    return input_ids</code></pre>
+                <div class="intro-block">
+                    <p><strong>三个反直觉点</strong>：</p>
+                    <ul>
+                        <li><strong>不是无脑随机替换</strong>：只在 <code>audio_labels != -100</code> 的位置替换——也就是<strong>只在「模型本来要预测音频码」的那些时间步</strong>动手。上下文区域（label=-100）保持原样。</li>
+                        <li><strong>文本侧保护 image token</strong>：图像占位符 <code>image_token_id</code> 是连续 64 个，一旦打散模型就找不到图了，所以额外排除 <code>input_ids[8] != self.image_token_id</code>。</li>
+                        <li><strong>替换值域受限</strong>：音频替换值落在 <code>[0, 2112)</code>（2048 个 mimi 码 + 64 特殊 token），文本落在 <code>[0, len(tokenizer))</code>——不会替换出非法 token。</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: collate ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：长短样本凑一锅</h2>
+                <p>训练是按 batch 进行的，但每个样本长度不同。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>collate_fn</h3>
+                <h4>对齐与填充</h4>
+                <p>一个 batch 里，样本 A 的对话有 50 步，样本 B 有 80 步，样本 C 没有图片……直接堆成张量会维度不匹配。<code>collate_fn</code> 就是来解决这个的：</p>
+                <ul>
+                    <li><strong>文本/音频序列</strong>：pad 到 batch 内最长那个的长度，凑成统一形状</li>
+                    <li><strong>图片</strong>：所有样本都堆起来——没图片的样本在 dataset 里就已填成 dummy 全零图，保证 batch 里每个位置都有图张量（见下页源码）</li>
+                    <li><strong>音频 fbank 特征</strong>：同样 pad 到最长</li>
+                </ul>
+                <pre><code class="language-plaintext"># 一个 batch 的 3 个样本
+样本1: 文本 50 步, 有图片
+样本2: 文本 80 步, 无图片
+样本3: 文本 60 步, 有图片
+
+# collate 之后
+input_ids: (3, 9, 80)     ← 全部 pad 到 80 步
+pixel_values: (3, 3, 256, 256)  ← 样本2 是 dummy 全零图，但形状一致，batch 索引对齐</code></pre>
+                <div class="intro-block">
+                    <p>padding 填的是占位符（如 <code>&lt;|audio_pad|&gt;</code> 或 <code>-100</code>），这些位置不会被计算损失——它们只是为了让张量形状规整。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>dummy 占位，非跳过</h3>
+                <p><strong>修正</strong>：之前为便于理解讲成「没图片的跳过」，真实实现不是跳过——而是<strong>返回一个全零的 dummy 张量</strong>，保证 batch 里每个样本的键结构（key/shape）完全一致。这样 collate 时直接 stack 不会因为缺键报错。</p>
+                <p><strong>📌 对应源码：</strong><code>omni_dataset.py</code> 的 <code>OmniDataset.__getitem__</code>（第 249-254 行）</p>
+                <p><strong>📜 真实源码：omni_dataset.py 第 249-254 行</strong></p>
+                <pre><code class="language-python"># 混合训练时，无音频样本返回dummy tensor保持batch索引尽可能对齐 (SenseVoice: T x 560)
+if audio_inputs is None and self.audio_processor:
+    audio_inputs = torch.zeros(1, 1, 560)          # ← 无音频 → dummy 全零
+    audio_len = 0
+if pixel_values is None and self.vision_processor:
+    pixel_values = {'pixel_values': torch.zeros(1, 3, 256, 256)}   # ← 无图像 → dummy 全零</code></pre>
+                <div class="intro-block">
+                    <p><strong>为什么不跳过而用 dummy</strong>：collate_fn 要把 batch 里所有样本的 <code>pixel_values</code> / <code>audio_inputs</code> 堆成一个大张量（<code>torch.stack</code>）。如果有的样本返回 <code>None</code>、有的返回张量，<code>stack</code> 会直接报错。用 dummy 全零张量占位，<strong>形状 (1,3,256,256) 和真实图一致</strong>，stack 时维度对齐；而全零的输入不会激活任何有意义特征，对训练无害。这才是「batch 键结构一致」的正确做法。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 + 排错 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：理解 9 通道</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>填空与思考</h3>
+                        <p>一段助手回复「你好呀！」对应的训练样本，文本通道是 <code>[你好, 呀, ！, &lt;|im_end|&gt;]</code>。请回答：</p>
+                        <ol>
+                            <li>对应的音频通道为什么是 <strong>8 层</strong>而不是 1 层？</li>
+                            <li>如果文本标签是 <code>[你好, 呀, ！, &lt;|im_end|&gt;]</code>，而前面 system+user 部分的标签应该是什么值？为什么？</li>
+                            <li>为什么要对波形做「加噪声、变速」这种「搞坏」数据的操作？</li>
+                        </ol>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <p>1) 因为 Mimi 把音频编码成 8 层残差码本（阶段 0、3 讲过），8 层从粗到细表达声音，少一层就丢信息。2) 前面部分标签全是 -100。因为那些是上下文不是要学的内容，-100 让 CrossEntropyLoss 跳过，模型只学「最后这段回复」。3) 数据增强。真实环境的语音有噪声、语速差异，只学干净样本模型会过拟合、一到真实场景就抓瞎。增强逼模型学到本质而非表面。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见困惑排解</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>「音频码为什么是交错排列的？」</h4>
+                        <p>answer_audios 是一维数组，每 8 个连续整数属于 8 个码本层（一帧）。解析时按 8 个一组切开，还原成 (8, T) 的形状。</p>
+                    </div>
+                    <div class="card">
+                        <h4>「-100 这个数有特殊含义吗？」</h4>
+                        <p>没有数学特殊性，纯粹是 PyTorch 的约定——CrossEntropyLoss 的 <code>ignore_index</code> 默认就是 -100。换成别的负数也行，但约定俗成用 -100。</p>
+                    </div>
+                    <div class="card">
+                        <h4>「没图片的样本怎么办？」</h4>
+                        <p>不是跳过，而是填一张 <strong>dummy 全零图</strong> <code>torch.zeros(1,3,256,256)</code>。因为 collate_fn 要用 <code>torch.stack</code> 把整个 batch 的图张量堆起来，缺了会报错；全零图形状一致、stack 对齐，且全零输入不会激活有意义特征，对训练无害。</p>
+                    </div>
+                    <div class="card">
+                        <h4>「增强会不会把数据搞得太乱学不会？」</h4>
+                        <p>增强强度是调过的（概率、幅度都有限制），目的是「增加多样性」而非「毁掉信号」。太强确实会学不会，所以参数要克制。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关键要点回顾</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>9 通道对齐</h4>
+                        <p>8 层音频 + 1 层文本共享同一时间轴，让模型学到「词对应什么声音」。</p>
+                    </div>
+                    <div class="card">
+                        <h4>输入目标错一位</h4>
+                        <p>输入左移、目标右移，实现「预测下一个 token/音频码」的训练目标。</p>
+                    </div>
+                    <div class="card">
+                        <h4>-100 屏蔽</h4>
+                        <p>只在最后一段 assistant 回复处算损失，前面的上下文用 -100 跳过。</p>
+                    </div>
+                    <div class="card">
+                        <h4>数据增强</h4>
+                        <p>波形/频谱增强模拟真实环境，Scheduled Sampling 训练「纠错能力」，防过拟合。</p>
+                    </div>
+                    <div class="card">
+                        <h4>collate 对齐</h4>
+                        <p>pad 到 batch 内最长，无图/无音频样本用 dummy 全零占位，让长短不一的样本凑成规整张量。</p>
+                    </div>
+                    <div class="card">
+                        <h4>全模态对齐的根基</h4>
+                        <p>所有这些处理，都是为了让「文字、声音、图像」能在同一次训练里被模型同时学到。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide title-slide">
+            <h1>数据已经备好</h1>
+            <p>接下来看它怎么被「喂」进训练循环</p>
+            <p>下一章：<strong>阶段 5 · 训练流程</strong>——三阶段流水线，从会写到会说</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

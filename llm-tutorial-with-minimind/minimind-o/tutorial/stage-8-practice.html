@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 8：把知识练成手感</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛠️</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>把知识练成手感</h1>
+            <p>阶段 8 · 八个动手实践，从体验到创造</p>
+        </section>
+
+        <!-- ==================== 开篇 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>看懂不等于会做</h3>
+                <p>前七章你「理解」了 MiniMind-O 的方方面面。但理解是脆弱的——过两周可能就忘。真正牢固的知识，来自<strong>亲手敲过、跑过、改过、调过</strong>。</p>
+                <p>这一章是练习册。八个实践按难度递增，从「跑通推理」到「训练自己的模型」。每个都有明确目标、可操作步骤、该观察什么、可能踩什么坑。</p>
+                <div class="intro-block">
+                    <p>建议至少完成前三组（难度 ★）。它们验证你对核心概念的理解。后两组（★★★）是挑战，做完你就有能力独立扩展这个项目了。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>八关难度地图</h3>
+                <table>
+                    <thead><tr><th>难度</th><th>实践</th><th>你将获得</th></tr></thead>
+                    <tbody>
+                        <tr><td>★☆☆</td><td>1. 跑通推理</td><td>亲手让模型说话</td></tr>
+                        <tr><td>★☆☆</td><td>2. 探索 Tokenizer</td><td>看文字怎么变数字</td></tr>
+                        <tr><td>★☆☆</td><td>3. 改模型配置</td><td>理解参数量从哪来</td></tr>
+                        <tr><td>★★☆</td><td>4. 可视化注意力</td><td>看见模型「在看哪」</td></tr>
+                        <tr><td>★★☆</td><td>5. 跟踪张量形状</td><td>在脑子里跑通 forward</td></tr>
+                        <tr><td>★★☆</td><td>6. 调采样参数</td><td>驾驭模型的「性格」</td></tr>
+                        <tr><td>★★★</td><td>7. 小数据训练</td><td>跑完整训练流水线</td></tr>
+                        <tr><td>★★★</td><td>8. 搭 Web Demo</td><td>做个能用的产品</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 入门组 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>入门组：建立直观感受</h2>
+                <p>难度 ★☆☆——先让模型在你手里活起来。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实践 1：跑通六种推理</h3>
+                <p><strong>目标</strong>：亲手跑完六种模式，确认模型各项能力都正常。</p>
+                <pre><code class="language-bash">python eval_omni.py --mode 0 --prompt_lang 1    # 文本对话
+python eval_omni.py --mode 2 --prompt_lang 1    # 语音对话
+python eval_omni.py --mode 3                    # 声音克隆
+python eval_omni.py --mode 4                    # 图像理解
+python eval_omni.py --mode -1                   # 全部串跑</code></pre>
+                <p><strong>该观察什么</strong>：每跑完一种，去 <code>output/</code> 看生成的 mp3 能不能播、内容对不对。文本对话应该有连贯的回复，声音克隆应该能听出不同音色。</p>
+                <div class="intro-block">
+                    <p><strong>这一关的价值</strong>：把阶段 1 和阶段 6 的命令变成肌肉记忆。之后任何实验，你都能快速让模型跑起来看效果。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实践 2：探索分词器</h3>
+                <h4>拆开 Tokenizer 看个究竟</h4>
+                <p><strong>目标</strong>：亲眼看到一段文字如何被切成 token、变成数字、再还原。</p>
+                <pre><code class="language-python">from transformers import AutoTokenizer
+tok = AutoTokenizer.from_pretrained("./model")
+
+text = "你好，世界！Hello World!"
+ids = tok.encode(text)
+print("Token IDs:", ids)
+print("切分:", tok.convert_ids_to_tokens(ids))
+print("还原:", tok.decode(ids))
+
+# 看特殊 token
+print(f"BOS={tok.bos_token}({tok.bos_token_id}) EOS={tok.eos_token}({tok.eos_token_id})")
+
+# 构造一个对话 prompt
+msgs = [{"role": "user", "content": "你好"}]
+print(tok.apply_chat_template(msgs, tokenize=False))</code></pre>
+                <p><strong>该观察什么</strong>：中文是几个字一个 token？英文呢？emoji 呢？<code>apply_chat_template</code> 输出里的 <code>&lt;|im_start|&gt;</code> 长什么样？</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实践 3：改改配置</h3>
+                <h4>参数量怎么变</h4>
+                <p><strong>目标</strong>：直观感受 <code>hidden_size</code>、层数对模型规模的影响。</p>
+                <pre><code class="language-python">from model.model_minimind import MiniMindConfig, MiniMindForCausalLM
+
+configs = [
+    ("tiny",  MiniMindConfig(hidden_size=256, num_hidden_layers=4)),
+    ("small", MiniMindConfig(hidden_size=512, num_hidden_layers=6)),
+    ("base",  MiniMindConfig(hidden_size=768, num_hidden_layers=8)),
+]
+for name, cfg in configs:
+    model = MiniMindForCausalLM(cfg)
+    params = sum(p.numel() for p in model.parameters()) / 1e6
+    print(f"{name}: {params:.1f}M 参数")</code></pre>
+                <p><strong>该观察什么</strong>：tiny/small/base 参数量差几倍？把 hidden_size 翻倍，参数量是翻倍还是翻四倍（提示：线性层参数是 in×out）？</p>
+                <div class="intro-block">
+                    <p><strong>这一关的价值</strong>：理解模型规模不是玄学。下次看到「7B 模型」「13B 模型」，你能大致推算它的 hidden_size 和层数。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 进阶组 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>进阶组：看见模型的内部</h2>
+                <p>难度 ★★☆——把黑盒拆开，观察它的工作过程。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实践 4：可视化注意力</h3>
+                <p><strong>目标</strong>：用热力图看到模型在读每个词时，关注了哪些其他词。</p>
+                <p><strong>步骤</strong>：在 <code>Attention.forward</code> 里加一行，把注意力权重存下来；跑一次推理；用 matplotlib 画热力图。</p>
+                <pre><code class="language-python"># 1. 在 Attention.forward 里加一行（保存权重）
+self.last_attn_weights = attn_weights   # (B, heads, T, T)
+
+# 2. 推理后取出某一层某一头
+attn = model.model.layers[0].self_attn.last_attn_weights[0, 0].cpu().numpy()
+
+# 3. 画热力图
+import seaborn as sns, matplotlib.pyplot as plt
+sns.heatmap(attn, cmap='YlOrRd')
+plt.savefig("attention.png")</code></pre>
+                <p><strong>该观察什么</strong>：上三角是不是空的（因果掩码）？浅层是不是更关注相邻词（局部），深层是不是更关注语义相关的词？</p>
+                <div class="warning">
+                    <p><strong>注意</strong>：保存注意力权重会增加内存占用，只在调试时加，调试完记得删掉。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实践 5：跟踪前向形状</h3>
+                <h4>一次 forward 的所有形状</h4>
+                <p><strong>目标</strong>：在脑子里完整跑通一次前向传播，盯死每个张量的形状。</p>
+                <pre><code class="language-python"># 在 MiniMindOmni.forward 关键位置插桩（纯文本输入场景）
+def forward(self, input_ids):
+    print(f"input_ids:      {input_ids.shape}")          # (1, T)
+    text_ids = input_ids[:, 8, :] if input_ids.dim() == 3 else input_ids
+    # 9 通道 (1,9,T) 时取第 8 通道=文本；纯文本 (1,T) 直接用
+    h = self.thinker.embed_tokens(text_ids)
+    print(f"after embed:    {h.shape}")                  # (1, T, 768)
+    for i, layer in enumerate(self.thinker.layers):
+        h = layer(h)
+    print(f"after 8 blocks: {h.shape}")                  # (1, T, 768)
+    logits = self.lm_head(h)
+    print(f"text_logits:    {logits.shape}")             # (1, T, 6400)</code></pre>
+                <div class="warning">
+                    <p><strong>别照抄 <code>input_ids[8]</code>。</strong>真实源码 <code>model_omni.py:252</code> 是 <code>input_ids[:, 8, :]</code>——取的是第 8 个<strong>通道</strong>（文本），不是第 8 个 batch。写成 <code>input_ids[8]</code> 在 <code>(1, T)</code> 或 <code>(1, 9, T)</code> 上都会越界报错。</p>
+                </div>
+                <p><strong>该观察什么</strong>：从 Embedding 到 8 个 Block 再到 lm_head，<code>(1, T, 768)</code> 这个形状是不是一直不变？只有最后 lm_head 把 768 变成 6400？为什么中间维度稳定（因为残差连接要求输入输出同维）？</p>
+                <p>这个练习直接验证阶段 2 和阶段 3 讲的所有形状约定。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实践 6：驯服采样参数</h3>
+                <p><strong>目标</strong>：用同一个 prompt、不同采样参数，感受模型的「性格」变化。</p>
+                <pre><code class="language-bash"># 同一个问题，三种「性格」
+python eval_omni.py --mode 0 --temperature 0.1 --top_p 0.5    # 保守，几乎确定
+python eval_omni.py --mode 0 --temperature 0.7 --top_p 0.85   # 自然（推荐）
+python eval_omni.py --mode 0 --temperature 1.5 --top_p 0.95   # 奔放，天马行空</code></pre>
+                <p><strong>该观察什么</strong>：temperature=0.1 是不是每次回答几乎一样、有点机械？1.5 是不是多样但不一定连贯？为什么 0.7 通常是甜点？</p>
+                <div class="intro-block">
+                    <p><strong>这一关的价值</strong>：以后部署模型时，你能根据场景调参——客服场景要稳定（低 temperature），创意写作要多样（高 temperature）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 挑战组 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>挑战组：从用到造</h2>
+                <p>难度 ★★★——跑完整流程，甚至自己造一个。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实践 7：跑一遍完整训练</h3>
+                <p><strong>目标</strong>：用 Mini 数据集，在单卡上跑完 T2A → A2A Proj → A2A Full 三阶段，亲手训练一个能用的模型。</p>
+                <pre><code class="language-bash"># 改好 trainer/train.sh 里的数据路径后
+bash trainer/train.sh</code></pre>
+                <p><strong>该观察什么</strong>（这些观察比「跑完」更重要）：</p>
+                <ul>
+                    <li>loss 曲线是不是持续下降？有没有突然飙升（学习率太大）</li>
+                    <li>text_loss 和 audio_loss 的比例——audio 是不是比 text 小（因为除以了 8）</li>
+                    <li>学习率是不是按余弦曲线从高到低衰减</li>
+                    <li>训练速度（tokens/sec）和显存占用是否正常</li>
+                </ul>
+                <div class="warning">
+                    <p><strong>耐心点</strong>：Mini 流水线在 3090 上约 2 小时。训练中如果 loss 变 NaN，立刻停下来排查（学习率太大或数据有问题），不要让它白跑。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>实践 8：搭网页 Demo</h3>
+                <h4>做一个能用的产品</h4>
+                <p><strong>目标</strong>：把模型包成一个别人能在浏览器里玩的产品。</p>
+                <pre><code class="language-bash"># 先跑通现成的
+python scripts/web_demo_omni.py      # Gradio 版
+python webui/web_demo.py             # Flask 版</code></pre>
+                <p>跑通后，尝试改造它，这是真正的学习：</p>
+                <ul>
+                    <li>改改 Gradio 的界面文案、配色，理解前端怎么和后端函数挂钩</li>
+                    <li>在 Flask 版加一个新功能（比如保存对话历史到文件）</li>
+                    <li>挑战：加一个「翻译模式」按钮，把 prompt 前缀改成翻译指令</li>
+                </ul>
+                <p>能独立改 Web Demo，说明你彻底理解了「用户输入 → 模型推理 → 结果展示」这条链路。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 总结 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>做完这八关，你具备了什么</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>操作能力</h4>
+                        <p>能熟练加载模型、跑推理、调参数（实践 1、6）</p>
+                    </div>
+                    <div class="card">
+                        <h4>洞察能力</h4>
+                        <p>能看懂 token、注意力、张量形状这些内部细节（实践 2、4、5）</p>
+                    </div>
+                    <div class="card">
+                        <h4>规模直觉</h4>
+                        <p>能估算模型参数量、判断配置合理性（实践 3）</p>
+                    </div>
+                    <div class="card">
+                        <h4>工程能力</h4>
+                        <p>能跑训练、搭界面，独立完成一个完整项目（实践 7、8）</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>给动手者的几条建议</h3>
+                <div class="intro-block">
+                    <p><strong>1. 不要怕报错</strong>。每个报错都是一次学习机会。看到红字先读，再搜，再问——别直接跳过。</p>
+                    <p><strong>2. 改一点看一点</strong>。改完立刻运行观察变化，不要攒一堆改动再跑（出了错不知道是哪改导致的）。</p>
+                    <p><strong>3. 多用 print 和断点</strong>。理解和调试模型，最有效的工具就是 <code>print(x.shape)</code> 和 IDE 断点。</p>
+                    <p><strong>4. 记录你的实验</strong>。哪个参数、什么结果——记下来。否则做完就忘，等于白做。</p>
+                    <p><strong>5. 大胆改</strong>。这是开源项目，改坏了 git reset 就行。最深的理解来自「我改了这里，结果变成了那样」。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide title-slide">
+            <h1>手感已经练成</h1>
+            <p>你不光懂了，还会做了</p>
+            <p>下一章：<strong>阶段 9 · 深入与扩展</strong>——更大的世界在等着</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 3：给它装上耳朵和嘴巴</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>给它装上耳朵和嘴巴</h1>
+            <p>阶段 3 · 全模态模型 Thinker-Talker 双路径</p>
+        </section>
+
+        <!-- ==================== 开篇 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Thinker 还差两样</h3>
+                <h4>上一章的 Thinker，还差两样东西</h4>
+                <p>阶段 2 结束时，Thinker 已经是一个合格的语言模型：它能读懂文字、能生成文字。但 MiniMind-O 叫「全模态」——它还得能<strong>听</strong>（理解语音和图像）、能<strong>说</strong>（生成语音）。</p>
+                <p>问题是：同一个 Transformer，怎么既当大脑又当嘴巴？让一个网络同时干「理解」和「发声」这两件差别极大的事，行不行？</p>
+                <div class="intro-block">
+                    <p>MiniMind-O 的回答是：<strong>别让一个网络硬扛，拆成两个</strong>。一个 Thinker 专心理解、生成文字；一个 Talker 专门把文字变成声音。两者用一个 Bridge 连起来。</p>
+                    <p>这个「双大脑」设计，是本章的全部。理解了它，你就理解了 MiniMind-O 与普通 LLM 的本质区别。</p>
+                    <p><strong>卸掉这个比喻</strong>：「大脑」「嘴巴」「桥」只是为了帮你建立直觉。代码里 Thinker 和 Talker 是两个独立的 <code>nn.Module</code>（Transformer），它们之间传递的并不是「想法」，而是<strong>一个 <code>(B, T, 768)</code> 的浮点张量</strong>——具体说是 Thinker 第 3 层的隐藏状态。Bridge 也不是物理连接，就是一次张量切片 + 线性投影。所以接下来看到 <code>bridge_layer</code>、<code>hidden_states</code> 这些词时，记得把它们对回这里的比喻。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>本章的五个核心问题</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>为什么要两个大脑</h4>
+                        <p>理解文字和生成声音差别太大，一个网络干不好。→ Part 1</p>
+                    </div>
+                    <div class="card">
+                        <h4>三种感官怎么对齐</h4>
+                        <p>语音、图像、文字的特征维度不同，怎么统一？→ Part 2</p>
+                    </div>
+                    <div class="card">
+                        <h4>Thinker 怎么把想法告诉 Talker</h4>
+                        <p>Bridge 桥接：从哪一层取信息，为什么。→ Part 3</p>
+                    </div>
+                    <div class="card">
+                        <h4>Talker 怎么同时生成 8 层声音</h4>
+                        <p>输出头设计 + 交错延迟。→ Part 4</p>
+                    </div>
+                    <div class="card">
+                        <h4>它们在一次推理里怎么配合</h4>
+                        <p>完整 forward 旅程 + 流式输出。→ Part 5、6</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: 两个大脑 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：两个大脑</h2>
+                <p>从「一个会读写的模型」到「一个能听能说的模型」，最关键的设计决策。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>一个网络硬扛会怎样</h3>
+                <p>设想最朴素的方案：把 Thinker 的输出头从「6400 个词」换成「同时预测词 + 8 层音频码」。听起来简单，但有两个硬伤：</p>
+                <ul>
+                    <li><strong>任务打架</strong>：理解语言需要「语义」表征，生成声音需要「声学」表征，两者最优的隐藏状态分布完全不同。一个网络被拉扯，两边都做不好。</li>
+                    <li><strong>浪费算力</strong>：纯文本对话时根本不需要算声音，但混在一起就停不下来。</li>
+                </ul>
+                <p>所以 MiniMind-O 的选择是：<strong>保留 Thinker 专攻语言，新增一个 Talker 专攻声音</strong>。</p>
+                <div class="ai-diagram">
+                  <h4>图：Thinker-Talker 双路径架构总览</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个左右双栏的架构图，左栏 Thinker（思考者，浅蓝色），右栏 Talker（说话者，浅紫色），中间用橙色 Bridge 连接
+                  - 左栏 Thinker 内部自上而下：多模态输入（文本/音频/图像经投影器对齐到 768 维）→ 8 层 Transformer → 输出文本 logits（6400 个词）；在第 3 层位置引出一条橙色虚线指向右栏，标注「Bridge：第 3 层隐藏状态」
+                  - 右栏 Talker 内部自上而下：接收 Bridge 状态（经 embed_proj）+ 音频嵌入（经 codec_proj）→ 4 层 Transformer → 输出 8 层音频 logits（每层 2112 个码）
+                  - 说话人嵌入 spk_emb 从下方注入 Talker，标注「决定用什么音色」
+                  - 关键标注：Thinker 标注「大脑：理解输入、想好说什么」；Talker 标注「嘴巴：把想法变成声音」；Bridge 标注「把 Thinker 的意图传给 Talker」
+                  - 配色建议：浅灰背景，Thinker 浅蓝色，Talker 浅紫色，Bridge 橙色，文本路径绿色，音频路径紫色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>分工：谁干什么</h3>
+                <table>
+                    <thead><tr><th></th><th>Thinker 思考者</th><th>Talker 说话者</th></tr></thead>
+                    <tbody>
+                        <tr><td>规模</td><td>8 层 Transformer（~64M）</td><td>4 层 Transformer（~47M）</td></tr>
+                        <tr><td>输入</td><td>文本 + 音频 + 图像特征</td><td>Bridge 状态 + 音频嵌入</td></tr>
+                        <tr><td>输出</td><td>文本 logits（6400 个词）</td><td>8 层音频 logits（每层 2112 码）</td></tr>
+                        <tr><td>职责</td><td>理解、生成文字</td><td>把文字意图转成声音</td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>一个关键的偷懒设计</strong>：Talker 的 4 层不是从零训练的，而是<strong>从 Thinker 的后 4 层复制权重</strong>初始化。因为 Talker 也需要「理解语言」才能知道该说什么——既然 Thinker 已经学会了，直接拿来用，比从零训练快得多、好得多。这个初始化技巧在阶段 5 训练流程里会再讲。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>挂载但不注册</h3>
+                <h4>object.__setattr__：把大编码器「挂」上去但不参与训练</h4>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.__init__()</code>（第 110-121 行）</p>
+                <p>读源码时你会看到 <code>__init__</code> 里用 <code>object.__setattr__(self, 'thinker', self.model)</code> 这种写法，而不是常见的 <code>self.thinker = self.model</code>。这不是炫技，是<strong>故意绕过 <code>nn.Module</code> 的参数注册</strong>。</p>
+                <p>📜 真实源码：model_omni.py 第 110-121 行</p>
+                <pre><code class="language-python">class MiniMindOmni(MiniMindForCausalLM):
+    def __init__(self, config, audio_encoder_path=..., vision_model_path=...):
+        super().__init__(config)
+        object.__setattr__(self, 'thinker', self.model)        # thinker 是 model 的别名！
+        object.__setattr__(self.model, 'lm_head', self.lm_head)
+        self.talker = TalkerModule(config)
+        self.audio_proj = MMAudioProjector(...)
+        self.vision_proj = MMVisionProjector(...)
+        # ...
+        audio_encoder, audio_processor = self.load_sensevoice(audio_encoder_path)
+        object.__setattr__(self, 'audio_encoder', audio_encoder)   # 大编码器，不注册参数
+        object.__setattr__(self, 'audio_processor', audio_processor)
+        vision_encoder, vision_processor = self.load_vision(vision_model_path)
+        object.__setattr__(self, 'vision_encoder', vision_encoder) # 大编码器，不注册参数
+        object.__setattr__(self, 'vision_processor', vision_processor)</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>普通 self.x = ... 会发生什么</h4>
+                        <p><code>nn.Module.__setattr__</code> 会自动把赋值对象的参数登记到 <code>self._parameters / self._modules</code>，于是 <code>self.parameters()</code> 会包含它，<strong>优化器会更新它</strong>。</p>
+                    </div>
+                    <div class="column">
+                        <h4>object.__setattr__ 绕过注册</h4>
+                        <p>直接调用最底层的 <code>object</code> 的赋值，<strong>跳过 <code>nn.Module</code> 的注册逻辑</strong>。于是 <code>audio_encoder / vision_encoder</code> 虽然<strong>挂在 self 上能调用</strong>，但不进入 <code>self.parameters()</code>，<strong>不会被训练</strong>（也省显存，不用给它们存梯度）。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>点破一个关键别名：<code>self.thinker</code> 就是继承来的 <code>self.model</code>。</strong> <code>MiniMindOmni</code> 继承自 <code>MiniMindForCausalLM</code>，父类已经有个 <code>self.model</code>（Thinker 本体）。<code>object.__setattr__(self,'thinker',self.model)</code> 只是把 <code>self.model</code> 起了个<strong>语义更清晰的别名 <code>self.thinker</code></strong>——所以在源码里你会看到 <code>self.thinker.layers</code>、<code>self.thinker.norm</code>，它们和 <code>self.model.layers</code>、<code>self.model.norm</code> 是<strong>同一个对象</strong>。同理 <code>self.audio_encoder</code> / <code>self.vision_encoder</code> 用 <code>object.__setattr__</code> 注册，是因为这俩是大预训练模型，<strong>整个冻结、不训练</strong>（代码里 <code>requires_grad = False</code> 也佐证了这一点）。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 感官对齐 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：感官对齐</h2>
+                <p>文字、声音、图像，怎么塞进同一个 Thinker？</p>
+                <div class="intro-block">
+                    <p>Thinker 只认 768 维向量。但三种输入的「原生维度」完全不同：文本经 Embedding 是 768 维，音频经 SenseVoice 是 512 维，图像经 SigLIP2 虽然也是 768 维但语义空间不同。必须把它们<strong>对齐</strong>到同一个 768 维空间，才能拼到一起送进 Transformer。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>投影器：维度翻译官</h3>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MMAudioProjector</code> / <code>MMVisionProjector</code>（第 31-54 行）</p>
+                <p>对齐的工具是<strong>投影器（Projector）</strong>——一个两层的小 MLP。它把每种模态的特征「翻译」成 Thinker 能消化的 768 维。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程简化版</h4>
+                        <pre><code class="language-python"># 音频投影器：512 维 → 768 维
+class MMAudioProjector(nn.Module):
+    def __init__(self):
+        self.norm = nn.LayerNorm(512)
+        self.proj = nn.Sequential(
+            nn.Linear(512, 768),   # 升维到 768
+            nn.GELU(),             # 非线性
+            nn.Linear(768, 768),   # 再做一次变换
+        )
+    def forward(self, x):
+        return self.proj(self.norm(x))   # (T, 512) → (T, 768)</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 model_omni.py:31-41</h4>
+                        <p>📜 真实源码：model_omni.py 第 31-41 行</p>
+                        <pre><code class="language-python">class MMAudioProjector(nn.Module):
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(in_dim),
+            nn.Linear(in_dim, out_dim),    # 512 → 768
+            nn.GELU(),
+            nn.Linear(out_dim, out_dim),   # 768 → 768
+        )
+    def forward(self, x):
+        return self.mlp(x)
+# 实例化：self.audio_proj = MMAudioProjector(config.audio_hidden_size, config.hidden_size)
+#        = MMAudioProjector(512, 768)</code></pre>
+                    </div>
+                </div>
+                <p>视觉投影器 <code>MMVisionProjector</code> 结构完全相同（model_omni.py 第 44-54 行），只是 SigLIP2 输出本来就是 768 维，所以是 768→768 的变换（主要起「语义对齐」而非「改维度」的作用）。</p>
+                <div class="intro-block">
+                    <p><strong>为什么是两层 MLP 而不是一层 Linear？</strong> 因为不同编码器的语义空间差异较大（SenseVoice 的 512 维和 Thinker 的 768 维含义完全不同），需要一点非线性变换才能把语义对齐好。LayerNorm 先归一化能让训练更稳。注意真实代码里 <code>in_dim/out_dim</code> 是<strong>构造时传入</strong>的（不是写死 512/768），所以同一个类既能做音频（512→768）又能做视觉（768→768）。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>「注入」而不是「拼接」</h3>
+                <p>对齐之后，怎么把音频/图像特征送进 Thinker？MiniMind-O 用了一个巧妙的设计叫<strong>注入（inject）</strong>：不是在序列末尾追加新 token，而是<strong>替换</strong>序列里的占位符。</p>
+                <div class="ai-diagram">
+                  <h4>图：注入机制——用真实特征替换占位符</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：上下两行对比，上行是「注入前」的序列，下行是「注入后」的序列
+                  - 上行（注入前）：一排方块 [你, 好, audio_pad, audio_pad, audio_pad, 吗]，其中三个 audio_pad 用浅红色标注「占位符，等待被替换」
+                  - 下行（注入后）：同样一排方块 [你, 好, 音频特征₁, 音频特征₂, 音频特征₃, 吗]，三个原占位符位置变成绿色方块标注「真实的音频特征向量」
+                  - 上下之间画三个向下的替换箭头，从上行的 audio_pad 指向下行的音频特征
+                  - 关键标注：在右侧标注「占位符数量 = 音频特征帧数，精确控制插入位置」；底部补充「这样模型在序列里『看』到的就是连续的真实音频信息」
+                  - 配色建议：浅灰背景，文本方块浅蓝色，占位符浅红色，替换后的音频特征浅绿色，箭头橙色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>好处：占位符的数量等于音频/图像特征的帧数，位置精确可控。文本和模态特征在序列里天然交错，Thinker 的注意力能自由地在它们之间穿梭。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>注入：toy ↔ 源码</h3>
+                <h4>对照：注入黑盒 ↔ 真实 inject_audio_features</h4>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.inject_audio_features()</code>（第 160-181 行）</p>
+                <p>真实实现的「注入」不是一句 <code>hidden[mask] = audio_feat</code>，而是<strong>扫描连续 marker、切片替换、且只注入第一段</strong>。逐样本遍历 token 序列，遇到 <code>&lt;|audio_pad|&gt;</code> 就连续往前吞，吞到的这一段用真实音频特征<strong>切片替换</strong>。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程概念版</h4>
+                        <pre><code class="language-python">def inject(hidden, audio_feat, audio_pad_positions):
+    # 把 audio_pad 位置替换成真实音频特征
+    hidden[audio_pad_positions] = audio_feat
+    return hidden</code></pre>
+                        <p>看起来一句赋值就够。但真实实现要处理「连续 marker」「长度对齐」「多段只填第一段」。</p>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 model_omni.py:160-181</h4>
+                        <p>📜 真实源码：model_omni.py 第 160-181 行</p>
+                        <pre><code class="language-python">def inject_audio_features(self, tokens, h, audio_feats, seqlen):
+    marker = self.config.audio_ids[0]   # &lt;|audio_pad|&gt;
+    out = []
+    for b in range(h.size(0)):
+        hb, seq, i = h[b], tokens[b].tolist(), 0
+        af = audio_feats[b] if audio_feats[b] is not None else None
+        while i &lt; len(seq):
+            if seq[i] == marker:
+                start = i
+                while i &lt; len(seq) and seq[i] == marker:
+                    i += 1                          # 吞掉连续 marker
+                if af is not None:
+                    inject_len = min(af.size(0), i - start)
+                    hb = torch.cat((hb[:start], af[:inject_len], hb[start + inject_len:]), dim=0)  # 切片替换
+                    af = None                        # 只注入第一段，后面 marker 保持原样
+            else:
+                i += 1
+        out.append(hb)
+    return torch.stack(out)</code></pre>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>三个关键细节学生容易卡：<strong>(1)</strong> 用 <code>while i &lt; len(seq) and seq[i] == marker</code> 把<strong>连续的</strong>占位符整段吞掉，<code>start</code> 记起点、<code>i</code> 走到末尾；<strong>(2)</strong> <code>inject_len = min(af.size(0), i - start)</code> 取「音频特征帧数」和「占位符个数」的较小值，<code>torch.cat((hb[:start], af[:inject_len], hb[start+inject_len:]))</code> 把这一段<strong>切片替换</strong>掉；<strong>(3)</strong> 替换完立刻 <code>af = None</code>，保证<strong>只注入第一段音频</strong>（一句话只需注入一次说话人的语音特征，后面再有 marker 也不填）。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>含 None 的 list</h3>
+                <h4>encode_audio_inputs 的陷阱：返回含 None 的 list</h4>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.encode_audio_inputs()</code>（第 137-158 行）</p>
+                <p>这是学生读源码最容易<strong>卡住</strong>的地方：<strong>这个函数的返回值不是 tensor，是一个 list</strong>，而且当批次里<strong>部分样本没有音频</strong>时，list 里会含有 <code>None</code>。</p>
+                <p>📜 真实源码：model_omni.py 第 137-158 行</p>
+                <pre><code class="language-python">@torch.compiler.disable
+def encode_audio_inputs(self, audio_inputs, audio_lens=None):
+    if (audio_inputs is None) or (self.audio_encoder is None) or (not audio_inputs.any()):
+        return None
+    batch_mask = audio_inputs.flatten(1).any(1)            # 哪些样本真的有音频
+    enc_dtype = next(self.audio_encoder.parameters()).dtype
+    valid_fbank = audio_inputs[batch_mask].to(dtype=enc_dtype)   # 只编码"有音频"的样本
+    # ...
+    emb_list = [self.audio_proj(emb[i, ...].unsqueeze(0).to(proj_dtype)).squeeze(0) for i in range(emb.size(0))]
+    if batch_mask.all():
+        return emb_list                                     # 全部都有音频 → list[tensor]
+    out = [None] * audio_inputs.size(0)                     # 关键：含 None 的 list
+    j = 0
+    for i in range(audio_inputs.size(0)):
+        if batch_mask[i]:
+            out[i] = emb_list[j]                            # 有音频的位置填上
+            j += 1                                          # 没音频的位置保持 None
+    return out                                              # 返回 list，里面混着 None</code></pre>
+                <div class="intro-block">
+                    <p><strong>为什么是 list 而不是 tensor？</strong> 因为不同样本的音频长度不同（帧数不同），无法 stack 成一个规整的 tensor，所以用 list 逐样本存。为什么含 <code>None</code>？批次里有的样本是纯文本（没音频），<code>batch_mask</code> 把它们<strong>过滤</strong>掉只送有效样本给编码器，但返回时要在原位置补 <code>None</code> 占位，保证 <code>out[i]</code> 和原 batch 的第 i 个样本对应。<strong>下游 <code>inject_audio_features</code> 用 <code>af = audio_feats[b] if audio_feats[b] is not None else None</code> 来兼容这个 <code>None</code></strong>——读源码时如果在这里看到 <code>None</code> 检查，就知道是处理「这个样本没音频」的情况。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: Bridge ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：Bridge</h2>
+                <p>Thinker 想好了要说什么，Talker 怎么知道？</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>从哪一层取信息</h3>
+                <h4>从 Thinker 的哪一层取信息</h4>
+                <p>Thinker 有 8 层。Talker 需要拿到 Thinker 的「想法」来生成声音——但该从哪一层取？MiniMind-O 的答案是<strong>第 3 层</strong>（从 0 开始数，共 8 层）。</p>
+                <table>
+                    <thead><tr><th>取哪一层</th><th>问题</th></tr></thead>
+                    <tbody>
+                        <tr><td>太浅（第 0、1 层）</td><td>语义信息还没充分提取，太「原始」</td></tr>
+                        <tr><td>太深（第 6、7 层）</td><td>信息已经过度适配「预测下一个词」这个具体任务，损失了生成声音所需的丰富表征</td></tr>
+                        <tr><td>中间（第 3 层）</td><td>既有足够语义理解，又保留了丰富的中间表征 ← <strong>选这个</strong></td></tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>OmniConfig</code>（第 10-29 行）；<code>bridge_layer</code> 在第 29 行：默认 <code>self.bridge_layer = kwargs.get("bridge_layer", self.num_hidden_layers // 2 - 1)</code>，对 8 层 Thinker 就是 <code>8//2-1 = 3</code>。</p>
+                    <p>这叫 <strong>bridge_layer = 3</strong>，是 <code>OmniConfig</code> 里的一个关键超参数。它本质是个折中：在「理解得够深」和「表征够通用」之间找平衡点。这个值是实验调出来的，不同模型可能不同。</p>
+                    <p>顺便熟悉一下 <code>OmniConfig</code>（model_omni.py 第 10-29 行）里几个你会反复看到的字段：<code>audio_pad_token=2049</code>（音频占位码）、<code>audio_stop_token=2050</code>（停止码）、<code>audio_spk_token=2051</code>（说话人占位码）、<code>audio_vocab_size=2112</code>（每层码本词表）、<code>spk_emb_size=192</code>（说话人嵌入维度）、<code>image_token_len=64</code>（图像 token 数）、<code>think_end_ids=[26,234,234]</code>（&lt;/think&gt;\n\n）。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Bridge 状态怎么用</h3>
+                <p>Thinker 前向时，顺手把第 3 层的隐藏状态存下来（叫 <code>bridge_states</code>）。Talker 拿到它后，先过一个 <code>embed_proj</code> 投影，再作为 Talker 的主要输入。</p>
+                <pre><code class="language-python"># Thinker 前向时捕获第 3 层
+for i, layer in enumerate(self.thinker.layers):
+    hidden = layer(hidden)
+    if i == self.bridge_layer:           # 第 3 层
+        bridge_states = hidden           # 存下来，留给 Talker</code></pre>
+                <p>但 Talker 的输入不只这一路——还有来自音频的信号。两路怎么融合？</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>两路融合公式</h3>
+                <h4>融合公式：文字意图 + 声音信号</h4>
+                <p>Talker 的输入是两路信号相加：</p>
+                <pre><code class="language-plaintext">talker_input = embed_proj(bridge_states) × text_scale
+              + codec_proj(audio_embeddings) × audio_scale</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：Talker 输入的两路融合</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：两股信号从左右两侧汇入中间一个 + 号的流程图
+                  - 左路（上方）：bridge_states（Thinker 第 3 层，浅蓝色）→ embed_proj 投影 → × text_scale=3.0（标注「文字意图，权重更大」）
+                  - 右路（下方）：audio_embeddings（8 码本嵌入平均，浅紫色）→ codec_proj 投影 → × audio_scale=1.0（标注「声音信号，权重较小」）
+                  - 两路在中间的 + 号汇合，得到 talker_input（浅绿色），标注「Talker 的输入」
+                  - 关键标注：在 text_scale 旁标注「初始 3.0，语义理解是基础，权重更大」；在 audio_scale 旁标注「初始 1.0，声音是辅助」；底部补充「两个 scale 是可学习参数，训练中模型自己调整比例」
+                  - 配色建议：浅灰背景，文字路浅蓝色，声音路浅紫色，汇合结果浅绿色，scale 数字橙色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p><strong>为什么文字权重（3.0）比声音权重（1.0）大？</strong> 因为「说什么」由语义决定（文字意图是主导），「怎么说」（声音细节）是辅助。初始给文字更大权重，让模型先学会「说对话」，再慢慢调声音。这两个 scale 是<strong>可学习</strong>的，训练中模型会自己找到最佳比例。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: Talker 输出 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：8 层声音</h2>
+                <p>声音有 8 层码本，Talker 怎么同时预测 8 个输出？</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>朴素方案的代价</h3>
+                <p>每个位置 Talker 要输出 8 个码（对应 8 层码本），每个码是 2112 选 1。最直白的做法：搞 8 个独立的输出头，每个是一个 <code>Linear(768, 2112)</code>。</p>
+                <pre><code class="language-plaintext">8 个独立输出头 = 8 × Linear(768, 2112)
+             = 8 × 1.6M = 12.8M 参数</code></pre>
+                <p>13M 参数，对一个 ~113M 的模型来说占比太大了。而且这 8 层码本预测的内容高度相关（都是同一句话的声音），用 8 个完全独立的头是一种浪费。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>共享基座 + 轻量适配器</h3>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>TalkerHead</code>（第 57-65 行）、<code>TalkerEmbedding</code>（第 68-76 行）、<code>TalkerModule</code>（第 88-102 行）</p>
+                <p>MiniMind-O 的优化：<strong>一个大基座大家共享，每个码本再加一个小适配器</strong>表达差异。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程简化版</h4>
+                        <pre><code class="language-python">class TalkerHead(nn.Module):
+    def __init__(self):
+        self.base = nn.Linear(768, 2112)          # 共享基座，所有码本都用它
+        self.adapters = nn.ModuleList([           # 8 个轻量适配器
+            nn.Sequential(nn.Linear(768, 256), nn.GELU(), nn.Linear(256, 2112))
+            for _ in range(8)
+        ])
+
+    def forward(self, x):
+        base_out = self.base(x)                   # 共享部分
+        return [base_out + adapter_i(x)           # 每层 = 共享 + 该层专属微调
+                for adapter_i in self.adapters]</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 model_omni.py:57-65</h4>
+                        <p>📜 真实源码：model_omni.py 第 57-65 行</p>
+                        <pre><code class="language-python">class TalkerHead(nn.Module):
+    def __init__(self, in_features, out_features, num_layers=8, rank=256):
+        super().__init__()
+        self.num_layers = num_layers
+        self.base = nn.Linear(in_features, out_features, bias=False)
+        self.adapters = nn.ModuleList([
+            nn.Sequential(nn.Linear(in_features, rank, bias=False),
+                          nn.GELU(),
+                          nn.Linear(rank, out_features, bias=False))
+            for _ in range(num_layers)])
+    def forward(self, x):
+        base_out = self.base(x)
+        return [base_out + adapter(x) for adapter in self.adapters]</code></pre>
+                    </div>
+                </div>
+                <div class="columns">
+                    <div class="column">
+                        <h4>8 个独立头</h4>
+                        <p>12.8M 参数</p>
+                        <p>8 层完全独立，重复造轮子</p>
+                    </div>
+                    <div class="column">
+                        <h4>共享 + 适配器</h4>
+                        <p>约 7.5M 参数（省 40%）</p>
+                        <p>共性用基座，差异用小适配器（低秩 256）</p>
+                    </div>
+                </div>
+                <p>这本质是一种<strong>低秩</strong>思想：8 层码本共享大部分知识（基座），只在细节上有差异（用 256 维的小适配器表达）。和 LoRA 的思路一脉相承。</p>
+                <div class="intro-block">
+                    <p><strong>对称设计：<code>TalkerEmbedding</code></strong>（model_omni.py 第 68-76 行）也用同样的「基座 + 适配器」结构，只不过是<strong>反向</strong>的——把音频码本 id 映射回嵌入向量：<code>self.base = nn.Embedding(...)</code> 共享，<code>self.adapters</code> 每层一个，<code>forward</code> 里 <code>sum(base_out[:, i, :] + self.adapters[i](x[:, i, :]) for i in ...)/num_layers</code>。输出头和输入嵌入一进一出，结构完全对称。<strong><code>TalkerModule</code></strong>（第 88-102 行）则把 talker 的所有零件（4 层 <code>MiniMindBlock</code>、<code>RMSNorm</code>、<code>TalkerHead lm_head</code>、<code>TalkerEmbedding embed_tokens</code>、<code>codec_proj/embed_proj</code>、<code>text_scale/audio_scale</code>、<code>spk_proj</code>）打包到一起。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>交错延迟</h3>
+                <h4>交错延迟：让声音「错落有致」地生成</h4>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.stream_generate()</code>（<code>audio_step</code> 与 <code>if audio_step &lt; i</code> 判断）</p>
+                <p>这是 MiniMind-O 最巧妙的设计之一。Talker 不是「同时」生成 8 层，而是让<strong>第 i 层码本延迟 i 步才开始生成</strong>——形成阶梯式的延迟。<strong>真实实现里，延迟由一个统一的 <code>audio_step</code> 变量控制，不是「第 i 层各自独立计数」。</strong></p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程概念版</h4>
+                        <p>每层各自延迟，<strong>第 i 层从第 i 步开始</strong>。这是为了建立直觉的简化说法。</p>
+                        <pre><code class="language-plaintext">码本层 i 从第 i 步开始生成：
+  layer 0: 第 0 步开始
+  layer 1: 第 1 步开始
+  ...
+  layer 7: 第 7 步开始</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 model_omni.py:363-378</h4>
+                        <p>📜 真实源码：model_omni.py 第 363-378 行</p>
+                        <pre><code class="language-python">step = input_ids.shape[1] - start_pos
+audio_step = step - 1   # 恒定延迟 1 步
+# ...
+for i, al in enumerate(out.audio_logits):
+    if audio_step &lt; i:                       # 第 i 层还没轮到
+        audio_codes[i].append(self.audio_pad_token)
+    else:
+        # ... 真正采样第 i 层码本</code></pre>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>之前为便于理解讲成「第 i 层从第 i 步开始」，真实实现是：</strong>用一个统一的 <code>audio_step</code> 控制。在普通模式下 <code>audio_step = step - 1</code>（恒定延迟 1 步）；每层用 <code>if audio_step &lt; i</code> 判断「我这一层还没轮到，就补一个 <code>audio_pad_token</code> 占位」。<code>audio_step</code> 是个不断增长的「时钟」，所有 8 层共享它，于是自然形成了阶梯延迟的效果（第 i 层要等 <code>audio_step</code> 长到 &gt;= i 才开始真采样）。</p>
+                </div>
+                <div class="ai-diagram">
+                  <h4>图：交错延迟——8 层码本错落生成</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个时间轴上的网格图，横轴是时间步 t0~t9，纵轴从上到下是「文本生成」和「码本层 0~7」共 9 行
+                  - 第一行「文本」：t0~t5 依次填入 你/好/吗/我/很/好，t6 填 EOS，后面留空
+                  - 第二行「码本层 0」：从 t1 开始填 a₀,a₁,a₂...（t0 空）
+                  - 第三行「码本层 1」：从 t2 开始填 a₀,a₁...（t0,t1 空）
+                  - 以此类推，每往下一层，开始时间晚一步，形成左上到右下的阶梯空白
+                  - 最后一行「码本层 7」：从 t7 才开始填
+                  - 关键标注：在顶部画一个时钟符号标注「audio_step（统一时钟，每步 +1）」；用大括号在右侧标注「第 i 层在 audio_step &gt;= i 时才真采样，否则补 audio_pad_token」；底部补充「低层先开始高层后跟，靠 audio_step 一个变量统一驱动」
+                  - 配色建议：浅灰背景，文本行浅蓝色，码本层用浅紫色渐变（越深层越深），已填充格子深色，空格子浅色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p><strong>为什么这么设计？</strong> 低层码本承载基本音高，高层承载细节。让低层先动起来、高层延迟跟上，模拟了真实语音「先有轮廓后有细节」的产生过程，能提升生成质量和多样性。这也意味着要等 8 步之后，才能凑齐一帧完整的 8 码音频送去 Mimi 解码。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>思考期不发声</h3>
+                <h4>思考模式下，音频要等 &lt;/think&gt; 才开始</h4>
+                <p>当 <code>open_thinking=True</code> 时，<code>audio_step</code> 的计算方式会切换：在模型输出完思考段（&lt;/think&gt;\n\n，对应 <code>think_end_ids</code>）之前，<code>audio_step</code> 被设成 <strong>-1</strong>，所有 8 层都补 <code>audio_pad_token</code>——也就是<strong>思考阶段不发声</strong>。</p>
+                <p>📜 真实源码：model_omni.py 第 363-378 行</p>
+                <pre><code class="language-python">step = input_ids.shape[1] - start_pos
+audio_step = step - 1  # 默认：恒定延迟 1 步
+if generated_tokens is not None:           # 开启思考模式
+    generated_tokens.append(text_token)
+    if not think_end_step and generated_tokens[-len(self.config.think_end_ids):] == list(self.config.think_end_ids):
+        think_end_step = step + 2          # 检测到 &lt;/think&gt;\n\n，记录音频可开始的时间步
+    audio_step = (step - think_end_step) if think_end_step else -1  # 思考结束前 = -1（全静音）
+for i, al in enumerate(out.audio_logits):
+    if audio_step &lt; i:                     # 思考期间 audio_step=-1 &lt; 任何 i，全部补 pad
+        audio_codes[i].append(self.audio_pad_token)
+    else:
+        # ... 真采样</code></pre>
+                <div class="intro-block">
+                    <p>这个设计很直观：模型在「自言自语」（思考）时不该出声，等想清楚了（输出完 <code>&lt;/think&gt;\n\n</code>）才开始合成语音。注意 <code>think_end_ids = [26, 234, 234]</code> 就是 &lt;/think&gt; 换行换行的三个 token id。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>两套采样参数</h3>
+                <h4>文本和音频用两套不同的采样参数</h4>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.stream_generate()</code>（文本采样 349-357 行；音频采样 369-378 行）</p>
+                <p>这是源码里容易被忽略、但很关键的一点：<strong>文本侧和音频侧的采样策略完全不同</strong>，不是共用一套参数。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>文本侧（model_omni.py:349-357）</h4>
+                        <p>📜 真实源码：model_omni.py 第 349-357 行</p>
+                        <pre><code class="language-python"># temperature=0.75, top_p=0.90（来自 generate 默认参数）
+logits = out.logits[0, -1, :].clone() / (temperature + 1e-9)
+if rp != 1.0:                              # 整句级别的 repetition penalty
+    seen = list(set(input_ids[0].tolist()))
+    score = logits[seen]
+    logits[seen] = torch.where(score > 0, score / rp, score * rp)
+if top_p and top_p &lt; 1.0:                  # top-p (nucleus)
+    sorted_l, sorted_i = torch.sort(logits, descending=True)
+    mask = torch.cumsum(F.softmax(sorted_l, dim=-1), dim=-1) > top_p
+    mask[1:], mask[0] = mask[:-1].clone(), False
+    logits[sorted_i[mask]] = -float('Inf')
+text_token = torch.multinomial(F.softmax(logits, dim=-1), 1).item()</code></pre>
+                        <p><strong>温度 0.75 + top_p 0.90</strong>，相对宽松，鼓励文字多样性。</p>
+                    </div>
+                    <div class="column">
+                        <h4>音频侧（model_omni.py:373-378）</h4>
+                        <p>📜 真实源码：model_omni.py 第 373-378 行</p>
+                        <pre><code class="language-python">logits_i = al[0, -1, :].clone() / 0.2      # 温度 0.2（远低于文本）
+for prev_code in audio_codes[i][-3:]:      # 只对前 3 个已生成码做 RP
+    score = logits_i[prev_code]
+    logits_i[prev_code] = torch.where(score > 0, score / 1.05, score * 1.05)
+top_val, top_idx = logits_i.topk(50)       # top-k=50（不是 top-p）
+code = top_idx[torch.multinomial(F.softmax(top_val, dim=-1), 1)].item()
+audio_codes[i].append(code)
+if audio_stop_pos[i] is None and code >= 2048:   # code>=2048 判停止
+    audio_stop_pos[i] = len(audio_codes[i]) - 1</code></pre>
+                        <p><strong>温度 0.2 + top_k=50 + 局部 RP</strong>，更确定、更稳定，避免声音乱跳。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>为什么两套参数不同？</strong> 文字希望有创造性（温度高、用 top-p），但声音一旦乱跳就会出现杂音/卡顿，所以音频侧用<strong>低温度（0.2）、top-k（50）</strong>更稳，而且<strong>停止判据是 <code>code &gt;= 2048</code></strong>（码本 0-2047 是正常码，2048 及以上即 <code>audio_pad_token=2049</code>/<code>audio_stop_token=2050</code>/<code>audio_spk_token=2051</code> 这类控制码）。注意音频侧的 repetition penalty 只惩罚<strong>该层最近 3 个码</strong>（<code>audio_codes[i][-3:]</code>），不是像文本侧那样惩罚整句历史。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 5: forward 旅程 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5：forward</h2>
+                <p>把前面所有零件串起来，看一次前向传播发生了什么。</p>
+                <div class="intro-block">
+                    <p>这是全章的整合环节。我们将跟踪一批数据，从进入模型到产出文本和音频，走完五步。建议对照前面各 Part 的图来理解。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>输入：一个 9 通道的张量</h3>
+                <p>MiniMind-O 的输入很有特色：不是普通的 <code>(B, T)</code> 文本序列，而是 <code>(9, T)</code> 的<strong>9 通道</strong>张量。</p>
+                <table>
+                    <thead><tr><th>通道</th><th>内容</th></tr></thead>
+                    <tbody>
+                        <tr><td>通道 0-7</td><td>8 层音频码本（目标音频，训练用）</td></tr>
+                        <tr><td>通道 8</td><td>文本 token（对话内容）</td></tr>
+                    </tbody>
+                </table>
+                <p>文本和音频共享同一个时间轴 T，紧紧绑在一起——这样训练时模型能学到「这个词对应这个声音」的对齐关系。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>步骤 1-2：注入</h3>
+                <h4>第 1-2 步：文本嵌入 + 注入多模态</h4>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.forward()</code> 第 245-292 行（输入解析、音频/图像注入、Thinker 主干）</p>
+                <p>取出文本通道，做 Embedding 得到初始隐藏状态。然后，如果有音频输入，就用 SenseVoice 编码后<strong>注入</strong>到 <code>&lt;|audio_pad|&gt;</code> 位置；如果有图像，就用 SigLIP2 编码后注入到 <code>&lt;|image_pad|&gt;</code> 位置。</p>
+                <p>📜 真实源码：model_omni.py 第 245-292 行（节选）</p>
+                <pre><code class="language-python">def forward(self, input_ids, attention_mask=None, past_key_values=None,
+            use_cache=False, logits_to_keep=0, audio_inputs=None, audio_lens=None, pixel_values=None, **args):
+    if len(input_ids.shape) == 2:                       # 训练：只有文本 → 自动构造全 pad 的 audio_ids
+        batch_size, seq_length = input_ids.shape
+        text_ids = input_ids
+        audio_ids = torch.full((batch_size, 8, seq_length), self.audio_pad_token, ...)
+    else:                                               # 推理：(B,9,T)：前 8 通道音频 + 第 8 通道文本
+        batch_size, _, seq_length = input_ids.shape
+        text_ids, audio_ids = input_ids[:, 8, :], input_ids[:, :8, :]
+    # ...
+    hidden_states = self.thinker.dropout(self.thinker.embed_tokens(text_ids))   # 文本嵌入
+    if audio_inputs is not None and start_pos == 0:
+        audio_features = self.encode_audio_inputs(audio_inputs, audio_lens)     # SenseVoice 编码
+        hidden_states = self.inject_audio_features(text_ids, hidden_states, audio_features, seq_length)  # 注入
+    if pixel_values is not None and start_pos == 0:
+        # ... SigLIP2 编码 + count_vision_proj 注入到 &lt;|image_pad|&gt; 位置
+    bridge_states = hidden_states</code></pre>
+                <div class="intro-block">
+                    <p>注意源码里<strong>训练和推理两种输入格式</strong>：训练时 <code>input_ids</code> 是 2D <code>(B,T)</code>（纯文本），代码会自动造一个全 <code>audio_pad_token</code> 的 <code>audio_ids (B,8,T)</code>；推理时 <code>input_ids</code> 是 3D <code>(B,9,T)</code>，<code>[:,8,:]</code> 是文本、<code>[:,:8,:]</code> 是 8 层音频码本——就是上一张 slide 讲的「9 通道」。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>步骤 3：Thinker</h3>
+                <h4>第 3 步：Thinker 前向</h4>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.forward()</code> 第 288-293 行（Thinker 主干 + bridge 捕获）</p>
+                <p>融合后的隐藏状态送进 Thinker 的 8 层 Transformer。一边产出最终的文本 logits，一边在第 3 层<strong>顺手捕获 bridge_states</strong>。</p>
+                <p>📜 真实源码：model_omni.py 第 288-293 行</p>
+                <pre><code class="language-python">bridge_states = hidden_states
+for i, (layer, past_key_value) in enumerate(zip(self.thinker.layers, past_key_values[:n_thinker])):
+    hidden_states, present = layer(hidden_states, position_embeddings, past_key_value=past_key_value, use_cache=use_cache, attention_mask=attention_mask)
+    presents.append(present)
+    if i == self.config.bridge_layer:           # 第 3 层
+        bridge_states = hidden_states           # 留给 Talker
+h_thinker = self.thinker.norm(hidden_states)    # Thinker 最终隐藏状态</code></pre>
+                <p>到这里，Thinker 的活干完了：它理解了输入（可能含音频/图像），想好了要回复的文字。注意 <code>bridge_states</code> 和 <code>h_thinker</code> 是<strong>两份不同的东西</strong>：前者是第 3 层（中间层）的状态给 Talker 用，后者是最后一层（norm 后）的状态用来算文本 logits。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>步骤 4：装 Talker</h3>
+                <h4>第 4 步：组装 Talker 的输入</h4>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.forward()</code>（Talker 段，第 296-306 行）</p>
+                <p>Talker 要干活了。先把音频通道（8 层码本）过 TalkerEmbedding 转成向量，再和 bridge_states 融合。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程简化版</h4>
+                        <pre><code class="language-python"># 音频码本 → 嵌入向量
+audio_emb = self.talker.audio_embed(audio_codes)
+audio_signal = self.talker.codec_proj(audio_emb)
+
+text_signal = self.talker.embed_proj(bridge_states)
+
+talker_input = text_signal * text_scale \
+             + audio_signal * audio_scale
+talker_input = inject_speaker(talker_input, spk_emb, ...)</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 model_omni.py:296-301</h4>
+                        <p>📜 真实源码：model_omni.py 第 296-301 行</p>
+                        <pre><code class="language-python">talker_emb = self.talker.embed_tokens(audio_ids)
+spk_emb = args.get('spk_emb', None)
+if spk_emb is not None:
+    spk_mask = (audio_ids[:, 0, :] == self.audio_spk_token).unsqueeze(-1)
+    talker_emb = torch.where(spk_mask, self.talker.spk_proj(spk_emb).unsqueeze(1), talker_emb)
+hidden_states = self.talker.embed_proj(bridge_states) * self.talker.text_scale \
+              + self.talker.codec_proj(talker_emb) * self.talker.audio_scale</code></pre>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>之前为便于理解讲成「<code>inject_speaker(talker_input, ...)</code> 注入到融合后的输入」，真实实现是：</strong>说话人嵌入 <code>spk_emb</code> 注入到<strong>融合前</strong>的 <code>talker_emb</code>（音频嵌入本身），而不是融合后的 <code>talker_input</code>。具体做法是：先用 <code>spk_mask = (audio_ids[:,0,:] == audio_spk_token)</code> 找到所有「说话人占位」位置，再用 <code>torch.where(spk_mask, spk_proj(spk_emb), talker_emb)</code> 把这些位置的嵌入<strong>替换</strong>成说话人嵌入。而且 <code>spk_emb</code> 是 192 维，要先过 <code>spk_proj(192→768)</code> 升维到 talker 维度。<strong>替换发生在 codec_proj 之前、text/audio 融合之前。</strong></p>
+                    <p>说话人嵌入 <code>spk_emb</code> 注入到 <code>&lt;|audio_spk|&gt;</code> 位置——这是「声音克隆」的关键：它告诉 Talker「用谁的音色来说」。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>步骤 5：出声音</h3>
+                <h4>第 5 步：Talker 前向，产出 8 层声音</h4>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.forward()</code> 第 302-316 行（Talker 主干 + 输出 logits）</p>
+                <p>融合后的 talker_input 送进 Talker 的 4 层 Transformer，最后过 TalkerHead，一次产出 8 层音频 logits。</p>
+                <p>📜 真实源码：model_omni.py 第 302-316 行</p>
+                <pre><code class="language-python">talker_pos_emb = (self.talker.freqs_cos[start_pos:start_pos + seq_length], self.talker.freqs_sin[start_pos:start_pos + seq_length])
+for layer, past_key_value in zip(self.talker.layers, past_key_values[n_thinker:]):
+    hidden_states, present = layer(hidden_states, talker_pos_emb, past_key_value=past_key_value, use_cache=use_cache, attention_mask=attention_mask)
+    presents.append(present)
+h_talker = self.talker.norm(hidden_states)
+# ...
+text_logits = self.thinker.lm_head(h_thinker[:, slice_indices, :])     # (B, T, 6400) 文本预测
+audio_logits = self.talker.lm_head(h_talker[:, slice_indices, :])      # 8 × (B, T, 2112) 音频预测
+out = MoeCausalLMOutputWithPast(aux_loss=aux_loss, logits=text_logits, past_key_values=presents)
+out.audio_logits = audio_logits
+return out</code></pre>
+                <div class="ai-diagram">
+                  <h4>图：一次 forward 的五步全景</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从上到下的五步流程图，每步是一个圆角矩形，用箭头串联
+                  - 步骤 1（解析）：input_ids (9, T) → 拆出文本通道和音频通道
+                  - 步骤 2（嵌入+注入）：文本 Embedding → 注入音频特征（替换 audio_pad）→ 注入图像特征（替换 image_pad），用浅绿色
+                  - 步骤 3（Thinker前向，浅蓝色，最大）：8 层 Transformer，分出两个输出——主输出 text_logits，以及第 3 层引出的 bridge_states（橙色虚线指向步骤 4）
+                  - 步骤 4（组装Talker输入）：bridge_states 经 embed_proj（文字路）+ 音频嵌入经 codec_proj（声音路）两路融合 → talker_input
+                  - 步骤 5（Talker前向，浅紫色）：4 层 Transformer → TalkerHead → 8 层 audio_logits
+                  - 关键标注：最右侧标注最终两个输出「text_logits（文字）+ audio_logits（8层声音）」；bridge_states 用橙色强调贯穿
+                  - 配色建议：浅灰背景，Thinker 步骤浅蓝色，Talker 步骤浅紫色，bridge 橙色，注入浅绿色
+                  - 画面比例：9:16 竖版或 16:9
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>aux_loss 占位梯度</h3>
+                <h4>aux_loss 的 dummy gradient：让新模块接上梯度图</h4>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.forward()</code>（第 308-316 行）</p>
+                <p>这是源码里一行很「奇怪」但很重要的代码：forward 末尾的 <code>aux_loss</code> 里，给几个新加模块的参数求和后<strong>乘以 0</strong>。</p>
+                <p>📜 真实源码：model_omni.py 第 308-316 行</p>
+                <pre><code class="language-python">slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
+aux_loss = sum(l.mlp.aux_loss for l in list(self.thinker.layers) + list(self.talker.layers) if isinstance(l.mlp, MOEFeedForward))
+aux_loss += sum(p.sum() for p in self.audio_proj.parameters()) * 0 \
+          + sum(p.sum() for p in self.vision_proj.parameters()) * 0 \
+          + sum(p.sum() for p in self.talker.lm_head.adapters.parameters()) * 0 \
+          + sum(p.sum() for p in self.talker.spk_proj.parameters()) * 0   # dummy gradient
+text_logits = self.thinker.lm_head(h_thinker[:, slice_indices, :])
+audio_logits = self.talker.lm_head(h_talker[:, slice_indices, :])
+out = MoeCausalLMOutputWithPast(aux_loss=aux_loss, logits=text_logits, past_key_values=presents)
+out.audio_logits = audio_logits
+return out</code></pre>
+                <div class="columns">
+                    <div class="column">
+                        <h4>为什么要 *0</h4>
+                        <p>训练时只有部分数据流会经过某些新模块（例如纯文本 batch 根本不碰 <code>vision_proj</code>，没有 <code>spk_emb</code> 时不碰 <code>spk_proj</code>）。PyTorch 里<strong>没参与前向的参数不会被优化器更新</strong>（在 AdamW 里甚至可能跳过权重衰减，造成训练不一致）。</p>
+                    </div>
+                    <div class="column">
+                        <h4>*0 怎么解决问题</h4>
+                        <p>把 <code>audio_proj / vision_proj / adapters / spk_proj</code> 的参数<strong>显式加进 loss</strong>，<code>*0</code> 保证<strong>不改变 loss 数值</strong>（梯度贡献也是 0），但<strong>让这些参数"出现"在反向传播的计算图里</strong>，从而在每一步都被优化器统一处理（含权重衰减）。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p><strong>另一个省算力的细节：<code>logits_to_keep</code> 切片。</strong> <code>slice_indices = slice(-logits_to_keep, None)</code> 表示只对序列<strong>末尾 <code>logits_to_keep</code> 个位置</strong>算 logits（过 lm_head）。训练时如果只关心最后几个位置的预测（比如最后一个 token 的 next-token loss），就不用对整个序列算一遍 768→6400 / 768→2112 的大矩阵乘法，省一大笔显存和算力。<code>h_thinker[:, slice_indices, :]</code> 就是切出这个末尾窗口。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 6: 流式生成 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6：流式生成</h2>
+                <p>推理时，Thinker 和 Talker 不是「想完再说」，而是<strong>同步进行</strong>。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>会 yield 的循环</h3>
+                <h4>stream_generate：一个会 yield 的循环</h4>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.stream_generate()</code>（第 326-395 行）</p>
+                <p>推理用的是 <code>stream_generate()</code>，它是一个生成器（回顾阶段 0 的 yield）。每个时间步它<strong>同时</strong>产出：一个文本 token + 该步该有的音频帧。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>教程简化版</h4>
+                        <pre><code class="language-python">def stream_generate(self, input_ids, ...):
+    bridge = self.first_forward(input_ids)
+    while not finished:
+        text_token = self.thinker_step(bridge)
+        audio_frame = self.talker_step(bridge, step)
+        yield text_token, audio_frame     # 吐给调用者，立刻显示/播放
+        ...</code></pre>
+                    </div>
+                    <div class="column">
+                        <h4>真实源码 model_omni.py:326-395</h4>
+                        <p>📜 真实源码：model_omni.py 第 326-395 行</p>
+                        <pre><code class="language-python">def stream_generate(self, input_ids, eos_token_id, max_new_tokens, temperature, top_p, rp, use_cache, return_audio_codes=False, **args):
+    start_pos, past_kvs, text_finished, first_finished = input_ids.shape[1], None, False, True
+    audio_codes = [[] for _ in range(8)]
+    audio_stop_pos = [None] * 8
+    audio_buffer = torch.full((1, 8, start_pos), self.audio_pad_token, ...)
+    # ... 处理 spk_emb / ref_codes 初始化
+    while input_ids.shape[1] &lt; start_pos + max_new_tokens:
+        out = self.forward(...)                      # 一次 forward（带 KV cache）
+        past_kvs = out.past_key_values
+        # ... 文本采样 + 音频按 audio_step 采样（见前面采样 slide）
+        if text_finished and all(audio_stop_pos[i] is not None for i in range(8)): break
+        # ... 把新 token / 新码本拼回 input_ids / audio_buffer
+        yield input_ids[:, start_pos:], audio_frame   # 流式吐 (text_tokens, audio_frame)</code></pre>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <p>调用方（比如 <code>eval_omni.py</code>）拿到 <code>yield</code> 的文本就立刻打印（打字机效果），拿到音频帧就攒着——攒够 8 层一帧就送去 Mimi 解码播放。<strong>文本和语音是同步流式产出的</strong>，这就是为什么 MiniMind-O 能实现「边说边出声」的实时感。注意源码里 <code>audio_buffer</code> 是个 <code>(1,8,T)</code> 的张量，每一步往右长一格，把 8 层码本的「已知部分」喂给下一次 forward。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>什么时候停</h3>
+                <p><strong>📌 对应源码：</strong><code>model_omni.py</code> 的 <code>MiniMindOmni.stream_generate()</code> 第 378、380 行</p>
+                <p>生成在两个条件都满足时结束：</p>
+                <ul>
+                    <li><strong>文本侧</strong>：Thinker 生成了结束符 <code>&lt;|im_end|&gt;</code>（对应 <code>eos_token_id</code>，<code>text_finished=True</code>，第 391-393 行）</li>
+                    <li><strong>音频侧</strong>：所有 8 层码本都触发了停止（<code>all(audio_stop_pos[i] is not None for i in range(8))</code>，第 380 行）</li>
+                </ul>
+                <p>📜 真实源码：model_omni.py 第 378、380 行</p>
+                <pre><code class="language-python">if audio_stop_pos[i] is None and code >= 2048:    # code>=2048 判停止
+    audio_stop_pos[i] = len(audio_codes[i]) - 1   # 记录这一层停在哪一步
+# ...
+if text_finished and all(audio_stop_pos[i] is not None for i in range(8)): break   # 两边都停才 break</code></pre>
+                <div class="intro-block">
+                    <p>注意音频侧的停止判据是 <code>code &gt;= 2048</code>，不是只判 <code>== 2050</code>。这是因为码本 0-2047 是正常音频码，而 <strong>2048 及以上都是控制码</strong>（<code>audio_pad_token=2049</code> / <code>audio_stop_token=2050</code> / <code>audio_spk_token=2051</code>）——只要模型在某一层吐出了控制码，就认为这一层该结束了。</p>
+                    <p>由于交错延迟，文本先结束，音频还会再跑几步把剩余的码本层补齐。所以你会看到终端里「文本打完了，但 Talker 还在输出几帧音频」的现象——这是正常的。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>声音克隆：换个音色说话</h3>
+                <p>声音克隆（mode 3）的秘密就藏在 forward 第 4 步：注入不同的 <code>spk_emb</code> 和参考音频码 <code>ref_codes</code>，Talker 就会用对应的音色生成。</p>
+                <pre><code class="language-plaintext"># 克隆流程
+录 3~6 秒某人的声音
+    → Mimi 编码成 ref_codes（参考音频码）
+    → CAM++ 提取 spk_emb（192 维说话人嵌入）
+    → 推理时注入到 Talker 的 spk 位置
+    → Talker 模仿这个音色生成回复</code></pre>
+                <p>ref_codes 提供「声音的样本」，spk_emb 提供「说话人的身份」。两者结合，Talker 就能「学谁像谁」。预置音色文件 <code>voices.pt</code> 里就存了一批这样的组合。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 练习 + 排错 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：设计选择题</h3>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>三个设计决策，为什么这么做</h3>
+                        <p>试着不看前文，回答这三个「为什么」：</p>
+                        <ol>
+                            <li>为什么 Talker 从 Thinker 的<strong>第 3 层</strong>（而不是最后一层）取 bridge_states？</li>
+                            <li>为什么融合公式里 <strong>text_scale=3.0</strong> 大于 <strong>audio_scale=1.0</strong>？</li>
+                            <li>为什么 TalkerHead 用<strong>共享基座 + 适配器</strong>，而不是 8 个独立头？</li>
+                        </ol>
+                        <div class="answer-section">
+                            <h4>参考答案</h4>
+                            <p>1) 最后一层过度适配「预测下一个词」，表征太专用；太浅层语义不足。第 3 层是「理解够深 + 表征够通用」的折中。2) 「说什么」由语义主导，声音是辅助；初始给文字更大权重让模型先学对话，两个 scale 可学习会再调。3) 8 层码本高度相关，共享基座表达共性、小适配器表达差异，省 40% 参数还不损效果（低秩思想）。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见困惑排解</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>「文本和音频是怎么对齐的？」</h4>
+                        <p>靠 9 通道共享时间轴。训练时每个文本 token 和对应的音频码在同一时间步，模型从数据中学到「这句话对应这段声音」。</p>
+                    </div>
+                    <div class="card">
+                        <h4>「为什么 Talker 只有 4 层，比 Thinker 少？」</h4>
+                        <p>生成声音比理解语言简单（它已经有了 Thinker 的理解结果作输入）。少层既够用又省参数。4 层是从 Thinker 后 4 层复制来的。</p>
+                    </div>
+                    <div class="card">
+                        <h4>「纯文本对话时 Talker 还工作吗？」</h4>
+                        <p>工作，但你听不到。没有音频输入时，Talker 仍会生成音频码——只是这部分输出你可能不保存。它不会拖慢太多，因为 Talker 层数少。</p>
+                    </div>
+                    <div class="card">
+                        <h4>「实时通话的打断（barge-in）怎么实现？」</h4>
+                        <p>那是 Web 端 VAD（语音活动检测）的功劳，不在模型内部。详见阶段 7 Web 演示——VAD 检测到用户开口，就中断正在生成的回复。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关键要点回顾</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>双大脑分工</h4>
+                        <p>Thinker（8层）管理解+文字，Talker（4层）管发声。一个网络干不好两件相反的事。</p>
+                    </div>
+                    <div class="card">
+                        <h4>投影对齐 + 注入</h4>
+                        <p>三种模态经投影器对齐到 768 维，再用「替换占位符」的方式注入序列。</p>
+                    </div>
+                    <div class="card">
+                        <h4>Bridge 第 3 层</h4>
+                        <p>从 Thinker 中间层取状态给 Talker，是「够深」和「够通用」的折中。</p>
+                    </div>
+                    <div class="card">
+                        <h4>共享 + 适配器</h4>
+                        <p>TalkerHead 用一个共享基座 + 8 个低秩适配器，省 40% 参数表达 8 层码本。</p>
+                    </div>
+                    <div class="card">
+                        <h4>交错延迟</h4>
+                        <p>由统一的 <code>audio_step</code> 控制，<code>if audio_step &lt; i</code> 决定第 i 层是否补 pad。低层先动高层后跟，模拟真实语音产生。</p>
+                    </div>
+                    <div class="card">
+                        <h4>流式同步输出</h4>
+                        <p>stream_generate 用 yield 同时吐文本和音频，实现边说边出声的实时感。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>延伸阅读</h3>
+                <div class="intro-block">
+                    <p><strong>1. 《Mini-Omni》论文（MiniMind-O 的直接参考）</strong></p>
+                    <p>Thinker-Talker 架构、交错延迟音频生成的原始提出者。读完会发现 MiniMind-O 是它的小型开源实现。</p>
+                    <p><strong>2. 《SpeechGPT》《SALMONN》</strong></p>
+                    <p>语音-语言模型的先驱工作，理解「为什么 LLM 要扩展到语音」这个研究方向。</p>
+                    <p><strong>3. 《Mimi》（Kyutai 神经音频编解码器）</strong></p>
+                    <p>想搞懂「为什么是 8 层码本」「RVQ 残差向量量化」的原理，这是源头。阶段 0 的音频部分有直觉介绍。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide title-slide">
+            <h1>它现在会听、会看、会说了</h1>
+            <p>全模态模型的架构你已经吃透</p>
+            <p>下一章：<strong>阶段 4 · 数据处理</strong>——这些零件，靠什么数据训练出来</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

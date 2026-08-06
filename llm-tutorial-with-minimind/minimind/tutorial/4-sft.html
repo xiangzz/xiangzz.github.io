@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 4：监督微调 SFT</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>监督微调 SFT</h1>
+            <p>阶段 4 · 让模型从"会说话"进化到"会听话"</p>
+        </section>
+
+        <!-- ==================== 开场：问题驱动 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>灵魂拷问</h3>
+                <p>预训练完成后，模型能续写文章、补全句子。但如果你输入 <strong>"请帮我写一首关于春天的诗"</strong>，它可能接着写 <strong>"请帮我写一首关于夏天的诗、秋天的诗……"</strong>——它在续写，而不是在回答。</p>
+                <div class="intro-block">
+                    <p>模型已经"会说话"了，但还不会"听话"——不懂指令，不懂角色，不懂对话。怎么让它变成一个能听懂你、能靠谱回答的 AI 助手？这就是 <strong>SFT（Supervised Fine-Tuning）</strong>要解决的问题。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>当模型不会听话</h3>
+                                <div class="ai-diagram">
+                  <h4>图：预训练模型与 SFT 后模型的行为对比</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：左右两组对比。左侧"问题"组（红色边框）：用户输入"请写一首关于春天的诗"→ 预训练模型输出"请写一首关于夏天的诗、关于秋天的诗……"（续写行为）。右侧"目标"组（绿色边框）：同样用户输入"请写一首关于春天的诗"→ SFT后模型输出"春风拂面花满枝，燕子归来筑新巢……"（回答行为）
+                  - 各元素关系：左侧"问题"组通过大箭头标注"SFT"连接到右侧"目标"组，表示 SFT 是从续写到回答的转换过程
+                  - 关键标注：左侧标注"续写而非回答"（红色），右侧标注"理解意图并回答"（绿色）
+                  - 配色建议：浅灰背景，问题组红色边框，目标组绿色边框，SFT箭头用橙色加粗
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <p>预训练学会了语言的"形"，SFT 教会模型语言的"用"——什么场合说什么话。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: 为什么需要 SFT ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1: 为什么需要 SFT</h2>
+                <p>先搞清楚动机——为什么不直接用预训练模型？SFT 到底改变了什么？</p>
+                <div class="intro-block">
+                    <p>预训练后的模型虽然"博览群书"，但它只会续写——你问它问题，它可能接着你的话往下编。SFT 就是那个把"书呆子"变成"好助手"的关键步骤。理解这一步的动机和本质差异，是后面所有内容的地基。</p>
+                    <ul>
+                        <li><strong>从类比到本质</strong>——用"图书馆 vs 家教"的比喻建立直觉，再回到技术细节</li>
+                        <li><strong>能力跃迁对比</strong>——直观展示预训练后与 SFT 后模型输出的差异</li>
+                        <li><strong>核心差异一览表</strong>——从目标、数据、学习率、标签策略等维度全面对比预训练和 SFT</li>
+                        <li><strong>学习率的秘密</strong>——为什么 SFT 的学习率比预训练小 50 倍？不这么做会怎样？</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>从图书馆到家教</h3>
+                <div class="columns">
+                    <div class="column">
+                        <h4>预训练 = 读完图书馆</h4>
+                        <p>模型读了几 GB 的文本，学会了语法、词汇、常识。但它只学会了一件事：接着写。</p>
+                        <p>给它任何输入，它只会往后"续"。</p>
+                    </div>
+                    <div class="column">
+                        <h4>SFT = 请一个家教</h4>
+                        <p>家教手把手教模型：别人问问题时，你要这样回答；给你指令时，你要这样执行。</p>
+                        <p>从"复读机"变成"对话者"。</p>
+                    </div>
+                </div>
+                <p><em>比喻卸甲："图书馆"和"家教"只是为了建立直觉。技术上的区别是训练目标和数据格式——预训练用纯文本做"预测下一个 token"，SFT 用"指令-回答"对且只在回答部分计算 loss（Label Masking）。模型并没有真的"读书"或"被教"，它始终在做同一件事：根据上文预测下一个 token，只是 SFT 调整了它预测的内容偏好。</em></p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>能力跃迁</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>预训练后能做什么</h4>
+                        <p>续写文章："今天天气很好，所以..." → "我决定出门散步。"</p>
+                        <p>补全句子："中国的首都是" → "北京。"</p>
+                        <p>但它不理解"这是用户在问我问题"这件事。</p>
+                    </div>
+                    <div class="card">
+                        <h4>SFT 后能做什么</h4>
+                        <p>识别"用户在提问"这个意图本身。</p>
+                        <p>以"助手"身份给出有条理的回答。</p>
+                        <p>遵循格式指令："请列出三点"就真的列三点。</p>
+                    </div>
+                </div>
+                <div class="conclusion">
+                    <p class="highlight">Pretrain 学会"说人类语言"，SFT 学会"做人类助手"。这是两个完全不同的能力层级。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>核心差异一览</h3>
+                <table>
+                    <thead><tr><th>维度</th><th>Pretrain</th><th>SFT</th></tr></thead>
+                    <tbody>
+                        <tr><td>目标</td><td>学会语言规律</td><td>学会按指令对话</td></tr>
+                        <tr><td>数据格式</td><td>纯文本，每行一段话</td><td>多轮对话 JSON</td></tr>
+                        <tr><td>数据集类</td><td><code>PretrainDataset</code></td><td><code>SFTDataset</code></td></tr>
+                        <tr><td>学习率</td><td><code>5e-4</code></td><td><code>1e-5</code>（小 50 倍）</td></tr>
+                        <tr><td>序列长度</td><td>340</td><td>768（更长）</td></tr>
+                        <tr><td>训练轮数</td><td>较多</td><td>默认 2 轮</td></tr>
+                        <tr><td>标签策略</td><td>所有 token 都学</td><td>只学助手回答</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>学习率为什么差50倍</h3>
+                <p><strong>定义</strong>：学习率控制每次参数更新的步长大小。</p>
+                <p><strong>白话</strong>：预训练就像教一个不会说话的婴儿——大胆学、多犯错没关系。而 SFT 就像教一个已经会弹钢琴的人新的指法——只能微调，改太猛就把原来会的全忘了。</p>
+                <p>改太猛的后果有个专业名字：<strong>灾难性遗忘</strong>。模型把预训练学到的语言知识全丢了，SFT 也就白费了。</p>
+                <div class="intro-block">
+                    <p>这个比喻只是为了帮你建立直观感受。在数学上，学习率决定的是梯度下降的步长——参数空间里每一步走多远。预训练从随机参数起步，需要大步探索；SFT 在一个已经很好的起点上，只需要小心翼翼地微调方向。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: SFT 数据长什么样 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2: 对话数据格式</h2>
+                <p>先看一眼真实数据长什么样，再去理解代码就轻松多了。</p>
+                <div class="intro-block">
+                    <p>写代码之前先认识数据格式，这是工程实践中的好习惯。SFT 的训练数据不是随便的文本，而是结构化的多轮对话——每一轮都有明确的角色分工。搞懂数据长什么样，后面的 Label Masking、generate_labels 才能看得明白。</p>
+                    <ul>
+                        <li><strong>JSONL 格式解析</strong>——每行一个 JSON 对象，包含完整的多轮对话</li>
+                        <li><strong>四种对话类型</strong>——普通问答、带系统提示、带推理过程、工具调用，各有各的用途</li>
+                        <li><strong>多轮对话结构</strong>——一轮 question 配一轮 answer，数据可以任意长度</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>JSONL 多轮对话</h3>
+                <p><strong>定义</strong>：SFT 数据使用 JSONL 格式（每行一个 JSON 对象），每条包含一段对话。</p>
+                <p><strong>白话</strong>：就像微信聊天记录的导出——每条消息有发送者（角色）和内容。</p>
+                <p><em>比喻卸甲："聊天记录"只是帮助你建立直觉。实质上 JSONL 是一种逐行存储 JSON 对象的文本格式，每行是一个独立的训练样本，没有数据库、没有消息协议，就是纯文本文件。</em></p>
+                <pre><code class="language-json">{
+  "conversations": [
+    {"role": "user", "content": "请介绍一下中国的四大发明"},
+    {"role": "assistant", "content": "中国四大发明分别是造纸术、印刷术、火药和指南针...",
+     "reasoning_content": "用户问四大发明，我要简要介绍每一项"}
+  ]
+}</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>对话类型一览</h3>
+                                <div class="ai-diagram">
+                  <h4>图：SFT 数据支持的四种对话类型</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：顶部"SFT 数据 JSONL"矩形，向下扇出4条箭头连接到4个子类型矩形：①"普通问答 user→assistant"（蓝色），②"带系统提示 system→user→assistant"（绿色），③"带推理过程 含 reasoning_content"（橙色），④"工具调用对话 含 tools 和 tool_calls"（紫色）
+                  - 各元素关系：从顶部数据源向下分支为4种对话类型，每种类型标注角色流转顺序
+                  - 关键标注：每种类型用不同颜色区分，底部标注"角色有四种：system、user、assistant、tool"
+                  - 配色建议：浅灰背景，四种类型分别用蓝、绿、橙、紫区分
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+                <p>角色有四种：<code>system</code>（系统指令）、<code>user</code>（用户）、<code>assistant</code>（助手）、<code>tool</code>（工具）。<code>reasoning_content</code> 字段记录助手的思考过程，可以为空。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>多轮对话示例</h3>
+                <pre><code class="language-json">{
+  "conversations": [
+    {"role": "system", "content": "你是一个数学老师"},
+    {"role": "user", "content": "勾股定理是什么？"},
+    {"role": "assistant", "content": "勾股定理：直角三角形两直角边平方和等于斜边平方。即 a² + b² = c²。", "reasoning_content": "用户问基础数学概念"},
+    {"role": "user", "content": "举个数字例子？"},
+    {"role": "assistant", "content": "比如 3² + 4² = 9 + 16 = 25 = 5²，所以 3、4、5 就是一组勾股数。", "reasoning_content": ""}
+  ]
+}</code></pre>
+                <p>一条数据可以包含任意多轮对话。模型会从每一轮助手的回答中学习。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: Label Masking 核心 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3: Label Masking</h2>
+                <p>这是 SFT 与预训练最本质的区别。搞懂这个机制，就搞懂了 SFT 的一半。</p>
+                <div class="intro-block">
+                    <p>预训练时每个 token 都参与学习，但 SFT 不一样——模型只需要学会"怎么回答"，不需要学会"怎么提问"。Label Masking 就是告诉模型"哪些位置该学，哪些位置该忽略"的机制。这一节是理解 generate_labels 算法的前置知识。</p>
+                    <ul>
+                        <li><strong>核心问题</strong>——为什么不能让模型学习用户提问的部分？</li>
+                        <li><strong>-100 的含义</strong>——PyTorch 中如何用特殊值标记"不参与 loss 计算的位置"</li>
+                        <li><strong>可视化 Masking</strong>——用直观的方式看到序列中谁学谁不学</li>
+                        <li><strong>多轮对话的 Masking</strong>——多轮场景下，每轮 assistant 的回答都要被标记为可学习</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>核心问题</h3>
+                <div class="warning">
+                    <strong>预训练中每个 token 都参与训练，但 SFT 中只让模型学"自己该说的部分"——用户的问题、系统提示都不是模型写的，不应该学。</strong>
+                </div>
+                <p>设想一个场景：对话数据包含"用户：1+1等于多少？助手：1+1等于2。"</p>
+                <p>如果让模型学习整个序列，它会学着去预测"1+1等于多少？"——但这是用户说的，不是助手该说的。</p>
+                <p>我们只想让它学"1+1等于2"这部分。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>什么是 Label Masking</h3>
+                <p><strong>定义</strong>：Label Masking 是一种训练技巧——把序列中不需要学习的位置的 label 设为 <code>-100</code>，其余位置设为真实 token ID。</p>
+                <p><strong>白话</strong>：就像老师批改试卷时，只批改答案部分，题目部分直接跳过。<code>-100</code> 就是"跳过"的标记。</p>
+                <p><em>比喻卸甲："批改试卷"只是直觉。实际机制是 <code>CrossEntropyLoss</code> 的 <code>ignore_index=-100</code>——遇到 -100 的位置直接跳过损失计算，不产生梯度。模型并没有"判断对错"的能力，它只是在被告诉"这些位置不用学"。</em></p>
+                <div class="intro-block">
+                    <p>为什么是 <code>-100</code>？因为 PyTorch 的 <code>CrossEntropyLoss</code> 默认 <code>ignore_index=-100</code>。遇到 label 为 -100 的位置，损失函数自动跳过，不计算梯度。还记得预训练中 PAD 位置的 labels 也设为 -100 吗？同一个原理，不同的目的——预训练忽略填充，SFT 忽略非助手回答。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>可视化：谁学谁不学</h3>
+                <div class="ai-diagram">
+                  <h4>图：Label Masking 张量对齐全景</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：两行横向排列的长条形"纸带"，上方纸带标注"input_ids"，下方纸带标注"labels"。每条纸带被竖线分割成一个个小格子，每个格子代表一个 token
+                  - 上方纸带的内容按顺序为：[浅灰色块] system标记 → [浅灰色块] "你是AI助手" → [浅灰色块] user标记 → [浅灰色块] "光合作用是什么？" → [浅蓝色块] assistant标记 → [绿色块] "光合作用是植物利用阳光..." → [绿色块] im_end标记 → [浅灰色块] pad
+                  - 下方纸带的内容与上方一一对应对齐：[红色块] "-100" → [红色块] "-100" → [红色块] "-100" → [红色块] "-100" → [红色块] "-100" → [绿色块] 实际token → [绿色块] 实际token → [红色块] "-100"
+                  - 关键标注：绿色区域上方画一个大括号标注"参与训练（loss 计算）"，红色区域上方画一个大括号标注"不参与训练（被 -100 忽略）"
+                  - 配色建议：浅灰/浅蓝背景，绿色格子用 #51cf66，红色格子用 #ffa07a
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、杂乱的颜色
+                  </p>
+                </div>
+                <div class="columns">
+                    <div class="column">
+                        <h4>不参与训练（labels = -100）</h4>
+                        <p>系统提示部分</p>
+                        <p>用户问题部分</p>
+                        <p>填充（pad）部分</p>
+                    </div>
+                    <div class="column">
+                        <h4>参与训练（labels = 实际 token）</h4>
+                        <p>助手回答的每一个 token</p>
+                        <p>包括思考过程（&lt;think&gt;...&lt;/think&gt;）</p>
+                        <p>以及结束标记 &lt;|im_end|&gt;</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>多轮对话的 Masking</h3>
+                <div class="ai-diagram">
+                  <h4>图：多轮对话 Label Masking</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一个长条形 token 序列纸带，分为上下两行，上行标注"input_ids"，下行标注"labels"
+                  - 区块从左到右依次为：[灰色] system 提示 → [灰色] user: 第一个问题 → [绿色] assistant: 第一个回答 → [灰色] user: 第二个问题 → [绿色] assistant: 第二个回答
+                  - 下方 labels 对应：[红色] -100 → [红色] -100 → [绿色] 实际token → [红色] -100 → [绿色] 实际token
+                  - 关键标注：用虚线圆圈标注两次 assistant 的 bos_id 位置，用箭头标注"generate_labels 的 while 循环会找到所有 assistant 块"
+                  - 配色建议：白色背景，绿色 #51cf66，红色 #ffa07a
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、格子太密
+                  </p>
+                </div>
+                <div class="teaching-callout teaching-callout--compact">
+                    <p><strong>关键理解</strong>：<code>generate_labels</code> 中的 while 循环会从头到尾扫描整个序列，<strong>找到所有</strong> assistant 回答的位置。无论是 1 轮还是 10 轮对话，每个 assistant 回答都会被正确标记。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: 数据如何变成训练样本 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：数据变身记</h2>
+                <p>一段对话 JSON 怎么变成模型能吃的 (input_ids, labels) 张量对？关键在于找到 assistant 说话的起止位置，只在那里计算 loss。</p>
+                <div class="intro-block">
+                    <p>这是 SFT 整个数据管线中最核心、也是最有技术含量的一节。从原始 JSON 到模型可用的训练样本，中间要经过模板渲染、tokenization、Label Masking、填充对齐等多道工序。我们一行一行看代码，把每个环节拆清楚。</p>
+                    <ul>
+                        <li><strong>SFTDataset 构造函数</strong>——加载数据、初始化 tokenizer、预计算定位标记</li>
+                        <li><strong>Chat Template</strong>——把对话渲染成模型认识的特殊格式</li>
+                        <li><strong>generate_labels 算法</strong>——SFT 最核心的函数，用 bos/eos 标记定位 assistant 回答区域</li>
+                        <li><strong>四步拆解与流程图</strong>——把复杂算法拆成可消化的小步骤</li>
+                        <li><strong>__getitem__ 全流程</strong>——从单条数据到 (input_ids, labels) 的完整流水线</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>构造函数</h3>
+                <p>构造函数完成三件事：加载数据、初始化 tokenizer、预计算定位标记。</p>
+                <pre><code class="language-python">class SFTDataset(Dataset):
+    def __init__(self, jsonl_path, tokenizer, max_length=1024):
+        super().__init__()
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        features = Features({
+            'conversations': [{
+                'role': Value('string'),
+                'content': Value('string'),
+                'reasoning_content': Value('string'),
+                'tools': Value('string'),
+                'tool_calls': Value('string')
+            }]
+        })
+        self.samples = load_dataset('json', data_files=jsonl_path,
+                                     split='train', features=features)
+        # 预计算 BOS 和 EOS 标记的 token 序列
+        self.bos_id = tokenizer(f'{tokenizer.bos_token}assistant\n',
+                                add_special_tokens=False).input_ids
+        self.eos_id = tokenizer(f'{tokenizer.eos_token}\n',
+                                add_special_tokens=False).input_ids</code></pre>
+                <p><code>Features</code> 定义了数据的字段类型，确保 <code>reasoning_content</code>、<code>tools</code> 等可选字段缺失时不会报错。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>bos_id 与 eos_id</h3>
+                <p><strong>定义</strong>：<code>bos_id</code> 是 <code>&lt;|im_start|&gt;assistant\n</code> 的 token 序列，<code>eos_id</code> 是 <code>&lt;|im_end|&gt;\n</code> 的 token 序列。</p>
+                <p><strong>白话</strong>：它们是"助手回答开始"和"助手回答结束"的定位标记——像书签一样，帮我们在长长的 token 序列中找到"助手到底说了什么"。</p>
+                <p>这个比喻只是为了帮你建立直观感受。在计算机内部，bos_id/eos_id 实际上是预先编码好的整数列表，在 <code>generate_labels</code> 中用来做子序列匹配，定位 assistant 回答的起止位置。</p>
+                                <div class="ai-diagram">
+                  <h4>图：bos_id 与 eos_id 定位标记结构</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右三段结构。左侧"bos_id 开头标记"矩形内含三个小格："&lt;|im_start|&gt;" → "assistant" → "\n"。右侧"eos_id 结尾标记"矩形内含两个小格："&lt;|im_end|&gt;" → "\n"。中间用大括号区域标注"助手的回答内容夹在两者之间"
+                  - 各元素关系：bos_id 在左，中间是助手回答区域，eos_id 在右，三者线性排列
+                  - 关键标注：bos_id 标注"定位助手回答起始"，eos_id 标注"定位助手回答结束"
+                  - 配色建议：浅灰背景，bos_id 蓝色，eos_id 红色，中间回答区域绿色
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么要预计算</h3>
+                <div class="intro-block">
+                    <p><strong>预判解惑</strong>：为什么不每次实时 tokenize 来找标记？</p>
+                    <p>因为 <code>bos_id</code> 和 <code>eos_id</code> 的值是固定的——模板格式不变，它们的编码就不变。预计算一次存下来，后面每条数据直接拿来比较，省下海量重复计算。</p>
+                    <p>如果有 10000 条训练数据，每条要扫描一次 input_ids，那就省下了 10000 次 tokenize 调用。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Chat Template</h3>
+                <p><strong>定义</strong>：<code>create_chat_prompt</code> 调用 tokenizer 内置的 chat_template，把结构化对话数据转为带特殊标记的文本。</p>
+                <p><strong>白话</strong>：就是翻译官——把"角色+内容"的对话列表翻译成模型能读懂的一整段文字。</p>
+                <p><em>比喻卸甲："翻译官"只是直觉。实际是 <code>chat_template</code> 里一段 Jinja2 模板字符串，按固定规则把 role/content 拼接成带 <code>&lt;|im_start|&gt;</code> 等特殊标记的纯文本，没有任何"翻译"智能，纯粹是字符串拼接。</em></p>
+                <pre><code class="language-python">def create_chat_prompt(self, conversations):
+    messages = []
+    tools = None
+    for message in conversations:
+        message = dict(message)
+        if message.get("role") == "system" and message.get("tools"):
+            tools = json.loads(message["tools"])
+        if message.get("tool_calls") and isinstance(message["tool_calls"], str):
+            message["tool_calls"] = json.loads(message["tool_calls"])
+        messages.append(message)
+    return self.tokenizer.apply_chat_template(
+        messages, tokenize=False,
+        add_generation_prompt=False, tools=tools
+    )</code></pre>
+                <p>这个方法会解析 JSON 字符串格式的 <code>tools</code> 和 <code>tool_calls</code>，然后交给 <code>apply_chat_template</code> 统一渲染。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>Template 渲染结果</h3>
+                <p>经过 <code>apply_chat_template</code> 后，结构化对话变成了这样的文本：</p>
+                <pre><code class="language-text">&lt;|im_start|&gt;system
+你是一个知识丰富的AI助手&lt;|im_end|&gt;
+&lt;|im_start|&gt;user
+什么是光合作用？&lt;|im_end|&gt;
+&lt;|im_start|&gt;assistant
+&lt;think&gt;
+用户在问光合作用，我需要解释清楚
+&lt;/think&gt;
+
+光合作用是植物利用阳光...&lt;|im_end|&gt;</code></pre>
+                <div class="teaching-callout teaching-callout--compact">
+                    <p><strong>关键</strong>：每段对话以 <code>&lt;|im_start|&gt;角色名\n</code> 开头，以 <code>&lt;|im_end|&gt;\n</code> 结尾。这就是 bos_id 和 eos_id 要找的标记——它们在文本中的样子就是 <code>&lt;|im_start|&gt;assistant\n</code> 和 <code>&lt;|im_end|&gt;\n</code>。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>generate_labels</h3>
+                <h4>SFT 最核心的函数——决定了模型学什么、不学什么</h4>
+                <pre><code class="language-python">def generate_labels(self, input_ids):
+    # 第一步：全部初始化为 -100（全部忽略）
+    labels = [-100] * len(input_ids)
+    i = 0
+    while i < len(input_ids):
+        # 第二步：找到 '&lt;|im_start|&gt;assistant\n' 的位置
+        if input_ids[i:i + len(self.bos_id)] == self.bos_id:
+            start = i + len(self.bos_id)  # 跳过 bos 标记本身
+            end = start
+            # 第三步：找到 '&lt;|im_end|&gt;\n' 的位置
+            while end < len(input_ids):
+                if input_ids[end:end + len(self.eos_id)] == self.eos_id:
+                    break
+                end += 1
+            # 第四步：将 bos 到 eos 之间的标签设为实际 token
+            for j in range(start, min(end + len(self.eos_id), self.max_length)):
+                labels[j] = input_ids[j]
+            i = end + len(self.eos_id) if end < len(input_ids) else len(input_ids)
+        else:
+            i += 1
+    return labels</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>算法执行流程</h3>
+                                <div class="ai-diagram">
+                  <h4>图：generate_labels 算法执行流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：纵向流程图。顶部"开始：labels 全部设为 -100"→"i=0"→菱形"找到 bos_id？"（否→"i+=1"→菱形"i&lt;len？"→是回到"找到 bos_id？"，否→"返回 labels"）。找到 bos_id 后→"start = i + len(bos_id)"→"向后搜索 eos_id"→菱形"找到 eos_id？"（否继续搜索）→找到后→"labels[start:end+eos] = 实际token"→"跳到 eos 后面继续"→回到"i&lt;len？"判断
+                  - 各元素关系：双重循环结构——外层循环扫描 bos_id，内层循环搜索 eos_id，找到后填充 labels
+                  - 关键标注：初始状态标注"全部-100"，填充操作标注"替换为真实token"
+                  - 配色建议：浅蓝背景，处理步骤蓝绿色，菱形判断橙色，初始/结束绿色
+                  - 画面比例：9:16（纵向）
+                  - 避免：过度装饰、3D 效果、节点太密
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>四步拆解</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>第一步：全部忽略</h4>
+                        <p><code>labels = [-100] * len(input_ids)</code></p>
+                        <p>先默认什么都不学。安全第一。</p>
+                    </div>
+                    <div class="card">
+                        <h4>第二步：找开头</h4>
+                        <p>逐位扫描，用子序列匹配找 <code>bos_id</code>（即 <code>&lt;|im_start|&gt;assistant\n</code>）。</p>
+                        <p>找到了就说明"从这里开始是助手的回答"。</p>
+                    </div>
+                    <div class="card">
+                        <h4>第三步：找结尾</h4>
+                        <p>从开头标记之后继续扫描，找 <code>eos_id</code>（即 <code>&lt;|im_end|&gt;\n</code>）。</p>
+                        <p>找到了就确定了助手回答的完整范围。</p>
+                    </div>
+                    <div class="card">
+                        <h4>第四步：填充标签</h4>
+                        <p>把这个范围内的 labels 从 -100 替换为实际的 token ID。</p>
+                        <p>只有这些位置会参与 loss 计算。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>__getitem__ 全流程</h3>
+                <p>每次 DataLoader 取数据时，会调用 <code>__getitem__</code>，串联所有处理步骤：</p>
+                <pre><code class="language-python">def __getitem__(self, index):
+    # 1. 获取原始数据
+    sample = self.samples[index]
+    conversations = pre_processing_chat(sample['conversations'])
+    # 2. 格式化：将对话转为 chat template 文本
+    prompt = self.create_chat_prompt(conversations)
+    # 3. 后处理：可能移除空的思考标签
+    prompt = post_processing_chat(prompt)
+    # 4. 分词 + 截断 + 填充
+    input_ids = self.tokenizer(prompt).input_ids[:self.max_length]
+    input_ids += [self.tokenizer.pad_token_id] * (self.max_length - len(input_ids))
+    # 5. 生成标签（核心步骤！）
+    labels = self.generate_labels(input_ids)
+    return torch.tensor(input_ids, dtype=torch.long), \
+           torch.tensor(labels, dtype=torch.long)</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>处理流水线全景</h3>
+                                <div class="ai-diagram">
+                  <h4>图：SFT 数据从 JSONL 到训练样本的处理流水线</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右8个圆角矩形依次连接：①"JSONL 原始数据"→②"pre_processing 随机系统提示"→③"create_chat_prompt Chat Template"→④"post_processing 空思考标签"→⑤"tokenizer 分词截断"→⑥"padding 填充 max_length"→⑦"generate_labels 标签掩码"→⑧"返回 input_ids, labels"
+                  - 各元素关系：从左到右依次处理，每步输出作为下一步输入，线性流水线
+                  - 关键标注：步骤②标注"20%概率"，步骤④标注"80%移除空思考"，步骤⑦标注"核心步骤"并用加粗边框
+                  - 配色建议：浅蓝背景，普通步骤浅蓝色，核心步骤⑦用橙色边框加粗
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、节点太密
+                  </p>
+                </div>
+                <p>注意填充（padding）在 <code>generate_labels</code> <strong>之前</strong>执行。所以 pad 部分的 labels 也都是 -100——因为初始值就是 -100，不会被覆盖。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 5: 预处理与后处理 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5: 预处理与后处理</h2>
+                <p>数据在送入 tokenizer 之前和之后，还有两道"清洗工序"。它们让模型更鲁棒。</p>
+                <div class="intro-block">
+                    <p>光有干净的数据格式还不够，还有一些细节处理能显著提升训练效果。这些"小技巧"看起来不起眼，但在实际工程中往往是区分"能用"和"好用"的关键。</p>
+                    <ul>
+                        <li><strong>随机系统提示</strong>——以 20% 概率为对话添加系统提示，让模型学会适应有无 system 的场景</li>
+                        <li><strong>预处理决策流程</strong>——用流程图展示数据增强的判断逻辑</li>
+                        <li><strong>空思考标签处理</strong>——80% 概率移除空的 think 标签，作为数据增强手段</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>随机系统提示</h3>
+                <p><strong>定义</strong>：<code>pre_processing_chat</code> 以 20% 概率为没有 system 消息的对话随机添加系统提示。</p>
+                <p><strong>白话</strong>：不是每条对话都自带系统提示。我们随机"塞"一个进去，让模型学会在有/无系统提示时都能正常回答。</p>
+                <pre><code class="language-python">def pre_processing_chat(conversations, add_system_ratio=0.2):
+    # 有工具定义的对话不做处理
+    if any(conv.get('tools') for conv in conversations):
+        return conversations
+    SYSTEM_PROMPTS = [
+        "你是一个知识丰富的AI，尽力为用户提供准确的信息。",
+        "你是minimind，一个小巧但有用的语言模型。",
+        "You are a helpful AI assistant.",
+        # ... 共 10 条中英文提示
+    ]
+    if conversations[0].get('role') != 'system':
+        if random.random() < add_system_ratio:
+            return [{'role': 'system', 'content': random.choice(SYSTEM_PROMPTS)}] + conversations
+    return conversations</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>预处理决策流程</h3>
+                                <div class="ai-diagram">
+                  <h4>图：pre_processing_chat 预处理决策流程</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：纵向决策树。顶部"收到对话数据"→菱形"有工具定义？"（是→"直接返回"），否→菱形"已有 system？"（是→"直接返回"），否→菱形"random &lt; 0.2？"（否80%→"不加提示"，是20%→"插入随机系统提示"）
+                  - 各元素关系：三层菱形判断依次筛选，每层有"是/否"分支
+                  - 关键标注：每条分支标注概率（20%/80%），"直接返回"标注"工具对话不做处理"
+                  - 配色建议：浅灰背景，判断菱形橙色，直接返回蓝色，插入提示绿色
+                  - 画面比例：9:16（纵向）
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+                <div class="teaching-callout teaching-callout--compact">
+                    <p><strong>为什么是 20% 而不是 100%</strong>？如果每条数据都加系统提示，模型会"依赖"它。20% 的概率让模型既能在有系统提示时遵循指令，也能在没系统提示时自然回答。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>空思考标签处理</h3>
+                <p><strong>定义</strong>：<code>post_processing_chat</code> 以 80% 概率移除空思考标签 <code>&lt;think&gt;\n\n&lt;/think&gt;\n\n</code>。</p>
+                <p><strong>白话</strong>：当助手没有推理过程时（<code>reasoning_content</code> 为空），模板会生成空的思考标签。80% 的情况下删掉它（更干净），20% 保留（让模型学会"有时不思考就直接回答"）。</p>
+                <pre><code class="language-python">def post_processing_chat(prompt_content, empty_think_ratio=0.2):
+    if '&lt;think&gt;\n\n&lt;/think&gt;\n\n' in prompt_content and random.random() > empty_think_ratio:
+        prompt_content = prompt_content.replace('&lt;think&gt;\n\n&lt;/think&gt;\n\n', '')
+    return prompt_content</code></pre>
+                <div class="intro-block">
+                    <p>这和系统提示的随机添加是同一个思路：<strong>数据增强</strong>。让模型见到各种变体，提高泛化能力。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 6: Thinking 模式 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 6: Thinking 模式</h2>
+                <p>模型可以先"想"再"答"。这个能力来自 DeepSeek-R1 / OpenAI o1 的启发。</p>
+                <div class="intro-block">
+                    <p>Think 模式让模型在给出最终回答之前，先在"草稿纸"上推理一番。这不仅是推理阶段的技巧，训练阶段也需要特殊处理——思考过程要不要参与 loss 计算？答案和你想的可能不一样。</p>
+                    <ul>
+                        <li><strong>思考模式格式</strong>——用 &lt;think&gt;...&lt;/think&gt; 标签包裹内部推理过程</li>
+                        <li><strong>训练区域划分</strong>——思考内容和最终回答都算 assistant 的回答，全部参与 loss 计算</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>思考模式格式</h3>
+                <p><strong>定义</strong>：模型在回答之前先进行内部推理，推理过程包裹在 <code>&lt;think&gt;...&lt;/think&gt;</code> 标签中。</p>
+                <p><strong>白话</strong>：就像考试时先在草稿纸上算一遍，再往卷子上写答案。</p>
+                <p>这个比喻只是为了帮你建立直观感受。在计算机内部，Thinking 模式只是在最终回答前多生成了一段 &lt;think&gt; 包裹的文本。这些文本和回答一样，都在 assistant 回答区域内，都会参与训练。</p>
+                <pre><code class="language-text">&lt;|im_start|&gt;assistant
+&lt;think&gt;
+用户问的是勾股定理，我需要给出定义并举例子。
+先说定义：a² + b² = c²。
+再举个例子：3, 4, 5。
+&lt;/think&gt;
+
+勾股定理：直角三角形中，两直角边的平方和等于斜边的平方。
+例如：3² + 4² = 5²。
+&lt;|im_end|&gt;</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>思考模式的训练</h3>
+                                <div class="ai-diagram">
+                  <h4>图：Thinking 模式下助手回答的完整训练区域</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：纵向流程展示助手回答内部结构。顶部"&lt;|im_start|&gt;assistant"→"&lt;think&gt;"→"推理过程 reasoning_content"→"&lt;/think&gt;"→"正式回答 content"→"&lt;|im_end|&gt;"。整个区域用一个大的绿色虚线框包围，标注"全部参与训练"
+                  - 各元素关系：从上到下线性排列，think部分在上，正式回答在下，全部被绿色框包围表示参与训练
+                  - 关键标注：think区域标注"先想后答"，正式回答标注"最终输出"，绿色框标注"全部参与 loss 计算"
+                  - 配色建议：浅灰背景，think标签橙色，正式回答蓝色，绿色虚线框包围全部
+                  - 画面比例：9:16（纵向）
+                  - 避免：过度装饰、3D 效果
+                  </p>
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>提升推理能力</h4>
+                        <p>数学、逻辑、编程任务上，先"想"再"答"的效果明显更好。</p>
+                    </div>
+                    <div class="card">
+                        <h4>提高可解释性</h4>
+                        <p>推理过程对开发者可见，便于调试和改进。</p>
+                    </div>
+                    <div class="card">
+                        <h4>数据来源</h4>
+                        <p>JSONL 中的 <code>reasoning_content</code> 字段。为空则模板生成空思考标签，由后处理函数决定是否移除。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 7: 训练如何运转 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 7：训练如何运转</h2>
+                <p>有了前面的知识储备，现在看训练流程就轻松多了。SFT 训练的核心和预训练几乎一样，只多了 Label Masking。</p>
+                <div class="intro-block">
+                    <p>前面几节搞清楚了数据和 Label Masking，现在把它们装进训练循环里。好消息是 SFT 的训练代码和预训练高度相似，只有少数关键差异需要注意。这一节帮你把训练的每个环节都看明白。</p>
+                    <ul>
+                        <li><strong>关键超参数</strong>——学习率 1e-5、序列长度 768、必须从预训练权重开始</li>
+                        <li><strong>为什么序列更长</strong>——对话数据天然比单段文本更长的原因</li>
+                        <li><strong>训练循环核心代码</strong>——逐行讲解与预训练的差异</li>
+                        <li><strong>梯度累积与裁剪</strong>——在显存有限时模拟大 batch size 的技巧</li>
+                        <li><strong>学习率调度</strong>——余弦退火策略，先快后慢</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>关键超参数</h3>
+                <pre><code class="language-python">parser.add_argument("--learning_rate", type=float, default=1e-5)   # 比 Pretrain 小 50 倍
+parser.add_argument("--epochs", type=int, default=2)               # SFT 通常 2 轮就够
+parser.add_argument("--max_seq_len", default=768, type=int)        # 比 Pretrain 的 340 更长
+parser.add_argument("--batch_size", type=int, default=16)
+parser.add_argument("--accumulation_steps", type=int, default=1)   # 梯度累积
+parser.add_argument("--grad_clip", type=float, default=1.0)        # 梯度裁剪
+parser.add_argument("--dtype", type=str, default="bfloat16")       # 混合精度
+parser.add_argument("--data_path", type=str,
+                    default="../dataset/sft_t2t_mini.jsonl")
+parser.add_argument("--from_weight", default='pretrain')           # 基于预训练权重！</code></pre>
+                <div class="warning">
+                    <strong>from_weight 必须是 pretrain！用随机初始化的模型做 SFT，就像让一个不识字的人学写诗——根本学不会。模型必须先"会说话"（预训练），才能"学听话"（SFT）。</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>为什么序列更长</h3>
+                <p>SFT 的 <code>max_seq_len</code> 是 768，而预训练只有 340。为什么？</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>预训练数据</h4>
+                        <p>每条就是一段纯文本，短文本就够学语言规律了。</p>
+                    </div>
+                    <div class="column">
+                        <h4>SFT 数据</h4>
+                        <p>一条对话包含 system + user + assistant，可能还有多轮。对话天然更长。</p>
+                    </div>
+                </div>
+                <p>如果截断太短，助手回答可能被截掉，那 labels 里就没有有效训练信号了。768 是一个平衡值——既覆盖大多数对话，又不浪费太多显存。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练循环核心</h3>
+                <pre><code class="language-python">for step, (input_ids, labels) in enumerate(loader):
+    input_ids = input_ids.to(args.device)
+    labels = labels.to(args.device)
+
+    with autocast_ctx:
+        res = model(input_ids, labels=labels)
+        loss = res.loss + res.aux_loss
+        loss = loss / args.accumulation_steps
+
+    scaler.scale(loss).backward()
+
+    if step % args.accumulation_steps == 0:
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+        scaler.step(optimizer)
+        scaler.update()
+        optimizer.zero_grad(set_to_none=True)</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>与预训练的差异</h3>
+                <div class="intro-block">
+                    <p>训练循环与 Pretrain <strong>几乎一模一样</strong>。前向传播、反向传播、梯度裁剪、混合精度——全都一样。</p>
+                    <p><strong>唯一的实质性区别在数据</strong>：<code>SFTDataset</code> 返回的 <code>labels</code> 经过了 Label Masking 处理，只有助手回答参与损失计算。这个区别在 Dataset 层已经搞定了，训练循环不需要任何特殊处理。</p>
+                </div>
+                <p>这就是好的架构设计——训练逻辑不变，数据逻辑封装在 Dataset 里。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>梯度累积与裁剪</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>梯度累积（accumulation_steps）</h4>
+                        <p>显存不够加大 batch size 怎么办？分成小步累加梯度，累积够了再更新参数。</p>
+                        <p>等价 batch size = batch_size × accumulation_steps。</p>
+                    </div>
+                    <div class="card">
+                        <h4>梯度裁剪（grad_clip=1.0）</h4>
+                        <p>当梯度的范数超过 1.0 时，等比例缩小。防止某一步更新太猛导致训练崩溃。</p>
+                        <p>SFT 学习率已经很小了，但裁剪是双保险。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>学习率调度</h3>
+                <pre><code class="language-python">lr = get_lr(epoch * iters + step, args.epochs * iters, args.learning_rate)
+for param_group in optimizer.param_groups:
+    param_group['lr'] = lr</code></pre>
+                <p>每一步都会根据当前进度重新计算学习率。通常使用<strong>余弦退火</strong>（cosine annealing）策略——开始时学习率最大，逐步衰减到接近 0。</p>
+                <p>这样模型在训练初期学得多、后期学得少，符合"先抓大方向、再打磨细节"的直觉。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 8: 续训机制 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 8: 续训机制</h2>
+                <p>训练中断了怎么办？MiniMind 内置了断点续训功能。</p>
+                <div class="intro-block">
+                    <p>训练大模型往往需要很长时间，中途断电、OOM、手动中断都是常事。如果每次都从头开始，那简直是噩梦。续训机制让你从断点无缝恢复，不浪费之前的计算成果。</p>
+                    <ul>
+                        <li><strong>自动续训代码</strong>——如何用命令行参数控制是否从断点恢复</li>
+                        <li><strong>恢复内容清单</strong>——不只是模型参数，优化器状态、训练步数、混合精度状态都要恢复</li>
+                        <li><strong>检查点保存</strong>——轻量权重文件 vs 完整检查点，各有各的用途</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自动续训</h3>
+                <pre><code class="language-python"># 命令行参数
+parser.add_argument('--from_resume', default=0, type=int,
+                    choices=[0, 1], help="是否自动检测并续训")
+
+# 脚本中的续训逻辑
+ckp_data = lm_checkpoint(lm_config, weight=args.save_weight,
+                          save_dir='../checkpoints') if args.from_resume == 1 else None
+
+start_epoch, start_step = 0, 0
+if ckp_data:
+    model.load_state_dict(ckp_data['model'])
+    optimizer.load_state_dict(ckp_data['optimizer'])
+    scaler.load_state_dict(ckp_data['scaler'])
+    start_epoch = ckp_data['epoch']
+    start_step = ckp_data.get('step', 0)</code></pre>
+                <div class="intro-block">
+                    <p>设 <code>--from_resume 1</code> 后，脚本会自动检测最新的 checkpoint，恢复模型参数、优化器状态、学习率调度器，然后从断点处继续训练。不需要手动指定从哪个 epoch 开始。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>续训恢复内容</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>模型参数</h4>
+                        <p>model.load_state_dict(ckp_data['model'])</p>
+                        <p>恢复到中断前的模型状态。</p>
+                    </div>
+                    <div class="card">
+                        <h4>优化器状态</h4>
+                        <p>optimizer.load_state_dict(ckp_data['optimizer'])</p>
+                        <p>包括动量、二阶矩等 AdamW 内部状态。</p>
+                    </div>
+                    <div class="card">
+                        <h4>训练进度</h4>
+                        <p>start_epoch 和 start_step</p>
+                        <p>确保不重复训练已经学过的数据。</p>
+                    </div>
+                    <div class="card">
+                        <h4>混合精度状态</h4>
+                        <p>scaler.load_state_dict(ckp_data['scaler'])</p>
+                        <p>恢复 GradScaler 的缩放因子。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>保存检查点</h3>
+                <p>脚本每隔 <code>save_interval</code> 步（默认 1000）保存一次检查点：</p>
+                <pre><code class="language-python">if (step % args.save_interval == 0 or step == iters) and is_main_process():
+    model.eval()
+    # 保存模型权重（FP16 节省空间）
+    state_dict = raw_model.state_dict()
+    torch.save({k: v.half().cpu() for k, v in state_dict.items()}, ckp)
+    # 保存完整检查点（含优化器状态，用于续训）
+    lm_checkpoint(lm_config, weight=args.save_weight, model=model,
+                  optimizer=optimizer, epoch=epoch, step=step,
+                  wandb=wandb, save_dir='../checkpoints', scaler=scaler)
+    model.train()</code></pre>
+                <div class="teaching-callout teaching-callout--compact">
+                    <p><strong>注意</strong>：保存了两种文件——轻量权重文件（纯模型参数，用于推理）和完整检查点（含优化器状态，用于续训）。别搞混。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 9: 训练全景图 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 9: 端到端全景</h2>
+                <p>让我们把所有碎片拼起来，看一条数据从原始 JSON 到梯度更新的完整旅程。</p>
+                <div class="intro-block">
+                    <p>前面我们把 SFT 拆成了一块块零件——数据格式、Label Masking、模板渲染、训练循环。现在是时候把它们串成一条完整的流水线，从全局视角重新审视整个训练过程。</p>
+                    <ul>
+                        <li><strong>训练架构全景图</strong>——一张图看懂数据从 JSON 到梯度更新的完整链路</li>
+                        <li><strong>端到端数据追踪表</strong>——跟踪一条具体数据在每个阶段的形态变化</li>
+                        <li><strong>完整数据流</strong>——从文件读取到 loss 反传的全景回顾</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>训练架构全景</h3>
+                <div class="ai-diagram">
+                  <h4>图：SFT 训练完整架构</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右三层架构图
+                  - 第一层（数据层，浅蓝色）：JSONL文件 → SFTDataset → DataLoader（返回 input_ids 和 labels）
+                  - 第二层（模型层，浅绿色）：Transformer模型 → 输入input_ids → 前向传播 → logits
+                  - 第三层（优化层，浅橙色）：logits与labels计算CrossEntropyLoss（labels中-100位置自动被忽略）→ loss.backward() → optimizer.step()
+                  - 数据层到模型层标注"input_ids 送入模型"，模型层到优化层标注"logits + labels → loss"
+                  - 关键标注：在loss计算处展示"只有assistant部分（绿色）参与计算，其余被-100屏蔽（灰色）"
+                  - 配色建议：数据层浅蓝，模型层浅绿，优化层浅橙
+                  - 画面比例：16:9
+                  - 避免：过度装饰、3D 效果、组件太密
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>端到端数据追踪</h3>
+                <pre><code class="language-json">{"conversations": [
+  {"role": "user", "content": "1+1等于多少？"},
+  {"role": "assistant", "content": "1+1等于2。", "reasoning_content": ""}
+]}</code></pre>
+                <table>
+                    <thead><tr><th>步骤</th><th>操作</th><th>结果</th></tr></thead>
+                    <tbody>
+                        <tr><td>1. 读取</td><td>加载 JSON</td><td>原始对话数据</td></tr>
+                        <tr><td>2. 预处理</td><td><code>pre_processing_chat</code></td><td>20% 概率加了 system 消息</td></tr>
+                        <tr><td>3. 格式化</td><td><code>apply_chat_template</code></td><td>带 <code>&lt;|im_start|&gt;</code> 标记的文本</td></tr>
+                        <tr><td>4. 后处理</td><td><code>post_processing_chat</code></td><td>空思考标签可能被移除</td></tr>
+                        <tr><td>5. 分词</td><td><code>tokenizer</code></td><td><code>[1, 284, 56, ...]</code></td></tr>
+                        <tr><td>6. 填充</td><td>pad 到 768</td><td><code>[1, 284, ..., 0, 0]</code></td></tr>
+                        <tr><td>7. 标签</td><td><code>generate_labels</code></td><td>助手回答处=实际 token，其余=-100</td></tr>
+                        <tr><td>8. Tensor</td><td><code>torch.tensor</code></td><td>送入模型训练</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>完整数据流</h3>
+                                <div class="ai-diagram">
+                  <h4>图：SFT 端到端完整数据流</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：纵向流程图。顶部"读取 JSONL"→"pre_processing 20%加系统提示"→"create_chat_prompt Chat Template"→"post_processing 80%移除空思考"→"tokenizer 分词"→"截断+padding 到 max_seq_len"→"generate_labels Label Masking"→"DataLoader 批处理"→"模型前向传播"→"CrossEntropyLoss -100自动忽略"→"反向传播+参数更新"
+                  - 各元素关系：从上到下线性流程，数据经过预处理、格式化、分词、标签生成、送入模型训练
+                  - 关键标注：generate_labels 步骤用橙色边框加粗标注"核心"，loss处标注"只计算助手回答"
+                  - 配色建议：浅灰背景，数据步骤蓝色系，模型计算绿色系，loss/优化橙色系
+                  - 画面比例：9:16（纵向）
+                  - 避免：过度装饰、3D 效果、节点太密
+                  </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 10: 动手实践 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 10: 动手实践</h2>
+                <p>理论学完了，动手跑一跑才能真正理解。</p>
+                <div class="intro-block">
+                    <p>读再多代码不如自己跑一遍。这一节给你完整的动手指南——从启动训练命令开始，到自定义数据、动手练习，再到遇到问题时的排错手册。把前面的知识转化为真正的工程能力。</p>
+                    <ul>
+                        <li><strong>启动训练</strong>——一行命令跑通 SFT，附带关键参数说明</li>
+                        <li><strong>准备自己的数据</strong>——如何构造符合格式要求的 JSONL 数据集</li>
+                        <li><strong>动手练习</strong>——手工标注 labels、算法跟踪 generate_labels、调参决策</li>
+                        <li><strong>错误诊断</strong>——loss 不降、loss 飙升、模型复读等常见问题的排查思路</li>
+                        <li><strong>FAQ</strong>——集中回答学习过程中最常见的疑问</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>启动训练</h3>
+                <pre><code class="language-bash">$ cd trainer
+$ python train_full_sft.py</code></pre>
+                <p>默认参数：数据 <code>sft_t2t_mini.jsonl</code>，基于预训练权重，学习率 <code>1e-5</code>，序列长度 768，训练 2 轮。</p>
+                <p>预期输出：</p>
+                <pre><code class="language-text">Epoch:[1/2](1/xxx), loss: 8.xxxx, logits_loss: 8.xxxx, aux_loss: 0.xxxx, lr: 0.00000xxx, epoch_time: xx.xmin</code></pre>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>自定义参数</h3>
+                <pre><code class="language-bash">$ python train_full_sft.py \
+    --data_path ../dataset/my_sft_data.jsonl \
+    --learning_rate 5e-6 \
+    --max_seq_len 1024 \
+    --epochs 3 \
+    --batch_size 8 \
+    --accumulation_steps 4 \
+    --from_weight pretrain \
+    --save_dir ../my_sft_output</code></pre>
+                <div class="teaching-callout teaching-callout--compact">
+                    <p><strong>等价 batch size</strong> = <code>batch_size(8)</code> × <code>accumulation_steps(4)</code> = 32。显存不够时用累积来模拟大 batch。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>准备自己的数据</h3>
+                <pre><code class="language-json">{"conversations": [{"role": "user", "content": "你好"}, {"role": "assistant", "content": "你好！有什么可以帮助你的吗？", "reasoning_content": ""}]}
+{"conversations": [{"role": "system", "content": "你是数学老师"}, {"role": "user", "content": "2×3=？"}, {"role": "assistant", "content": "2×3=6。", "reasoning_content": "简单的乘法"}]}</code></pre>
+                <div class="warning">
+                    <strong>数据质量比数量更重要！</strong>1000 条高质量对话的效果可能比 10000 条低质量对话更好。确保回答准确、格式一致、涵盖多样场景。
+                </div>
+                <p>每行一个 JSON 对象，必须包含 <code>conversations</code> 字段。<code>reasoning_content</code> 可以为空字符串。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 练习与诊断 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：手工标注</h3>
+                <p>假设以下是一条经过 chat_template 格式化后的 token 序列（简化表示）：</p>
+                <pre><code class="language-text">[&lt;|im_start|&gt;, system, \n, 你是AI助手, &lt;|im_end|&gt;, \n,
+ &lt;|im_start|&gt;, user, \n, 什么是光合作用？, &lt;|im_end|&gt;, \n,
+ &lt;|im_start|&gt;, assistant, \n, 光合作用是植物利用阳光..., &lt;|im_end|&gt;, \n,
+ &lt;pad&gt;, &lt;pad&gt;, &lt;pad&gt;]</code></pre>
+                <div class="example-box">
+                    <h4>请写出对应的 labels 序列</h4>
+                    <p>提示：system 和 user 部分的 labels 是什么？assistant 部分呢？padding 部分呢？</p>
+                    <details class="teaching-accordion">
+                        <summary class="teaching-accordion__summary">查看答案</summary>
+                        <div class="teaching-accordion__body">
+                            <pre><code class="language-text">[-100, -100, -100, -100, -100, -100,
+ -100, -100, -100, -100, -100, -100,
+ -100, -100, -100, 光合作用是植物利用阳光..., &lt;|im_end|&gt;, \n,
+ -100, -100, -100]</code></pre>
+                            <p>只有从 <code>assistant\n</code> 之后到 <code>&lt;|im_end|&gt;\n</code>（含）之间的 token 才参与训练。padding 部分保持 -100 不变。</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：算法跟踪</h3>
+                <p>给定以下 input_ids（简化，每个元素代表一个 token）：</p>
+                <pre><code class="language-python">input_ids = [10, 20, 30, 1, 2, 3, 40, 50, 4, 5, 60]
+# bos_id = [1, 2, 3]  (代表 &lt;|im_start|&gt;assistant\n)
+# eos_id = [4, 5]      (代表 &lt;|im_end|&gt;\n)</code></pre>
+                <div class="example-box">
+                    <h4>请手动模拟 generate_labels 的执行过程</h4>
+                    <p>问题 1：i=0 时，<code>input_ids[0:3]</code> 即 <code>[10,20,30]</code> 等于 <code>[1,2,3]</code> 吗？</p>
+                    <p>问题 2：i=3 时，<code>input_ids[3:6]</code> 即 <code>[1,2,3]</code> 等于 <code>[1,2,3]</code> 吗？此时 start 和 end 各是多少？</p>
+                    <p>问题 3：最终的 labels 是什么？</p>
+                    <details class="teaching-accordion">
+                        <summary class="teaching-accordion__summary">查看答案</summary>
+                        <div class="teaching-accordion__body">
+                            <p><strong>问题 1</strong>：不等。<code>[10,20,30] != [1,2,3]</code>，所以 <code>i += 1</code>，继续搜索。</p>
+                            <p><strong>问题 2</strong>：相等！<code>start = 3 + 3 = 6</code>。end 从 6 开始搜索：<code>input_ids[8:10] = [4,5] == eos_id</code>，所以 <code>end = 8</code>。</p>
+                            <p><strong>问题 3</strong>：<code>labels[6]</code> 到 <code>labels[9]</code>（含 eos_id）设为 input_ids 的对应值：</p>
+                            <pre><code class="language-python">[-100, -100, -100, -100, -100, -100, 40, 50, 4, 5, -100]</code></pre>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>练习：调参决策</h3>
+                <div class="example-box">
+                    <h4>场景：你的 SFT 数据有 5000 条长对话，平均长度 900 tokens</h4>
+                    <p>请思考以下问题并给出你的参数选择：</p>
+                    <p>1. <code>max_seq_len</code> 应该设多少？为什么？</p>
+                    <p>2. <code>learning_rate</code> 设 <code>1e-5</code> 还是 <code>1e-3</code>？为什么？</p>
+                    <p>3. <code>epochs</code> 设 2 还是 20？为什么？</p>
+                    <details class="teaching-accordion">
+                        <summary class="teaching-accordion__summary">查看答案</summary>
+                        <div class="teaching-accordion__body">
+                            <p>1. <code>max_seq_len</code> 应设 1024 或更大。因为平均长度 900，默认 768 会截断大量数据，助手回答可能被截掉，labels 里就没有有效训练信号了。</p>
+                            <p>2. <code>1e-5</code>。SFT 学习率必须很小，<code>1e-3</code> 会导致灾难性遗忘，把预训练知识全抹掉。</p>
+                            <p>3. 2 轮就够。5000 条数据训练太多轮容易过拟合——模型把训练集背下来了，但遇到新问题就懵了。</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 常见错误诊断 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>错误诊断：loss 不降</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>症状</h4>
+                        <p>训练几十步后 loss 还是在 10.x 左右波动，没有明显下降趋势。</p>
+                    </div>
+                    <div class="card">
+                        <h4>可能原因</h4>
+                        <p><code>from_weight</code> 没有设为 <code>pretrain</code>，模型从随机参数起步，连语言都还不懂，SFT 自然学不到东西。</p>
+                    </div>
+                    <div class="card">
+                        <h4>快速检查</h4>
+                        <p>看启动日志，确认加载了预训练权重文件。检查权重文件大小是否合理。</p>
+                    </div>
+                    <div class="card">
+                        <h4>修复</h4>
+                        <p>确保 <code>--from_weight pretrain</code>，并且 <code>out/pretrain_*.pth</code> 文件存在。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>错误诊断：loss 飙升</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>症状</h4>
+                        <p>loss 突然变成 inf 或 NaN，训练彻底崩溃。</p>
+                    </div>
+                    <div class="card">
+                        <h4>可能原因</h4>
+                        <p>学习率太大了。你可能用了预训练的学习率 <code>5e-4</code> 而不是 SFT 的 <code>1e-5</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>快速检查</h4>
+                        <p>在日志中找到 <code>lr:</code> 那一列，看是否在 <code>1e-5</code> 量级。</p>
+                    </div>
+                    <div class="card">
+                        <h4>修复</h4>
+                        <p>设 <code>--learning_rate 1e-5</code>。如果已经崩溃了，需要从预训练权重重新开始。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>错误诊断：模型复读</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>症状</h4>
+                        <p>模型输出总是重复用户的问题，而不是给出回答。</p>
+                    </div>
+                    <div class="card">
+                        <h4>可能原因</h4>
+                        <p>labels 掩码没生效——<code>generate_labels</code> 没有正确找到 bos_id 和 eos_id。</p>
+                    </div>
+                    <div class="card">
+                        <h4>快速检查</h4>
+                        <p>取消 <code>SFTDataset.__getitem__</code> 中被注释掉的调试打印代码，看 labels 是否正确。</p>
+                    </div>
+                    <div class="card">
+                        <h4>修复</h4>
+                        <p>检查 tokenizer 的 <code>bos_token</code> 和 <code>eos_token</code> 是否与 chat_template 的标记一致。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>错误诊断：其他问题</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>数据格式报错</h4>
+                        <p><strong>症状</strong>：<code>KeyError: 'conversations'</code></p>
+                        <p><strong>修复</strong>：检查 JSONL 文件格式。每行必须是合法 JSON，且包含 <code>conversations</code> 字段。</p>
+                    </div>
+                    <div class="card">
+                        <h4>过拟合严重</h4>
+                        <p><strong>症状</strong>：训练 loss 很低，但模型对训练集外的问题回答很差。</p>
+                        <p><strong>修复</strong>：减少 epochs，增加数据多样性。2 轮通常足够。</p>
+                    </div>
+                    <div class="card">
+                        <h4>显存不够 OOM</h4>
+                        <p><strong>症状</strong>：<code>CUDA out of memory</code></p>
+                        <p><strong>修复</strong>：减小 <code>batch_size</code>，增大 <code>accumulation_steps</code>，或减小 <code>max_seq_len</code>。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== FAQ ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>常见问题 FAQ</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>-100 怎么被忽略的</h4>
+                        <p><code>CrossEntropyLoss</code> 内置 <code>ignore_index=-100</code>，遇到 -100 自动跳过，不计算梯度。</p>
+                    </div>
+                    <div class="card">
+                        <h4>需要多少数据</h4>
+                        <p>MiniMind 通常几千到几万条高质量对话就够。关键是多样、格式正确、回答质量高。</p>
+                    </div>
+                    <div class="card">
+                        <h4>训练多久算够</h4>
+                        <p>默认 2 个 epoch。观察 loss 曲线，不再明显下降就可以停了。过长会过拟合。</p>
+                    </div>
+                    <div class="card">
+                        <h4>能用 CPU 训练吗</h4>
+                        <p>可以，但会很慢。脚本会自动检测：有 GPU 用 GPU，没有用 CPU。小模型在 CPU 上勉强能跑。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 总结 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>SFT 核心回顾</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>数据格式</h4>
+                        <p>JSONL 多轮对话，支持 system/user/assistant/tool 四种角色，支持 reasoning_content 思考过程</p>
+                    </div>
+                    <div class="card">
+                        <h4>关键机制：Label Masking</h4>
+                        <p>只有助手回答参与训练，其余标签为 -100；Chat Template 提供统一的对话格式标记</p>
+                    </div>
+                    <div class="card">
+                        <h4>训练参数</h4>
+                        <p>学习率 1e-5（比预训练小 50 倍），序列长度 768，训练轮数 2</p>
+                    </div>
+                    <div class="card">
+                        <h4>与 Pretrain 的关系</h4>
+                        <p>必须先 Pretrain 再 SFT——Pretrain 教语言规律，SFT 教对话行为</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你学到了什么</h3>
+                <div class="summary-grid">
+                    <div class="concept-card concept-card--success">
+                        <h4 class="concept-card__title">为什么需要 SFT</h4>
+                        <p>从"会说话"到"会听话"的进化。预训练教语言规律，SFT 教对话行为。</p>
+                    </div>
+                    <div class="concept-card concept-card--success">
+                        <h4 class="concept-card__title">Label Masking</h4>
+                        <p>只有助手回答参与训练，其余位置 label 为 -100。这是 SFT 与预训练的核心区别。</p>
+                    </div>
+                    <div class="concept-card concept-card--success">
+                        <h4 class="concept-card__title">Chat Template</h4>
+                        <p>统一格式化对话，用 <code>&lt;|im_start|&gt;</code> / <code>&lt;|im_end|&gt;</code> 标记分隔角色。bos_id 和 eos_id 用来定位助手回答。</p>
+                    </div>
+                    <div class="concept-card concept-card--success">
+                        <h4 class="concept-card__title">Thinking Mode</h4>
+                        <p>模型先"想"再"答"，推理过程包裹在 <code>&lt;think&gt;</code> 标签中。由 <code>reasoning_content</code> 字段控制。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 收尾 ==================== -->
+        <section class="slide title-slide">
+            <h1>阶段 4 完成</h1>
+            <p>从"会说话"到"会听话"——SFT 让模型学会遵循指令、扮演助手。</p>
+            <p>下一章：<strong>阶段 5 · LoRA 微调</strong>——只训练 1.4% 的参数，实现同样的微调效果</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

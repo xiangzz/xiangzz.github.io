@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阶段 9：更大的世界</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🗺️</text></svg>">
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="../../../prism/prism.css">
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ==================== 封面 ==================== -->
+        <section class="slide title-slide active">
+            <h1>更大的世界</h1>
+            <p>阶段 9 · 把 MiniMind-O 放回它的技术谱系</p>
+        </section>
+
+        <!-- ==================== 开篇 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>你已经站得很高</h3>
+                <p>走到这里，你已经从零理解了一个全模态模型——它的架构、数据、训练、推理、部署。这不是一件小事：MiniMind-O 浓缩了<strong>过去十年自然语言处理几乎所有关键技术</strong>。</p>
+                <p>但它是站在巨人的肩膀上的。RoPE 来自 RoFormer、GQA 来自一篇专门的论文、SwiGLU 来自 GLU 变体研究、Thinker-Talker 来自 Mini-Omni……每一个零件都有出处。</p>
+                <div class="intro-block">
+                    <p>最后一章，我们把 MiniMind-O 放回它所属的技术谱系里：看看它的每个设计从哪来、整个领域怎么演进的、接下来该往哪走。这是收尾，也是新的起点。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 1: 技术家谱 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 1：技术家谱</h2>
+                <p>每个设计决策，都有它的「父母」。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>这些零件分别来自哪里</h3>
+                <table>
+                    <thead><tr><th>MiniMind-O 的设计</th><th>灵感来源</th><th>为什么选它</th></tr></thead>
+                    <tbody>
+                        <tr><td>整体 LLM 架构</td><td>LLaMA</td><td>现代开源 LLM 的事实标准</td></tr>
+                        <tr><td>RMSNorm</td><td>RMSNorm 论文</td><td>比 LayerNorm 快，效果相当</td></tr>
+                        <tr><td>RoPE 位置编码</td><td>RoFormer</td><td>天然支持相对位置</td></tr>
+                        <tr><td>GQA 分组注意力</td><td>GQA 论文</td><td>KV Cache 减半，推理快</td></tr>
+                        <tr><td>SwiGLU 前馈</td><td>GLU Variants 论文</td><td>门控机制提升效果</td></tr>
+                        <tr><td>Thinker-Talker 架构</td><td>Mini-Omni</td><td>理解和生成分离，各司其职</td></tr>
+                        <tr><td>Mimi 音频编解码</td><td>Kyutai Mimi</td><td>8 层 RVQ，高质量低码率</td></tr>
+                        <tr><td>视觉投影对齐</td><td>LLaVA / MiniGPT-4</td><td>小投影器对齐视觉到语言空间</td></tr>
+                    </tbody>
+                </table>
+                <p>看到没？MiniMind-O 不是凭空发明，而是<strong>把业界验证过的最佳实践，浓缩进一个小到能单卡训练的模型里</strong>。这正是它作为「教学项目」的价值——你能看清每个零件。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>架构演进：2017 至今</h3>
+                <div class="ai-diagram">
+                  <h4>图：Transformer 架构的七年演进</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一条从左到右的时间线，五个节点代表 Transformer 架构的关键演进
+                  - 节点依次为：① 原始 Transformer(2017)标注「Post-Norm + MHA + 正弦位置编码」② GPT-2(2019)标注「Pre-Norm」③ GPT-3(2020)标注「大规模预训练」④ LLaMA(2023)标注「RMSNorm + RoPE + SwiGLU + GQA」⑤ MiniMind-O(本项目)标注「LLaMA 架构 + Thinker-Talker 全模态」
+                  - 节点之间用箭头连接，每个箭头上标注「改了什么」
+                  - 关键标注：LLaMA 节点用浅蓝色高亮（标注「现代 LLM 的标准配方」）；MiniMind-O 节点用浅绿色高亮（标注「站在 LLaMA 肩上 + 多模态扩展」）
+                  - 配色建议：浅灰背景，节点用从浅到深的蓝色渐变，LLaMA 浅蓝色，MiniMind-O 浅绿色，箭头深灰色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>你会发现 MiniMind-O 的每个选择都不是随意的——它们是七年里无数次实验筛出来的「最优解」。理解了这个演进，你就理解了为什么现代 LLM 长这个样。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 2: 注意力演进 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 2：细节的演进</h2>
+                <p>以注意力为例，看技术是怎么一步步优化的。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>注意力的三代</h3>
+                <h4>MHA → GQA → MQA：在精度和速度间取舍</h4>
+                <p>注意力头的 KV 数量，经历了三代设计。这背后是一个清晰的权衡：<strong>KV 越少，推理越快、缓存越小，但精度可能下降</strong>。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>MHA（标准）</h4>
+                        <p>8 个 Q、8 个 K、8 个 V。</p>
+                        <p>精度最高，但 KV Cache 最大。</p>
+                        <p>适合训练、对质量要求高。</p>
+                    </div>
+                    <div class="column">
+                        <h4>GQA（本项目）</h4>
+                        <p>8 个 Q、4 组 KV，两两共享。</p>
+                        <p>精度几乎不损，缓存减半。</p>
+                        <p>现代 LLM 主流选择。</p>
+                    </div>
+                    <div class="column">
+                        <h4>MQA（极端）</h4>
+                        <p>8 个 Q、1 组 KV。</p>
+                        <p>最快最小，但精度略降。</p>
+                        <p>对速度极致追求时用。</p>
+                    </div>
+                </div>
+                <p>GQA 是个漂亮的折中——这是工程里最常见的智慧：<strong>不走极端，在两个端点之间找甜点</strong>。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 3: 全模态前沿 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 3：全模态前沿</h2>
+                <p>MiniMind-O 属于一个更大的趋势。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>从单模态到全模态的四步</h3>
+                <div class="ai-diagram">
+                  <h4>图：从纯文本 LLM 到全模态模型的演进</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：从左到右的四个阶段方块，用粗箭头串联，表示模态能力的扩展
+                  - 阶段 1：LLM 纯文本（标注 GPT、LLaMA），只处理文字
+                  - 阶段 2：VLM 视觉语言（标注 GPT-4V、LLaVA），文字 + 图像
+                  - 阶段 3：Speech LM 语音语言（标注 SpeechGPT、SALMONN），文字 + 语音
+                  - 阶段 4：Omni 全模态（标注 GPT-4o、MiniMind-O），文字 + 语音 + 图像，用浅绿色高亮加粗边框
+                  - 关键标注：每个阶段方块下方标注「新增了什么能力」；在阶段 4 旁标注「终极目标：一个模型处理所有模态」
+                  - 配色建议：浅灰背景，四个阶段用从浅到深的绿色渐变，Omni 用最深的绿色高亮
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>MiniMind-O 处在这条演进的终点——「全模态」。而 GPT-4o 这样的闭源模型走的是同一条路。区别只在于规模：GPT-4o 是万亿参数，MiniMind-O 是一亿参数。但<strong>核心思想是一致的</strong>，这正是开源小模型的价值——让你能看清大模型的「骨架」。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>多 Token 预测</h3>
+                <h4>为什么能同时生成 8 层</h4>
+                <p>传统生成是「一个一个 token 吐」。但 MiniMind-O 的 Talker <strong>同时</strong>预测 8 层音频码——这叫<strong>多 Token 预测（MTP）</strong>，是近两年的重要趋势。</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>传统：逐个生成</h4>
+                        <p>生成 token1 → token2 → ...</p>
+                        <p>质量高，但慢。</p>
+                    </div>
+                    <div class="column">
+                        <h4>MTP：一次多个</h4>
+                        <p>同时预测 8 层码本。</p>
+                        <p>配合交错延迟保证质量，比逐层快约 8 倍。</p>
+                    </div>
+                </div>
+                <p>这个思路在 GPT-4o、DeepSeek-V3 等最新模型里都被采用。MiniMind-O 是你能亲手研究 MTP 的最小实例。</p>
+            </div>
+        </section>
+
+        <!-- ==================== Part 4: 论文路线 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 4：论文阅读路线</h2>
+                <p>想往深处走，这是按优先级排好的清单。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>必读：打地基的两篇</h3>
+                <div class="intro-block">
+                    <p><strong>1.《Attention Is All You Need》（2017）</strong></p>
+                    <p>Transformer 的诞生论文。所有后续工作的根基。读懂它，你就理解了 Q/K/V、多头、位置编码的原始设计动机。</p>
+                    <p><strong>2.《LLaMA》论文</strong></p>
+                    <p>MiniMind-O 架构的直接参考。RMSNorm、RoPE、SwiGLU 这些现代 LLM 的「标准配方」都在这里定型。读完你会发现 MiniMind-O 几乎是它的小型复刻。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>推荐：理解每个零件</h3>
+                <div class="intro-block">
+                    <p><strong>3.《RoFormer》</strong>—— RoPE 原始论文，想搞懂旋转位置编码的数学原理必读。</p>
+                    <p><strong>4.《GQA》论文</strong>—— 分组查询注意力，理解 KV Cache 优化的权衡。</p>
+                    <p><strong>5.《GLU Variants Improve Transformer》</strong>—— SwiGLU 的来源，理解门控前馈网络。</p>
+                    <p><strong>6.《Switch Transformer》</strong>—— MoE 混合专家的经典，理解稀疏激活。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>进阶：全模态方向</h3>
+                <div class="intro-block">
+                    <p><strong>7.《Mini-Omni》</strong>—— Thinker-Talker 架构、交错延迟音频生成的原始提出者，MiniMind-O 的直接蓝本。</p>
+                    <p><strong>8.《SpeechGPT》《SALMONN》</strong>—— 语音-语言模型的先驱，理解「为什么要把声音接进 LLM」。</p>
+                    <p><strong>9.《LLaVA》《MiniGPT-4》</strong>—— 视觉语言模型，理解视觉投影对齐的经典做法。</p>
+                    <p><strong>10.《Mimi》《SoundStream》</strong>—— 神经音频编解码器，理解 8 层 RVQ 码本的原理。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== Part 5: 下一步 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Part 5：下一步去哪</h2>
+                <p>学完 MiniMind-O，三条深入路线。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>三个方向，选你感兴趣的</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>🔧 模型架构方向</h4>
+                        <p>想更深理解「模型本身怎么设计」。</p>
+                        <p>读 LLaMA 2/3 源码 → 学 MoE（Mixtral）→ 研究长上下文技术（YaRN 扩展、Ring Attention）。</p>
+                    </div>
+                    <div class="card">
+                        <h4>🏋️ 训练工程方向</h4>
+                        <p>想搞懂「大模型怎么训出来」。</p>
+                        <p>学分布式训练（Megatron、DeepSpeed）→ 学 RLHF/DPO 对齐 → 学数据工程。</p>
+                    </div>
+                    <div class="card">
+                        <h4>🚀 应用部署方向</h4>
+                        <p>想把模型做成能用的产品。</p>
+                        <p>学模型量化（GPTQ、AWQ）→ 学推理加速（vLLM、PagedAttention）→ 学服务部署（TGI、Triton）。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>姊妹项目</h3>
+                <h4>MiniMind 系列</h4>
+                <p>MiniMind-O 是 MiniMind 系列的第三个项目。另外两个值得作为补充学习：</p>
+                <div class="columns">
+                    <div class="column">
+                        <h4>MiniMind（纯文本 LLM）</h4>
+                        <p>最基础的一个。如果你对「预训练」(从零训练 LLM) 感兴趣，从这里开始最纯粹——没有多模态的干扰。</p>
+                    </div>
+                    <div class="column">
+                        <h4>MiniMind-V（视觉语言模型）</h4>
+                        <p>专注图文理解。比 MiniMind-O 简单（没有语音），适合先吃透「视觉如何接入 LLM」。</p>
+                    </div>
+                </div>
+                <p>建议顺序：先 MiniMind 打基础 → MiniMind-V 学多模态对齐 → MiniMind-O（本项目）挑战全模态。</p>
+            </div>
+        </section>
+
+        <!-- ==================== 旅程总结 ==================== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h3>全旅程浓缩图</h3>
+                <div class="ai-diagram">
+                  <h4>图：MiniMind-O 技术栈全景</h4>
+                  <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                  - 画面主体：一张分层的技术栈总览图，从下到上四层，每层几个方块
+                  - 第一层（最底，浅蓝色）「模型架构」：Thinker(8层Transformer: RMSNorm+RoPE+GQA+SwiGLU)、Talker(4层)、Bridge(第3层)、TalkerHead(共享+8适配器)
+                  - 第二层（浅紫色）「多模态」：音频(SenseVoice+投影器)、视觉(SigLIP2+投影器)、语音(Mimi 8层RVQ+CAM++音色)
+                  - 第三层（浅黄色）「训练」：3阶段流水线(T2A→A2A Proj→A2A Full)、数据增强、Scheduled Sampling、损失加权(text+audio/8+stop×10)
+                  - 第四层（浅绿色，最顶）「工程」：DDP分布式、混合精度BF16、梯度累积、原子检查点、实时VAD+WebSocket
+                  - 关键标注：在整张图最顶部标注「这些就是 MiniMind-O 的全部精华」；用虚线连接相关方块表示它们如何协作
+                  - 配色建议：浅灰背景，四层分别浅蓝/浅紫/浅黄/浅绿，方块边框深灰色
+                  - 画面比例：16:9
+                  </p>
+                </div>
+                <p>这张图里的每一个方块，你在前面八章里都学过它的原理。能把这张图画出来，说明你真的掌握了 MiniMind-O。</p>
+            </div>
+        </section>
+
+        <section class="slide">
+            <div class="slide-content">
+                <h3>写在最后</h3>
+                <div class="intro-block">
+                    <p>恭喜你走完了这趟旅程。从一个「0.1B 参数的全模态模型到底怎么工作」的疑问，到现在你能拆解它的每个零件、能跑通它的训练、能改造它的界面。</p>
+                    <p>记住三件事：</p>
+                    <ul>
+                        <li><strong>学习 AI 最好的方式是动手</strong>。别停在「看懂」，去改、去试、去犯错。</li>
+                        <li><strong>遇到问题回到这里</strong>。这份教程的每个阶段，都可以在你后续学习中反复回看——每次都会有新理解。</li>
+                        <li><strong>这是起点不是终点</strong>。MiniMind-O 是个 ~113M 的小模型，真正的大模型世界（7B、70B、万亿）在等你，但底层逻辑你已经掌握了。</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide title-slide">
+            <h1>旅程愉快 🎉</h1>
+            <p>你已经从零理解了一个全模态模型</p>
+            <p>下一个项目，由你来创造</p>
+        </section>
+
+    </main>
+
+    <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div class="controls">
+        <button id="prevBtn">上一页</button>
+        <span id="slide-counter">1 / X</span>
+        <button id="nextBtn">下一页</button>
+    </div>
+
+    <script src="../../../prism/prism.js"></script>
+    <script src="../../../prism/prism-autoloader.min.js"></script>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>
