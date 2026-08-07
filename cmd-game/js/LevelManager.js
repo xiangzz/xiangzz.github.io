@@ -215,13 +215,13 @@ class LevelManager {
                 title: "进程列表",
                 description: "学习使用tasklist命令查看系统进程",
                 tasks: [
-                    { id: "tasklist_1", text: "查看所有运行的进程", completed: false },
-                    { id: "tasklist_2", text: "观察进程信息", completed: false }
+                    { id: "tasklist_1", text: "使用 tasklist 查看所有运行的进程", completed: false },
+                    { id: "tasklist_2", text: "使用 tasklist /v 查看进程详细信息（含状态、用户名）", completed: false }
                 ],
                 hints: [
-                    "使用 tasklist 查看所有进程",
-                    "观察进程的PID、内存使用等信息",
-                    "注意不同进程的内存占用差异"
+                    "使用 tasklist 查看所有进程的基础信息（PID、内存）",
+                    "使用 tasklist /v 查看进程的详细信息（状态、用户名、窗口标题）",
+                    "注意 /v 参数会显示更多列的进程信息"
                 ],
                 setupState: this.setupProcessListLevel.bind(this),
                 checkSuccess: this.checkProcessListLevel.bind(this),
@@ -420,14 +420,29 @@ class LevelManager {
                 if (cmd.startsWith('dir') && result && result.type !== 'error' && !this.completedTasks.has('nav_1')) {
                     this.markTaskCompleted('nav_1', level);
                 }
-                if (cmd.startsWith('cd documents') && !this.completedTasks.has('nav_2')) {
-                    this.markTaskCompleted('nav_2', level);
+                // 任务2：cd 进入 Documents 目录（容忍尾部反斜杠、引号、大小写）
+                {
+                    const tk = this.parseCommandTokens(cmd);
+                    if (tk.name === 'cd' && result && result.type !== 'error' && !this.completedTasks.has('nav_2')) {
+                        // 检查目标是否指向 documents（取路径最后一段比较）
+                        const targetOk = tk.targets.some(t =>
+                            t.replace(/\\/g, '/').split('/').pop().toLowerCase() === 'documents');
+                        if (targetOk) {
+                            this.markTaskCompleted('nav_2', level);
+                        }
+                    }
                 }
                 break;
                 
             case 2: // 创建目录
-                if (cmd.startsWith('mkdir my_folder') && !this.completedTasks.has('mkdir_1')) {
-                    this.markTaskCompleted('mkdir_1', level);
+                // 任务1：mkdir（或 md 别名）创建 my_folder 目录
+                {
+                    const tk = this.parseCommandTokens(cmd);
+                    if ((tk.name === 'mkdir' || tk.name === 'md') && result && result.type !== 'error' &&
+                        tk.targets.some(t => t.toLowerCase() === 'my_folder') &&
+                        !this.completedTasks.has('mkdir_1')) {
+                        this.markTaskCompleted('mkdir_1', level);
+                    }
                 }
                 if (cmd.startsWith('dir') && this.completedTasks.has('mkdir_1') && !this.completedTasks.has('mkdir_2')) {
                     this.markTaskCompleted('mkdir_2', level);
@@ -450,8 +465,14 @@ class LevelManager {
                 if (cmd.startsWith('dir') && !this.completedTasks.has('del_1')) {
                     this.markTaskCompleted('del_1', level);
                 }
-                if (cmd.startsWith('del delete_me.txt') && !this.completedTasks.has('del_2')) {
-                    this.markTaskCompleted('del_2', level);
+                // 任务2：删除 delete_me.txt（支持 del 或 erase 别名，容忍 /q 等参数）
+                {
+                    const tk = this.parseCommandTokens(cmd);
+                    if ((tk.name === 'del' || tk.name === 'erase') && result && result.type !== 'error' &&
+                        tk.targets.some(t => t.toLowerCase() === 'delete_me.txt') &&
+                        !this.completedTasks.has('del_2')) {
+                        this.markTaskCompleted('del_2', level);
+                    }
                 }
                 if (cmd.startsWith('dir') && this.completedTasks.has('del_2') && !this.completedTasks.has('del_3')) {
                     this.markTaskCompleted('del_3', level);
@@ -459,11 +480,17 @@ class LevelManager {
                 break;
                 
             case 5: // 文件查看
-                if (cmd.startsWith('type readme.txt') && !this.completedTasks.has('type_1')) {
-                    this.markTaskCompleted('type_1', level);
-                }
-                if (cmd.startsWith('type config.txt') && !this.completedTasks.has('type_2')) {
-                    this.markTaskCompleted('type_2', level);
+                // 支持 type 或 cat 别名
+                {
+                    const tk = this.parseCommandTokens(cmd);
+                    if ((tk.name === 'type' || tk.name === 'cat') && result && result.type !== 'error') {
+                        if (tk.targets.some(t => t.toLowerCase() === 'readme.txt') && !this.completedTasks.has('type_1')) {
+                            this.markTaskCompleted('type_1', level);
+                        }
+                        if (tk.targets.some(t => t.toLowerCase() === 'config.txt') && !this.completedTasks.has('type_2')) {
+                            this.markTaskCompleted('type_2', level);
+                        }
+                    }
                 }
                 break;
                 
@@ -471,8 +498,15 @@ class LevelManager {
                 if (cmd.startsWith('dir') && !this.completedTasks.has('move_1')) {
                     this.markTaskCompleted('move_1', level);
                 }
-                if (cmd.startsWith('move') && cmd.includes('source.txt') && cmd.includes('moved.txt') && !this.completedTasks.has('move_2')) {
-                    this.markTaskCompleted('move_2', level);
+                // 任务2：移动并重命名 source.txt -> moved.txt
+                {
+                    const tk = this.parseCommandTokens(cmd);
+                    if (tk.name === 'move' && result && result.type !== 'error' &&
+                        tk.targets.some(t => t.toLowerCase() === 'source.txt') &&
+                        tk.targets.some(t => t.toLowerCase() === 'moved.txt') &&
+                        !this.completedTasks.has('move_2')) {
+                        this.markTaskCompleted('move_2', level);
+                    }
                 }
                 if (cmd.startsWith('dir') && this.completedTasks.has('move_2') && !this.completedTasks.has('move_3')) {
                     this.markTaskCompleted('move_3', level);
@@ -483,8 +517,15 @@ class LevelManager {
                 if (cmd.startsWith('dir') && !this.completedTasks.has('args_1')) {
                     this.markTaskCompleted('args_1', level);
                 }
-                if ((cmd.startsWith('del /q /f readonly.txt') || cmd.startsWith('del /f /q readonly.txt')) && !this.completedTasks.has('args_2')) {
-                    this.markTaskCompleted('args_2', level);
+                // 任务2：强制删除只读文件 — 只要 del 命令含 /q 和 /f 标志且目标是 readonly.txt 即可
+                {
+                    const tk = this.parseCommandTokens(cmd);
+                    if (tk.name === 'del' && result && result.type !== 'error' &&
+                        tk.flags.includes('q') && tk.flags.includes('f') &&
+                        tk.targets.some(t => t.toLowerCase() === 'readonly.txt') &&
+                        !this.completedTasks.has('args_2')) {
+                        this.markTaskCompleted('args_2', level);
+                    }
                 }
                 if (cmd.startsWith('dir') && this.completedTasks.has('args_2') && !this.completedTasks.has('args_3')) {
                     this.markTaskCompleted('args_3', level);
@@ -495,8 +536,15 @@ class LevelManager {
                 if (cmd.startsWith('dir') && !this.completedTasks.has('rename_1')) {
                     this.markTaskCompleted('rename_1', level);
                 }
-                if (cmd.startsWith('ren') && cmd.includes('old_name.txt') && cmd.includes('new_name.txt') && !this.completedTasks.has('rename_2')) {
-                    this.markTaskCompleted('rename_2', level);
+                // 任务2：重命名 old_name.txt -> new_name.txt（支持 ren 或 rename 别名）
+                {
+                    const tk = this.parseCommandTokens(cmd);
+                    if ((tk.name === 'ren' || tk.name === 'rename') && result && result.type !== 'error' &&
+                        tk.targets.some(t => t.toLowerCase() === 'old_name.txt') &&
+                        tk.targets.some(t => t.toLowerCase() === 'new_name.txt') &&
+                        !this.completedTasks.has('rename_2')) {
+                        this.markTaskCompleted('rename_2', level);
+                    }
                 }
                 if (cmd.startsWith('dir') && this.completedTasks.has('rename_2') && !this.completedTasks.has('rename_3')) {
                     this.markTaskCompleted('rename_3', level);
@@ -507,28 +555,53 @@ class LevelManager {
                 if (cmd.startsWith('dir') && !this.completedTasks.has('rmdir_1')) {
                     this.markTaskCompleted('rmdir_1', level);
                 }
-                if (cmd.startsWith('rmdir empty_folder') && !this.completedTasks.has('rmdir_2')) {
-                    this.markTaskCompleted('rmdir_2', level);
-                }
-                if ((cmd.startsWith('rmdir /s full_folder') || cmd.startsWith('rmdir /S full_folder')) && !this.completedTasks.has('rmdir_3')) {
-                    this.markTaskCompleted('rmdir_3', level);
+                // 任务2：删除空目录 empty_folder（支持 rmdir 或 rd 别名，容忍参数位置）
+                {
+                    const tk = this.parseCommandTokens(cmd);
+                    if ((tk.name === 'rmdir' || tk.name === 'rd') && result && result.type !== 'error') {
+                        // 检查目标是否含 empty_folder
+                        if (tk.targets.some(t => t.replace(/\\/g, '/').split('/').pop() === 'empty_folder') &&
+                            !this.completedTasks.has('rmdir_2')) {
+                            this.markTaskCompleted('rmdir_2', level);
+                        }
+                        // 任务3：删除非空目录 full_folder，必须有 /s 标志
+                        if (tk.flags.includes('s') &&
+                            tk.targets.some(t => t.replace(/\\/g, '/').split('/').pop() === 'full_folder') &&
+                            !this.completedTasks.has('rmdir_3')) {
+                            this.markTaskCompleted('rmdir_3', level);
+                        }
+                    }
                 }
                 break;
                 
             case 10: // 网络测试
-                if (cmd.startsWith('ping localhost') && !this.completedTasks.has('ping_1')) {
-                    this.markTaskCompleted('ping_1', level);
-                }
-                if ((cmd.startsWith('ping -n') || cmd.startsWith('ping /n')) && cmd.includes('localhost') && !this.completedTasks.has('ping_2')) {
-                    this.markTaskCompleted('ping_2', level);
+                // 任务1：ping 任意主机（localhost 或 IP 或域名）
+                {
+                    const tk = this.parseCommandTokens(cmd);
+                    if (tk.name === 'ping' && result && result.type !== 'error') {
+                        if (tk.targets.length > 0 && !this.completedTasks.has('ping_1')) {
+                            this.markTaskCompleted('ping_1', level);
+                        }
+                        // 任务2：用 -n 参数控制次数（次数 >= 2）
+                        if (tk.flags.includes('n') && !this.completedTasks.has('ping_2')) {
+                            // 从原始命令中提取 -n 后的数字
+                            const nMatch = cmd.match(/(?:-n|\/n)\s+(\d+)/);
+                            const n = nMatch ? parseInt(nMatch[1]) : 0;
+                            if (n >= 2 && n !== 4) {  // 4 是默认值，不计
+                                this.markTaskCompleted('ping_2', level);
+                            }
+                        }
+                    }
                 }
                 break;
                 
             case 11: // 进程列表
-                if (cmd.startsWith('tasklist') && !this.completedTasks.has('tasklist_1')) {
+                // 任务1：使用 tasklist 查看所有进程（不带 /v）
+                if (cmd.startsWith('tasklist') && !cmd.includes('/v') && !this.completedTasks.has('tasklist_1')) {
                     this.markTaskCompleted('tasklist_1', level);
                 }
-                if (cmd.startsWith('tasklist') && this.completedTasks.has('tasklist_1') && !this.completedTasks.has('tasklist_2')) {
+                // 任务2：使用 tasklist /v 查看详细信息
+                if (cmd.startsWith('tasklist') && cmd.includes('/v') && !this.completedTasks.has('tasklist_2')) {
                     this.markTaskCompleted('tasklist_2', level);
                 }
                 break;
@@ -563,19 +636,13 @@ class LevelManager {
                         }
                     }
                 }
-                // 任务2：使用 del *.bak 删除所有bak文件
+                // 任务2：使用 del *.bak 删除所有bak文件（容忍 /q 安静模式下 output 为空）
                 if (cmd.startsWith('del') && cmd.includes('*.bak') && !this.completedTasks.has('wildcard_2')) {
-                    // 检查命令执行结果
-                    if (result && result.type === 'output') {
-                        // 验证删除操作是否成功（检查输出中是否包含删除信息）
-                        const output = result.output.toLowerCase();
-                        if (output.includes('删除') || output.includes('已删除') || 
-                            output.includes('deleted') || output.includes('个文件')) {
-                            // 确保当前目录是wildcard_test
-                            const currentPath = this.vfs.getCurrentPath();
-                            if (currentPath.includes('wildcard_test')) {
-                                this.markTaskCompleted('wildcard_2', level);
-                            }
+                    // 只要命令执行成功（非 error）且在 wildcard_test 目录下即可
+                    if (result && result.type !== 'error') {
+                        const currentPath = this.vfs.getCurrentPath();
+                        if (currentPath.includes('wildcard_test')) {
+                            this.markTaskCompleted('wildcard_2', level);
                         }
                     }
                 }
@@ -607,7 +674,7 @@ class LevelManager {
                     // 检查命令执行结果
                     if (result && result.type === 'output' && result.output) {
                         // 验证是否找到了.js文件（main.js或utils.js）
-                        if (result.output.includes('.js') && 
+                        if (result.output.includes('.js') &&
                             (result.output.includes('main.js') || result.output.includes('utils.js'))) {
                             this.markTaskCompleted('filesearch_1', level);
                         }
@@ -624,7 +691,51 @@ class LevelManager {
                     }
                 }
                 break;
+
+            case 16: // 密码生成
+                // 任务1：使用 setinfo 设置学生信息
+                if (cmd.startsWith('setinfo') && !this.completedTasks.has('password_1')) {
+                    // 仅当命令执行成功时才标记任务完成
+                    if (result && result.type !== 'error' && result.success !== false) {
+                        this.markTaskCompleted('password_1', level);
+                    }
+                }
+                // 任务2：使用 genpass 生成加密密码
+                if (cmd.startsWith('genpass') && !this.completedTasks.has('password_2')) {
+                    // 仅当命令执行成功时才标记任务完成
+                    if (result && result.type !== 'error' && result.success !== false) {
+                        this.markTaskCompleted('password_2', level);
+                    }
+                }
+                break;
         }
+    }
+
+    /**
+     * 从命令字符串中提取命令名和参数（容忍引号、多空格、参数位置任意）
+     * @param {string} command - 原始命令（已 toLowerCase）
+     * @returns {{name: string, args: string[], flags: string[], targets: string[]}}
+     *   - name: 命令名（如 'del'、'rmdir'）
+     *   - args: 所有参数（含 flags 和 targets，保持顺序）
+     *   - flags: 标志参数（以 / 或 - 开头，去掉前缀并转小写，如 ['s','q']）
+     *   - targets: 非标志参数（文件名/路径等，去引号，如 ['readonly.txt']）
+     */
+    parseCommandTokens(command) {
+        const tokens = command.trim().split(/\s+/).filter(t => t.length > 0);
+        if (tokens.length === 0) return { name: '', args: [], flags: [], targets: [] };
+        const name = tokens[0];
+        const args = tokens.slice(1);
+        const flags = [];
+        const targets = [];
+        for (const a of args) {
+            const cleaned = a.replace(/^["']|["']$/g, '');
+            if (/^[/\-]/.test(cleaned)) {
+                flags.push(cleaned.replace(/^[/\-]+/, '').toLowerCase());
+            } else {
+                targets.push(cleaned);
+            }
+        }
+        return { name, args, flags, targets };
     }
 
     /**
@@ -738,7 +849,10 @@ class LevelManager {
     }
 
     checkNavigationLevel() {
-        return this.vfs.getCurrentPath() === 'C:\\Users\\Student\\Documents';
+        // 必须同时满足：路径正确 且 所有任务都已完成
+        const pathCorrect = this.vfs.getCurrentPath() === 'C:\\Users\\Student\\Documents';
+        const allTasksCompleted = this.completedTasks.has('nav_1') && this.completedTasks.has('nav_2');
+        return pathCorrect && allTasksCompleted;
     }
 
     setupDirectoryCreationLevel() {
@@ -829,8 +943,12 @@ class LevelManager {
     }
 
     checkCommandArgsLevel() {
+        // 必须同时满足：文件已删除 且 所有任务都已完成
         const fileExists = this.vfs.readFile('readonly.txt').success;
-        return !fileExists;
+        const allTasksCompleted = this.completedTasks.has('args_1') &&
+                                  this.completedTasks.has('args_2') &&
+                                  this.completedTasks.has('args_3');
+        return !fileExists && allTasksCompleted;
     }
 
     setupRmdirLevel() {
@@ -934,7 +1052,6 @@ class LevelManager {
         this.vfs.createFile('wildcard_test\\backup2.bak', 'Backup file 2');
         this.vfs.createFile('wildcard_test\\temp.tmp', 'Temporary file');
         this.vfs.createFile('wildcard_test\\readme.txt', 'Read me file');
-        this.vfs.createDirectory('wildcard_test');
     }
 
     checkWildcardLevel() {
@@ -945,8 +1062,6 @@ class LevelManager {
     setupAdvancedSearchLevel() {
         this.vfs.changeDirectory('C:\\Users\\Student\\Documents');
         this.vfs.createDirectory('search_test');
-        this.vfs.createFile('wildcard_test\\backup-13-1.bak', 'Backup file 1');
-        this.vfs.createFile('wildcard_test\\backup-13-2.bak', 'Backup file 2');
         this.vfs.createFile('search_test\\file1.txt', 'This file contains the word error in line 1\nNormal text in line 2\nAnother error message here');
         this.vfs.createFile('search_test\\file2.txt', 'Regular content\nNo special words here\nJust normal text');
         this.vfs.createFile('search_test\\log.txt', 'System log file\nerror: Connection failed\nWARNING: Low memory\nerror: Disk full');

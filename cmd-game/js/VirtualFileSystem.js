@@ -168,10 +168,10 @@ class VirtualFileSystem {
     getNode(path) {
         const pathArray = this.normalizePath(this.parsePath(path));
         let current = this.fileSystem;
-        
+
         for (let i = 0; i < pathArray.length; i++) {
             const part = pathArray[i];
-            
+
             // 特殊处理根级别（第一次循环）
             if (i === 0) {
                 // 对于根对象，直接查找 current[part]
@@ -267,12 +267,47 @@ class VirtualFileSystem {
             }
         }
 
-        if (this.isDirectory(targetPath)) {
-            this.currentPath = targetPath;
-            return { success: true, path: targetPath };
+        // 大小写不敏感地查找实际节点路径（模拟 Windows 文件系统不区分大小写）
+        const actualNode = this.findCaseInsensitivePath(targetPath);
+        if (actualNode) {
+            this.currentPath = actualNode;
+            return { success: true, path: actualNode };
         } else {
             return { success: false, error: '系统找不到指定的路径。' };
         }
+    }
+
+    /**
+     * 大小写不敏感地解析路径，返回规范化后的实际路径（使用文件系统中真实的大小写）
+     * 如果路径不存在返回 null。例如 'C:\users\student\documents' 可匹配到 'C:\Users\Student\Documents'
+     */
+    findCaseInsensitivePath(path) {
+        const pathArray = this.normalizePath(this.parsePath(path));
+        if (pathArray.length === 0) return null;
+        let current = this.fileSystem;
+        const resolved = [];
+        for (let i = 0; i < pathArray.length; i++) {
+            const part = pathArray[i];
+            let foundKey = null;
+            let container = (i === 0) ? current : (current && current.children);
+            if (!container) return null;
+            // 先精确匹配
+            if (container[part]) {
+                foundKey = part;
+            } else {
+                // 大小写不敏感匹配
+                const lower = part.toLowerCase();
+                foundKey = Object.keys(container).find(k => k.toLowerCase() === lower);
+            }
+            if (!foundKey) return null;
+            resolved.push(foundKey);
+            current = container[foundKey];
+            // 中间路径必须是目录
+            if (i < pathArray.length - 1 && (!current || current.type !== 'directory')) return null;
+        }
+        // 最终节点必须是目录（cd 只能进入目录）
+        if (!current || current.type !== 'directory') return null;
+        return resolved.join('\\');
     }
 
     /**
@@ -295,7 +330,7 @@ class VirtualFileSystem {
     createDirectory(path) {
         const pathArray = this.normalizePath(this.parsePath(path));
         const dirName = pathArray.pop();
-        const parentPath = pathArray.join('\\');
+        let parentPath = pathArray.join('\\');
         if (!parentPath.startsWith('C:')) {
             parentPath = 'C:\\' + parentPath;
         }
@@ -323,7 +358,7 @@ class VirtualFileSystem {
     createFile(path, content = '') {
         const pathArray = this.normalizePath(this.parsePath(path));
         const fileName = pathArray.pop();
-        const parentPath = pathArray.join('\\');
+        let parentPath = pathArray.join('\\');
         if (!parentPath.startsWith('C:')) {
             parentPath = 'C:\\' + parentPath;
         }
@@ -359,7 +394,7 @@ class VirtualFileSystem {
     delete(path) {
         const pathArray = this.normalizePath(this.parsePath(path));
         const itemName = pathArray.pop();
-        const parentPath = pathArray.join('\\');
+        let parentPath = pathArray.join('\\');
         if (!parentPath.startsWith('C:')) {
             parentPath = 'C:\\' + parentPath;
         }
@@ -385,7 +420,7 @@ class VirtualFileSystem {
     deleteDirectory(path, recursive = false) {
         const pathArray = this.normalizePath(this.parsePath(path));
         const dirName = pathArray.pop();
-        const parentPath = pathArray.join('\\');
+        let parentPath = pathArray.join('\\');
         if (!parentPath.startsWith('C:')) {
             parentPath = 'C:\\' + parentPath;
         }
@@ -480,7 +515,9 @@ class VirtualFileSystem {
      */
     searchFiles(pattern, searchPath = this.currentPath) {
         const results = [];
-        const regex = new RegExp(pattern.replace(/\*/g, '.*').replace(/\?/g, '.'), 'i');
+        // 先转义正则特殊字符，再转换通配符 * 和 ?
+        const escapeRegex = (s) => s.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escapeRegex(pattern).replace(/\*/g, '.*').replace(/\?/g, '.'), 'i');
         
         const search = (node, currentPath) => {
             if (node.children) {

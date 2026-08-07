@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>05 团队工作流</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ========== Slide 1: Title ========== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 05 章</div>
+            <h1>团队工作流</h1>
+            <p>分支保护、CODEOWNERS、模板——把好习惯固化成规则</p>
+            <strong>当协作出问题，靠规则而不是靠记忆</strong>
+        </section>
+
+        <!-- ========== Slide 2: Problem Opening ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>团队会踩的坑</h2>
+                <h4>PR 流程都懂了，可一旦人多起来，新麻烦就来了</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>有人直接推 main</h4>
+                        <p>约定好了「走 PR」，但总有人忘了，直接 push 到 main。<strong>没测试的代码进主干，全组陪葬。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>review 找错人</h4>
+                        <p>前端改了后端文件没人发现；新人提交没人审。<strong>该审的人没审，不该审的人在审。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>PR 描述五花八门</h4>
+                        <p>有人写一大段，有人只写「修了一下」。issue 报告也格式混乱。<strong>信息不齐，每次都要追问。</strong></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>本章把「好习惯」变成「强制规则」：</strong>用分支保护防止误推、用 CODEOWNERS 自动分配 reviewer、用模板统一 PR/issue 格式。<br>
+                    规则写在仓库里，不靠人记，不靠人盯。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 3: Before We Start ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>会开 PR，但团队没有规范</li>
+                            <li>想给自己的项目加上专业协作规则</li>
+                            <li>被「谁该 review」「怎么防误推」困扰的组长</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>你将学会</h4>
+                        <ul>
+                            <li>配置分支保护规则</li>
+                            <li>用 CODEOWNERS 自动指派 reviewer</li>
+                            <li>创建 PR 和 issue 的模板</li>
+                            <li>区分 Git Flow 和 Trunk Based 工作流</li>
+                            <li>遵循 code review 的礼仪和 checklist</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章暂不覆盖</h4>
+                        <ul>
+                            <li>Organization 团队管理（企业功能）</li>
+                            <li>CI 强制门禁（第 07 章）</li>
+                            <li>fork 工作流（第 06 章）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 4: Branch protection concept ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>分支保护</h2>
+                <h4>给 main 等关键分支上锁——不是谁都能直接推的</h4>
+                <div class="ai-diagram">
+                    <h4>图：分支保护如何工作</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：左侧一个「main 分支」用盾牌图标包围，右侧多个开发者图标
+                    - 各元素关系：一个开发者（标注「直接 push」）被红色叉号挡在盾牌外；另一个开发者（标注「走 PR + review」）的箭头穿过盾牌上标注「需 N 个 approve」的小门进入 main
+                    - 关键标注：盾牌上写「分支保护规则」，门外标「禁止直接推」，门内标「通过审查才放行」
+                    - 配色建议：浅灰背景，盾牌用深蓝，被拒路径用红色，通过路径用绿色
+                    - 画面比例：16:9
+                    - 避免：3D 效果、过多文字
+                    </p>
+                </div>
+                <div class="intro-block">
+                    <strong>分支保护的本质：</strong>把「应该走 PR」从口头约定变成系统强制。即使有人想直接 push，Git 服务器会拒绝。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 5: Personal account caveat ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>免费版能用吗</h2>
+                <h4>关键限制：免费账号的分支保护只对公共仓库生效</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>公共仓库（免费可用）</h4>
+                        <ul>
+                            <li>要求 PR 才能合并</li>
+                            <li>要求 review approve 数量</li>
+                            <li>要求 CI 检查通过</li>
+                            <li>禁止 force push</li>
+                            <li>要求分支保持最新</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>私有仓库（免费版不支持）</h4>
+                        <p>免费账号的私有仓库<strong>完全没有分支保护</strong>——任何协作者都能直接推 main。</p>
+                        <p>需要分支保护要升级 <strong>GitHub Pro</strong>（约 $4/月）。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>务实建议：</strong>学生团队项目用<strong>公共仓库</strong>，享受全部免费保护规则。涉及敏感代码才用私有，那时要分支保护就得升级 Pro。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 6: Configure protection ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置保护规则</h2>
+                <h4>仓库 → Settings → Branches → Add branch protection rule</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>必开的几项</h4>
+                        <ul>
+                            <li><strong>Require a pull request before merging</strong>：禁止直接 push</li>
+                            <li><strong>Require approvals</strong>：至少 N 人 approve（建议 1-2）</li>
+                            <li><strong>Require status checks to pass</strong>：CI 必须通过（第 07 章）</li>
+                            <li><strong>Do not allow bypassing</strong>：管理员也别想绕过</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>选则开</h4>
+                        <ul>
+                            <li><strong>Require linear history</strong>：强制 fast-forward（配合 Rebase/Squash）</li>
+                            <li><strong>Require branches up to date</strong>：合并前必须拉最新</li>
+                            <li><strong>Restrict who can push</strong>：限定可推送的人</li>
+                        </ul>
+                    </div>
+                </div>
+                <p>配置后，对 main 的直接 push 会被拒绝，必须走 PR 流程。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 7: CODEOWNERS intro ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>CODEOWNERS</h2>
+                <h4>一个文件，定义「哪些目录归谁审」——自动指派 reviewer</h4>
+                <pre><code class="language-text"># 文件位置：仓库根目录 CODEOWNERS
+# 或 .github/CODEOWNERS
+
+# 全局默认 owner
+*                        @组长
+
+# 前端目录由前端组审
+/src/frontend/           @alice @bob
+
+# 后端 API 由后端组审
+/src/api/                @carol
+
+# 文档任何人都能审
+/docs/                   @alice @bob @carol
+
+# 关键配置必须组长审
+package.json             @组长</code></pre>
+                <div class="intro-block">
+                    <strong>怎么生效：</strong>当 PR 改动了 <code>/src/frontend/</code> 下的文件，GitHub 自动把 alice 和 bob 加为<strong>必需 reviewer</strong>。不用人记，不用人催。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 8: CODEOWNERS details ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>匹配规则</h2>
+                <h4>CODEOWNERS 的路径语法和 .gitignore 类似</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>写法</th><th>匹配什么</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>*</code></td>
+                            <td>所有文件（全局默认）</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td><code>/src/</code></td>
+                            <td>src 目录下所有文件</td>
+                        </tr>
+                        <tr>
+                            <td><code>*.js</code></td>
+                            <td>所有 js 文件</td>
+                        </tr>
+                        <tr>
+                            <td><code>/docs/*</code></td>
+                            <td>docs 下的直接文件（非递归）</td>
+                        </tr>
+                        <tr>
+                            <td><code>/docs/**</code></td>
+                            <td>docs 下所有文件（递归）</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="warning">
+                    <strong>顺序很重要：最后一个匹配的规则生效。</strong>所以通用默认（<code>*</code>）要写在<strong>最前面</strong>，具体规则写在<strong>后面</strong>来覆盖它。顺序反了会导致「该 A 审的变成了 B 审」。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 9: PR Template ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>PR 模板</h2>
+                <h4>让每个 PR 自动带上一致的描述骨架</h4>
+                <pre><code class="language-text"># 文件位置：.github/PULL_REQUEST_TEMPLATE.md
+
+## 改动说明
+&lt;!-- 一句话说清做了什么 --&gt;
+
+## 改动类型
+- [ ] 新功能
+- [ ] bug 修复
+- [ ] 重构
+- [ ] 文档
+
+## 关联 issue
+Closes #
+
+## 如何测试
+&lt;!-- 描述验证步骤 --&gt;
+
+## 检查清单
+- [ ] 已自测
+- [ ] 已更新相关文档</code></pre>
+                <div class="intro-block">
+                    <strong>怎么生效：</strong>文件放在 <code>.github/PULL_REQUEST_TEMPLATE.md</code>，之后每次开 PR，描述框会<strong>自动预填</strong>这段内容。作者照着填，格式天然统一。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 10: Issue templates ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Issue 模板</h2>
+                <h4>给不同类型的 issue 定制表单——bug 报告和功能请求分开</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>创建方式</h4>
+                        <p>仓库 → <code>Settings</code> → <code>Issues</code> → <code>Set up templates</code>。<br>
+                        或手动建：</p>
+                        <ul>
+                            <li><code>.github/ISSUE_TEMPLATE/bug_report.md</code></li>
+                            <li><code>.github/ISSUE_TEMPLATE/feature_request.md</code></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>效果</h4>
+                        <p>新建 issue 时，用户能选择模板。选「bug 报告」会预填：</p>
+                        <ul>
+                            <li>问题描述</li>
+                            <li>复现步骤</li>
+                            <li>期望/实际行为</li>
+                            <li>环境信息</li>
+                        </ul>
+                        <p>信息齐全，不用追问。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 11: Issue forms (YAML) ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>结构化表单</h2>
+                <h4>用 YAML 写的 issue 表单，带输入框和下拉，比纯 markdown 模板更规范</h4>
+                <pre><code class="language-yaml"># .github/ISSUE_TEMPLATE/bug.yml
+name: Bug 报告
+description: 报告一个故障
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 出了什么问题
+      description: 描述你遇到的现象
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: 浏览器
+      options:
+        - Chrome
+        - Firefox
+        - Safari</code></pre>
+                <div class="intro-block">
+                    <strong>表单模式 (.yml) 比 markdown 模板 (.md) 更强</strong>：能强制必填、提供下拉选项、校验格式。适合想要规范 issue 质量的团队。文件名以 <code>.yml</code> 结尾放在 ISSUE_TEMPLATE 目录。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 12: Workflow comparison ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>工作流派别</h2>
+                <h4>团队怎么用分支——主流有两种思路</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th></th><th>Git Flow</th><th>Trunk Based</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>主干</td>
+                            <td>main + develop 两层</td>
+                            <td>只有 main</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td>分支寿命</td>
+                            <td>长（功能分支活几天到几周）</td>
+                            <td>短（几小时到一两天）</td>
+                        </tr>
+                        <tr>
+                            <td>发布</td>
+                            <td>有专门 release 分支</td>
+                            <td>从 main 直接打 tag</td>
+                        </tr>
+                        <tr>
+                            <td>适合</td>
+                            <td>有版本发布周期的产品</td>
+                            <td>持续部署的 web 项目</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>没有谁更好，看你的项目怎么发布。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 13: Git Flow detail ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Git Flow 详解</h2>
+                <h4>多分支模型，适合有明确版本节奏的项目</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>分支角色</h4>
+                        <ul>
+                            <li><code>main</code>：生产环境代码，只合并 release</li>
+                            <li><code>develop</code>：日常集成主线</li>
+                            <li><code>feature/*</code>：功能分支，从 develop 拉出</li>
+                            <li><code>release/*</code>：发布预备</li>
+                            <li><code>hotfix/*</code>：线上紧急修复</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>典型场景</h4>
+                        <p>每两周发一个版本的产品团队。develop 持续集成新功能，临近发版切出 release 分支测试，测试通过合并到 main 发版。</p>
+                        <p><strong>学生项目慎用：</strong>对小型项目来说分支太多，反而增加心智负担。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 14: Trunk Based detail ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Trunk Based</h2>
+                <h4>所有人都往 main 集成，功能分支短命——现代主流</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>核心做法</h4>
+                        <ul>
+                            <li>只有一个长期分支 <code>main</code></li>
+                            <li>每个功能开短分支，1-2 天内合并回 main</li>
+                            <li>通过 feature flag 隐藏未完成功能</li>
+                            <li>main 随时可部署</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>为什么流行</h4>
+                        <ul>
+                            <li>分支少，心智简单</li>
+                            <li>集成频繁，冲突小</li>
+                            <li>配合 CI/CD 随时发布</li>
+                            <li>Google、Meta 等大厂主流</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>学生项目推荐 Trunk Based。</strong>简单、现代、和持续部署天然契合。一人或小团队项目，就用 main + 短命 feature 分支 + Squash 合并。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 15: Review etiquette ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>review 礼仪</h2>
+                <h4>代码审查是技术活，也是人际活</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>对事不对人</h4>
+                        <p>说「这段循环可以简化」，不说「你写得真乱」。<br>评论代码，不评论人。</p>
+                    </div>
+                    <div class="card">
+                        <h4>解释为什么</h4>
+                        <p>「改成 map 更好」不如「改成 map 更易读，因为...」。理由让建议能被理解和接受。</p>
+                    </div>
+                    <div class="card">
+                        <h4>区分必须和建议</h4>
+                        <p>必须改的（bug、安全问题）明确说「必须」。可选优化用「建议」「nit:」（小问题）。别把所有意见都当成阻塞。</p>
+                    </div>
+                    <div class="card">
+                        <h4>表扬好的</h4>
+                        <p>看到巧妙的实现，留一句「这里写得好」。review 不只是挑错，也认可亮点。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 16: Review checklist ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>review 清单</h2>
+                <h4>审查 PR 时该看什么——一份可复用的 checklist</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>功能层面</h4>
+                        <ul>
+                            <li>改动是否实现了 PR 描述的目标</li>
+                            <li>有没有遗漏的边界情况</li>
+                            <li>测试覆盖了核心路径吗</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>代码层面</h4>
+                        <ul>
+                            <li>命名清晰、结构合理</li>
+                            <li>有没有重复代码可抽取</li>
+                            <li>复杂逻辑有没有注释</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>安全层面</h4>
+                        <ul>
+                            <li>有没有硬编码的密钥、密码</li>
+                            <li>用户输入有没有校验</li>
+                            <li>依赖引入是否可信</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>工程层面</h4>
+                        <ul>
+                            <li>CI 是否通过</li>
+                            <li>有没有破坏性改动</li>
+                            <li>文档/注释是否同步更新</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 17: Common anti-patterns ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>团队反模式</h2>
+                <h4>这些做法会让协作变糟，警惕</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>橡皮图章 review</h4>
+                        <p>看都不看直接 approve 凑数。<strong>review 数量不等于质量。</strong>宁愿慢一点认真审。</p>
+                    </div>
+                    <div class="card">
+                        <h4>巨型 PR</h4>
+                        <p>一个 PR 改 50 个文件、3000 行。没人能认真审。<strong>拆成小 PR，每个聚焦一件事。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>无休止的来回</h4>
+                        <p>review 意见反复拉扯几十轮。设立「Nit 不阻塞」原则，小问题别死磕。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 18: Practice ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手试一试</h2>
+                <h4>把规范装进自己的仓库</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>你的任务</h3>
+                        <p><strong>任务</strong>：为自己的项目配置一套基础协作规范。</p>
+                        <p><strong>要求</strong>：</p>
+                        <ol>
+                            <li>给 main 分支加保护规则：必须走 PR、至少 1 个 approve</li>
+                            <li>建一个 <code>.github/PULL_REQUEST_TEMPLATE.md</code></li>
+                            <li>建一个 <code>.github/ISSUE_TEMPLATE/bug_report.md</code></li>
+                            <li>建一个 <code>CODEOWNERS</code>，把自己设为默认 owner</li>
+                            <li>开一个 PR 验证模板是否生效</li>
+                        </ol>
+                        <h4>提示</h4>
+                        <ol>
+                            <li>配置文件本身也要通过 PR 合并进仓库</li>
+                            <li>CODEOWNERS 里的用户名是 GitHub 用户名，不是邮箱</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 19: Summary ========== -->
+        <section class="slide title-slide">
+            <div class="chapter-badge">第 05 章</div>
+            <h1>小结</h1>
+            <p>你已经能用规则让团队协作更可靠了</p>
+            <div class="card-grid" style="max-width: 600px; margin: 30px auto;">
+                <div class="card">
+                    <h4>本章要点</h4>
+                    <ul>
+                        <li>分支保护：强制走 PR、要求 approve、禁止直接推 main</li>
+                        <li>CODEOWNERS：按目录自动指派 reviewer</li>
+                        <li>PR/issue 模板：统一描述格式，信息齐全</li>
+                        <li>Git Flow（分层）vs Trunk Based（扁平），学生项目推荐后者</li>
+                        <li>review 礼仪：对事不对人，区分必须和建议</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="conclusion" style="max-width: 600px; margin-top: 20px; text-align: left;">
+                <strong>下一步：</strong>第 06 章 开源贡献 —— 把协作能力用到真正的开源世界，学习 fork 模型与 upstream 工作流。
+            </div>
+        </section>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+
+    </main>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

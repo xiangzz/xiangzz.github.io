@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>10 安全实践</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ========== Slide 1: Title ========== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 10 章</div>
+            <h1>安全实践</h1>
+            <p>认证、分支保护、漏洞扫描——给你的代码和账号上保险</p>
+            <strong>一次泄露，前功尽弃——安全是底线</strong>
+        </section>
+
+        <!-- ========== Slide 2: Problem Opening ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>真实的惨剧</h2>
+                <h4>这些事故每天在 GitHub 上发生</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>密钥推上去了</h4>
+                        <p>把云服务的 API key 写进代码，一 push 到公开仓库。<strong>10 分钟内就有爬虫扫到，刷你几千美元账单。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>账号被盗</h4>
+                        <p>只用密码没开 2FA，密码泄露后被人改了你的仓库、删了你的代码。<strong>没有第二道防线，全军覆没。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>依赖藏毒</h4>
+                        <p>装了个第三方库，它有已知漏洞。攻击者通过这个漏洞攻破你的应用。<strong>你都不知道自己装了什么。</strong></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>本章把安全基本面铺好：</strong>认证三件套（SSH/PAT/2FA）、分支保护、secret scanning、Dependabot。<br>
+                    都是免费个人账号就能用的能力，花半小时配上，省掉未来无数麻烦。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 3: Before We Start ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>有 GitHub 账号，但没配过 2FA</li>
+                            <li>担心密钥泄露、账号被盗</li>
+                            <li>想让项目自动检测漏洞和敏感信息</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>你将学会</h4>
+                        <ul>
+                            <li>配置 SSH key、PAT、2FA</li>
+                            <li>用分支保护防止误操作</li>
+                            <li>开启 secret scanning 和 push protection</li>
+                            <li>用 Dependabot 管依赖漏洞</li>
+                            <li>查看账号安全日志</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章暂不覆盖</h4>
+                        <ul>
+                            <li>企业版安全功能（Audit Log 高级版等）</li>
+                            <li>代码签名（GPG signing）</li>
+                            <li>自托管 runner 安全</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 4: Auth trio overview ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>认证三件套</h2>
+                <h4>SSH key、PAT、2FA——三种保护，各管一摊</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th></th><th>SSH key</th><th>PAT</th><th>2FA</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>保护什么</td>
+                            <td>Git 推送认证</td>
+                            <td>API / 命令行认证</td>
+                            <td>账号登录本身</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td>形式</td>
+                            <td>公私钥对</td>
+                            <td>长字符串令牌</td>
+                            <td>第二因素验证</td>
+                        </tr>
+                        <tr>
+                            <td>建议</td>
+                            <td>长期主力开发</td>
+                            <td>限定 scope 和期限</td>
+                            <td>必开</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <strong>三者不冲突，应该都配。</strong>2FA 是账号级防线，SSH/PAT 是操作级认证。少了任何一层，都有对应的攻击路径。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 5: 2FA ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开 2FA</h2>
+                <h4>双因素认证——账号安全的第一道也是最重要防线</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>怎么开</h4>
+                        <p>头像 → <code>Settings</code> → <code>Password and authentication</code> → <code>Enable two-factor authentication</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>两种方式</h4>
+                        <ul>
+                            <li><strong>Authenticator app</strong>（推荐）：用 Google Authenticator、Authy 扫码，每 30 秒生成验证码</li>
+                            <li><strong>SMS</strong>：短信收验证码（不如 app 安全）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>务必保存恢复码！</strong>2FA 开启时会给你一组一次性恢复码。手机丢了时用它登录。<strong>没恢复码 + 手机丢失 = 账号永久无法登录</strong>，存到密码管理器或打印。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 6: SSH keys detailed ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>SSH key 详解</h2>
+                <h4>公钥放 GitHub，私钥留本地——非对称加密认证</h4>
+                <pre><code class="language-bash"># 1. 生成密钥对（推荐 ed25519 算法）
+$ ssh-keygen -t ed25519 -C "你的邮箱"
+# 一路回车，或设个私钥密码再加一层保护
+
+# 2. 启动 ssh-agent 并加私钥
+$ eval "$(ssh-agent -s)"
+$ ssh-add ~/.ssh/id_ed25519
+
+# 3. 复制公钥
+$ cat ~/.ssh/id_ed25519.pub
+
+# 4. 加到 GitHub: Settings → SSH and GPG keys → New SSH key
+
+# 5. 测试
+$ ssh -T git@github.com
+# Hi 用户名! You've successfully authenticated.</code></pre>
+            </div>
+        </section>
+
+        <!-- ========== Slide 7: SSH security tips ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>SSH 安全要点</h2>
+                <h4>让密钥既方便又安全</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>私钥永不外泄</h4>
+                        <p><code>id_ed25519</code>（无 .pub）是私钥，<strong>绝对不能</strong>：发给别人、推上仓库、截图发群。它等同于你的身份。</p>
+                    </div>
+                    <div class="card">
+                        <h4>一机一钥</h4>
+                        <p>每台设备生成独立密钥对。这样丢一台设备只需吊销对应公钥，不影响其他设备。</p>
+                    </div>
+                    <div class="card">
+                        <h4>定期轮换</h4>
+                        <p>怀疑泄露、换电脑时，在 GitHub 删除旧公钥、添加新的。GitHub 不会有「泄露通知」，要自己留意。</p>
+                    </div>
+                    <div class="card">
+                        <h4>加私钥密码</h4>
+                        <p>生成时设 passphrase。即使私钥文件被盗，没有密码也用不了。配合 ssh-agent 免每次输入。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 8: PAT security ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>PAT 安全</h2>
+                <h4>令牌比密码强，但用错一样出事</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>最小权限原则</h4>
+                        <p>生成 PAT 时<strong>只勾必要的 scope</strong>：</p>
+                        <ul>
+                            <li>只读公开仓库：<code>public_repo</code></li>
+                            <li>读写仓库：<code>repo</code></li>
+                            <li>改设置：额外加 <code>admin:repo_hook</code></li>
+                        </ul>
+                        <p>不要勾「全选」——用不上就是风险。</p>
+                    </div>
+                    <div class="card">
+                        <h4>设过期时间</h4>
+                        <p>别选 No expiration。90 天或更短。过期后强制重新生成，<strong>降低长期泄露风险</strong>。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>PAT 泄露的应急：</strong>立刻到 Settings → Developer settings → Tokens，<strong>删除</strong>该令牌（不是改，是删）。它立即失效。然后排查有没有被滥用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 9: Branch protection recap ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>分支保护</h2>
+                <h4>第 05 章讲过工作流视角，这里看安全视角</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>防止误操作</h4>
+                        <ul>
+                            <li>禁止 force push（防历史被覆盖）</li>
+                            <li>禁止删除分支</li>
+                            <li>必须 PR 才能合并</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>强制质量门槛</h4>
+                        <ul>
+                            <li>必须 review approve</li>
+                            <li>CI 必须通过</li>
+                            <li>分支必须最新</li>
+                            <li>CODEOWNERS 审查</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>安全角度看分支保护：</strong>即使有人 PAT 泄露，攻击者也无法直接改 main——必须走 PR 流程被审查。<strong>这是「纵深防御」的一层。</strong>
+                </div>
+                <div class="warning">
+                    <strong>免费版的限制：</strong>分支保护<strong>只在公共仓库</strong>免费可用。免费账号的私有仓库无法启用任何分支保护规则——需升级 GitHub Pro（约 $4/月）。敏感项目想用这层防护，要么公开仓库，要么付费。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 10: Secret scanning ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>secret scanning</h2>
+                <h4>GitHub 自动扫描仓库，找出已泄露的密钥</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>能识别什么</h4>
+                        <ul>
+                            <li>云厂商的 access key（AWS、GCP、Azure）</li>
+                            <li>数据库连接串</li>
+                            <li>各种 SaaS 的 token（Slack、Stripe 等）</li>
+                            <li>GitHub 自己的 PAT</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>怎么开</h4>
+                        <p>公开仓库<strong>默认开启、完全免费</strong>。</p>
+                        <p>免费账号的<strong>私有仓库不支持</strong> secret scanning（需付费计划）。所以密钥相关的敏感项目要么公开、要么升级。</p>
+                        <p>扫到会在 Security 标签报警，并通知对应服务商（很多会自动吊销泄露的 key）。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>这是救命的功能。</strong>很多开发者是在 GitHub 的 secret scanning 告警里，<strong>第一次</strong>知道自己的 key 泄露了——比刷爆账单才发现早得多。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 11: Push protection ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>push protection</h2>
+                <h4>更前一步——在你 push 含密钥的提交时直接拦截</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>和 scanning 的区别</h4>
+                        <p><strong>scanning</strong>：事后扫描，密钥已经进了仓库历史，再报警让你处理。</p>
+                        <p><strong>push protection</strong>：事前拦截，含密钥的 push<strong>直接被拒绝</strong>，密钥根本进不了仓库。</p>
+                    </div>
+                    <div class="card">
+                        <h4>怎么开</h4>
+                        <p>对<strong>公开仓库</strong>，push protection 对每个用户<strong>默认开启</strong>，无需手动配置。</p>
+                        <p>私有仓库需要仓库级设置（Settings → Code security → Push protection），免费账号可能不可用。</p>
+                        <p>开启后，push 被拦时本地会收到提示，告诉你哪个文件哪行疑似密钥。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>两者配合最佳：</strong>push protection 拦新泄露，secret scanning 兜底历史泄露。公开仓库两者都建议开。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 12: What if already leaked ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>已经泄露怎么办</h2>
+                <h4>密钥进了仓库历史，光删文件不够</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>第一步：立即吊销</h4>
+                        <p>去对应服务商（AWS/云厂商/SaaS）<strong>立即吊销</strong>那个 key，生成新的。<br>
+                        这是第一优先级，<strong>别先去清理 git 历史</strong>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>第二步：清理历史（可选）</h4>
+                        <p>用 <code>git filter-repo</code> 或 BFG 清理历史中的密钥。但<strong>吊销才是根本</strong>——历史可能已被 clone，删了也不保险。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>关键认知：git 历史几乎无法真正「删除」。</strong>有人 clone 了、fork 了，密钥就还在。<br>
+                    所以正确的做法永远是<strong>先吊销让密钥失效</strong>，而不是试图抹除痕迹。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 13: Dependabot intro ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Dependabot</h2>
+                <h4>自动监控依赖，发现已知漏洞就告诉你</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>它做什么</h4>
+                        <ul>
+                            <li>扫描 <code>package.json</code> / <code>requirements.txt</code> 等依赖文件</li>
+                            <li>对照漏洞数据库（GitHub Advisory）</li>
+                            <li>发现有漏洞版本的依赖就发告警</li>
+                            <li>能自动开 PR 升级到安全版本</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>怎么开</h4>
+                        <p>Settings → Code security → Dependabot alerts → Enable。<br>
+                        再开 Dependabot security updates 让它自动提升级 PR。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 14: Dependabot in action ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Dependabot 实战</h2>
+                <h4>你会在仓库里看到这些</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>告警</h4>
+                        <p>Security 标签出现告警：「lodash 4.17.4 有原型污染漏洞（CVE-xxx）」。点进去看影响范围和修复版本。</p>
+                    </div>
+                    <div class="card">
+                        <h4>自动 PR</h4>
+                        <p>Dependabot 自动开 PR：「Bump lodash from 4.17.4 to 4.17.21」。review 合并即修复。<strong>连 changelog 都给你附上。</strong></p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>Dependabot 是免费的「安全管家」。</strong>装一次，持续监控。学生项目尤其推荐——你通常不知道自己装的库有没有漏洞，Dependabot 替你知道。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 15: Dependabot version updates ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>版本更新</h2>
+                <h4>除了安全漏洞，还能定期升级到最新版</h4>
+                <pre><code class="language-yaml"># .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"      # 每周检查更新
+    open-pull-requests-limit: 5  # 最多同时 5 个升级 PR</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>安全更新 vs 版本更新</h4>
+                        <p><strong>安全更新</strong>：有漏洞才开 PR（自动）。</p>
+                        <p><strong>版本更新</strong>：定期开 PR 升到最新版（需配 yml）。后者让依赖保持新鲜，避免攒一堆旧债。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 16: Security advisory ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Security Advisory</h2>
+                <h4>仓库级安全公告——报告和管理漏洞</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>两种角色</h4>
+                        <ul>
+                            <li><strong>报告者</strong>：发现别人仓库漏洞，私下报告给维护者（不公开）</li>
+                            <li><strong>维护者</strong>：在修补前不公开，修好后发公告</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>入口</h4>
+                        <p>仓库 → Security → Advisories。可配 CVSS 评分、影响版本、修复版本。</p>
+                    </div>
+                </div>
+                <p>开源项目用这个流程负责任地披露漏洞，避免攻击者抢在修复前利用。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 17: Account security log ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>账号安全日志</h2>
+                <h4>查看你账号的所有活动记录</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>在哪看</h4>
+                        <p>头像 → Settings → Password and authentication → 底部 <code>Security log</code>。</p>
+                    </div>
+                    <div class="card">
+                        <h4>能看到什么</h4>
+                        <ul>
+                            <li>登录记录（IP、时间、设备）</li>
+                            <li>密码、2FA 的修改</li>
+                            <li>PAT、SSH key 的增删</li>
+                            <li>仓库权限变更</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>定期瞄一眼。</strong>看到不认识的 IP 登录、没做过的操作，立即改密码、检查 2FA、吊销可疑令牌。<strong>这是发现账号被盗的最快途径。</strong>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 18: Security checklist ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安全清单</h2>
+                <h4>对照这份清单，给你的账号和项目体检</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>账号级</h4>
+                        <ul>
+                            <li>开了 2FA，恢复码已保存</li>
+                            <li>密码独特（不在别处复用）</li>
+                            <li>定期看 Security log</li>
+                            <li>无用的 PAT 已清理</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>仓库级</h4>
+                        <ul>
+                            <li>main 分支有保护规则</li>
+                            <li>secret scanning 已开</li>
+                            <li>push protection 已开</li>
+                            <li>Dependabot 已开</li>
+                            <li>secrets 不在代码里</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>学生项目至少做到：</strong>开 2FA + main 分支保护 + Dependabot。这三样免费、配一次就行，挡住 90% 的常见风险。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 19: CI secrets safety ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>CI 里的密钥</h2>
+                <h4>workflow 用 secrets 安全，但有几点要注意</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>不要打印到日志</h4>
+                        <p>虽然 GitHub 会自动打码 <code>${{ secrets.X }}</code>，但 <code>echo $TOKEN</code> 这种可能漏出来。日志是公开的（公开仓库）。</p>
+                    </div>
+                    <div class="card">
+                        <h4>PR 慎用</h4>
+                        <p>fork 来的 PR 默认<strong>访问不到</strong>你的 secrets。这是好事——防恶意 PR 偷密钥。需要时手动给特定 PR 加权限。</p>
+                    </div>
+                    <div class="card">
+                        <h4>最小权限</h4>
+                        <p>workflow 用 <code>permissions:</code> 显式声明所需权限，别用默认的宽权限。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 20: Practice ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手试一试</h2>
+                <h4>给自己的账号和仓库上保险</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>你的任务</h3>
+                        <p><strong>任务</strong>：按安全清单配置一遍。</p>
+                        <p><strong>要求</strong>：</p>
+                        <ol>
+                            <li>开启账号 2FA，保存恢复码</li>
+                            <li>生成 SSH key，加到 GitHub，测试连接</li>
+                            <li>给自己的仓库开 secret scanning + push protection</li>
+                            <li>开启 Dependabot alerts 和 security updates</li>
+                            <li>检查 PAT 列表，删掉不用的、给在用的设短过期</li>
+                            <li>看一眼 Security log</li>
+                        </ol>
+                        <h4>提示</h4>
+                        <ol>
+                            <li>2FA 恢复码用密码管理器存，别存笔记软件明文</li>
+                            <li>已开的功能开关在 Settings → Code security 一页集中看</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 21: Summary ========== -->
+        <section class="slide title-slide">
+            <div class="chapter-badge">第 10 章</div>
+            <h1>小结</h1>
+            <p>你已经给自己的代码和账号上了多重保险</p>
+            <div class="card-grid" style="max-width: 600px; margin: 30px auto;">
+                <div class="card">
+                    <h4>本章要点</h4>
+                    <ul>
+                        <li>认证三件套：SSH key（推送）、PAT（API）、2FA（账号）</li>
+                        <li>PAT 遵循最小权限 + 短过期</li>
+                        <li>secret scanning 事后扫，push protection 事前拦</li>
+                        <li>密钥泄露第一优先级是吊销，不是删历史</li>
+                        <li>Dependabot 自动监控依赖漏洞并提升级 PR</li>
+                        <li>定期看 Security log 发现异常</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="conclusion" style="max-width: 600px; margin-top: 20px; text-align: left;">
+                <strong>下一步：</strong>第 11 章 GitHub API 与集成 —— 最后一章，学习用 REST/GraphQL API 和 webhook 把 GitHub 与外部系统打通。
+            </div>
+        </section>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+
+    </main>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

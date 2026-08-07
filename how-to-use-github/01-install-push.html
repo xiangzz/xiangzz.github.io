@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>01 Git 速通与首次推送</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ========== Slide 1: Title ========== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 01 章</div>
+            <h1>Git 速通与首次推送</h1>
+            <p>从本地一行 commit 到把代码送上 GitHub——建立「本地 ↔ 远程」的心智模型</p>
+            <strong>五分钟内，让你的项目出现在 github.com 上</strong>
+        </section>
+
+        <!-- ========== Slide 2: Problem Opening ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>代码只在本地</h2>
+                <h4>你的项目跑得挺好，但它只活在你这台电脑上</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>换台电脑就没了</h4>
+                        <p>你在宿舍写完作业，第二天去机房想接着干——代码不在那台机器上。<strong>U 盘拷来拷去，版本乱了套。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>没法给别人看</h4>
+                        <p>老师让你交一个「项目链接」，你只能把文件夹打包成 zip 发邮件。<strong>没有历史，没有结构，也不专业。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>不知道怎么传上去</h4>
+                        <p>你注册了 GitHub，点 New repository 卡住了——SSH 是什么？PAT 又是什么？<strong>认证这一关就把人劝退。</strong></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>本章目标很单纯：</strong>把本地已有代码，一次性推送到 GitHub。<br>
+                    Git 的基本操作（你已会）快速过，重点解决「怎么连上远程」和「认证怎么配」。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 3: Before We Start ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>已经在本地用过 <code>git add</code> / <code>git commit</code>，但没往远程推过</li>
+                            <li>注册了 GitHub 账号，却不知道下一步该干嘛</li>
+                            <li>被 SSH key、PAT、<code>remote</code> 这些词绕晕了的人</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>你将学会</h4>
+                        <ul>
+                            <li>用两条命令把本地仓库连上 GitHub</li>
+                            <li>在 SSH key 和 PAT 之间做选择并配置好</li>
+                            <li>完成第一次 <code>git push</code></li>
+                            <li>看懂 push 失败的常见报错并修复</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章暂不覆盖</h4>
+                        <ul>
+                            <li>分支与合并（第 03 章 Pull Request）</li>
+                            <li>clone 别人的仓库（第 02 章）</li>
+                            <li>团队协作工作流（第 05 章）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 4: Local-Remote Mental Model ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>两个仓库</h2>
+                <h4>理解 Git 的核心：本地仓库与远程仓库是两份独立的副本</h4>
+                <div class="ai-diagram">
+                    <h4>图：本地仓库与远程仓库的关系</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：左侧一台笔记本电脑（标注「本地仓库 .git」），右侧一朵云（标注「远程仓库 GitHub」）
+                    - 各元素关系：两个图标之间有两条箭头，上方箭头从左到右标「push 推送」，下方箭头从右到左标「pull 拉取」
+                    - 关键标注：本地笔记本下方标「git commit 在这里发生」，云端下方标「github.com/你的用户名/仓库」
+                    - 配色建议：浅灰背景，笔记本用深蓝，云用橙色描边，箭头用深色，文字清晰
+                    - 画面比例：16:9
+                    - 避免：3D 效果、过度装饰、复杂图标
+                    </p>
+                </div>
+                <div class="intro-block">
+                    <strong>关键认知：</strong>你每次 <code>git commit</code>，改动只存在<strong>本地</strong>。<code>git push</code> 才是把本地的提交同步到 GitHub。<br>
+                    所以——commit 了但没 push，换台电脑一样看不到。这是新手最常踩的坑。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 5: Git Quick Recap ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Git 三件套</h2>
+                <h4>你已经会了，这里只做 30 秒回顾，对齐术语</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>命令</th><th>作用</th><th>大白话</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>git init</code></td>
+                            <td>初始化仓库</td>
+                            <td>在这个文件夹里开启 Git 管理，生成隐藏的 <code>.git</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>git add</code></td>
+                            <td>把改动加入暂存区</td>
+                            <td>把要提交的文件「装进盒子」</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td><code>git commit</code></td>
+                            <td>创建一次提交</td>
+                            <td>把盒子封口、贴标签，存进本地历史</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-bash">$ git init
+$ git add .
+$ git commit -m "第一次提交"</code></pre>
+                <div class="intro-block">
+                    <strong>本章假设你已熟练以上三步。</strong>如果还生疏，先在本地多练几次——远程操作只是把「已 commit 的东西」同步上去。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 6: Create Remote Repo on GitHub ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>在 GitHub 建仓库</h2>
+                <h4>登录 github.com，右上角 + → New repository</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>必填项</h4>
+                        <ul>
+                            <li><strong>Repository name</strong>：用小写英文+连字符，如 <code>my-first-project</code></li>
+                            <li><strong>Public / Private</strong>：Public 任何人可见，Private 只有你和协作者</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>先不要勾这些</h4>
+                        <ul>
+                            <li>❌ Add a README file</li>
+                            <li>❌ Add .gitignore</li>
+                            <li>❌ Choose a license</li>
+                        </ul>
+                        <p>因为你的本地仓库已经有内容了。勾选这些会在远程生成初始提交，导致首次 push 时<strong>历史冲突</strong>。空仓库最好对接。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>常见踩坑：</strong>建仓库时勾了 README，结果 push 报 <code>failed to push some refs</code>。新手在这里卡很久。记住：<strong>本地有内容，远程就留空。</strong>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 7: The Repo URL ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>拿到仓库地址</h2>
+                <h4>建好后，GitHub 会给你一个地址，长这样</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>HTTPS 地址</h4>
+                        <pre><code class="language-bash">https://github.com/用户名/仓库名.git</code></pre>
+                        <p>用 PAT（个人访问令牌）认证。<strong>新手友好，跨平台无配置。</strong></p>
+                    </div>
+                    <div class="column">
+                        <h4>SSH 地址</h4>
+                        <pre><code class="language-bash">git@github.com:用户名/仓库名.git</code></pre>
+                        <p>用 SSH key 认证。<strong>配好后免密，长期最省心。</strong></p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>在哪找：</strong>仓库页面绿色的 <code>Code</code> 按钮 → 弹出框顶部两个标签 <code>HTTPS</code> / <code>SSH</code> 切换 → 右侧复制按钮。<br>
+                    把地址记下来，下一步要用。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 8: Auth Choice Overview ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>认证二选一</h2>
+                <h4>GitHub 早就不允许密码推送了，必须用 PAT 或 SSH key</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>方式</th><th>配置难度</th><th>日常体验</th><th>推荐场景</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr class="highlight">
+                            <td>PAT (HTTPS)</td>
+                            <td>简单，网页生成</td>
+                            <td>首次要粘贴令牌</td>
+                            <td>新手、临时用、多机器</td>
+                        </tr>
+                        <tr>
+                            <td>SSH key</td>
+                            <td>中等，命令行生成</td>
+                            <td>一次配好永久免密</td>
+                            <td>长期主力开发</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="key-point">
+                    <strong>给新手的建议：</strong>第一次先用 <strong>PAT</strong> 把流程跑通，体验完整的 push。<br>
+                    等你确定会长期用 Git，再花十分钟配 SSH key（第 10 章安全实践会系统讲）。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 9: Generate PAT ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>生成 PAT</h2>
+                <h4>Personal Access Token，本质是一串代替密码的令牌</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>在哪生成</h4>
+                        <p>GitHub 右上角头像 → <code>Settings</code> → 左侧最下方 <code>Developer settings</code> → <code>Personal access tokens</code> → <code>Tokens (classic)</code> → <code>Generate new token (classic)</code></p>
+                    </div>
+                    <div class="card">
+                        <h4>关键设置</h4>
+                        <ul>
+                            <li><strong>Note</strong>：写用途，如「我的笔记本」</li>
+                            <li><strong>Expiration</strong>：选 90 天或自定义</li>
+                            <li><strong>Scopes</strong>：勾选 <code>repo</code>（完整仓库读写）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>令牌只显示一次！</strong>生成后立刻复制保存到密码管理器。关掉页面就再也看不到，只能重新生成。<br>
+                    <strong>不要</strong>把令牌写进代码或截图发给别人——它等同于你的密码。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 10: First Push with PAT ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>关联并推送</h2>
+                <h4>在本地仓库目录下，依次执行这三步</h4>
+                <pre><code class="language-bash"># 1. 关联远程仓库（把 GitHub 地址记作 origin）
+$ git remote add origin https://github.com/用户名/仓库名.git
+
+# 2. 重命名默认分支为 main（GitHub 现在默认用 main）
+$ git branch -M main
+
+# 3. 首次推送，-u 把本地 main 和远程 main 绑定
+$ git push -u origin main</code></pre>
+                <div class="intro-block">
+                    <strong>第一次 push 会弹出认证窗口</strong>（Git Credential Manager）。输入用户名，密码栏<strong>粘贴刚才的 PAT</strong>，不是 GitHub 登录密码。<br>
+                    认证通过后，凭证会被系统记住，之后 push 不用再输。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 11: Verify on GitHub ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>在 GitHub 上确认</h2>
+                <h4>刷新仓库页面，你的文件应该出现了</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>检查清单</h4>
+                        <ul>
+                            <li>文件列表与本地一致</li>
+                            <li>能看到刚才的 commit 消息和时间</li>
+                            <li>分支名显示为 <code>main</code></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>后续推送简化</h4>
+                        <p>因为 <code>-u</code> 已经绑定了上游，之后提交只需：</p>
+                        <pre><code class="language-bash">$ git add .
+$ git commit -m "改动说明"
+$ git push</code></pre>
+                        <p>不用再写 <code>origin main</code>。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>恭喜！</strong>你已经完成了 Git 学习曲线里最陡的那一段——远程对接。剩下的都是在此基础上的扩展。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 12: Troubleshooting - Auth Failed ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错：认证失败</h2>
+                <h4>推送时报 <code>Authentication failed</code> 或 <code>403</code></h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>原因一：用了登录密码</h4>
+                        <p>GitHub 2021 年起禁止密码推送。<strong>修复</strong>：改用 PAT 粘贴到密码栏。</p>
+                    </div>
+                    <div class="card">
+                        <h4>原因二：PAT scope 不够</h4>
+                        <p>生成时没勾 <code>repo</code>。<strong>修复</strong>：重新生成令牌，勾上 <code>repo</code> 全选。</p>
+                    </div>
+                    <div class="card">
+                        <h4>原因三：令牌过期</h4>
+                        <p>有过期时间的令牌到期了。<strong>修复</strong>：重新生成并更新系统凭证。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>清掉旧凭证重输：</strong>Windows 在「凭据管理器」→ Windows 凭据 → 找到 <code>git:https://github.com</code> 删除；macOS 用 <code>git credential-osxkeychain erase</code>。下次 push 会重新弹出认证窗口。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 13: Troubleshooting - Non-fast-forward ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错：被拒推送</h2>
+                <h4>报 <code>non-fast-forward</code> 或 <code>rejected</code></h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>典型原因</h4>
+                        <p>远程有你本地没有的提交——最常见是建仓库时勾了 README，远程多了一个初始 commit。</p>
+                        <p>Git 出于安全，拒绝你的 push，怕覆盖别人的工作。</p>
+                    </div>
+                    <div class="column">
+                        <h4>修复方法</h4>
+                        <p>先把远程的拉下来合并，再 push：</p>
+                        <pre><code class="language-bash">$ git pull origin main --allow-unrelated-histories
+$ git push</code></pre>
+                        <p><code>--allow-unrelated-histories</code> 允许合并两条没有共同起点的历史。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>预防：</strong>本地有内容时，建远程仓库<strong>不要勾</strong>任何初始化文件。这是第 06 张幻灯片强调过的——养成习惯就不会再遇到这个错。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 14: SSH Quick Path ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>SSH 免密方案</h2>
+                <h4>如果你打算长期用 Git，花十分钟配一次，之后永久免密</h4>
+                <pre><code class="language-bash"># 1. 生成密钥对（一路回车用默认值）
+$ ssh-keygen -t ed25519 -C "你的邮箱@example.com"
+
+# 2. 复制公钥内容
+$ cat ~/.ssh/id_ed25519.pub
+
+# 3. 到 GitHub → Settings → SSH and GPG keys → New SSH key 粘贴
+
+# 4. 测试连接
+$ ssh -T git@github.com</code></pre>
+                <div class="intro-block">
+                    <strong>切换已有仓库到 SSH：</strong>把 remote 地址改成 SSH 形式即可：<br>
+                    <code>git remote set-url origin git@github.com:用户名/仓库名.git</code><br>
+                    之后 push/pull 全部走 SSH，不再需要 PAT。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 15: SSH vs PAT Recap ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>两种方式怎么选</h2>
+                <h4>不存在谁更高级，只看你的使用场景</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>场景</th><th>推荐</th><th>理由</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>第一次跑通流程</td>
+                            <td>PAT</td>
+                            <td>网页点几下就能用，不用碰命令行</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td>自己长期开发</td>
+                            <td>SSH</td>
+                            <td>一次配置，多台机器复用，最省心</td>
+                        </tr>
+                        <tr>
+                            <td>在别人电脑临时用</td>
+                            <td>PAT</td>
+                            <td>用完可在 GitHub 一键撤销令牌</td>
+                        </tr>
+                        <tr>
+                            <td>CI/CD 自动化</td>
+                            <td>PAT 或 deploy key</td>
+                            <td>令牌可限定权限和有效期</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>两种方式可以随时切换，不冲突。详细的安全考量见第 10 章。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 16: Practice ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手试一试</h2>
+                <h4>把一个本地小项目推上 GitHub</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>你的任务</h3>
+                        <p><strong>任务</strong>：在本地建一个文件夹，写一个 <code>hello.txt</code>，把它推送到 GitHub 上的新仓库。</p>
+                        <p><strong>要求</strong>：</p>
+                        <ol>
+                            <li>本地 <code>git init</code> 并完成首次 commit</li>
+                            <li>在 GitHub 建空仓库（不勾 README）</li>
+                            <li>用 PAT 或 SSH 完成首次 push</li>
+                            <li>刷新 GitHub 页面确认文件出现</li>
+                        </ol>
+                        <h4>提示</h4>
+                        <ol>
+                            <li>忘了命令？回头看第 10 张幻灯片的三步</li>
+                            <li>认证失败？回第 12 张幻灯片对照排查</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 17: Summary ========== -->
+        <section class="slide title-slide">
+            <div class="chapter-badge">第 01 章</div>
+            <h1>小结</h1>
+            <p>你已经把本地代码推上了 GitHub——最难的第一步跨过去了</p>
+            <div class="card-grid" style="max-width: 600px; margin: 30px auto;">
+                <div class="card">
+                    <h4>本章要点</h4>
+                    <ul>
+                        <li>本地仓库与远程仓库是两份副本，<code>commit</code> 在本地，<code>push</code> 才同步</li>
+                        <li>认证二选一：PAT（新手友好）或 SSH key（长期省心）</li>
+                        <li>首次推送三步：<code>remote add</code> → <code>branch -M main</code> → <code>push -u</code></li>
+                        <li>本地有内容时，远程仓库留空，避免历史冲突</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="conclusion" style="max-width: 600px; margin-top: 20px; text-align: left;">
+                <strong>下一步：</strong>第 02 章 远程仓库日常 —— 学会 clone 别人的项目、pull 同步更新、在网页上看历史。
+            </div>
+        </section>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+
+    </main>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

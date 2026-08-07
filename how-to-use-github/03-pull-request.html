@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>03 Pull Request 全流程</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ========== Slide 1: Title ========== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 03 章</div>
+            <h1>Pull Request 全流程</h1>
+            <p>从开分支到合并进主干——GitHub 协作的核心载体</p>
+            <strong>PR 不是技术，是一种工作礼仪</strong>
+        </section>
+
+        <!-- ========== Slide 2: Problem Opening ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>直接推主干？</h2>
+                <h4>你改完代码想提交，但团队不允许直接动 main 分支</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>一人项目随便推</h4>
+                        <p>你自己写作业，commit 直接 push 到 main，没问题。<strong>但只要超过一个人，这么干迟早撞车。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>多人直接推的灾难</h4>
+                        <p>A 和 B 同时改 main，互相覆盖；有人推了没测过的代码，全组项目跑不起来；出了问题不知道是谁干的。<strong>没有审查，就没有质量。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>想知道 PR 是啥</h4>
+                        <p>你听人说「提个 PR」，但不知道那具体是什么。<strong>它和 branch 什么关系？和 commit 什么关系？</strong></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>本章把 PR 讲透：</strong>从「为什么要开分支」到「合并策略怎么选」，再到「冲突怎么解」。<br>
+                    PR 是 GitHub 上一切团队协作的基础，也是后续 04-06 章的前置知识。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 3: Before We Start ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>会 push/pull，但没开过 PR</li>
+                            <li>想参与需要 PR 的开源或团队项目</li>
+                            <li>被「分支、合并、冲突」吓到过的人</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>你将学会</h4>
+                        <ul>
+                            <li>feature branch 工作法的完整节奏</li>
+                            <li>在 GitHub 上开 PR、写描述、做 review</li>
+                            <li>选择 Merge / Squash / Rebase 三种合并策略</li>
+                            <li>处理合并冲突（网页端 + 命令行）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章暂不覆盖</h4>
+                        <ul>
+                            <li>分支保护规则（第 05 章）</li>
+                            <li>fork 模型的 PR（第 06 章）</li>
+                            <li>CI 自动检查（第 07 章）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 4: What is PR ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>PR 是什么</h2>
+                <h4>Pull Request = 「请把我的分支拉进去合并」的申请</h4>
+                <div class="ai-diagram">
+                    <h4>图：PR 的本质</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：两条分支线。上方是「main 主干」，下方是「feature/login 功能分支」。feature 分支从 main 某点分出，前进几个 commit 后，用一个箭头指回 main
+                    - 各元素关系：分出处标「开分支」，feature 上的圆点标「commit 1/2/3」，箭头指回 main 处标「Pull Request：请求合并」
+                    - 关键标注：main 旁注「受保护，不能直接推」，feature 旁注「你的工作区，随便改」
+                    - 配色建议：浅灰背景，main 用深蓝色粗线，feature 用橙色线，合并箭头用绿色
+                    - 画面比例：16:9
+                    - 避免：3D 效果、过多文字、复杂装饰
+                    </p>
+                </div>
+                <div class="intro-block">
+                    <strong>大白话：</strong>你在主干旁边开一条「小路」（分支），在小路上随便改，改完申请「请把我这条小路接回大路」。这个申请就是 PR。别人可以先看看小路修得好不好，再决定接不接。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 5: Feature Branch Workflow ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>分支工作法</h2>
+                <h4>feature branch——每做一个改动就开一条专属分支</h4>
+                <pre><code class="language-bash"># 1. 确保在 main 上且是最新
+$ git checkout main
+$ git pull
+
+# 2. 开一条新分支，名字说清要干嘛
+$ git checkout -b feature/add-login
+
+# 3. 在新分支上正常改代码、commit
+$ git add .
+$ git commit -m "添加登录页面"
+
+# 4. 推送新分支到远程
+$ git push -u origin feature/add-login</code></pre>
+                <div class="key-point">
+                    <strong>分支命名约定：</strong>用 <code>功能/简述</code> 格式，如 <code>feature/login</code>、<code>fix/typo</code>、<code>docs/readme</code>。别人一看就知道这条分支是干嘛的。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 6: Open PR on GitHub ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>在网页开 PR</h2>
+                <h4>推送分支后，GitHub 会提示你创建 Pull Request</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>入口</h4>
+                        <ul>
+                            <li>推送分支后，终端会显示一个 <code>Create a pull request</code> 链接</li>
+                            <li>或仓库页面 → <code>Pull requests</code> 标签 → <code>New pull request</code></li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>关键设置</h4>
+                        <ul>
+                            <li><strong>base</strong>：合并到哪（通常 <code>main</code>）</li>
+                            <li><strong>compare</strong>：你的功能分支</li>
+                            <li><strong>标题</strong>：一句话说清做了什么</li>
+                            <li><strong>描述</strong>：改了什么、为什么改、怎么测</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>好描述让 review 更快。</strong>别只写「改了点东西」。写清楚「解决了什么问题、做了哪些改动、如何验证」三段，reviewer 会感谢你。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 7: PR description template ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>PR 描述模板</h2>
+                <h4>一个清晰 PR 描述的骨架，照着填就行</h4>
+                <pre><code class="language-markdown">## 改动说明
+添加了用户登录页面，支持邮箱+密码登录。
+
+## 改动类型
+- [x] 新功能
+- [ ] bug 修复
+- [ ] 重构
+
+## 关联 issue
+Closes #12
+
+## 如何测试
+1. 启动项目 `npm start`
+2. 访问 /login
+3. 用 test@example.com / 123456 登录
+
+## 截图
+（如有 UI 改动，贴截图）</code></pre>
+                <div class="intro-block">
+                    <strong><code>Closes #12</code></strong> 是关键字联动：合并这个 PR 时，第 12 号 issue 会<strong>自动关闭</strong>。第 04 章 Issues 会详细讲这个机制。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 8: PR Interface Tour ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>PR 界面导览</h2>
+                <h4>一个 PR 页面有四个关键标签</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>标签</th><th>看什么</th><th>用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr class="highlight">
+                            <td>Conversation</td>
+                            <td>讨论、状态、合并按钮</td>
+                            <td>整体协调与最终合并</td>
+                        </tr>
+                        <tr>
+                            <td>Commits</td>
+                            <td>这个 PR 含哪些提交</td>
+                            <td>看工作过程</td>
+                        </tr>
+                        <tr>
+                            <td>Files changed</td>
+                            <td>逐行 diff 对比</td>
+                            <td>code review 主战场</td>
+                        </tr>
+                        <tr>
+                            <td>Checks</td>
+                            <td>CI 自动测试结果</td>
+                            <td>第 07 章 Actions 产出</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>90% 的 review 工作发生在 <code>Files changed</code> 标签里。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 9: Code Review ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>做 code review</h2>
+                <h4>在 Files changed 标签里逐行审查代码</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>三种评论方式</h4>
+                        <ul>
+                            <li>鼠标悬停某行 → 点蓝色 <code>+</code> 图标加单行评论</li>
+                            <li>拖选多行 → 对一段代码整体评论</li>
+                            <li>评论框右下角选类型：<strong>Comment</strong>（普通）、<strong>Suggest change</strong>（建议改法）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>Suggestion 的妙用</h4>
+                        <p>用 <code>```suggestion</code> 代码块写建议改法，作者点一下「Apply」就能直接采纳，不用手动改。这是最高效的 review 方式。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>review 礼仪：</strong>对事不对人，提建议而非命令，说清「为什么」要改。第 05 章团队工作流有完整的 review checklist。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 10: Review actions ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>四种审查动作</h2>
+                <h4>review 完成时，你要做一个明确的表态</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>动作</th><th>含义</th><th>何时用</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Comment</td>
+                            <td>仅评论，不表态</td>
+                            <td>有疑问但不阻塞合并</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td>Approve</td>
+                            <td>同意合并</td>
+                            <td>代码没问题，可以进主干</td>
+                        </tr>
+                        <tr>
+                            <td>Request changes</td>
+                            <td>要求修改</td>
+                            <td>有问题必须改才能合并</td>
+                        </tr>
+                        <tr>
+                            <td>（不操作）</td>
+                            <td>静默同意</td>
+                            <td>没意见就不点，让有权限的人合并</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>被 request changes 后，作者改完代码会自动清除「需修改」状态，重新等待 review。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 11: Merge strategies overview ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>合并策略</h2>
+                <h4>PR 通过审查后，有三种方式把它并进主干</h4>
+                <div class="ai-diagram">
+                    <h4>图：三种合并策略对历史的影响</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：三组分支示意图，横向排列，分别标注「Merge commit」「Squash」「Rebase」
+                    - 各元素关系：
+                      第一组「Merge commit」：feature 分支的 3 个圆点保留，main 上多出一个紫色「merge commit」把两条线连起来，形成菱形
+                      第二组「Squash」：feature 的 3 个圆点被压成 1 个，main 上只新增 1 个提交，历史是直线
+                      第三组「Rebase」：feature 的 3 个提交被重新排在 main 末端，无合并提交，历史是直线但保留了 3 个 commit
+                    - 关键标注：每组下方标特点，如「保留全部历史」「历史最干净」「线性且保留提交」
+                    - 配色建议：浅灰背景，main 用深蓝，feature 用橙色，merge commit 用紫色
+                    - 画面比例：16:9
+                    - 避免：3D 效果、过多文字说明
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 12: Merge commit ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Merge commit</h2>
+                <h4>最传统的方式：保留分支的所有提交，额外加一个合并节点</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>优点</h4>
+                        <ul>
+                            <li>完整保留分支历史和工作过程</li>
+                            <li>能看出「哪些提交是一起做的」</li>
+                            <li>大项目、多人协作的默认选择</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>缺点</h4>
+                        <ul>
+                            <li>历史图会分叉再合并，复杂</li>
+                            <li>主干混入大量小提交</li>
+                            <li>feature 分支上的「wip」「修 typo」也进历史</li>
+                        </ul>
+                    </div>
+                </div>
+                <p>适合：大型长期项目、想完整保留协作轨迹的团队。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 13: Squash ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Squash 合并</h2>
+                <h4>把分支上的所有提交压成一个，再并进主干</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>优点</h4>
+                        <ul>
+                            <li>主干历史是干净的直线</li>
+                            <li>每个 PR 对应主干<strong>一个</strong>提交</li>
+                            <li>回退整个功能很容易</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>缺点</h4>
+                        <ul>
+                            <li>丢失分支内的细粒度提交历史</li>
+                            <li>原始 commit hash 改变</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>学生项目、小团队首选 Squash。</strong>它让主干历史像目录一样清晰：「这次加了登录」「那次修了 bug」，而不用看一堆「wip」「再改一下」。<br>
+                    本教程网站自己的提交历史就是 Squash 风格。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 14: Rebase ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Rebase 合并</h2>
+                <h4>把分支提交「搬到」主干末端，线性排列，不加合并节点</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>优点</h4>
+                        <ul>
+                            <li>历史是干净的直线</li>
+                            <li>保留分支上的每个提交</li>
+                            <li>适合提交本身就有意义的项目</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>缺点</h4>
+                        <ul>
+                            <li>历史图虽线性但提交多</li>
+                            <li>提交顺序可能和实际工作顺序不符</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>怎么选的速记：</strong>要干净直线选 Squash，要保留每步且线性选 Rebase，要完整轨迹选 Merge commit。个人/学生项目 → Squash；开源大项目 → Merge 或 Rebase。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 15: Conflict concept ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>合并冲突</h2>
+                <h4>当你的分支和主干改了同一处代码，Git 无法自动合并</h4>
+                <pre><code class="language-text">&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
+这是你分支上的版本
+=======
+这是主干上的版本
+&gt;&gt;&gt;&gt;&gt;&gt;&gt; main</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>冲突标记三段</h4>
+                        <ul>
+                            <li><code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> 到 <code>=======</code>：你的改动（HEAD）</li>
+                            <li><code>=======</code> 到 <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code>：对方的改动</li>
+                            <li>你需要<strong>手动决定保留哪个，或合并两者</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>冲突不是错误，是 Git 在请你做判断。</strong>它把两种版本都摆出来，让你决定最终长什么样。删掉冲突标记，保留想要的代码即可。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 16: Resolve on Web ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>网页端解冲突</h2>
+                <h4>小冲突直接在 GitHub 网页上改，不用开终端</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>何时能用</h4>
+                        <p>点 <code>Merge pull request</code> 时，如果 GitHub 检测到冲突且<strong>冲突文件不多</strong>，会出现 <code>Resolve conflicts</code> 按钮。</p>
+                    </div>
+                    <div class="card">
+                        <h4>操作步骤</h4>
+                        <ol>
+                            <li>点 <code>Resolve conflicts</code></li>
+                            <li>网页编辑器显示带冲突标记的文件</li>
+                            <li>手动删掉 <code>&lt;&lt;&lt;</code> / <code>===</code> / <code>&gt;&gt;&gt;</code> 标记，保留正确代码</li>
+                            <li>点 <code>Mark as resolved</code> → <code>Commit merge</code></li>
+                            <li>回到 PR 页面继续合并</li>
+                        </ol>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>适合场景：</strong>改了几行 README、调了个文案这种小冲突。涉及多文件、逻辑改动大的冲突，还是用命令行更靠谱。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 17: Resolve via CLI ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>命令行解冲突</h2>
+                <h4>复杂冲突在本地解决，掌控力最强</h4>
+                <pre><code class="language-bash"># 1. 把最新主干拉进你的分支
+$ git fetch origin
+$ git merge origin/main
+
+# 2. Git 提示冲突文件
+# Auto-merging app.js
+# CONFLICT (content): Merge conflict in app.js
+
+# 3. 打开 app.js，手动解决冲突标记
+
+# 4. 标记已解决
+$ git add app.js
+
+# 5. 完成合并
+$ git commit
+$ git push</code></pre>
+                <div class="warning">
+                    <strong>解冲突的核心原则：</strong>理解两边<strong>都想达到什么目的</strong>，而不是简单选一个。常常最终代码是两种方案的综合——既要 A 的功能，也要 B 的修复。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 18: Abort merge ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>放弃合并</h2>
+                <h4>冲突太复杂、改到一半想重来——随时可以退出</h4>
+                <pre><code class="language-bash"># 合并进行中，想放弃
+$ git merge --abort
+
+# 回到合并前的干净状态，仿佛什么都没发生</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>什么时候用</h4>
+                        <ul>
+                            <li>冲突太多，一次性理不清</li>
+                            <li>改到一半发现方向错了</li>
+                            <li>想先去请教别人再回来处理</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>放心地 abort。</strong>Git 的合并是安全的，<code>--abort</code> 不会丢失你之前的 commit，只是取消这次没完成的合并操作。你的工作都在。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 19: After merge ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>合并之后</h2>
+                <h4>PR 合并了，善后工作别忘</h4>
+                <pre><code class="language-bash"># 1. 切回主干并拉取最新（含你刚合并的改动）
+$ git checkout main
+$ git pull
+
+# 2. 删除已合并的本地功能分支
+$ git branch -d feature/add-login
+
+# 3. 删除远程的功能分支（GitHub 合并时通常自动提示删）
+$ git push origin --delete feature/add-login</code></pre>
+                <div class="key-point">
+                    <strong>为什么要删分支：</strong>已合并的功能分支完成了使命，留着会让分支列表越来越乱。<code>-d</code>（小写）是安全删除——只允许删已合并的分支，未合并的要用 <code>-D</code> 强删。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 20: PR best practices ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>好 PR 的习惯</h2>
+                <h4>让 reviewer 爱上你的 PR</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>小而专一</h4>
+                        <p>一个 PR 只解决一件事。别把「加登录」和「改 README」塞进同一个 PR。<strong>小 PR 审得快，合并快。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>标题就是结论</h4>
+                        <p>「添加邮箱登录功能」比「update」好一万倍。标题要让别人扫一眼 PR 列表就知道干了啥。</p>
+                    </div>
+                    <div class="card">
+                        <h4>描述说清 why</h4>
+                        <p>代码已经展示了「怎么改」，描述要解释「为什么改」。reviewer 需要上下文。</p>
+                    </div>
+                    <div class="card">
+                        <h4>自测再提交</h4>
+                        <p>开 PR 前自己先跑通。把未完成的、跑不起来的代码丢给别人审，是对别人时间的不尊重。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 21: Troubleshooting ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错：PR 不见分支</h2>
+                <h4>开了 PR，但 Files changed 显示「There isn't anything to compare」</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>原因</h4>
+                        <p>你的功能分支和主干<strong>没有差异</strong>——可能是你忘记在功能分支上 commit，或 commit 后忘记 push。</p>
+                    </div>
+                    <div class="column">
+                        <h4>检查清单</h4>
+                        <pre><code class="language-bash"># 确认在功能分支
+$ git branch
+
+# 确认有新提交
+$ git log main..HEAD
+
+# 确认推到了远程
+$ git status</code></pre>
+                        <p><code>git status</code> 显示 <code>ahead of origin</code> 说明还没 push。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 22: Practice ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手试一试</h2>
+                <h4>完整走一遍 PR 全流程</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>你的任务</h3>
+                        <p><strong>任务</strong>：在自己的仓库里，通过 PR 修改 README。</p>
+                        <p><strong>要求</strong>：</p>
+                        <ol>
+                            <li>开 feature 分支 <code>docs/improve-readme</code></li>
+                            <li>在 README 里加一段「项目结构」说明</li>
+                            <li>commit 并 push 该分支</li>
+                            <li>在 GitHub 开 PR，写清楚描述</li>
+                            <li>自己 review 一遍，选 Squash 合并</li>
+                            <li>合并后清理本地和远程分支</li>
+                        </ol>
+                        <h4>提示</h4>
+                        <ol>
+                            <li>一个人也能走完 PR——你就是作者也是 reviewer</li>
+                            <li>合并后记得 <code>git pull</code> 把合并结果拉回本地 main</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 23: Summary ========== -->
+        <section class="slide title-slide">
+            <div class="chapter-badge">第 03 章</div>
+            <h1>小结</h1>
+            <p>你已经掌握 GitHub 协作的核心——PR 全流程</p>
+            <div class="card-grid" style="max-width: 600px; margin: 30px auto;">
+                <div class="card">
+                    <h4>本章要点</h4>
+                    <ul>
+                        <li>feature branch 工作法：开分支 → commit → push → 开 PR</li>
+                        <li>PR 四标签：Conversation / Commits / Files changed / Checks</li>
+                        <li>三种合并策略：Merge commit（完整）/ Squash（干净）/ Rebase（线性）</li>
+                        <li>冲突可在网页解（小）或命令行解（大），随时可 abort</li>
+                        <li>合并后清理分支，保持仓库整洁</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="conclusion" style="max-width: 600px; margin-top: 20px; text-align: left;">
+                <strong>下一步：</strong>第 04 章 Issues 与 Projects —— 学会用 issue 跟踪任务、用看板管理进度，让 PR 不再是无序的。
+            </div>
+        </section>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+
+    </main>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

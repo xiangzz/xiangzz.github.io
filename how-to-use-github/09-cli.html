@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>09 GitHub CLI</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ========== Slide 1: Title ========== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 09 章</div>
+            <h1>GitHub CLI</h1>
+            <p>用 gh 命令操作仓库、PR、release——不离开终端搞定一切</p>
+            <strong>能脚本化的，就别手动点网页</strong>
+        </section>
+
+        <!-- ========== Slide 2: Problem Opening ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>网页太慢</h2>
+                <h4>你想做个 PR、看个 issue、发个版本，却要打开浏览器、登录、点一堆</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>切来切去</h4>
+                        <p>你在终端写代码，要开 PR 得切到浏览器，找到仓库，点 New pull request，填表单。<strong>打断心流，效率低。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>批量操作做不了</h4>
+                        <p>想给 10 个 issue 加同一个 label，网页上一个一个点。<strong>没有「全选」按钮，纯手工累死。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>没法自动化</h4>
+                        <p>想写个脚本「每天列出未关闭的 PR」，网页做不到。<strong>没有命令行接口，就没法编程化。</strong></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>本章让 GitHub 回到命令行：</strong>用官方 <code>gh</code> 工具，在终端里开 PR、查 issue、发 release、跑 Actions。<br>
+                    所有能点网页的操作，gh 几乎都能做，还能脚本化批量处理。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 3: Before We Start ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>熟悉命令行，想少切浏览器</li>
+                            <li>有批量操作、自动化 GitHub 的需求</li>
+                            <li>想发 release、触发 Actions 但嫌网页麻烦</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>你将学会</h4>
+                        <ul>
+                            <li>安装并认证 gh</li>
+                            <li>用 gh 操作 repo、pr、issue</li>
+                            <li>用 gh release 发版本</li>
+                            <li>触发和查看 Actions</li>
+                            <li>写脚本批量处理任务</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章暂不覆盖</h4>
+                        <ul>
+                            <li>gh 扩展开发（进阶）</li>
+                            <li>API 直接调用（第 11 章）</li>
+                            <li>企业版功能</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 4: What is gh ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>gh 是什么</h2>
+                <h4>GitHub 官方命令行工具——把网页功能搬进终端</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>能做什么</h4>
+                        <ul>
+                            <li>仓库：clone、create、fork</li>
+                            <li>PR：创建、查看、checkout、合并</li>
+                            <li>issue：创建、查看、列表</li>
+                            <li>release：创建、上传附件</li>
+                            <li>Actions：查看、触发 workflow</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>和 git 的区别</h4>
+                        <p><code>git</code> 管版本控制（commit/push）。<br>
+                        <code>gh</code> 管 GitHub 平台功能（PR/issue/release）。<br>
+                        <strong>两者配合使用</strong>，不是替代关系。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>gh 是开源的</strong>，GitHub 官方维护，更新频繁。它本质是对 GitHub API 的封装——第 11 章你会学到那些 API 的真身。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 5: Install gh ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>安装 gh</h2>
+                <h4>各平台都有现成包</h4>
+                <pre><code class="language-bash"># macOS
+$ brew install gh
+
+# Windows (Scoop)
+$ scoop install gh
+# 或 (Winget)
+$ winget install GitHub.cli
+
+# Linux (Ubuntu/Debian)
+$ sudo apt install gh
+
+# 验证安装
+$ gh --version
+gh version 2.45.0 (2024-xx-xx)</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>Windows 注意</h4>
+                        <p>装完可能要重开终端让 PATH 生效。PowerShell 和 Git Bash 都能用。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 6: Auth ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>认证登录</h2>
+                <h4>第一次用 gh 要登录，绑定你的 GitHub 账号</h4>
+                <pre><code class="language-bash">$ gh auth login
+
+# 交互式选择：
+# ? What account? → GitHub.com
+# ? Protocol? → HTTPS（或 SSH）
+# ? Authenticate Git? → Yes
+# ? How to authenticate? → Login with a web browser
+
+# 显示一个一次性码，浏览器打开授权页粘贴</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>认证后</h4>
+                        <p>凭证安全保存在系统钥匙串。之后所有 gh 命令<strong>自动带认证</strong>，不用每次登录。</p>
+                    </div>
+                    <div class="card">
+                        <h4>检查状态</h4>
+                        <pre><code class="language-bash">$ gh auth status
+✔ Logged in to github.com as 你的用户名</code></pre>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>gh auth 会顺便配置 git 凭证</strong>，所以装好 gh 后，git push 也能复用这套认证，不用再单独配 PAT。一举两得。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 7: repo commands ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>仓库操作</h2>
+                <h4>gh repo——比网页更快的仓库管理</h4>
+                <pre><code class="language-bash"># 创建新仓库（自动含远程）
+$ gh repo create 我的项目 --public --source=. --push
+
+# clone 仓库（不用输完整 URL）
+$ gh repo clone 用户名/仓库名
+
+# 在浏览器打开当前仓库主页
+$ gh repo view --web
+
+# fork 别人的仓库并 clone
+$ gh repo fork 用户名/仓库名 --clone
+
+# 查看仓库信息
+$ gh repo view 用户名/仓库名</code></pre>
+                <div class="intro-block">
+                    <strong>gh repo create 的妙处：</strong>一条命令完成「建远程 + 关联本地 + push」，比第 01 章手动三步快得多。<code>--source=.</code> 把当前目录作为本地仓库。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 8: pr create ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>创建 PR</h2>
+                <h4>gh pr create——不离开终端开 PR</h4>
+                <pre><code class="language-bash"># 在 feature 分支上
+$ gh pr create
+
+# 交互式填写标题和描述
+# ? Title: 添加登录页面
+# ? Body: (打开编辑器写描述)
+
+# 一行命令版（CI 友好）
+$ gh pr create --title "添加登录页面" --body "Closes #12"</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>常用选项</h4>
+                        <ul>
+                            <li><code>--base main</code>：指定目标分支</li>
+                            <li><code>--head feature/x</code>：指定源分支</li>
+                            <li><code>--reviewer alice</code>：指派 reviewer</li>
+                            <li><code>--label bug</code>：加 label</li>
+                            <li><code>--draft</code>：开草稿 PR</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 9: pr management ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>PR 管理</h2>
+                <h4>查看、检出、合并——一条龙</h4>
+                <pre><code class="language-bash"># 列出当前仓库所有 PR
+$ gh pr list
+
+# 查看某个 PR 详情
+$ gh pr view 15
+
+# 把别人的 PR 拉到本地测试
+$ gh pr checkout 15
+
+# 在浏览器打开 PR
+$ gh pr view 15 --web
+
+# 合并 PR（squash/merge/rebase）
+$ gh pr merge 15 --squash --delete-branch</code></pre>
+                <div class="intro-block">
+                    <strong><code>gh pr checkout N</code> 特别有用：</strong>看到同事的 PR 想在本地跑一下，一条命令把那条分支拉下来，自动切过去。比手动 fetch + checkout 省事。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 10: issue commands ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>issue 操作</h2>
+                <h4>gh issue——不用打开网页也能管 issue</h4>
+                <pre><code class="language-bash"># 创建 issue
+$ gh issue create --title "登录按钮失灵" --body "描述..."
+
+# 列出未关闭的 issue
+$ gh issue list
+
+# 列出分配给你的
+$ gh issue list --assignee @me
+
+# 查看某条 issue（含讨论）
+$ gh issue view 12
+
+# 关闭 issue
+$ gh issue close 12
+
+# 重新打开
+$ gh issue reopen 12</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>筛选组合</h4>
+                        <pre><code class="language-bash"># 你的、未关闭、bug 标签
+$ gh issue list --assignee @me \
+    --state open --label bug</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 11: release - what is it ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Release 是什么</h2>
+                <h4>给项目的某个时刻打个「正式标签」——通常是发版</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>release 包含</h4>
+                        <ul>
+                            <li><strong>tag</strong>：版本号（如 v1.0.0）</li>
+                            <li><strong>标题和说明</strong>：这次更新了什么</li>
+                            <li><strong>附件</strong>：可下载的产物（安装包、压缩包）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>和 tag 的区别</h4>
+                        <p>tag 是 Git 概念（指向某 commit 的命名指针）。<br>
+                        release 是 GitHub 概念——基于 tag 的<strong>富信息发布物</strong>，带说明和附件。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>学生项目何时用 release：</strong>课程项目交付、参赛作品提交、开源库发版本。<strong>不是每个 commit 都要 release</strong>，只在里程碑节点发。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 12: release commands ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>发 release</h2>
+                <h4>gh release——命令行发版，CI 友好</h4>
+                <pre><code class="language-bash"># 创建 release（自动打 tag）
+$ gh release create v1.0.0 \
+    --title "v1.0.0 正式版" \
+    --notes "首个公开版本"
+
+# 带二进制附件
+$ gh release create v1.0.0 \
+    ./dist/app.zip ./dist/app.tar.gz \
+    --title "v1.0.0" --notes "发布说明"
+
+# 从 CHANGELOG 自动生成 notes
+$ gh release create v1.0.0 --generate-notes</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>其他操作</h4>
+                        <ul>
+                            <li><code>gh release list</code>：列出所有 release</li>
+                            <li><code>gh release view v1.0.0</code>：查看详情</li>
+                            <li><code>gh release download v1.0.0</code>：下载附件</li>
+                            <li><code>gh release delete v1.0.0</code>：删除</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 13: generate notes ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自动发布说明</h2>
+                <h4>--generate-notes 让 GitHub 自动写更新日志</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>它做了什么</h4>
+                        <p>对比上一个 release，自动生成：</p>
+                        <ul>
+                            <li>新增的 commit 标题列表</li>
+                            <li>新合并的 PR（含编号和标题）</li>
+                            <li>新增的贡献者</li>
+                            <li>按规范分类（如 Features / Fixes）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>前提</h4>
+                        <p>commit 消息和 PR 标题遵循规范（如 Conventional Commits），自动分类才准。<br>
+                        哪怕不规范，至少能列出改动列表，比手写省事。</p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>配合 CI 最佳：</strong>workflow 里打 tag 触发，用 <code>--generate-notes</code> 自动发 release，全程无人值守。这是「打 tag 即发版」的常见做法。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 13.5: Conventional Commits ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>提交规范</h2>
+                <h4>Conventional Commits——让 commit 消息能被机器读懂</h4>
+                <pre><code class="language-text">格式：类型(范围): 描述
+
+feat(auth): 添加邮箱登录
+fix(api): 修复登录接口空指针
+docs: 更新 README 安装步骤
+chore: 升级依赖版本
+refactor(parser): 抽取公共解析逻辑</code></pre>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>类型</th><th>含义</th><th>release 分类</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr class="highlight">
+                            <td><code>feat</code></td>
+                            <td>新功能</td>
+                            <td>Features</td>
+                        </tr>
+                        <tr>
+                            <td><code>fix</code></td>
+                            <td>bug 修复</td>
+                            <td>Bug Fixes</td>
+                        </tr>
+                        <tr>
+                            <td><code>docs</code></td>
+                            <td>文档</td>
+                            <td>（一般不进 release notes）</td>
+                        </tr>
+                        <tr>
+                            <td><code>chore</code></td>
+                            <td>杂项/依赖</td>
+                            <td>（一般不进 release notes）</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <strong>为什么要遵循：</strong>上一张的 <code>--generate-notes</code> 会按 <code>feat</code> / <code>fix</code> 自动归类成 Features / Fixes 章节。<strong>commit 写得规范，发版说明就是一键生成的高质量文档</strong>；写得随意，只能拿到一串看不懂的标题。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 14: Actions commands ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>操作 Actions</h2>
+                <h4>gh run——查看和触发 workflow</h4>
+                <pre><code class="language-bash"># 列出最近的 workflow 运行
+$ gh run list
+
+# 查看某次运行的详情
+$ gh run view 12345678
+
+# 查看失败的日志
+$ gh run view 12345678 --log-failed
+
+# 手动触发 workflow_dispatch 类型的 workflow
+$ gh workflow run deploy.yml
+
+# 重新运行失败的
+$ gh run rerun 12345678
+
+# 取消正在运行的
+$ gh run cancel 12345678</code></pre>
+                <div class="intro-block">
+                    <strong>查失败日志不用开浏览器了：</strong><code>gh run view --log-failed</code> 直接把错误打在终端，配合 grep 快速定位问题。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 15: Scripting example ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>脚本化实战</h2>
+                <h4>批量给 issue 加 label——一行命令搞定</h4>
+                <pre><code class="language-bash"># 把所有未关闭、未分类的 issue 加上 triage 标签
+$ gh issue list --state open --json number --jq '.[].number' | \
+    while read issue; do
+        gh issue edit $issue --add-label triage
+    done</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>拆解</h4>
+                        <ul>
+                            <li><code>--json number</code>：输出 JSON，只取 number 字段</li>
+                            <li><code>--jq '.[].number'</code>：用 jq 提取成纯数字列表</li>
+                            <li><code>while read</code>：逐行处理</li>
+                            <li><code>gh issue edit --add-label</code>：给单条加 label</li>
+                        </ul>
+                    </div>
+                </div>
+                <p>这个模式（list → 提取 → 循环 edit）适用于所有批量场景。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 16: JSON output ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>JSON 输出</h2>
+                <h4>几乎每个 gh 命令都支持 --json，便于程序化处理</h4>
+                <pre><code class="language-bash"># 列出 PR 的编号和标题
+$ gh pr list --json number,title
+[
+  { "number": 15, "title": "添加登录" },
+  { "number": 14, "title": "修复 typo" }
+]
+
+# 用 jq 提取纯标题
+$ gh pr list --json title --jq '.[].title'
+添加登录
+修复 typo</code></pre>
+                <div class="intro-block">
+                    <strong>--json 和 --jq 是脚本化的核心。</strong><code>--json</code> 指定字段，<code>--jq</code> 用 jq 语法过滤。<br>
+                    不加 <code>--jq</code> 输出完整 JSON，加了的输出处理后结果。这是 gh 设计最妙的地方。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 17: alias ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>自定义别名</h2>
+                <h4>给常用命令起短名，少敲键盘</h4>
+                <pre><code class="language-bash"># 创建别名
+$ gh alias set co 'pr checkout'
+# 现在 gh co 15 等于 gh pr checkout 15
+
+$ gh alias set mine 'pr list --assignee @me'
+# gh mine 列出分配给你的 PR
+
+# 列出所有别名
+$ gh alias list
+
+# 删除别名
+$ gh alias delete co</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>什么时候用</h4>
+                        <p>有又长又常用的命令时。比如每天要看的「我的 PR」、「带某标签的 issue」。<br>
+                        别名存在配置里，跨机器用 <code>gh sync</code> 同步。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 18: Extensions ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>扩展机制</h2>
+                <h4>gh extension——装别人写的命令，扩展 gh 能力</h4>
+                <pre><code class="language-bash"># 安装扩展（用户名/仓库名）
+$ gh extension install dlvhdr/gh-dash
+
+# 用扩展
+$ gh dash
+# （打开一个 PR/issue 仪表盘）
+
+# 列出已装扩展
+$ gh extension list
+
+# 升级
+$ gh extension upgrade --all</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>生态</h4>
+                        <p>GitHub 社区贡献了大量扩展：</p>
+                        <ul>
+                            <li>仪表盘（gh-dash）</li>
+                            <li>预览 markdown</li>
+                            <li>统计贡献图</li>
+                            <li>批量操作工具</li>
+                        </ul>
+                        <p>搜索：<code>github 话题 gh-extension</code></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 19: gh in CI ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>gh 在 CI 里</h2>
+                <h4>workflow 中用 gh——自动发 release、评论 PR</h4>
+                <pre><code class="language-yaml">steps:
+  - uses: actions/checkout@v7
+  - run: npm run build
+
+  - name: 发 release
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    run: |
+      gh release create v${{ github.run_number }} \
+        ./dist/app.zip \
+        --generate-notes</code></pre>
+                <div class="intro-block">
+                    <strong>workflow 里 gh 自带认证：</strong><code>GITHUB_TOKEN</code> 是 Actions 自动提供的临时令牌，不用手动配 secret。在 step 里设为 <code>GH_TOKEN</code> 环境变量，gh 就能用了。<br>
+                    常见用法：build 后自动发 release、PR 被打开时自动评论、定时检查并关闭陈旧 issue。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 20: Common workflow cheatsheet ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>日常速查</h2>
+                <h4>最常用的 gh 命令组合</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>场景</th><th>命令</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr class="highlight">
+                            <td>建项目并推送</td>
+                            <td><code>gh repo create 名 --public --source=. --push</code></td>
+                        </tr>
+                        <tr>
+                            <td>开 PR</td>
+                            <td><code>gh pr create --fill</code></td>
+                        </tr>
+                        <tr>
+                            <td>看我的任务</td>
+                            <td><code>gh pr list --assignee @me</code></td>
+                        </tr>
+                        <tr>
+                            <td>发版本</td>
+                            <td><code>gh release create v1.0 --generate-notes</code></td>
+                        </tr>
+                        <tr>
+                            <td>查 CI 失败</td>
+                            <td><code>gh run view --log-failed</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p><code>--fill</code> 自动用 commit 消息填充 PR 标题和描述，超省事。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 21: Troubleshooting ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错：认证失效</h2>
+                <h4>gh 命令报 authentication failed</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>常见原因</h4>
+                        <ul>
+                            <li>token 过期（gh 登录的凭证有期限）</li>
+                            <li>换了电脑没重新登录</li>
+                            <li>改了 GitHub 密码后失效</li>
+                            <li>权限不足（操作私有仓库但 token 没 repo 权限）</li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>修复</h4>
+                        <p>重新登录：</p>
+                        <pre><code class="language-bash">$ gh auth login</code></pre>
+                        <p>走完浏览器授权流程即可。<br>
+                        如果只是刷新权限：<code>gh auth refresh</code>。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 22: Practice ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手试一试</h2>
+                <h4>用 gh 走一遍完整流程</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>你的任务</h3>
+                        <p><strong>任务</strong>：纯用 gh 命令完成建仓库、开 PR、发 release。</p>
+                        <p><strong>要求</strong>：</p>
+                        <ol>
+                            <li><code>gh auth login</code> 完成认证</li>
+                            <li><code>gh repo create</code> 建新仓库并推送本地代码</li>
+                            <li>开 feature 分支改点东西，用 <code>gh pr create</code> 开 PR</li>
+                            <li>用 <code>gh pr merge --squash</code> 合并</li>
+                            <li>用 <code>gh release create v0.1 --generate-notes</code> 发个版本</li>
+                            <li>全程不打开浏览器（除非认证）</li>
+                        </ol>
+                        <h4>提示</h4>
+                        <ol>
+                            <li>忘了命令随时 <code>gh --help</code> 或 <code>gh pr --help</code></li>
+                            <li><code>--web</code> 参数能在浏览器打开对应页面</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 23: Summary ========== -->
+        <section class="slide title-slide">
+            <div class="chapter-badge">第 09 章</div>
+            <h1>小结</h1>
+            <p>你已经能在终端里完成几乎所有 GitHub 操作了</p>
+            <div class="card-grid" style="max-width: 600px; margin: 30px auto;">
+                <div class="card">
+                    <h4>本章要点</h4>
+                    <ul>
+                        <li>gh 是 GitHub 官方 CLI，管平台功能（PR/issue/release）</li>
+                        <li>认证一次永久可用，还顺带给 git 配凭证</li>
+                        <li>repo/pr/issue/release/run 五大子命令覆盖日常</li>
+                        <li>--json + --jq 让输出可程序化，支持脚本批处理</li>
+                        <li>在 workflow 里用 GITHUB_TOKEN 自动发版、评论</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="conclusion" style="max-width: 600px; margin-top: 20px; text-align: left;">
+                <strong>下一步：</strong>第 10 章 安全实践 —— 系统讲 SSH/PAT/2FA、分支保护、secret scanning、Dependabot，给你的项目上保险。
+            </div>
+        </section>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+
+    </main>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

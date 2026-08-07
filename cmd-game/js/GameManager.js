@@ -19,7 +19,10 @@ class GameManager {
         // 游戏状态
         this.isGameActive = true;
         this.currentLevel = 1;
-        
+
+        // 命令历史导航游标：-1 表示不在历史中浏览
+        this.historyCursor = -1;
+
         // 事件监听器
         this.eventListeners = new Map();
         
@@ -171,6 +174,8 @@ class GameManager {
         // 添加命令到历史
         this.vfs.addToHistory(command);
         this.commandCount++;
+        // 执行新命令后重置历史游标
+        this.historyCursor = -1;
         
         // 显示命令行
         this.addToTerminal(`${this.vfs.getDisplayPath()}>${command}`, 'command-line');
@@ -405,22 +410,33 @@ class GameManager {
     }
 
     /**
-     * 显示上一个命令
+     * 显示上一个命令（向更早的历史浏览）
+     * historyCursor 语义：-1 表示停留在新输入位置；>=0 表示距最新一条的偏移量
      */
     showPreviousCommand() {
         const history = this.vfs.getHistory();
-        if (history.length > 0) {
-            // 简单实现：显示最后一个命令
-            this.elements.terminalInput.value = history[history.length - 1];
+        if (history.length === 0) return;
+
+        // 游标向更早的方向推进（不能超过历史长度-1）
+        if (this.historyCursor < history.length - 1) {
+            this.historyCursor++;
+            this.elements.terminalInput.value = history[history.length - 1 - this.historyCursor];
         }
     }
 
     /**
-     * 显示下一个命令
+     * 显示下一个命令（向更新的历史浏览，回到新输入位置时清空）
      */
     showNextCommand() {
-        // 简单实现：清空输入
-        this.elements.terminalInput.value = '';
+        const history = this.vfs.getHistory();
+        if (history.length === 0 || this.historyCursor <= 0) {
+            // 已经回到最新位置，清空输入框
+            this.historyCursor = -1;
+            this.elements.terminalInput.value = '';
+            return;
+        }
+        this.historyCursor--;
+        this.elements.terminalInput.value = history[history.length - 1 - this.historyCursor];
     }
 
     /**

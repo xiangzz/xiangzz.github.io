@@ -109,10 +109,10 @@ function setupKeyboardShortcuts() {
             }
         }
         
-        // Ctrl + R: 重置游戏
+        // Ctrl + R: 重置游戏（确认逻辑由 resetGame 内部统一处理，避免双重弹窗）
         if (event.ctrlKey && event.key === 'r') {
             event.preventDefault();
-            if (gameManager && confirm('确定要重置游戏吗？')) {
+            if (gameManager) {
                 gameManager.resetGame();
             }
         }
@@ -182,16 +182,6 @@ function handleVisibilityChange() {
         if (input) {
             input.focus();
         }
-    }
-}
-
-/**
- * 处理窗口大小变化
- */
-function handleResize() {
-    // 调整终端显示区域
-    if (gameManager) {
-        gameManager.scrollToBottom();
     }
 }
 

@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>07 GitHub Actions</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ========== Slide 1: Title ========== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 07 章</div>
+            <h1>GitHub Actions</h1>
+            <p>push 之后自动测试、构建、部署——把重复劳动交给机器</p>
+            <strong>写一次 workflow，省下一辈子的手动操作</strong>
+        </section>
+
+        <!-- ========== Slide 2: Problem Opening ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>手动太累</h2>
+                <h4>每次改完代码，你都在重复做同样的事</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>手动测试</h4>
+                        <p>改完代码，你得手动跑一遍测试，确认没坏。<strong>忘了跑就合并，bug 进了主干。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>手动部署</h4>
+                        <p>每次发版，要本地 build、上传服务器、重启服务。<strong>步骤繁琐，还容易出错。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>环境不一致</h4>
+                        <p>「我这能跑啊」——你本地能跑，到别人机器就挂。<strong>没有统一的环境保证。</strong></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>本章让机器替你做这些：</strong>写一个 workflow 文件，定义「push 时自动跑测试、构建、部署」。之后每次 push，GitHub 帮你执行。<br>
+                    这是现代软件开发的基础设施，也是后续章节（Pages 部署、CLI 触发）的前置。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 3: Before We Start ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>会 PR，想让代码自动测试</li>
+                            <li>听说过 CI/CD 但没动手配过</li>
+                            <li>想自动化构建、部署、发版流程</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>你将学会</h4>
+                        <ul>
+                            <li>读懂和编写 workflow.yaml</li>
+                            <li>配置各类触发器（push、PR、定时、手动）</li>
+                            <li>理解 job、step、runner 的关系</li>
+                            <li>用 matrix 做多环境测试</li>
+                            <li>用 cache 加速、artifact 存产物</li>
+                            <li>安全管理 secrets</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章暂不覆盖</h4>
+                        <ul>
+                            <li>自托管 runner（企业场景）</li>
+                            <li>Actions 市场发布（进阶）</li>
+                            <li>复杂部署平台集成（第 08 章部分）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 4: What is Actions ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Actions 是什么</h2>
+                <h4>GitHub 内置的 CI/CD 平台——代码仓库自带的自动化引擎</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>它能做什么</h4>
+                        <ul>
+                            <li><strong>CI</strong>：push/PR 时自动跑测试</li>
+                            <li><strong>CD</strong>：合并后自动构建并部署</li>
+                            <li><strong>自动化</strong>：定时任务、发版、通知</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>核心优势</h4>
+                        <ul>
+                            <li>免费额度：公开仓库无限分钟，私有仓库每月 2000 分钟</li>
+                            <li>无需自建服务器，GitHub 提供 runner</li>
+                            <li>配置即代码（YAML 文件随仓库走）</li>
+                            <li>海量现成 Action 可复用</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>对学生完全够用。</strong>公开仓库免费无限使用，足够跑作业项目的测试和部署。这章的例子都能在免费额度内完成。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 5: Where workflows live ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>workflow 放哪</h2>
+                <h4>约定俗成的目录：.github/workflows/</h4>
+                <pre><code class="language-text">你的仓库/
+├── .github/
+│   └── workflows/
+│       ├── test.yml      # 测试 workflow
+│       └── deploy.yml    # 部署 workflow
+├── src/
+└── package.json</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>规则</h4>
+                        <ul>
+                            <li>每个 <code>.yml</code> / <code>.yaml</code> 文件是一个独立 workflow</li>
+                            <li>文件名随意，通常按用途命名</li>
+                            <li>可以放多个 workflow，互不干扰</li>
+                            <li>push 这个文件到仓库即生效</li>
+                        </ul>
+                    </div>
+                </div>
+                <p>路径写错（如放在 .github/ 根目录而非 workflows/）会导致 Actions 不识别。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 6: Anatomy of a workflow ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>workflow 结构</h2>
+                <h4>一个最简 workflow 的五大要素</h4>
+                <pre><code class="language-yaml">name: CI                          # ① workflow 名字
+
+on: [push]                        # ② 触发条件
+
+jobs:                             # ③ 任务集合
+  test:                           # ④ 一个 job
+    runs-on: ubuntu-latest        #    运行环境
+    steps:                        # ⑤ 步骤序列
+      - uses: actions/checkout@v7
+      - run: echo "Hello"</code></pre>
+                <div class="intro-block">
+                    <strong>五要素：</strong>name（名字）、on（何时触发）、jobs（任务组）、每个 job 有 runs-on（在哪跑）和 steps（具体做什么）。<br>
+                    这是最小骨架，所有 workflow 都是它的扩展。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 7: Triggers ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>触发器 on</h2>
+                <h4>定义「什么时候跑这个 workflow」</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>触发器</th><th>何时触发</th><th>典型用途</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr class="highlight">
+                            <td><code>push</code></td>
+                            <td>推送代码时</td>
+                            <td>测试、构建</td>
+                        </tr>
+                        <tr>
+                            <td><code>pull_request</code></td>
+                            <td>开/更新 PR 时</td>
+                            <td>PR 检查</td>
+                        </tr>
+                        <tr>
+                            <td><code>schedule</code></td>
+                            <td>定时（cron）</td>
+                            <td>每日报告、爬虫</td>
+                        </tr>
+                        <tr>
+                            <td><code>workflow_dispatch</code></td>
+                            <td>手动点按钮</td>
+                            <td>发版、临时执行</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>可组合：<code>on: [push, pull_request]</code> 表示推送或开 PR 都触发。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 8: Trigger filters ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>触发过滤</h2>
+                <h4>精细控制——只在特定分支、路径触发</h4>
+                <pre><code class="language-yaml">on:
+  push:
+    branches:
+      - main          # 只在 push 到 main 时触发
+      - 'release/*'   # 或 release/ 开头的分支
+    paths:
+      - 'src/**'      # 只有 src 下文件变了才触发
+      - '!**.md'      # 排除 markdown 改动
+  pull_request:
+    branches:
+      - main</code></pre>
+                <div class="warning">
+                    <strong>过滤能省额度。</strong>不写过滤，改个 README 也会触发完整测试。用 paths 过滤，让文档改动不浪费 CI 资源。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 9: Jobs and runner ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>job 与 runner</h2>
+                <h4>job 是一组步骤，在某个 runner（虚拟机）上执行</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>runs-on 选环境</h4>
+                        <ul>
+                            <li><code>ubuntu-latest</code>：Linux，最常用、最省额度</li>
+                            <li><code>windows-latest</code>：Windows（费额度）</li>
+                            <li><code>macos-latest</code>：macOS（最贵，慎用）</li>
+                        </ul>
+                        <p>无特殊需求一律选 ubuntu，它最便宜。</p>
+                    </div>
+                    <div class="card">
+                        <h4>job 之间默认并行</h4>
+                        <p>多个 job 默认<strong>同时</strong>跑。要用 <code>needs</code> 指定依赖：</p>
+                        <pre><code class="language-yaml">jobs:
+  test:
+    ...
+  deploy:
+    needs: test   # 等 test 成功才跑</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 10: Steps ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>steps 详解</h2>
+                <h4>一个 job 里按顺序执行的步骤，每步是个 action 或命令</h4>
+                <pre><code class="language-yaml">steps:
+  # 用现成的 action（uses）
+  - name: 检出代码
+    uses: actions/checkout@v7
+
+  # 跑命令（run）
+  - name: 安装依赖
+    run: npm install
+
+  # 多行命令
+  - name: 跑测试
+    run: |
+      npm test
+      npm run lint</code></pre>
+                <div class="intro-block">
+                    <strong>两种 step：</strong><code>uses</code> 引用现成 Action（别人写好的能力），<code>run</code> 执行 shell 命令。<br>
+                    <code>actions/checkout@v7</code> 几乎是每个 workflow 的第一步——把代码拉到 runner 上才能操作。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 11: Action marketplace ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Action 市场</h2>
+                <h4>不用从零写，现成 Action 覆盖绝大多数需求</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>常用官方 Action</h4>
+                        <ul>
+                            <li><code>actions/checkout</code>：检出代码</li>
+                            <li><code>actions/setup-node</code>：装 Node.js</li>
+                            <li><code>actions/setup-python</code>：装 Python</li>
+                            <li><code>actions/cache</code>：缓存依赖</li>
+                            <li><code>actions/upload-artifact</code>：存产物</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>第三方 Action</h4>
+                        <ul>
+                            <li><code>peaceiris/actions-gh-pages</code>：部署 Pages</li>
+                            <li><code>softprops/action-gh-release</code>：发 Release</li>
+                            <li>市场：<code>github.com/marketplace</code> 搜</li>
+                        </ul>
+                    </div>
+                </div>
+                <p>引用格式：<code>作者/动作名@版本</code>。版本用 tag（如 <code>@v4</code>）或 commit SHA，<strong>别用 main 分支</strong>（不安全）。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 12: Real example - Node test ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：Node 测试</h2>
+                <h4>一个完整的 Node.js 自动测试 workflow</h4>
+                <pre><code class="language-yaml">name: Node CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: npm test</code></pre>
+                <div class="intro-block">
+                    <strong>这 8 行做了什么：</strong>每次 push 或 PR，拉代码 → 装 Node 20 → 装依赖 → 跑测试。<br>
+                    把它存为 <code>.github/workflows/test.yml</code> push 上去，下次推送就能在 Actions 标签看到运行结果。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 13: Python example ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：Python 测试</h2>
+                <h4>Python 项目的对应写法</h4>
+                <pre><code class="language-yaml">name: Python CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: pytest</code></pre>
+                <p>结构完全一样，只是 setup action 和测试命令不同。<strong>workflow 的套路是通用的</strong>，换语言只换 setup 和 run。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 14: Matrix testing ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>矩阵测试</h2>
+                <h4>matrix——一次在多个版本/系统上跑同一套测试</h4>
+                <pre><code class="language-yaml">jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm install
+      - run: npm test</code></pre>
+                <div class="key-point">
+                    <strong>这会跑 3 × 2 = 6 个 job：</strong>Node 18/20/22 × Linux/Windows。<br>
+                    适合库项目——确保你的代码在不同环境都能跑。应用项目通常不需要这么全面。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 15: Cache ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>缓存加速</h2>
+                <h4>每次重装依赖很慢——缓存能让后续运行快几倍</h4>
+                <pre><code class="language-yaml">steps:
+  - uses: actions/checkout@v7
+  - uses: actions/setup-node@v7
+    with:
+      node-version: '20'
+      cache: 'npm'     # 自动缓存 npm 依赖
+  - run: npm install   # 有缓存时这步快很多
+  - run: npm test</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>setup-node/python 内置 cache</h4>
+                        <p>现代 setup action 都支持 <code>cache</code> 参数，自动处理。<strong>不用手动写缓存逻辑。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>手动缓存</h4>
+                        <p>用 <code>actions/cache@v6</code>，指定 path 和 key。适合自定义缓存需求。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 16: Artifacts ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>存产物</h2>
+                <h4>artifact——把构建结果保存下来，供下载或传递给下一步</h4>
+                <pre><code class="language-yaml">steps:
+  - uses: actions/checkout@v7
+  - run: npm run build           # 构建产物在 dist/
+
+  - name: 上传产物
+    uses: actions/upload-artifact@v7
+    with:
+      name: build-output
+      path: dist/</code></pre>
+                <div class="intro-block">
+                    <strong>artifact 用途：</strong>构建后想下载打包结果查看、把测试报告存档、或让 deploy job 读取 build job 的产物。<br>
+                    在 Actions 运行页面能直接下载 artifact，保留 90 天。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 17: Secrets ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>密钥管理</h2>
+                <h4>secrets——加密存储的敏感信息，workflow 里安全引用</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>怎么设置</h4>
+                        <p>仓库 → <code>Settings</code> → <code>Secrets and variables</code> → <code>Actions</code> → <code>New repository secret</code>。</p>
+                        <ul>
+                            <li>名字如 <code>DEPLOY_KEY</code></li>
+                            <li>值加密存储，设置后不可读</li>
+                            <li>只能改不能查</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>怎么用</h4>
+                        <pre><code class="language-yaml">steps:
+  - name: 部署
+    run: ./deploy.sh
+    env:
+      SSH_KEY: ${{ secrets.DEPLOY_KEY }}</code></pre>
+                        <p>引用时用 <code>${{ secrets.名字 }}</code>，日志里会自动打码。</p>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>绝不把密钥写进 yaml 明文。</strong>push 到公开仓库就泄露了。一律用 secrets。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 18: Full CI/CD example ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>完整 CI/CD</h2>
+                <h4>测试 → 构建 → 部署，多 job 串联</h4>
+                <pre><code class="language-yaml">name: CI/CD
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm install
+      - run: npm test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: npm install &amp;&amp; npm run build
+      - uses: actions/upload-artifact@v7
+        with: { name: dist, path: dist/ }
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with: { name: dist, path: dist/ }
+      - run: ./deploy.sh
+        env:
+          TOKEN: ${{ secrets.DEPLOY_TOKEN }}</code></pre>
+            </div>
+        </section>
+
+        <!-- ========== Slide 19: Reading the CI/CD ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>解读这个流程</h2>
+                <h4>三个 job 串联，模拟真实发布管线</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>test job</h4>
+                        <p>跑测试。<strong>失败则后面都不跑</strong>——bug 代码不会进构建。</p>
+                    </div>
+                    <div class="card">
+                        <h4>build job</h4>
+                        <p><code>needs: test</code>，测试通过才构建。产物存为 artifact。</p>
+                    </div>
+                    <div class="card">
+                        <h4>deploy job</h4>
+                        <p><code>needs: build</code>，下载 artifact 部署。用 secret 存 token。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>这是 CI/CD 的经典模式：</strong>检查 → 打包 → 发布，每步成功才进下一步。<br>
+                    push 到 main 自动跑完全程，代码就从你的键盘走到了生产环境。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 20: Status badges ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>状态徽章</h2>
+                <h4>把 CI 状态显示在 README 里——一眼看出项目健康度</h4>
+                <pre><code class="language-markdown">![CI](https://github.com/用户/仓库/actions/workflows/test.yml/badge.svg)</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>效果</h4>
+                        <p>README 顶部显示一个徽章：<strong>绿色 passing</strong>（全部通过）或<strong>红色 failing</strong>（有失败）。</p>
+                    </div>
+                    <div class="card">
+                        <h4>怎么拿地址</h4>
+                        <p>仓库 → <code>Actions</code> → 选某个 workflow → 右上角 <code>...</code> → <code>Create status badge</code> → 复制 markdown。</p>
+                    </div>
+                </div>
+                <p>开源项目几乎都会在 README 顶部放 CI 徽章——这是项目专业度的标志。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 21: Troubleshooting ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错：workflow 不触发</h2>
+                <h4>push 了 yml，Actions 标签却什么都没有</h4>
+                <div class="columns">
+                    <div class="column">
+                        <h4>常见原因</h4>
+                        <ul>
+                            <li>文件不在 <code>.github/workflows/</code> 目录</li>
+                            <li>YAML 缩进错误（最常见）</li>
+                            <li><code>on</code> 触发器写错或过滤不匹配</li>
+                            <li>文件扩展名不是 <code>.yml</code>/<code>.yaml</code></li>
+                        </ul>
+                    </div>
+                    <div class="column">
+                        <h4>排查</h4>
+                        <p>在 Actions 页面看有没有黄色感叹号的 workflow——那是语法错误。</p>
+                        <p>点进去看具体报错，通常是缩进问题。YAML 对空格敏感，<strong>用空格不用 Tab</strong>。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 22: Troubleshooting 2 ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>排错：step 失败</h2>
+                <h4>workflow 跑起来了但某个 step 报红</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>怎么看</h4>
+                        <ol>
+                            <li>Actions 页面点失败的 run</li>
+                            <li>展开红色失败的 step</li>
+                            <li>看完整日志，找错误信息</li>
+                        </ol>
+                    </div>
+                    <div class="card">
+                        <h4>常见原因</h4>
+                        <ul>
+                            <li>命令在 runner 上不存在（如没装某工具）</li>
+                            <li>测试本身没过（代码 bug）</li>
+                            <li>secret 名字写错（值为空）</li>
+                            <li>路径大小写错（Linux 区分大小写）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>能在本地复现就先在本地跑。</strong>runner 是个 Linux 环境，本地能跑的命令，runner 上大概率也能跑。先确保本地通过再交给 CI。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 23: Free limits ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>免费额度</h2>
+                <h4>知道边界，避免超额停服</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>仓库类型</th><th>每月分钟数</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr class="highlight">
+                            <td>公开仓库</td>
+                            <td>无限</td>
+                            <td>完全免费，随便用</td>
+                        </tr>
+                        <tr>
+                            <td>私有仓库（免费账号）</td>
+                            <td>2000 分钟</td>
+                            <td>够个人项目</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>费率换算</h4>
+                        <ul>
+                            <li>Linux：1 分钟 = 1 分钟</li>
+                            <li>Windows：1 分钟 = 2 分钟</li>
+                            <li>macOS：1 分钟 = 10 分钟</li>
+                        </ul>
+                        <p>所以 macOS 慎用，10 倍费率很快耗尽额度。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 24: Practice ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手试一试</h2>
+                <h4>给自己的项目加上自动测试</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>你的任务</h3>
+                        <p><strong>任务</strong>：为任意已有项目配一个 CI workflow。</p>
+                        <p><strong>要求</strong>：</p>
+                        <ol>
+                            <li>建 <code>.github/workflows/test.yml</code></li>
+                            <li>触发条件：<code>push</code> 和 <code>pull_request</code></li>
+                            <li>用 ubuntu-latest，checkout + setup（node 或 python）</li>
+                            <li>安装依赖并跑测试</li>
+                            <li>push 后在 Actions 标签确认运行成功</li>
+                            <li>把状态徽章加到 README</li>
+                        </ol>
+                        <h4>提示</h4>
+                        <ol>
+                            <li>没有测试脚本？先加一个最简单的，如 <code>node -e "console.log('ok')"</code></li>
+                            <li>YAML 用空格缩进，2 空格最常见</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 25: Summary ========== -->
+        <section class="slide title-slide">
+            <div class="chapter-badge">第 07 章</div>
+            <h1>小结</h1>
+            <p>你已经能让代码在 push 后自动测试、构建、部署了</p>
+            <div class="card-grid" style="max-width: 600px; margin: 30px auto;">
+                <div class="card">
+                    <h4>本章要点</h4>
+                    <ul>
+                        <li>workflow 放 <code>.github/workflows/*.yml</code>，含 name/on/jobs/steps</li>
+                        <li>触发器：push、pull_request、schedule、workflow_dispatch</li>
+                        <li>job 默认并行，用 needs 串依赖</li>
+                        <li>matrix 多环境、cache 加速、artifact 存产物</li>
+                        <li>敏感信息一律用 secrets，别写明文</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="conclusion" style="max-width: 600px; margin-top: 20px; text-align: left;">
+                <strong>下一步：</strong>第 08 章 GitHub Pages —— 用 Actions 自动部署一个作品集个人主页，把你学的 CI/CD 立刻变现。
+            </div>
+        </section>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+
+    </main>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>

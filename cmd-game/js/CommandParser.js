@@ -160,10 +160,14 @@ class CommandParser {
         // 解析参数
         for (const arg of args) {
             if (arg.startsWith('/') || arg.startsWith('-')) {
-                if (arg.toLowerCase().includes('a')) {
+                // 取出 flag 字符部分（去掉前导 / 或 -），按字符精确判断
+                const flag = arg.toLowerCase().replace(/^[/\-]+/, '');
+                // /A 或 /A:attr 形式触发 showAll
+                if (flag === 'a' || flag.startsWith('a:') || flag.startsWith('a-')) {
                     showAll = true;
                 }
-                if (arg.toLowerCase().includes('s')) {
+                // /S 触发递归
+                if (flag === 's') {
                     recursive = true;
                 }
             } else if (!pattern) {
@@ -603,12 +607,14 @@ class CommandParser {
             };
         }
 
-        // 处理通配符删除
-        if (filename.includes('*')) {
+        // 处理通配符删除（支持 * 和 ?）
+        if (filename.includes('*') || filename.includes('?')) {
             const currentPath = this.vfs.getCurrentPath();
             try {
                 const files = this.vfs.listDirectory(currentPath);
-                const pattern = filename.replace(/\*/g, '.*');
+                // 先转义正则特殊字符，再转换通配符 * 和 ?
+                const escapeRegex = (s) => s.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+                const pattern = escapeRegex(filename).replace(/\*/g, '.*').replace(/\?/g, '.');
                 const regex = new RegExp('^' + pattern + '$', 'i');
                 
                 let deletedCount = 0;
@@ -930,13 +936,25 @@ class CommandParser {
         }
 
         let count = 4;
-        let target = args[0];
-        
-        // 处理 -n 参数
-        if (args[0] === '-n' && args.length >= 3) {
-            count = parseInt(args[1]) || 4;
-            target = args[2];
+        let target = '';
+
+        // 解析参数：支持 -n count 在任意位置，也支持 /n
+        const nonFlagArgs = [];
+        for (let i = 0; i < args.length; i++) {
+            const a = args[i];
+            const flag = a.toLowerCase().replace(/^[/\-]+/, '');
+            if ((flag === 'n' || a === '-n' || a === '/n') && i + 1 < args.length) {
+                const n = parseInt(args[i + 1]);
+                if (!isNaN(n) && n > 0) {
+                    count = n;
+                    i++; // 跳过 count 参数
+                }
+            } else if (!/^-/.test(a) && !/^\//.test(a)) {
+                // 非标志参数视为目标主机
+                nonFlagArgs.push(a);
+            }
         }
+        target = nonFlagArgs[0] || args.find(a => !/^-/.test(a) && !/^\//.test(a)) || '';
 
         // 模拟ping输出
         let output = `\n正在 Ping ${target}:\n\n`;
@@ -959,24 +977,38 @@ class CommandParser {
 
     /**
      * TASKLIST 命令 - 显示进程列表
+     * 支持 /v 显示详细信息（含状态、用户名、窗口标题）
      */
     cmdTasklist(args) {
-        let output = '\n映像名称                       PID 会话名              会话#       内存使用\n';
-        output += '========================= ======== ================ =========== ============\n';
-        
+        // 解析参数
+        let verbose = false;
+        for (const arg of args) {
+            const flag = arg.toLowerCase().replace(/^[/\-]+/, '');
+            if (flag === 'v') verbose = true;
+        }
+
+        let output;
+        if (verbose) {
+            output = '\n映像名称                       PID 会话名              会话#       内存使用  状态          用户名                    窗口标题\n';
+            output += '========================= ======== ================ =========== ============ ============== ======================= ==============\n';
+        } else {
+            output = '\n映像名称                       PID 会话名              会话#       内存使用\n';
+            output += '========================= ======== ================ =========== ============\n';
+        }
+
         // 模拟进程列表
         const allProcesses = [
-            { name: 'System Idle Process', pid: 0, session: 'Services', sessionId: 0, memory: '24 K' },
-            { name: 'System', pid: 4, session: 'Services', sessionId: 0, memory: '228 K' },
-            { name: 'smss.exe', pid: 364, session: 'Services', sessionId: 0, memory: '1,084 K' },
-            { name: 'csrss.exe', pid: 584, session: 'Services', sessionId: 0, memory: '4,784 K' },
-            { name: 'winlogon.exe', pid: 608, session: 'Console', sessionId: 1, memory: '2,652 K' },
-            { name: 'services.exe', pid: 652, session: 'Services', sessionId: 0, memory: '3,892 K' },
-            { name: 'lsass.exe', pid: 664, session: 'Services', sessionId: 0, memory: '6,744 K' },
-            { name: 'svchost.exe', pid: 824, session: 'Services', sessionId: 0, memory: '4,616 K' },
-            { name: 'svchost.exe', pid: 892, session: 'Services', sessionId: 0, memory: '3,028 K' },
-            { name: 'notepad.exe', pid: 1234, session: 'Console', sessionId: 1, memory: '8,192 K' },
-            { name: 'chrome.exe', pid: 5678, session: 'Console', sessionId: 1, memory: '256,000 K' }
+            { name: 'System Idle Process', pid: 0, session: 'Services', sessionId: 0, memory: '24 K', status: '运行', user: 'NT AUTHORITY\\SYSTEM', title: '不适用' },
+            { name: 'System', pid: 4, session: 'Services', sessionId: 0, memory: '228 K', status: '运行', user: 'NT AUTHORITY\\SYSTEM', title: '不适用' },
+            { name: 'smss.exe', pid: 364, session: 'Services', sessionId: 0, memory: '1,084 K', status: '运行', user: 'NT AUTHORITY\\SYSTEM', title: '不适用' },
+            { name: 'csrss.exe', pid: 584, session: 'Services', sessionId: 0, memory: '4,784 K', status: '运行', user: 'NT AUTHORITY\\SYSTEM', title: '不适用' },
+            { name: 'winlogon.exe', pid: 608, session: 'Console', sessionId: 1, memory: '2,652 K', status: '运行', user: 'NT AUTHORITY\\SYSTEM', title: '不适用' },
+            { name: 'services.exe', pid: 652, session: 'Services', sessionId: 0, memory: '3,892 K', status: '运行', user: 'NT AUTHORITY\\SYSTEM', title: '不适用' },
+            { name: 'lsass.exe', pid: 664, session: 'Services', sessionId: 0, memory: '6,744 K', status: '运行', user: 'NT AUTHORITY\\SYSTEM', title: '不适用' },
+            { name: 'svchost.exe', pid: 824, session: 'Services', sessionId: 0, memory: '4,616 K', status: '运行', user: 'NT AUTHORITY\\SYSTEM', title: '不适用' },
+            { name: 'svchost.exe', pid: 892, session: 'Services', sessionId: 0, memory: '3,028 K', status: '运行', user: 'NT AUTHORITY\\SYSTEM', title: '不适用' },
+            { name: 'notepad.exe', pid: 1234, session: 'Console', sessionId: 1, memory: '8,192 K', status: '运行', user: 'DESKTOP-GAME\\Student', title: '记事本 - 无标题' },
+            { name: 'chrome.exe', pid: 5678, session: 'Console', sessionId: 1, memory: '256,000 K', status: '运行', user: 'DESKTOP-GAME\\Student', title: 'Google Chrome' }
         ];
 
         // 只显示运行中的进程
@@ -995,7 +1027,14 @@ class CommandParser {
             const session = proc.session.padEnd(16);
             const sessionId = proc.sessionId.toString().padStart(11);
             const memory = proc.memory.padStart(12);
-            output += `${name} ${pid} ${session} ${sessionId} ${memory}\n`;
+            if (verbose) {
+                const status = (proc.status || '运行').padEnd(14);
+                const user = (proc.user || '').padEnd(23);
+                const title = (proc.title || '不适用').padEnd(14);
+                output += `${name} ${pid} ${session} ${sessionId} ${memory}  ${status} ${user} ${title}\n`;
+            } else {
+                output += `${name} ${pid} ${session} ${sessionId} ${memory}\n`;
+            }
         });
 
         return {
@@ -1246,14 +1285,21 @@ class CommandParser {
         }
 
         let showLineNumbers = false;
+        let ignoreCase = true;  // 与原实现保持一致：默认大小写不敏感
+        let recursive = false;
         let searchString = '';
         let filePattern = '';
-        
+
         // 解析参数
         for (let i = 0; i < args.length; i++) {
             const arg = args[i];
-            if (arg === '/n') {
+            const flag = arg.toLowerCase().replace(/^[/\-]+/, '');
+            if (flag === 'n') {
                 showLineNumbers = true;
+            } else if (flag === 'i') {
+                ignoreCase = true;
+            } else if (flag === 's') {
+                recursive = true;
             } else if (!searchString && !arg.startsWith('/')) {
                 searchString = arg;
             } else if (!filePattern && !arg.startsWith('/')) {
@@ -1275,57 +1321,66 @@ class CommandParser {
 
         let results = [];
         const currentPath = this.vfs.getCurrentPath();
-        
-        try {
-            // 获取匹配的文件
-            const files = this.vfs.listDirectory(currentPath);
-            const matchingFiles = files.filter(file => {
-                if (filePattern === '*.*') return !file.isDirectory;
-                if (filePattern === '*.txt') return file.name.endsWith('.txt');
-                if (filePattern === '*.log') return file.name.endsWith('.log');
-                return file.name.includes(filePattern.replace('*', ''));
-            });
 
-            for (const file of matchingFiles) {
-                if (!file.isDirectory) {
-                    try {
-                        const fileResult = this.vfs.readFile(this.vfs.joinPath(currentPath, file.name));
-                        if (!fileResult.success) continue;
-                        const content = fileResult.content;
-                        const lines = content.split('\n');
-                        
-                        for (let i = 0; i < lines.length; i++) {
-                            if (lines[i].toLowerCase().includes(searchString.toLowerCase())) {
-                                if (showLineNumbers) {
-                                    results.push(`${file.name}:${i + 1}:${lines[i]}`);
-                                } else {
-                                    results.push(`${file.name}:${lines[i]}`);
-                                }
-                            }
+        // 判断是否匹配文件名模式（支持通配符）
+        const escapeRegex = (s) => s.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+        const fileRegex = new RegExp('^' + escapeRegex(filePattern).replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+
+        // 收集要搜索的文件列表（可选递归）
+        const filesToSearch = [];
+        const collectFiles = (dirPath, isRoot) => {
+            try {
+                const files = this.vfs.listDirectory(dirPath);
+                for (const file of files) {
+                    const fullPath = this.vfs.joinPath(dirPath, file.name);
+                    if (file.type === 'directory') {
+                        if (recursive) collectFiles(fullPath, false);
+                    } else {
+                        // 根目录需要匹配文件名模式，子目录递归时也匹配
+                        if (fileRegex.test(file.name)) {
+                            filesToSearch.push({ name: file.name, path: fullPath, displayPath: isRoot ? file.name : fullPath.replace(currentPath + '\\', '') });
                         }
-                    } catch (e) {
-                        // 忽略无法读取的文件
                     }
                 }
-            }
+            } catch (e) { /* 忽略 */ }
+        };
+        collectFiles(currentPath, true);
 
-            if (results.length === 0) {
-                return {
-                    output: 'FINDSTR: 找不到搜索字符串',
-                    type: 'error'
-                };
-            }
+        for (const file of filesToSearch) {
+            try {
+                const fileResult = this.vfs.readFile(file.path);
+                if (!fileResult.success) continue;
+                const content = fileResult.content;
+                const lines = content.split('\n');
 
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+                    const haystack = ignoreCase ? line.toLowerCase() : line;
+                    const needle = ignoreCase ? searchString.toLowerCase() : searchString;
+                    if (haystack.includes(needle)) {
+                        if (showLineNumbers) {
+                            results.push(`${file.displayPath}:${i + 1}:${line}`);
+                        } else {
+                            results.push(`${file.displayPath}:${line}`);
+                        }
+                    }
+                }
+            } catch (e) {
+                // 忽略无法读取的文件
+            }
+        }
+
+        if (results.length === 0) {
             return {
-                output: results.join('\n'),
-                type: 'output'
-            };
-        } catch (error) {
-            return {
-                output: `FINDSTR: ${error.message}`,
+                output: 'FINDSTR: 找不到搜索字符串',
                 type: 'error'
             };
         }
+
+        return {
+            output: results.join('\n'),
+            type: 'output'
+        };
     }
 
     /**

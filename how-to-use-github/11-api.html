@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>11 GitHub API 与集成</title>
+    <link rel="stylesheet" href="./references/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>.card-grid { display: flex; flex-direction: column; }</style>
+</head>
+<body>
+    <main id="presentation">
+
+        <!-- ========== Slide 1: Title ========== -->
+        <section class="slide title-slide active">
+            <div class="chapter-badge">第 11 章</div>
+            <h1>API 与集成</h1>
+            <p>REST、GraphQL、webhook——把 GitHub 与任何外部系统打通</p>
+            <strong>gh 是别人的封装，API 是你自己造工具的原料</strong>
+        </section>
+
+        <!-- ========== Slide 2: Problem Opening ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>gh 不够用了</h2>
+                <h4>你想做的事，没有现成命令</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>想做机器人</h4>
+                        <p>新开 issue 时自动打标签、有人 star 时发条通知、每天统计贡献图。<strong>gh 没有这些功能。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>想接外部系统</h4>
+                        <p>把 PR 状态同步到飞书群、issue 关闭时更新 Notion 看板。<strong>GitHub 和这些工具之间没有现成桥梁。</strong></p>
+                    </div>
+                    <div class="card">
+                        <h4>想自定义查询</h4>
+                        <p>「过去一年谁提交最多」「哪些 issue 超过 30 天没动」——网页搜不出来，gh 也不好查。<strong>需要原始数据自己算。</strong></p>
+                    </div>
+                </div>
+                <div class="key-point">
+                    <strong>本章打开 GitHub 的底层：</strong>REST/GraphQL API 让你读写任意仓库数据，webhook 让 GitHub 主动通知你事件，GitHub App 让你构建正式集成。<br>
+                    这是 gh 背后的真身，也是你造工具的原料。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 3: Before We Start ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>开始之前</h2>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>适合谁</h4>
+                        <ul>
+                            <li>会基本编程（Python/JS），想自动化 GitHub</li>
+                            <li>好奇 gh 背后是怎么工作的</li>
+                            <li>想做个小机器人或集成</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>你将学会</h4>
+                        <ul>
+                            <li>用 REST API 查询和操作仓库</li>
+                            <li>用 GraphQL 精准取数据</li>
+                            <li>理解 token scope 和认证</li>
+                            <li>区分 OAuth App 和 GitHub App</li>
+                            <li>用 webhook 响应事件</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>本章暂不覆盖</h4>
+                        <ul>
+                            <li>GitHub Enterprise API</li>
+                            <li>复杂机器人框架（Probot 深度）</li>
+                            <li>OAuth 完整流程实现</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 4: Two APIs ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>两套 API</h2>
+                <h4>GitHub 提供 REST 和 GraphQL 两套接口</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th></th><th>REST API</th><th>GraphQL API</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>风格</td>
+                            <td>资源导向 URL</td>
+                            <td>查询语言，按需取字段</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td>易学</td>
+                            <td>简单直观</td>
+                            <td>有学习曲线</td>
+                        </tr>
+                        <tr>
+                            <td>查询效率</td>
+                            <td>可能多次请求</td>
+                            <td>一次取所需，省请求</td>
+                        </tr>
+                        <tr>
+                            <td>适合</td>
+                            <td>简单操作、curl 实测</td>
+                            <td>复杂关联查询</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <strong>新手从 REST 入手。</strong>它是 URL + HTTP 方法，curl 一行就能测。GraphQL 更强大但门槛高，等你熟了 REST 再进阶。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 5: REST basics ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>REST 基础</h2>
+                <h4>每个资源有自己的 URL，用 HTTP 方法操作</h4>
+                <pre><code class="language-text">GET    /repos/用户名/仓库名          # 获取仓库信息
+POST   /repos/用户名/仓库名/issues    # 创建 issue
+PATCH  /repos/用户名/仓库名/issues/12 # 修改 issue 12（改标题/状态等）
+GET    /repos/用户名/仓库名/issues/12 # 获取单条 issue</code></pre>
+                <div class="warning">
+                    <strong>注意：issue 没有 DELETE 方法。</strong>GitHub 不允许删除 issue，只能 PATCH 把状态改成 <code>closed</code> 来关闭。
+                </div>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>基础 URL</h4>
+                        <pre><code class="language-text">https://api.github.com</code></pre>
+                        <p>所有请求以此为前缀。</p>
+                    </div>
+                    <div class="card">
+                        <h4>HTTP 方法对应操作</h4>
+                        <ul>
+                            <li><strong>GET</strong>：读取</li>
+                            <li><strong>POST</strong>：创建</li>
+                            <li><strong>PATCH/PUT</strong>：更新</li>
+                            <li><strong>DELETE</strong>：删除</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 6: First REST call ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>第一次调用</h2>
+                <h4>用 curl 查询公开仓库信息，连认证都不用</h4>
+                <pre><code class="language-bash">$ curl https://api.github.com/repos/octocat/Hello-World
+
+{
+  "id": 1296269,
+  "name": "Hello-World",
+  "full_name": "octocat/Hello-World",
+  "owner": {
+    "login": "octocat",
+    ...
+  },
+  "stargazers_count": 1000+,
+  "open_issues_count": 100,
+  ...
+}</code></pre>
+                <div class="intro-block">
+                    <strong>读取公开数据不需要认证。</strong>但有速率限制：未认证每小时 60 次请求。认证后提升到 5000 次/小时——所以实际开发都要带 token。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 7: Authenticated call ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>带认证的调用</h2>
+                <h4>用 PAT 认证后，能读私有仓库、能写操作</h4>
+                <pre><code class="language-bash"># 带 token 的请求（注意 Authorization 头）
+$ curl -H "Authorization: Bearer 你的TOKEN" \
+       https://api.github.com/user
+
+# 查看当前认证用户信息
+{
+  "login": "你的用户名",
+  "name": "...",
+  "public_repos": 10,
+  ...
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>认证方式</h4>
+                        <ul>
+                            <li><code>Authorization: Bearer TOKEN</code>（推荐）</li>
+                            <li>URL 参数 <code>?access_token=TOKEN</code>（已废弃，不安全）</li>
+                            <li>建议用环境变量存 token，别写死</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>别在命令行明文写 token。</strong>会被 shell 历史记录。用 <code>$GITHUB_TOKEN</code> 环境变量，curl 里写 <code>-H "Authorization: Bearer $GITHUB_TOKEN"</code>。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 8: Create issue via API ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>用 API 创建 issue</h2>
+                <h4>POST 请求带 JSON body——能写就能自动化</h4>
+                <pre><code class="language-bash">$ curl -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Accept: application/vnd.github+json" \
+    https://api.github.com/repos/你/仓库/issues \
+    -d '{"title":"通过 API 创建","body":"测试","labels":["bug"]}'
+
+# 返回创建好的 issue（含编号、URL 等）</code></pre>
+                <div class="intro-block">
+                    <strong>这就是 gh issue create 背后的真相。</strong>gh 帮你封装了 HTTP 请求、JSON 构造、错误处理。<br>
+                    直接调 API 更灵活——你可以批量创建、从外部数据源导入、和别的系统联动。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 9: Rate limits ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>速率限制</h2>
+                <h4>API 有调用频率上限，防止滥用</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>认证状态</th><th>每小时限制</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>未认证</td>
+                            <td>60 次</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td>带 token（普通用户）</td>
+                            <td>5000 次</td>
+                        </tr>
+                        <tr>
+                            <td>GitHub App</td>
+                            <td>更高（按安装算）</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>查看剩余额度</h4>
+                        <pre><code class="language-bash">$ curl -H "Authorization: Bearer $TOKEN" \
+    https://api.github.com/rate_limit</code></pre>
+                        <p>返回 remaining / reset 等字段。</p>
+                    </div>
+                </div>
+                <p>脚本里记得处理 403（超限）——sleep 等 reset 时间再重试。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 10: Pagination ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>分页</h2>
+                <h4>返回多的接口会分页，默认一页 30 条</h4>
+                <pre><code class="language-bash"># 指定每页数量和页码
+$ curl -H "Authorization: Bearer $TOKEN" \
+    "https://api.github.com/repos/你/仓库/issues?per_page=100&amp;page=1"
+
+# Link 响应头告诉你有没有下一页
+Link: &lt;...&amp;page=2&gt;; rel="next", &lt;...&amp;page=5&gt;; rel="last"</code></pre>
+                <div class="intro-block">
+                    <strong>per_page 最大 100。</strong>想取全部就循环 page=1,2,3... 直到某页为空或没 next 链接。这是写 GitHub 数据采集脚本的基本套路。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 11: GraphQL intro ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>GraphQL 登场</h2>
+                <h4>用一条查询精确取你想要的字段——不过度、不不足</h4>
+                <pre><code class="language-bash">$ curl -X POST -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"{ viewer { login bio repositories(privacy: PUBLIC) { totalCount } } }"}' \
+    https://api.github.com/graphql
+
+{
+  "data": {
+    "viewer": {
+      "login": "你的用户名",
+      "bio": "...",
+      "repositories": {
+        "totalCount": 10
+      }
+    }
+  }
+}</code></pre>
+                <div class="intro-block">
+                    <strong>对比 REST：</strong>REST 取整个 user 对象（你只用了 3 个字段）；GraphQL 只返回你声明的字段。<br>
+                    更大的优势是<strong>关联数据一次取</strong>：「我的前 10 个仓库的最近 5 个 PR」——REST 要 N+1 次请求，GraphQL 一次搞定。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 12: GraphQL query example ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>GraphQL 实战</h2>
+                <h4>一次查询取多层数据——REST 要发很多请求</h4>
+                <pre><code class="language-graphql">query {
+  viewer {
+    login
+    repositories(first: 5, orderBy: {field: UPDATED_AT}) {
+      nodes {
+        name
+        issues(states: [OPEN], first: 3) {
+          totalCount
+          nodes { number title }
+        }
+      }
+    }
+  }
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>这条查询做了什么</h4>
+                        <p>取当前用户 → 最近更新的 5 个仓库 → 每个仓库前 3 个 open issue（含编号标题）和 issue 总数。</p>
+                        <p>用 REST 至少 6 次请求，GraphQL 一次返回。</p>
+                    </div>
+                </div>
+                <p>适合仪表盘、统计页面这类需要聚合数据的场景。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 13: GraphQL explorer ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>GraphiQL 探索器</h2>
+                <h4>可视化写 GraphQL 的官方工具——带自动补全</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>在哪</h4>
+                        <p><code>docs.github.com/graphql</code> → 点「GitHub GraphQL Explorer」→ 用 GitHub 登录。</p>
+                    </div>
+                    <div class="card">
+                        <h4>能做什么</h4>
+                        <ul>
+                            <li>左侧写查询，右侧实时看结果</li>
+                            <li>有字段自动补全和文档</li>
+                            <li>报错提示明确（哪个字段拼错）</li>
+                            <li>写好后复制到代码里</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>写 GraphQL 别凭记忆。</strong>用 Explorer 边查文档边写，比硬记 schema 高效得多。复杂的查询先在 Explorer 跑通再进代码。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 14: Token scopes ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>token 权限</h2>
+                <h4>scope 决定你的 token 能调哪些 API</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>scope</th><th>能做什么</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>（无 scope）</td>
+                            <td>读公开数据、读自己信息</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td><code>repo</code></td>
+                            <td>读写仓库（公开+私有）</td>
+                        </tr>
+                        <tr>
+                            <td><code>read:user</code></td>
+                            <td>读用户资料</td>
+                        </tr>
+                        <tr>
+                            <td><code>user:email</code></td>
+                            <td>读邮箱</td>
+                        </tr>
+                        <tr>
+                            <td><code>workflow</code></td>
+                            <td>改 GitHub Actions workflow</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>调 API 报 403 时，先检查 token 有没有对应 scope。第 10 章讲过的最小权限原则这里同样适用。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 15: OAuth App vs GitHub App ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>两种 App</h2>
+                <h4>OAuth App 和 GitHub App——给第三方做集成时的身份</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th></th><th>OAuth App</th><th>GitHub App</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>权限粒度</td>
+                            <td>用户级（拿用户全部权限）</td>
+                            <td>细粒度（按仓库、按操作）</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td>认证对象</td>
+                            <td>代表用户</td>
+                            <td>独立身份</td>
+                        </tr>
+                        <tr>
+                            <td>webhook</td>
+                            <td>需手动配</td>
+                            <td>原生支持</td>
+                        </tr>
+                        <tr>
+                            <td>适合</td>
+                            <td>简单工具</td>
+                            <td>正式集成、机器人</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="intro-block">
+                    <strong>新项目优先 GitHub App。</strong>它更安全（细粒度权限）、更现代、GitHub 官方主推。OAuth App 是老方案，简单但权限过粗。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 16: octokit libraries ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>octokit SDK</h2>
+                <h4>GitHub 官方多语言 SDK，不用手写 HTTP</h4>
+                <pre><code class="language-javascript">// JavaScript: @octokit/rest
+import { Octokit } from "@octokit/rest";
+
+const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+
+// 列出你的仓库
+const { data } = await octokit.rest.repos.listForAuthenticatedUser();
+console.log(data.map(r =&gt; r.full_name));
+
+// 创建 issue
+await octokit.rest.issues.create({
+  owner: '你', repo: '项目',
+  title: '通过 SDK 创建',
+});</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>各语言 SDK</h4>
+                        <ul>
+                            <li>JS/TS：<code>@octokit/rest</code>、<code>@octokit/graphql</code></li>
+                            <li>Python：<code>PyGithub</code>（社区）、<code>githubkit</code></li>
+                            <li>Go：<code>google/go-github</code></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 17: Python example ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Python 实战</h2>
+                <h4>用 PyGithub 统计仓库贡献者</h4>
+                <pre><code class="language-python">from github import Github
+import os
+
+g = Github(os.environ["GITHUB_TOKEN"])
+repo = g.get_repo("你/项目")
+
+# 统计每个贡献者的 commit 数
+contributors = repo.get_contributors()
+for c in contributors[:5]:
+    print(f"{c.login}: {c.contributions} 次提交")
+
+# 列出超过 30 天没动的 issue
+import datetime
+since = datetime.datetime.now() - datetime.timedelta(days=30)
+old_issues = [i for i in repo.get_issues(state="open")
+              if i.updated_at &lt; since]
+print(f"有 {len(old_issues)} 个 issue 超过 30 天没更新")</code></pre>
+                <div class="intro-block">
+                    <strong>这种统计 gh 做不到。</strong>API + 编程语言让你自由处理数据——做报告、生成仪表盘、自动化维护任务。<br>
+                    跑一遍发现没动过的 issue，是开源项目维护的常见脚本。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 18: Webhook concept ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>webhook</h2>
+                <h4>GitHub 主动 POST 通知你「发生了事件」——反向 API</h4>
+                <div class="ai-diagram">
+                    <h4>图：webhook 工作原理</h4>
+                    <p>【AI 生图提示词】请生成一张中文技术示意图，风格简洁、配色柔和、适合教学：
+                    - 画面主体：左侧 GitHub 云朵图标，右侧「你的服务器」图标，中间一个 webhook 配置框
+                    - 各元素关系：GitHub 上发生事件（如新 issue），GitHub 向你配置的 URL 发 HTTP POST 请求，你的服务器接收并处理
+                    - 关键标注：GitHub 侧标「事件触发（push/issue/PR）」，箭头标「POST payload」，你的服务器标「接收后执行逻辑（打标签/通知）」
+                    - 配色建议：浅灰背景，GitHub 用深蓝，你的服务器用绿色，箭头橙色
+                    - 画面比例：16:9
+                    - 避免：3D 效果、过多文字
+                    </p>
+                </div>
+                <div class="intro-block">
+                    <strong>API 是你主动问 GitHub，webhook 是 GitHub 主动告诉你。</strong>做实时响应（新 issue 立刻通知、PR 被合并自动部署）必须用 webhook。轮询 API 又慢又浪费额度。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 19: Webhook setup ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>配置 webhook</h2>
+                <h4>告诉 GitHub「发生 X 事件时，POST 到这个 URL」</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>在哪配</h4>
+                        <p>仓库 → Settings → Webhooks → Add webhook。</p>
+                    </div>
+                    <div class="card">
+                        <h4>关键设置</h4>
+                        <ul>
+                            <li><strong>Payload URL</strong>：你的服务器接收地址</li>
+                            <li><strong>Content type</strong>：选 application/json</li>
+                            <li><strong>Secret</strong>：用于验证请求确实来自 GitHub</li>
+                            <li><strong>Events</strong>：勾选要监听的事件（push、issues、pull_request 等）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning">
+                    <strong>必须验证 secret。</strong>任何能访问你 URL 的人都能伪造 POST。GitHub 用你设的 secret 签名，你的服务器要校验签名才处理——否则会被骗。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 20: Webhook payload ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>webhook 负载</h2>
+                <h4>GitHub POST 过来的 JSON——含事件全部信息</h4>
+                <pre><code class="language-json">// issues 事件的 payload（节选）
+{
+  "action": "opened",
+  "issue": {
+    "number": 42,
+    "title": "登录失灵",
+    "body": "点击登录没反应...",
+    "user": { "login": "reporter" },
+    "labels": []
+  },
+  "repository": {
+    "full_name": "你/项目"
+  }
+}</code></pre>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>怎么用</h4>
+                        <p>服务器收到后，根据 <code>action</code> 和内容做处理：</p>
+                        <ul>
+                            <li>新 issue 标题含「bug」→ 自动加 bug label</li>
+                            <li>新 PR → 发飞书通知</li>
+                            <li>push 到 main → 触发部署</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 21: Use case - auto label bot ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>实战：自动打标签</h2>
+                <h4>新 issue 根据标题自动分类——webhook + API 组合</h4>
+                <pre><code class="language-python"># Flask 接收 webhook
+from flask import Flask, request
+app = Flask(__name__)
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.json
+    if data["action"] == "opened":
+        title = data["issue"]["title"].lower()
+        labels = []
+        if "bug" in title or "失灵" in title:
+            labels.append("bug")
+        if "文档" in title or "doc" in title:
+            labels.append("documentation")
+        if labels:
+            repo = data["repository"]["full_name"]
+            num = data["issue"]["number"]
+            # 调 API 加 label
+            add_labels(repo, num, labels)
+    return "", 200</code></pre>
+            </div>
+        </section>
+
+        <!-- ========== Slide 22: Actions vs webhook vs API ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>三种自动化</h2>
+                <h4>什么时候用 Actions、webhook、外部脚本调 API</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>方案</th><th>适合</th><th>举例</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr class="highlight">
+                            <td>GitHub Actions</td>
+                            <td>仓库内的、事件触发的</td>
+                            <td>push 时测试、定时检查</td>
+                        </tr>
+                        <tr>
+                            <td>webhook + 自建服务</td>
+                            <td>跨系统集成、实时</td>
+                            <td>同步到飞书、通知 IM</td>
+                        </tr>
+                        <tr>
+                            <td>脚本调 API</td>
+                            <td>一次性、批处理</td>
+                            <td>统计贡献、批量改 label</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>很多场景三者都能做。优先级：<strong>能用 Actions 就用 Actions</strong>（免服务器），要跨系统才上 webhook。</p>
+            </div>
+        </section>
+
+        <!-- ========== Slide 23: Probot mention ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>Probot 框架</h2>
+                <h4>基于 Node.js 的 GitHub App 框架——少写样板代码</h4>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>它封装了什么</h4>
+                        <ul>
+                            <li>webhook 接收和签名验证</li>
+                            <li>GitHub App 认证（自动拿 token）</li>
+                            <li>API 调用（octokit 集成）</li>
+                            <li>常用模板（欢迎新贡献者、自动关闭陈旧 PR）</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>适合</h4>
+                        <p>想正经做一个机器人/集成。比起自己从零写 webhook 服务，Probot 省去重复劳动。<br>
+                        现成应用市场：<code>probot.github.io/apps</code>。</p>
+                    </div>
+                </div>
+                <div class="intro-block">
+                    <strong>这是进阶选项。</strong>本章教的 API + webhook 基础是 Probot 的前提。先用 curl / Python 跑通小例子，再考虑用框架。
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 24: Practice ========== -->
+        <section class="slide">
+            <div class="slide-content">
+                <h2>动手试一试</h2>
+                <h4>用 API 写一个自己的小工具</h4>
+                <div class="practice-container">
+                    <div class="practice-step">
+                        <h3>你的任务</h3>
+                        <p><strong>任务</strong>：用 API 做一个能查询并展示你仓库数据的脚本。</p>
+                        <p><strong>要求</strong>（任选一个）：</p>
+                        <ol>
+                            <li>统计你所有仓库的 star 总数和按语言分布</li>
+                            <li>列出某个仓库最近 10 个 open issue 的标题</li>
+                            <li>用 GraphQL 一次查出你最近 5 个仓库的 PR 数量</li>
+                        </ol>
+                        <p><strong>通用要求</strong>：</p>
+                        <ul>
+                            <li>token 从环境变量读，不写死</li>
+                            <li>处理分页（如果需要）</li>
+                            <li>输出格式化的结果</li>
+                        </ul>
+                        <h4>提示</h4>
+                        <ol>
+                            <li>先用 curl 在命令行验证查询对不对，再写代码</li>
+                            <li>遇到 403 检查 token scope 或是否超限</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== Slide 25: Chapter 11 Summary ========== -->
+        <section class="slide title-slide">
+            <div class="chapter-badge">第 11 章</div>
+            <h1>小结</h1>
+            <p>你已经能读写 GitHub 的任意数据，并让它主动通知你</p>
+            <div class="card-grid" style="max-width: 600px; margin: 30px auto;">
+                <div class="card">
+                    <h4>本章要点</h4>
+                    <ul>
+                        <li>REST API 简单直观，GraphQL 高效精准</li>
+                        <li>PAT 认证 + scope 控制权限</li>
+                        <li>GitHub App（细粒度）优于 OAuth App（粗粒度）</li>
+                        <li>webhook 让 GitHub 主动通知，适合实时集成</li>
+                        <li>octokit SDK 各语言都有，省去手写 HTTP</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="conclusion" style="max-width: 600px; margin-top: 20px; text-align: left;">
+                <strong>下一步：</strong>第 12 章 GitHub AI 与云端 —— Copilot 辅助写代码、Codespaces 云端开发、Gist 分享片段，跟上 2026 年的实际工作方式。
+            </div>
+        </section>
+
+    <div class="progress-bar-container"><div id="progress-bar"></div></div>
+    <div class="controls">
+        <button id="prevBtn">&larr; 上一页</button>
+        <span id="slide-counter"></span>
+        <button id="nextBtn">下一页 &rarr;</button>
+    </div>
+
+    </main>
+    <script src="./references/slide-nav.js"></script>
+    <script src="./references/slide-toc.js"></script>
+</body>
+</html>
