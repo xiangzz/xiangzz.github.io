@@ -244,7 +244,7 @@
                         'Authorization': `Bearer ${apiKey}`  // 使用Bearer token认证
                     },
                     body: JSON.stringify({
-                        model: "deepseek-chat",     // 使用DeepSeek聊天模型
+                        model: "deepseek-v4-flash",     // 使用DeepSeek聊天模型
                         messages: chatHistory,      // 发送完整的对话历史
                         stream: true                // 开启流式输出以获得实时响应
                     })
